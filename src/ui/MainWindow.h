@@ -12,6 +12,7 @@ namespace flatlas::editors { class BaseEditorPage; }
 namespace flatlas::editors { class TradeRoutePage; }
 namespace flatlas::editors { class IdsEditorPage; }
 namespace flatlas::editors { class ModManagerPage; }
+namespace flatlas::editors { class NpcEditorPage; }
 
 /// FLAtlas-Hauptfenster – schlanke Orchestrierung, delegiert an Panels und Editoren.
 class MainWindow : public QMainWindow
@@ -38,6 +39,7 @@ private:
     void openTradeRoutes();
     void openIdsEditor();
     void openModManager();
+    void openNpcEditor();
     void saveCurrentSystem();
     void saveCurrentFile();
     void newSystem();

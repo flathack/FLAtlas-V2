@@ -11,6 +11,7 @@ add_library(flatlas_editors STATIC
     base/BaseBuilder.h base/BaseBuilder.cpp
     base/RoomEditor.h base/RoomEditor.cpp
     npc/NpcEditorPage.h npc/NpcEditorPage.cpp
+    npc/MbaseOperations.h npc/MbaseOperations.cpp
     ini/IniEditorPage.h ini/IniEditorPage.cpp
     ini/IniCodeEditor.h ini/IniCodeEditor.cpp
     ini/IniSyntaxHighlighter.h ini/IniSyntaxHighlighter.cpp
