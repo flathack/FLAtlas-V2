@@ -7,6 +7,9 @@ add_library(flatlas_editors STATIC
     universe/UniverseEditorPage.h universe/UniverseEditorPage.cpp
     universe/UniverseSerializer.h universe/UniverseSerializer.cpp
     base/BaseEditorPage.h base/BaseEditorPage.cpp
+    base/BasePersistence.h base/BasePersistence.cpp
+    base/BaseBuilder.h base/BaseBuilder.cpp
+    base/RoomEditor.h base/RoomEditor.cpp
     npc/NpcEditorPage.h npc/NpcEditorPage.cpp
     ini/IniEditorPage.h ini/IniEditorPage.cpp
     ini/IniCodeEditor.h ini/IniCodeEditor.cpp

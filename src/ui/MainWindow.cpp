@@ -12,6 +12,8 @@
 #include "editors/system/SystemCreationWizard.h"
 #include "editors/ini/IniEditorPage.h"
 #include "editors/universe/UniverseEditorPage.h"
+#include "editors/base/BaseEditorPage.h"
+#include "editors/base/BaseBuilder.h"
 #include "domain/SystemDocument.h"
 #include "domain/UniverseData.h"
 
@@ -48,6 +50,7 @@ void MainWindow::createMenus()
     fileMenu->addAction(tr("&New System..."), this, [this]() { newSystem(); });
     fileMenu->addAction(tr("Open &System..."), this, [this]() { openSystemFile(); });
     fileMenu->addAction(tr("Open &Universe..."), this, [this]() { openUniverseFile(); });
+    fileMenu->addAction(tr("Open &Base Editor"), this, [this]() { openBaseEditor(); });
     fileMenu->addAction(tr("Open &INI..."), this, [this]() { openIniFile(); });
     fileMenu->addSeparator();
     fileMenu->addAction(tr("&Save"), QKeySequence::Save, this, [this]() { saveCurrentFile(); });
@@ -310,6 +313,21 @@ void MainWindow::saveCurrentFile()
         else
             QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
     }
+
+    // Try base editor
+    auto *baseEditor = qobject_cast<flatlas::editors::BaseEditorPage *>(
+        m_centerTabs->currentWidget());
+    if (baseEditor) {
+        const QString filePath = QFileDialog::getSaveFileName(
+            this, tr("Save Base INI"), QString(),
+            tr("INI Files (*.ini);;All Files (*)"));
+        if (!filePath.isEmpty()) {
+            if (baseEditor->save(filePath))
+                statusBar()->showMessage(tr("Saved: %1").arg(filePath), 3000);
+            else
+                QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
+        }
+    }
 }
 
 void MainWindow::openUniverseFile()
@@ -380,4 +398,21 @@ void MainWindow::openSystemFromUniverse(const QString &nickname, const QString &
     });
 
     statusBar()->showMessage(tr("Opened system: %1").arg(nickname), 3000);
+}
+
+void MainWindow::openBaseEditor()
+{
+    auto *editor = new flatlas::editors::BaseEditorPage(this);
+
+    int idx = m_centerTabs->addTab(editor, tr("Base Editor (new)"));
+    m_centerTabs->setCurrentIndex(idx);
+
+    connect(editor, &flatlas::editors::BaseEditorPage::titleChanged,
+            this, [this, editor](const QString &title) {
+        int i = m_centerTabs->indexOf(editor);
+        if (i >= 0)
+            m_centerTabs->setTabText(i, title);
+    });
+
+    statusBar()->showMessage(tr("Base Editor opened"), 3000);
 }
