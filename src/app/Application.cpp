@@ -1,4 +1,7 @@
 #include "Application.h"
+#include "core/Config.h"
+#include "core/Theme.h"
+#include "core/I18n.h"
 #include <QStyle>
 #include <QIcon>
 
@@ -30,45 +33,39 @@ Application::Application(int &argc, char **argv)
 
 void Application::applyTheme()
 {
-    // TODO Phase 1: Theme aus Config laden und QSS anwenden
-    // Platzhalter: Dark-Theme-Palette
-    QPalette darkPalette;
-    darkPalette.setColor(QPalette::Window, QColor(53, 53, 53));
-    darkPalette.setColor(QPalette::WindowText, Qt::white);
-    darkPalette.setColor(QPalette::Base, QColor(35, 35, 35));
-    darkPalette.setColor(QPalette::AlternateBase, QColor(53, 53, 53));
-    darkPalette.setColor(QPalette::ToolTipBase, Qt::white);
-    darkPalette.setColor(QPalette::ToolTipText, Qt::white);
-    darkPalette.setColor(QPalette::Text, Qt::white);
-    darkPalette.setColor(QPalette::Button, QColor(53, 53, 53));
-    darkPalette.setColor(QPalette::ButtonText, Qt::white);
-    darkPalette.setColor(QPalette::BrightText, Qt::red);
-    darkPalette.setColor(QPalette::Link, QColor(42, 130, 218));
-    darkPalette.setColor(QPalette::Highlight, QColor(42, 130, 218));
-    darkPalette.setColor(QPalette::HighlightedText, Qt::black);
-    setPalette(darkPalette);
+    auto &config = flatlas::core::Config::instance();
+    QString theme = config.getString("theme", "dark");
+    flatlas::core::Theme::instance().apply(theme);
+    m_currentTheme = theme;
 }
 
 void Application::setTheme(const QString &themeName)
 {
     m_currentTheme = themeName;
-    applyTheme();
+    flatlas::core::Theme::instance().apply(themeName);
+    flatlas::core::Config::instance().setString("theme", themeName);
+    flatlas::core::Config::instance().save();
 }
 
 void Application::setLanguage(const QString &languageCode)
 {
     m_currentLanguage = languageCode;
-    // TODO Phase 1: QTranslator austauschen, retranslateUi() aufrufen
+    flatlas::core::I18n::instance().setLanguage(languageCode);
+    flatlas::core::Config::instance().setString("language", languageCode);
+    flatlas::core::Config::instance().save();
 }
 
 void Application::initConfig()
 {
-    // TODO Phase 1: Config aus JSON laden
+    flatlas::core::Config::instance().load();
 }
 
 void Application::initTranslations()
 {
-    // TODO Phase 1: QTranslator mit .qm-Datei laden
+    auto &config = flatlas::core::Config::instance();
+    QString lang = config.getString("language", "de");
+    flatlas::core::I18n::instance().setLanguage(lang);
+    m_currentLanguage = lang;
 }
 
 void Application::parseCommandLine()

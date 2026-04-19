@@ -3,6 +3,11 @@
 #include "BrowserPanel.h"
 #include "PropertiesPanel.h"
 #include "CenterTabWidget.h"
+#include "SettingsDialog.h"
+#include "core/Config.h"
+#include "core/Theme.h"
+#include "core/I18n.h"
+#include "core/UndoManager.h"
 
 #include <QCloseEvent>
 #include <QMenuBar>
@@ -37,14 +42,21 @@ void MainWindow::createMenus()
     fileMenu->addSeparator();
     fileMenu->addAction(tr("&Save"), QKeySequence::Save, this, []() { /* TODO Phase 5 */ });
     fileMenu->addSeparator();
-    fileMenu->addAction(tr("&Settings..."), this, []() { /* TODO Phase 3 */ });
+    fileMenu->addAction(tr("&Settings..."), this, [this]() {
+        flatlas::ui::SettingsDialog dlg(this);
+        dlg.exec();
+    });
     fileMenu->addSeparator();
     fileMenu->addAction(tr("E&xit"), QKeySequence::Quit, this, &QWidget::close);
 
     // --- Edit ---
     auto *editMenu = menuBar()->addMenu(tr("&Edit"));
-    editMenu->addAction(tr("&Undo"), QKeySequence::Undo, this, []() { /* TODO Phase 1 */ });
-    editMenu->addAction(tr("&Redo"), QKeySequence::Redo, this, []() { /* TODO Phase 1 */ });
+    editMenu->addAction(tr("&Undo"), QKeySequence::Undo, this, []() {
+        flatlas::core::UndoManager::instance().undo();
+    });
+    editMenu->addAction(tr("&Redo"), QKeySequence::Redo, this, []() {
+        flatlas::core::UndoManager::instance().redo();
+    });
 
     // --- View ---
     auto *viewMenu = menuBar()->addMenu(tr("&View"));
@@ -60,14 +72,21 @@ void MainWindow::createMenus()
     // --- Settings ---
     auto *settingsMenu = menuBar()->addMenu(tr("&Settings"));
     auto *themeMenu = settingsMenu->addMenu(tr("&Theme"));
-    for (const auto &theme : {tr("Dark"), tr("Light"), tr("Founder"), tr("XP")}) {
+    for (const auto &theme : flatlas::core::Theme::instance().availableThemes()) {
         themeMenu->addAction(theme, this, [theme]() {
-            Q_UNUSED(theme); // TODO Phase 1
+            flatlas::core::Theme::instance().apply(theme);
+            flatlas::core::Config::instance().setString("theme", theme);
+            flatlas::core::Config::instance().save();
         });
     }
     auto *langMenu = settingsMenu->addMenu(tr("&Language"));
-    langMenu->addAction(QStringLiteral("Deutsch"), this, []() { /* TODO Phase 1 */ });
-    langMenu->addAction(QStringLiteral("English"), this, []() { /* TODO Phase 1 */ });
+    for (const auto &lang : flatlas::core::I18n::availableLanguages()) {
+        langMenu->addAction(lang, this, [lang]() {
+            flatlas::core::I18n::instance().setLanguage(lang);
+            flatlas::core::Config::instance().setString("language", lang);
+            flatlas::core::Config::instance().save();
+        });
+    }
 
     // --- Help ---
     auto *helpMenu = menuBar()->addMenu(tr("&Help"));
