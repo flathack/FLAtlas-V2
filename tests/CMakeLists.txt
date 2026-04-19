@@ -50,6 +50,11 @@ flatlas_add_test(test_BaseEditor   test_BaseEditor.cpp   flatlas_editors Qt6::Wi
 flatlas_add_test(test_MarketScanner   test_MarketScanner.cpp   flatlas_editors)
 flatlas_add_test(test_TradeScoring    test_TradeScoring.cpp    flatlas_editors flatlas_domain)
 
+# Phase 12 IDS/String tests
+flatlas_add_test(test_IdsStringTable  test_IdsStringTable.cpp  flatlas_infrastructure)
+flatlas_add_test(test_CsvImporter     test_CsvImporter.cpp     flatlas_infrastructure)
+flatlas_add_test(test_IdsEditorPage   test_IdsEditorPage.cpp   flatlas_editors Qt6::Widgets)
+
 # AppConfig is compiled into the FLAtlas executable, not a library.
 # Compile the source directly into the test.
 add_executable(test_AppConfig test_AppConfig.cpp ${CMAKE_SOURCE_DIR}/src/app/AppConfig.cpp)
