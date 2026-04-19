@@ -35,16 +35,16 @@ void MainWindow::createMenus()
     fileMenu->addAction(tr("&New System..."), this, []() { /* TODO Phase 5 */ });
     fileMenu->addAction(tr("&Open..."), this, []() { /* TODO Phase 5 */ });
     fileMenu->addSeparator();
-    fileMenu->addAction(tr("&Save"), this, []() { /* TODO Phase 5 */ }, QKeySequence::Save);
+    fileMenu->addAction(tr("&Save"), QKeySequence::Save, this, []() { /* TODO Phase 5 */ });
     fileMenu->addSeparator();
     fileMenu->addAction(tr("&Settings..."), this, []() { /* TODO Phase 3 */ });
     fileMenu->addSeparator();
-    fileMenu->addAction(tr("E&xit"), this, &QWidget::close, QKeySequence::Quit);
+    fileMenu->addAction(tr("E&xit"), QKeySequence::Quit, this, &QWidget::close);
 
     // --- Edit ---
     auto *editMenu = menuBar()->addMenu(tr("&Edit"));
-    editMenu->addAction(tr("&Undo"), this, []() { /* TODO Phase 1 */ }, QKeySequence::Undo);
-    editMenu->addAction(tr("&Redo"), this, []() { /* TODO Phase 1 */ }, QKeySequence::Redo);
+    editMenu->addAction(tr("&Undo"), QKeySequence::Undo, this, []() { /* TODO Phase 1 */ });
+    editMenu->addAction(tr("&Redo"), QKeySequence::Redo, this, []() { /* TODO Phase 1 */ });
 
     // --- View ---
     auto *viewMenu = menuBar()->addMenu(tr("&View"));

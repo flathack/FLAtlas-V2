@@ -41,6 +41,8 @@ if(WIN32)
 endif()
 
 add_subdirectory(src)
+
+enable_testing()
 add_subdirectory(tests)
 
 # Third-Party (noch leer)

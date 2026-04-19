@@ -2,8 +2,8 @@
 #include <QVBoxLayout>
 #include <QPixmap>
 
-SplashScreen::SplashScreen(QWidget *parent)
-    : QSplashScreen(parent)
+SplashScreen::SplashScreen(QWidget * /*parent*/)
+    : QSplashScreen()
 {
     // Splash-Bild laden (Platzhalter: einfarbiger Hintergrund)
     QPixmap pixmap(480, 320);

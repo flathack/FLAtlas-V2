@@ -11,7 +11,7 @@ private slots:
     }
     void detectBiniMagic()
     {
-        QByteArray data("BINI\x01\x00\x00\x00", 8);
+        QByteArray data("BINI\x01\x00\x00\x00\x0c\x00\x00\x00", 12);
         QVERIFY(flatlas::infrastructure::BiniDecoder::isBini(data));
     }
 };

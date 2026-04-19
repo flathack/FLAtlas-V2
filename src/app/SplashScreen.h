@@ -11,6 +11,7 @@ class SplashScreen : public QSplashScreen
 
 public:
     explicit SplashScreen(QWidget *parent = nullptr);
+    explicit SplashScreen(const QPixmap &pixmap);
 
     /// Fortschritt setzen (0-100) mit Statustext.
     void setProgress(int percent, const QString &message);

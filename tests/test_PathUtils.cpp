@@ -6,15 +6,18 @@ class TestPathUtils : public QObject {
 private slots:
     void parsePositionValid()
     {
-        auto pos = flatlas::core::PathUtils::parsePosition(QStringLiteral("100, -200, 300"));
-        QCOMPARE(pos.x(), 100.0);
-        QCOMPARE(pos.y(), -200.0);
-        QCOMPARE(pos.z(), 300.0);
+        float x = 0, y = 0, z = 0;
+        bool ok = flatlas::core::PathUtils::parsePosition(QStringLiteral("100, -200, 300"), x, y, z);
+        QVERIFY(ok);
+        QCOMPARE(x, 100.0f);
+        QCOMPARE(y, -200.0f);
+        QCOMPARE(z, 300.0f);
     }
     void parsePositionEmpty()
     {
-        auto pos = flatlas::core::PathUtils::parsePosition(QString());
-        QVERIFY(pos.isNull());
+        float x = 0, y = 0, z = 0;
+        bool ok = flatlas::core::PathUtils::parsePosition(QString(), x, y, z);
+        QVERIFY(!ok);
     }
 };
 

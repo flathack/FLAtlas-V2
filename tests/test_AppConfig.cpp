@@ -6,13 +6,13 @@ class TestAppConfig : public QObject {
 private slots:
     void singletonIdentity()
     {
-        auto &a = flatlas::app::AppConfig::instance();
-        auto &b = flatlas::app::AppConfig::instance();
+        auto &a = AppConfig::instance();
+        auto &b = AppConfig::instance();
         QCOMPARE(&a, &b);
     }
     void defaultTheme()
     {
-        auto &cfg = flatlas::app::AppConfig::instance();
+        auto &cfg = AppConfig::instance();
         QVERIFY(!cfg.theme().isEmpty());
     }
 };
