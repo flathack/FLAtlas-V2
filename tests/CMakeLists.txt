@@ -46,6 +46,10 @@ flatlas_add_test(test_UniverseEditorPage   test_UniverseEditorPage.cpp   flatlas
 # Phase 10 Base editor tests
 flatlas_add_test(test_BaseEditor   test_BaseEditor.cpp   flatlas_editors Qt6::Widgets)
 
+# Phase 11 Trade route tests
+flatlas_add_test(test_MarketScanner   test_MarketScanner.cpp   flatlas_editors)
+flatlas_add_test(test_TradeScoring    test_TradeScoring.cpp    flatlas_editors flatlas_domain)
+
 # AppConfig is compiled into the FLAtlas executable, not a library.
 # Compile the source directly into the test.
 add_executable(test_AppConfig test_AppConfig.cpp ${CMAKE_SOURCE_DIR}/src/app/AppConfig.cpp)

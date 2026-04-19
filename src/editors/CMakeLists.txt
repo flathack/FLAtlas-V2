@@ -16,6 +16,8 @@ add_library(flatlas_editors STATIC
     ini/IniSyntaxHighlighter.h ini/IniSyntaxHighlighter.cpp
     infocard/InfocardEditor.h infocard/InfocardEditor.cpp
     trade/TradeRoutePage.h trade/TradeRoutePage.cpp
+    trade/MarketScanner.h trade/MarketScanner.cpp
+    trade/TradeScoring.h trade/TradeScoring.cpp
     news/NewsRumorEditor.h news/NewsRumorEditor.cpp
     ids/IdsEditorPage.h ids/IdsEditorPage.cpp
     modmanager/ModManagerPage.h modmanager/ModManagerPage.cpp

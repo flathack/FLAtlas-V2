@@ -9,6 +9,7 @@ namespace flatlas::ui { class PropertiesPanel; }
 namespace flatlas::editors { class SystemEditorPage; }
 namespace flatlas::editors { class UniverseEditorPage; }
 namespace flatlas::editors { class BaseEditorPage; }
+namespace flatlas::editors { class TradeRoutePage; }
 
 /// FLAtlas-Hauptfenster – schlanke Orchestrierung, delegiert an Panels und Editoren.
 class MainWindow : public QMainWindow
@@ -32,6 +33,7 @@ private:
     void openIniFile();
     void openUniverseFile();
     void openBaseEditor();
+    void openTradeRoutes();
     void saveCurrentSystem();
     void saveCurrentFile();
     void newSystem();

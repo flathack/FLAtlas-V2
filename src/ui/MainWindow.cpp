@@ -14,6 +14,7 @@
 #include "editors/universe/UniverseEditorPage.h"
 #include "editors/base/BaseEditorPage.h"
 #include "editors/base/BaseBuilder.h"
+#include "editors/trade/TradeRoutePage.h"
 #include "domain/SystemDocument.h"
 #include "domain/UniverseData.h"
 
@@ -51,6 +52,7 @@ void MainWindow::createMenus()
     fileMenu->addAction(tr("Open &System..."), this, [this]() { openSystemFile(); });
     fileMenu->addAction(tr("Open &Universe..."), this, [this]() { openUniverseFile(); });
     fileMenu->addAction(tr("Open &Base Editor"), this, [this]() { openBaseEditor(); });
+    fileMenu->addAction(tr("&Trade Routes"), this, [this]() { openTradeRoutes(); });
     fileMenu->addAction(tr("Open &INI..."), this, [this]() { openIniFile(); });
     fileMenu->addSeparator();
     fileMenu->addAction(tr("&Save"), QKeySequence::Save, this, [this]() { saveCurrentFile(); });
@@ -415,4 +417,21 @@ void MainWindow::openBaseEditor()
     });
 
     statusBar()->showMessage(tr("Base Editor opened"), 3000);
+}
+
+void MainWindow::openTradeRoutes()
+{
+    auto *page = new flatlas::editors::TradeRoutePage(this);
+
+    int idx = m_centerTabs->addTab(page, tr("Trade Routes"));
+    m_centerTabs->setCurrentIndex(idx);
+
+    connect(page, &flatlas::editors::TradeRoutePage::titleChanged,
+            this, [this, page](const QString &title) {
+        int i = m_centerTabs->indexOf(page);
+        if (i >= 0)
+            m_centerTabs->setTabText(i, title);
+    });
+
+    statusBar()->showMessage(tr("Trade Routes opened"), 3000);
 }
