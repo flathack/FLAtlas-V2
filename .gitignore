@@ -1,0 +1,34 @@
+# Build
+build/
+cmake-build-*/
+out/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.ncb
+*.sdf
+
+# Compiled
+*.o
+*.obj
+*.exe
+*.dll
+*.lib
+*.a
+*.pdb
+*.ilk
+*.exp
+
+# Qt
+moc_*
+ui_*
+qrc_*
+*.qm
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini

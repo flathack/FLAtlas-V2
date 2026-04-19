@@ -1,0 +1,15 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/icons">
+        <!-- TODO: Add application icons -->
+    </qresource>
+    <qresource prefix="/images">
+        <!-- TODO: Add splash screen, backgrounds -->
+    </qresource>
+    <qresource prefix="/help">
+        <!-- TODO: Add help HTML files -->
+    </qresource>
+    <qresource prefix="/data">
+        <!-- TODO: Add static data files -->
+    </qresource>
+</RCC>
