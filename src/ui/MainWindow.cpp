@@ -8,6 +8,9 @@
 #include "core/Theme.h"
 #include "core/I18n.h"
 #include "core/UndoManager.h"
+#include "editors/system/SystemEditorPage.h"
+#include "editors/system/SystemCreationWizard.h"
+#include "domain/SystemDocument.h"
 
 #include <QCloseEvent>
 #include <QMenuBar>
@@ -17,6 +20,8 @@
 #include <QStatusBar>
 #include <QSettings>
 #include <QApplication>
+#include <QFileDialog>
+#include <QMessageBox>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -37,10 +42,10 @@ void MainWindow::createMenus()
 {
     // --- File ---
     auto *fileMenu = menuBar()->addMenu(tr("&File"));
-    fileMenu->addAction(tr("&New System..."), this, []() { /* TODO Phase 5 */ });
-    fileMenu->addAction(tr("&Open..."), this, []() { /* TODO Phase 5 */ });
+    fileMenu->addAction(tr("&New System..."), this, [this]() { newSystem(); });
+    fileMenu->addAction(tr("&Open..."), this, [this]() { openSystemFile(); });
     fileMenu->addSeparator();
-    fileMenu->addAction(tr("&Save"), QKeySequence::Save, this, []() { /* TODO Phase 5 */ });
+    fileMenu->addAction(tr("&Save"), QKeySequence::Save, this, [this]() { saveCurrentSystem(); });
     fileMenu->addSeparator();
     fileMenu->addAction(tr("&Settings..."), this, [this]() {
         flatlas::ui::SettingsDialog dlg(this);
@@ -144,4 +149,89 @@ void MainWindow::saveWindowState()
     QSettings settings;
     settings.setValue(QStringLiteral("mainwindow/geometry"), saveGeometry());
     settings.setValue(QStringLiteral("mainwindow/state"), saveState());
+}
+
+void MainWindow::openSystemFile()
+{
+    const QString filePath = QFileDialog::getOpenFileName(
+        this, tr("Open System INI"), QString(),
+        tr("INI Files (*.ini);;All Files (*)"));
+    if (filePath.isEmpty())
+        return;
+
+    auto *editor = new flatlas::editors::SystemEditorPage(this);
+    if (!editor->loadFile(filePath)) {
+        QMessageBox::warning(this, tr("Error"),
+                             tr("Could not load system file:\n%1").arg(filePath));
+        delete editor;
+        return;
+    }
+
+    int idx = m_centerTabs->addTab(editor, editor->document()->name());
+    m_centerTabs->setCurrentIndex(idx);
+
+    connect(editor, &flatlas::editors::SystemEditorPage::titleChanged,
+            this, [this, editor](const QString &title) {
+        int i = m_centerTabs->indexOf(editor);
+        if (i >= 0)
+            m_centerTabs->setTabText(i, title);
+    });
+
+    statusBar()->showMessage(tr("Loaded: %1").arg(filePath), 3000);
+}
+
+void MainWindow::saveCurrentSystem()
+{
+    auto *editor = currentSystemEditor();
+    if (!editor)
+        return;
+
+    if (editor->filePath().isEmpty()) {
+        const QString filePath = QFileDialog::getSaveFileName(
+            this, tr("Save System INI"), QString(),
+            tr("INI Files (*.ini);;All Files (*)"));
+        if (filePath.isEmpty())
+            return;
+        if (editor->saveAs(filePath))
+            statusBar()->showMessage(tr("Saved: %1").arg(filePath), 3000);
+        else
+            QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
+    } else {
+        if (editor->save())
+            statusBar()->showMessage(tr("Saved"), 3000);
+        else
+            QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
+    }
+}
+
+void MainWindow::newSystem()
+{
+    flatlas::editors::SystemCreationWizard wizard(this);
+    if (wizard.exec() != QDialog::Accepted)
+        return;
+
+    auto doc = wizard.createDocument();
+    if (!doc)
+        return;
+
+    auto *editor = new flatlas::editors::SystemEditorPage(this);
+    editor->setDocument(std::move(doc));
+
+    int idx = m_centerTabs->addTab(editor, editor->document()->name());
+    m_centerTabs->setCurrentIndex(idx);
+
+    connect(editor, &flatlas::editors::SystemEditorPage::titleChanged,
+            this, [this, editor](const QString &title) {
+        int i = m_centerTabs->indexOf(editor);
+        if (i >= 0)
+            m_centerTabs->setTabText(i, title);
+    });
+
+    statusBar()->showMessage(tr("New system created"), 3000);
+}
+
+flatlas::editors::SystemEditorPage *MainWindow::currentSystemEditor() const
+{
+    return qobject_cast<flatlas::editors::SystemEditorPage *>(
+        m_centerTabs->currentWidget());
 }

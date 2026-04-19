@@ -1,6 +1,9 @@
 # flatlas_editors – Alle Editor-Pages
 add_library(flatlas_editors STATIC
     system/SystemEditorPage.h system/SystemEditorPage.cpp
+    system/SystemPersistence.h system/SystemPersistence.cpp
+    system/SystemCreationWizard.h system/SystemCreationWizard.cpp
+    system/SystemUndoCommands.h
     universe/UniverseEditorPage.h universe/UniverseEditorPage.cpp
     base/BaseEditorPage.h base/BaseEditorPage.cpp
     npc/NpcEditorPage.h npc/NpcEditorPage.cpp

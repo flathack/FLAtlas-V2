@@ -24,6 +24,9 @@ flatlas_add_test(test_I18n        test_I18n.cpp        flatlas_core)
 flatlas_add_test(test_UndoManager test_UndoManager.cpp flatlas_core)
 flatlas_add_test(test_Logger      test_Logger.cpp      flatlas_core)
 
+# Phase 5 system editor tests
+flatlas_add_test(test_SystemPersistence test_SystemPersistence.cpp flatlas_editors)
+
 # AppConfig is compiled into the FLAtlas executable, not a library.
 # Compile the source directly into the test.
 add_executable(test_AppConfig test_AppConfig.cpp ${CMAKE_SOURCE_DIR}/src/app/AppConfig.cpp)
