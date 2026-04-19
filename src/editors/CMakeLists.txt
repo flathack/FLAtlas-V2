@@ -5,6 +5,7 @@ add_library(flatlas_editors STATIC
     system/SystemCreationWizard.h system/SystemCreationWizard.cpp
     system/SystemUndoCommands.h
     universe/UniverseEditorPage.h universe/UniverseEditorPage.cpp
+    universe/UniverseSerializer.h universe/UniverseSerializer.cpp
     base/BaseEditorPage.h base/BaseEditorPage.cpp
     npc/NpcEditorPage.h npc/NpcEditorPage.cpp
     ini/IniEditorPage.h ini/IniEditorPage.cpp

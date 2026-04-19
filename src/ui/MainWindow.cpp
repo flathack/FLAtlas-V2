@@ -11,7 +11,9 @@
 #include "editors/system/SystemEditorPage.h"
 #include "editors/system/SystemCreationWizard.h"
 #include "editors/ini/IniEditorPage.h"
+#include "editors/universe/UniverseEditorPage.h"
 #include "domain/SystemDocument.h"
+#include "domain/UniverseData.h"
 
 #include <QCloseEvent>
 #include <QMenuBar>
@@ -45,6 +47,7 @@ void MainWindow::createMenus()
     auto *fileMenu = menuBar()->addMenu(tr("&File"));
     fileMenu->addAction(tr("&New System..."), this, [this]() { newSystem(); });
     fileMenu->addAction(tr("Open &System..."), this, [this]() { openSystemFile(); });
+    fileMenu->addAction(tr("Open &Universe..."), this, [this]() { openUniverseFile(); });
     fileMenu->addAction(tr("Open &INI..."), this, [this]() { openIniFile(); });
     fileMenu->addSeparator();
     fileMenu->addAction(tr("&Save"), QKeySequence::Save, this, [this]() { saveCurrentFile(); });
@@ -297,4 +300,84 @@ void MainWindow::saveCurrentFile()
                 QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
         }
     }
+
+    // Try universe editor
+    auto *universeEditor = qobject_cast<flatlas::editors::UniverseEditorPage *>(
+        m_centerTabs->currentWidget());
+    if (universeEditor) {
+        if (universeEditor->save())
+            statusBar()->showMessage(tr("Saved"), 3000);
+        else
+            QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
+    }
+}
+
+void MainWindow::openUniverseFile()
+{
+    const QString filePath = QFileDialog::getOpenFileName(
+        this, tr("Open Universe.ini"), QString(),
+        tr("INI Files (*.ini);;All Files (*)"));
+    if (filePath.isEmpty())
+        return;
+
+    auto *editor = new flatlas::editors::UniverseEditorPage(this);
+    if (!editor->loadFile(filePath)) {
+        QMessageBox::warning(this, tr("Error"),
+                             tr("Could not load Universe file:\n%1").arg(filePath));
+        delete editor;
+        return;
+    }
+
+    int idx = m_centerTabs->addTab(editor,
+        QStringLiteral("Universe (%1)").arg(editor->data()->systemCount()));
+    m_centerTabs->setCurrentIndex(idx);
+
+    connect(editor, &flatlas::editors::UniverseEditorPage::titleChanged,
+            this, [this, editor](const QString &title) {
+        int i = m_centerTabs->indexOf(editor);
+        if (i >= 0)
+            m_centerTabs->setTabText(i, title);
+    });
+
+    connect(editor, &flatlas::editors::UniverseEditorPage::openSystemRequested,
+            this, &MainWindow::openSystemFromUniverse);
+
+    statusBar()->showMessage(tr("Loaded Universe: %1").arg(filePath), 3000);
+}
+
+void MainWindow::openSystemFromUniverse(const QString &nickname, const QString &systemFile)
+{
+    // Resolve relative path from universe file context
+    QString resolvedPath = systemFile;
+
+    // Check if already open
+    for (int i = 0; i < m_centerTabs->count(); ++i) {
+        auto *sysEditor = qobject_cast<flatlas::editors::SystemEditorPage *>(
+            m_centerTabs->widget(i));
+        if (sysEditor && sysEditor->document() &&
+            sysEditor->document()->name().compare(nickname, Qt::CaseInsensitive) == 0) {
+            m_centerTabs->setCurrentIndex(i);
+            return;
+        }
+    }
+
+    auto *editor = new flatlas::editors::SystemEditorPage(this);
+    if (!editor->loadFile(resolvedPath)) {
+        QMessageBox::warning(this, tr("Error"),
+                             tr("Could not load system file:\n%1").arg(resolvedPath));
+        delete editor;
+        return;
+    }
+
+    int idx = m_centerTabs->addTab(editor, editor->document()->name());
+    m_centerTabs->setCurrentIndex(idx);
+
+    connect(editor, &flatlas::editors::SystemEditorPage::titleChanged,
+            this, [this, editor](const QString &title) {
+        int i = m_centerTabs->indexOf(editor);
+        if (i >= 0)
+            m_centerTabs->setTabText(i, title);
+    });
+
+    statusBar()->showMessage(tr("Opened system: %1").arg(nickname), 3000);
 }

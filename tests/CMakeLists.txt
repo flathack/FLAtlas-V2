@@ -39,6 +39,10 @@ flatlas_add_test(test_CmpLoader       test_CmpLoader.cpp       flatlas_infrastru
 flatlas_add_test(test_TextureLoader   test_TextureLoader.cpp   flatlas_infrastructure)
 flatlas_add_test(test_ModelCache      test_ModelCache.cpp       flatlas_rendering)
 
+# Phase 9 Universe editor tests
+flatlas_add_test(test_UniverseSerializer   test_UniverseSerializer.cpp   flatlas_editors)
+flatlas_add_test(test_UniverseEditorPage   test_UniverseEditorPage.cpp   flatlas_editors Qt6::Widgets)
+
 # AppConfig is compiled into the FLAtlas executable, not a library.
 # Compile the source directly into the test.
 add_executable(test_AppConfig test_AppConfig.cpp ${CMAKE_SOURCE_DIR}/src/app/AppConfig.cpp)
