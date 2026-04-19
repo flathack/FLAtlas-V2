@@ -21,6 +21,8 @@ add_library(flatlas_editors STATIC
     news/NewsRumorEditor.h news/NewsRumorEditor.cpp
     ids/IdsEditorPage.h ids/IdsEditorPage.cpp
     modmanager/ModManagerPage.h modmanager/ModManagerPage.cpp
+    modmanager/ConflictDetector.h modmanager/ConflictDetector.cpp
+    modmanager/ModWorkflow.h modmanager/ModWorkflow.cpp
     jump/JumpConnectionDialog.h jump/JumpConnectionDialog.cpp
 )
 

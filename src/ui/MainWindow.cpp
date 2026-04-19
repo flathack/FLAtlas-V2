@@ -16,6 +16,7 @@
 #include "editors/base/BaseBuilder.h"
 #include "editors/trade/TradeRoutePage.h"
 #include "editors/ids/IdsEditorPage.h"
+#include "editors/modmanager/ModManagerPage.h"
 #include "domain/SystemDocument.h"
 #include "domain/UniverseData.h"
 
@@ -55,6 +56,7 @@ void MainWindow::createMenus()
     fileMenu->addAction(tr("Open &Base Editor"), this, [this]() { openBaseEditor(); });
     fileMenu->addAction(tr("&Trade Routes"), this, [this]() { openTradeRoutes(); });
     fileMenu->addAction(tr("&IDS Editor"), this, [this]() { openIdsEditor(); });
+    fileMenu->addAction(tr("&Mod Manager"), this, [this]() { openModManager(); });
     fileMenu->addAction(tr("Open &INI..."), this, [this]() { openIniFile(); });
     fileMenu->addSeparator();
     fileMenu->addAction(tr("&Save"), QKeySequence::Save, this, [this]() { saveCurrentFile(); });
@@ -453,4 +455,21 @@ void MainWindow::openIdsEditor()
     });
 
     statusBar()->showMessage(tr("IDS Editor opened"), 3000);
+}
+
+void MainWindow::openModManager()
+{
+    auto *page = new flatlas::editors::ModManagerPage(this);
+
+    int idx = m_centerTabs->addTab(page, tr("Mod Manager"));
+    m_centerTabs->setCurrentIndex(idx);
+
+    connect(page, &flatlas::editors::ModManagerPage::titleChanged,
+            this, [this, page](const QString &title) {
+        int i = m_centerTabs->indexOf(page);
+        if (i >= 0)
+            m_centerTabs->setTabText(i, title);
+    });
+
+    statusBar()->showMessage(tr("Mod Manager opened"), 3000);
 }
