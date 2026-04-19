@@ -8,6 +8,7 @@ add_library(flatlas_editors STATIC
     base/BaseEditorPage.h base/BaseEditorPage.cpp
     npc/NpcEditorPage.h npc/NpcEditorPage.cpp
     ini/IniEditorPage.h ini/IniEditorPage.cpp
+    ini/IniCodeEditor.h ini/IniCodeEditor.cpp
     ini/IniSyntaxHighlighter.h ini/IniSyntaxHighlighter.cpp
     infocard/InfocardEditor.h infocard/InfocardEditor.cpp
     trade/TradeRoutePage.h trade/TradeRoutePage.cpp

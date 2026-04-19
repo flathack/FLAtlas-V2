@@ -27,7 +27,9 @@ private:
     void restoreWindowState();
     void saveWindowState();
     void openSystemFile();
+    void openIniFile();
     void saveCurrentSystem();
+    void saveCurrentFile();
     void newSystem();
     flatlas::editors::SystemEditorPage *currentSystemEditor() const;
 

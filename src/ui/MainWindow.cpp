@@ -10,6 +10,7 @@
 #include "core/UndoManager.h"
 #include "editors/system/SystemEditorPage.h"
 #include "editors/system/SystemCreationWizard.h"
+#include "editors/ini/IniEditorPage.h"
 #include "domain/SystemDocument.h"
 
 #include <QCloseEvent>
@@ -43,9 +44,10 @@ void MainWindow::createMenus()
     // --- File ---
     auto *fileMenu = menuBar()->addMenu(tr("&File"));
     fileMenu->addAction(tr("&New System..."), this, [this]() { newSystem(); });
-    fileMenu->addAction(tr("&Open..."), this, [this]() { openSystemFile(); });
+    fileMenu->addAction(tr("Open &System..."), this, [this]() { openSystemFile(); });
+    fileMenu->addAction(tr("Open &INI..."), this, [this]() { openIniFile(); });
     fileMenu->addSeparator();
-    fileMenu->addAction(tr("&Save"), QKeySequence::Save, this, [this]() { saveCurrentSystem(); });
+    fileMenu->addAction(tr("&Save"), QKeySequence::Save, this, [this]() { saveCurrentFile(); });
     fileMenu->addSeparator();
     fileMenu->addAction(tr("&Settings..."), this, [this]() {
         flatlas::ui::SettingsDialog dlg(this);
@@ -234,4 +236,65 @@ flatlas::editors::SystemEditorPage *MainWindow::currentSystemEditor() const
 {
     return qobject_cast<flatlas::editors::SystemEditorPage *>(
         m_centerTabs->currentWidget());
+}
+
+void MainWindow::openIniFile()
+{
+    const QString filePath = QFileDialog::getOpenFileName(
+        this, tr("Open INI File"), QString(),
+        tr("INI Files (*.ini);;All Files (*)"));
+    if (filePath.isEmpty())
+        return;
+
+    auto *editor = new flatlas::editors::IniEditorPage(this);
+    if (!editor->openFile(filePath)) {
+        QMessageBox::warning(this, tr("Error"),
+                             tr("Could not open file:\n%1").arg(filePath));
+        delete editor;
+        return;
+    }
+
+    int idx = m_centerTabs->addTab(editor, editor->fileName());
+    m_centerTabs->setCurrentIndex(idx);
+
+    connect(editor, &flatlas::editors::IniEditorPage::titleChanged,
+            this, [this, editor](const QString &title) {
+        int i = m_centerTabs->indexOf(editor);
+        if (i >= 0)
+            m_centerTabs->setTabText(i, title);
+    });
+
+    statusBar()->showMessage(tr("Opened: %1").arg(filePath), 3000);
+}
+
+void MainWindow::saveCurrentFile()
+{
+    // Try system editor first
+    auto *sysEditor = currentSystemEditor();
+    if (sysEditor) {
+        saveCurrentSystem();
+        return;
+    }
+
+    // Try INI editor
+    auto *iniEditor = qobject_cast<flatlas::editors::IniEditorPage *>(
+        m_centerTabs->currentWidget());
+    if (iniEditor) {
+        if (iniEditor->filePath().isEmpty()) {
+            const QString filePath = QFileDialog::getSaveFileName(
+                this, tr("Save INI File"), QString(),
+                tr("INI Files (*.ini);;All Files (*)"));
+            if (filePath.isEmpty())
+                return;
+            if (iniEditor->saveAs(filePath))
+                statusBar()->showMessage(tr("Saved: %1").arg(filePath), 3000);
+            else
+                QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
+        } else {
+            if (iniEditor->save())
+                statusBar()->showMessage(tr("Saved"), 3000);
+            else
+                QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
+        }
+    }
 }
