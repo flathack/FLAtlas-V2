@@ -9,6 +9,7 @@ add_library(flatlas_rendering STATIC
     view3d/OrbitCamera.h view3d/OrbitCamera.cpp
     view3d/SelectionManager.h view3d/SelectionManager.cpp
     view3d/SkyRenderer.h view3d/SkyRenderer.cpp
+    view3d/MaterialFactory.h view3d/MaterialFactory.cpp
     flight/FlightController.h flight/FlightController.cpp
     preview/ModelPreview.h preview/ModelPreview.cpp
     preview/ModelCache.h preview/ModelCache.cpp
@@ -18,6 +19,7 @@ add_library(flatlas_rendering STATIC
 target_include_directories(flatlas_rendering PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(flatlas_rendering PUBLIC
     flatlas_domain
+    flatlas_infrastructure
     Qt6::Core
     Qt6::Widgets
     Qt6::Gui

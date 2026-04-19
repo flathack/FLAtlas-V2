@@ -33,6 +33,12 @@ flatlas_add_test(test_IniSyntaxHighlighter test_IniSyntaxHighlighter.cpp flatlas
 # Phase 7 3D view tests
 flatlas_add_test(test_SceneView3D test_SceneView3D.cpp flatlas_rendering Qt6::Widgets)
 
+# Phase 8 CMP/3DB/Texture tests
+flatlas_add_test(test_VmeshDecoder    test_VmeshDecoder.cpp    flatlas_infrastructure)
+flatlas_add_test(test_CmpLoader       test_CmpLoader.cpp       flatlas_infrastructure)
+flatlas_add_test(test_TextureLoader   test_TextureLoader.cpp   flatlas_infrastructure)
+flatlas_add_test(test_ModelCache      test_ModelCache.cpp       flatlas_rendering)
+
 # AppConfig is compiled into the FLAtlas executable, not a library.
 # Compile the source directly into the test.
 add_executable(test_AppConfig test_AppConfig.cpp ${CMAKE_SOURCE_DIR}/src/app/AppConfig.cpp)
