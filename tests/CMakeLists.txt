@@ -30,6 +30,9 @@ flatlas_add_test(test_SystemPersistence test_SystemPersistence.cpp flatlas_edito
 # Phase 6 INI editor tests
 flatlas_add_test(test_IniSyntaxHighlighter test_IniSyntaxHighlighter.cpp flatlas_editors Qt6::Widgets)
 
+# Phase 7 3D view tests
+flatlas_add_test(test_SceneView3D test_SceneView3D.cpp flatlas_rendering Qt6::Widgets)
+
 # AppConfig is compiled into the FLAtlas executable, not a library.
 # Compile the source directly into the test.
 add_executable(test_AppConfig test_AppConfig.cpp ${CMAKE_SOURCE_DIR}/src/app/AppConfig.cpp)

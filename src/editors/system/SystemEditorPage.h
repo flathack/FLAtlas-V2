@@ -5,7 +5,7 @@
 #include <memory>
 
 namespace flatlas::domain { class SystemDocument; class SolarObject; class ZoneItem; }
-namespace flatlas::rendering { class MapScene; class SystemMapView; }
+namespace flatlas::rendering { class MapScene; class SystemMapView; class SceneView3D; }
 class QToolBar;
 class QSplitter;
 class QTreeWidget;
@@ -53,6 +53,7 @@ private:
     std::unique_ptr<flatlas::domain::SystemDocument> m_document;
     flatlas::rendering::MapScene *m_mapScene = nullptr;
     flatlas::rendering::SystemMapView *m_mapView = nullptr;
+    flatlas::rendering::SceneView3D *m_sceneView3D = nullptr;
     QToolBar *m_toolBar = nullptr;
     QSplitter *m_splitter = nullptr;
     QTreeWidget *m_objectTree = nullptr;

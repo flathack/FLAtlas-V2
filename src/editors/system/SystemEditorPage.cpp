@@ -9,6 +9,7 @@
 #include "domain/ZoneItem.h"
 #include "rendering/view2d/MapScene.h"
 #include "rendering/view2d/SystemMapView.h"
+#include "rendering/view3d/SceneView3D.h"
 #include "core/UndoManager.h"
 
 #include <QVBoxLayout>
@@ -61,9 +62,14 @@ void SystemEditorPage::setupUi()
     m_mapView->setMapScene(m_mapScene);
     m_splitter->addWidget(m_mapView);
 
+    // 3D view (right)
+    m_sceneView3D = new SceneView3D(this);
+    m_splitter->addWidget(m_sceneView3D);
+
     m_splitter->setStretchFactor(0, 0);
     m_splitter->setStretchFactor(1, 1);
-    m_splitter->setSizes({220, 700});
+    m_splitter->setStretchFactor(2, 1);
+    m_splitter->setSizes({220, 500, 500});
 
     mainLayout->addWidget(m_splitter);
 
@@ -99,6 +105,9 @@ void SystemEditorPage::connectSignals()
 {
     connect(m_mapScene, &MapScene::objectSelected, this, &SystemEditorPage::onObjectSelected);
 
+    // 3D → 2D selection sync
+    connect(m_sceneView3D, &SceneView3D::objectSelected, this, &SystemEditorPage::onObjectSelected);
+
     connect(m_objectTree, &QTreeWidget::currentItemChanged,
             this, [this](QTreeWidgetItem *current, QTreeWidgetItem *) {
         if (!current || !m_document)
@@ -116,6 +125,7 @@ bool SystemEditorPage::loadFile(const QString &filePath)
 
     m_document = std::move(doc);
     m_mapScene->loadDocument(m_document.get());
+    m_sceneView3D->loadDocument(m_document.get());
     refreshObjectList();
     emit titleChanged(m_document->name());
     return true;
@@ -127,6 +137,7 @@ void SystemEditorPage::setDocument(std::unique_ptr<SystemDocument> doc)
         SystemPersistence::clearExtras(m_document.get());
     m_document = std::move(doc);
     m_mapScene->loadDocument(m_document.get());
+    m_sceneView3D->loadDocument(m_document.get());
     refreshObjectList();
     emit titleChanged(m_document->name());
 }
@@ -186,6 +197,10 @@ void SystemEditorPage::onObjectSelected(const QString &nickname)
 {
     if (!m_document)
         return;
+
+    // Sync 3D selection
+    m_sceneView3D->selectObject(nickname);
+
     for (const auto &obj : m_document->objects()) {
         if (obj->nickname() == nickname) {
             showObjectProperties(obj.get());

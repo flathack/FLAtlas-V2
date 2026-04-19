@@ -6,6 +6,9 @@ add_library(flatlas_rendering STATIC
     view2d/items/ZoneItem2D.h view2d/items/ZoneItem2D.cpp
     view2d/items/TradelaneItem.h view2d/items/TradelaneItem.cpp
     view3d/SceneView3D.h view3d/SceneView3D.cpp
+    view3d/OrbitCamera.h view3d/OrbitCamera.cpp
+    view3d/SelectionManager.h view3d/SelectionManager.cpp
+    view3d/SkyRenderer.h view3d/SkyRenderer.cpp
     flight/FlightController.h flight/FlightController.cpp
     preview/ModelPreview.h preview/ModelPreview.cpp
     preview/ModelCache.h preview/ModelCache.cpp
