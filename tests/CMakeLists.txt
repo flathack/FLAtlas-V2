@@ -13,6 +13,13 @@ flatlas_add_test(test_IniParser     test_IniParser.cpp     flatlas_infrastructur
 flatlas_add_test(test_BiniDecoder   test_BiniDecoder.cpp   flatlas_infrastructure)
 flatlas_add_test(test_PathUtils     test_PathUtils.cpp     flatlas_core)
 
+# Phase 1 core tests
+flatlas_add_test(test_Config      test_Config.cpp      flatlas_core)
+flatlas_add_test(test_Theme       test_Theme.cpp       flatlas_core)
+flatlas_add_test(test_I18n        test_I18n.cpp        flatlas_core)
+flatlas_add_test(test_UndoManager test_UndoManager.cpp flatlas_core)
+flatlas_add_test(test_Logger      test_Logger.cpp      flatlas_core)
+
 # AppConfig is compiled into the FLAtlas executable, not a library.
 # Compile the source directly into the test.
 add_executable(test_AppConfig test_AppConfig.cpp ${CMAKE_SOURCE_DIR}/src/app/AppConfig.cpp)

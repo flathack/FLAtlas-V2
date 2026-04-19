@@ -1,6 +1,5 @@
 #pragma once
 // core/PathUtils.h – Case-insensitive Pfadauflösung (Freelancer-spezifisch)
-// TODO Phase 1
 
 #include <QString>
 
@@ -17,6 +16,9 @@ public:
 
     /// Position aus INI-String parsen ("x, y, z").
     static bool parsePosition(const QString &value, float &x, float &y, float &z);
+
+    /// Pfad normalisieren: Backslashes zu Forward-Slashes, trailing Slash entfernen.
+    static QString normalizePath(const QString &path);
 };
 
 } // namespace flatlas::core

@@ -1,7 +1,7 @@
 #pragma once
 // core/UndoManager.h – QUndoStack-basierter Undo/Redo-Manager
-// TODO Phase 1
 
+#include <QObject>
 #include <QUndoStack>
 
 namespace flatlas::core {
@@ -16,8 +16,26 @@ public:
     void push(QUndoCommand *command);
     void clear();
 
+    bool canUndo() const;
+    bool canRedo() const;
+    bool isClean() const;
+    void setClean();
+    int undoLimit() const;
+    void setUndoLimit(int limit);
+
+public slots:
+    void undo();
+    void redo();
+
+signals:
+    void undoTextChanged(const QString &text);
+    void redoTextChanged(const QString &text);
+    void canUndoChanged(bool canUndo);
+    void canRedoChanged(bool canRedo);
+    void cleanChanged(bool clean);
+
 private:
-    UndoManager() = default;
+    UndoManager();
     QUndoStack m_stack;
 };
 

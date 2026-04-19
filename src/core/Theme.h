@@ -1,12 +1,14 @@
 #pragma once
-// core/Theme.h – QSS-Paletten und dynamischer Theme-Wechsel
-// TODO Phase 1
+// core/Theme.h – QSS palette-based theming with 4 built-in themes
 
+#include <QHash>
 #include <QObject>
 #include <QString>
 #include <QStringList>
 
 namespace flatlas::core {
+
+using Palette = QHash<QString, QString>;
 
 class Theme : public QObject
 {
@@ -23,6 +25,9 @@ signals:
 
 private:
     Theme() = default;
+    static const QHash<QString, Palette> &palettes();
+    static QString generateStylesheet(const Palette &p);
+    static void applyQPalette(const Palette &p);
     QString m_current = QStringLiteral("dark");
 };
 
