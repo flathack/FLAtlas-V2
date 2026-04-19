@@ -1,6 +1,5 @@
 #pragma once
 // infrastructure/freelancer/FreelancerPaths.h – Freelancer-Installation finden
-// TODO Phase 2
 #include <QString>
 #include <QStringList>
 namespace flatlas::infrastructure {
@@ -14,5 +13,9 @@ public:
     static QString findServerExe(const QString &installDir);
     /// DATA-Verzeichnis finden.
     static QString findDataDir(const QString &installDir);
+    /// Alle bekannten Installationspfade.
+    static QStringList knownInstallPaths();
+    /// freelancer.ini im DATA-Verzeichnis finden (case-insensitive).
+    static QString findFreelancerIni(const QString &dataDir);
 };
 } // namespace flatlas::infrastructure

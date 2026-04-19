@@ -1,6 +1,5 @@
 #pragma once
 // infrastructure/parser/IniParser.h – Freelancer-INI-Parser (Duplikat-Keys)
-// TODO Phase 2
 
 #include <QMap>
 #include <QPair>

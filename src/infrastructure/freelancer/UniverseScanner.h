@@ -1,6 +1,5 @@
 #pragma once
 // infrastructure/freelancer/UniverseScanner.h – Universe-INI scannen
-// TODO Phase 2
 #include <QString>
 #include <QVector>
 #include "domain/UniverseData.h"
