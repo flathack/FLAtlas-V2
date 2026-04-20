@@ -99,7 +99,7 @@ QPen ZoneItem2D::penForZone(const flatlas::domain::ZoneItem &zone)
     const int damage = zone.damage();
 
     if (usage == QStringLiteral("patrol") || name.contains(QStringLiteral("_path_")) || !pathLabel.isEmpty()) {
-        QPen pen(QColor(150, 150, 150, 200));
+        QPen pen(QColor(150, 150, 150, 77));
         pen.setWidthF(1.2);
         pen.setStyle(Qt::DotLine);
         return pen;
@@ -116,8 +116,9 @@ QPen ZoneItem2D::penForZone(const flatlas::domain::ZoneItem &zone)
         return pen;
     }
     if (name.contains(QStringLiteral("death")) || name.contains(QStringLiteral("destroy_vignette")) || damage > 0) {
-        QPen pen(QColor(150, 150, 150, 200));
+        QPen pen(QColor(150, 150, 150, 77));
         pen.setWidthF(1.5);
+        pen.setStyle(Qt::DotLine);
         return pen;
     }
     if (name.contains(QStringLiteral("nebula")) || name.contains(QStringLiteral("badlands"))) {
@@ -168,13 +169,13 @@ QBrush ZoneItem2D::brushForZone(const flatlas::domain::ZoneItem &zone)
     const int damage = zone.damage();
 
     if (usage == QStringLiteral("patrol") || name.contains(QStringLiteral("_path_")) || !pathLabel.isEmpty())
-        return QBrush(QColor(150, 150, 150, 102));
+        return QBrush(Qt::NoBrush);
     if (popType.contains(QStringLiteral("trade_path")))
         return QBrush(Qt::NoBrush);
     if (name.contains(QStringLiteral("pop_ambient")) || popType.contains(QStringLiteral("background")))
         return QBrush(QColor(190, 145, 60, 16));
     if (name.contains(QStringLiteral("death")) || name.contains(QStringLiteral("destroy_vignette")) || damage > 0)
-        return QBrush(QColor(150, 150, 150, 102));
+        return QBrush(Qt::NoBrush);
     if (name.contains(QStringLiteral("nebula")) || name.contains(QStringLiteral("badlands")))
         return QBrush(QColor(120, 60, 200, 18));
     if (name.contains(QStringLiteral("debris")) || name.contains(QStringLiteral("asteroid")))

@@ -9,8 +9,15 @@
 #include <QFont>
 #include <QFontMetrics>
 #include <QScrollBar>
+#include <QTimer>
 
 namespace flatlas::rendering {
+
+namespace {
+
+constexpr double kInitialGridFillFactor = 1.12;
+
+}
 
 SystemMapView::SystemMapView(QWidget *parent)
     : QGraphicsView(parent)
@@ -34,6 +41,17 @@ void SystemMapView::setMapScene(MapScene *scene)
 {
     m_mapScene = scene;
     QGraphicsView::setScene(scene);
+    m_pendingInitialFit = true;
+    m_pendingInitialFitPasses = 3;
+}
+
+void SystemMapView::scheduleInitialFit()
+{
+    m_pendingInitialFit = true;
+    m_pendingInitialFitPasses = 3;
+    QTimer::singleShot(0, this, [this]() { applyInitialFitIfNeeded(); });
+    QTimer::singleShot(25, this, [this]() { applyInitialFitIfNeeded(); });
+    QTimer::singleShot(75, this, [this]() { applyInitialFitIfNeeded(); });
 }
 
 void SystemMapView::setBackgroundPixmap(const QPixmap &pixmap, const QColor &fallbackColor)
@@ -60,9 +78,24 @@ void SystemMapView::zoomToFit()
     if (targetRect.isNull() || targetRect.width() <= 0.0 || targetRect.height() <= 0.0)
         return;
 
+    const auto previousAnchor = transformationAnchor();
+    const auto previousResizeAnchor = resizeAnchor();
+    setTransformationAnchor(QGraphicsView::AnchorViewCenter);
+    setResizeAnchor(QGraphicsView::AnchorViewCenter);
+
     resetTransform();
     fitInView(targetRect, Qt::KeepAspectRatio);
+    centerOn(targetRect.center());
+    scale(kInitialGridFillFactor, kInitialGridFillFactor);
+    centerOn(targetRect.center());
+
+    setTransformationAnchor(previousAnchor);
+    setResizeAnchor(previousResizeAnchor);
     m_minZoomScale = qMax(0.0001, transform().m11());
+    if (--m_pendingInitialFitPasses <= 0) {
+        m_pendingInitialFit = false;
+        m_pendingInitialFitPasses = 0;
+    }
 }
 
 void SystemMapView::wheelEvent(QWheelEvent *event)
@@ -215,6 +248,27 @@ void SystemMapView::drawForeground(QPainter *painter, const QRectF &rect)
     }
 
     painter->restore();
+}
+
+void SystemMapView::showEvent(QShowEvent *event)
+{
+    QGraphicsView::showEvent(event);
+    applyInitialFitIfNeeded();
+}
+
+void SystemMapView::resizeEvent(QResizeEvent *event)
+{
+    QGraphicsView::resizeEvent(event);
+    applyInitialFitIfNeeded();
+}
+
+void SystemMapView::applyInitialFitIfNeeded()
+{
+    if (!m_pendingInitialFit || !scene())
+        return;
+    if (viewport()->width() <= 1 || viewport()->height() <= 1)
+        return;
+    zoomToFit();
 }
 
 } // namespace flatlas::rendering

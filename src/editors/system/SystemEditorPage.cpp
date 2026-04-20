@@ -144,7 +144,7 @@ bool SystemEditorPage::loadFile(const QString &filePath)
         m_sceneView3D->loadDocument(m_document.get());
     }
     refreshObjectList();
-    m_mapView->zoomToFit();
+    m_mapView->scheduleInitialFit();
     emit titleChanged(m_document->name());
     return true;
 }
@@ -161,7 +161,7 @@ void SystemEditorPage::setDocument(std::unique_ptr<SystemDocument> doc)
         m_sceneView3D->loadDocument(m_document.get());
     }
     refreshObjectList();
-    m_mapView->zoomToFit();
+    m_mapView->scheduleInitialFit();
     emit titleChanged(m_document->name());
 }
 

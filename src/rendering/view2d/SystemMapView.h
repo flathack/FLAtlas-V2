@@ -16,6 +16,7 @@ public:
     void setMapScene(MapScene *scene);
     void setBackgroundPixmap(const QPixmap &pixmap, const QColor &fallbackColor = QColor(15, 18, 24));
     void setSystemName(const QString &name);
+    void scheduleInitialFit();
     void zoomToFit();
 
 signals:
@@ -28,8 +29,12 @@ protected:
     void contextMenuEvent(QContextMenuEvent *event) override;
     void drawBackground(QPainter *painter, const QRectF &rect) override;
     void drawForeground(QPainter *painter, const QRectF &rect) override;
+    void showEvent(QShowEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
+    void applyInitialFitIfNeeded();
+
     MapScene *m_mapScene = nullptr;
     bool m_panning = false;
     QPixmap m_backgroundPixmap;
@@ -37,6 +42,8 @@ private:
     int m_backgroundDarkenAlpha = 180;
     QString m_systemName;
     double m_minZoomScale = 0.01;
+    bool m_pendingInitialFit = false;
+    int m_pendingInitialFitPasses = 0;
 };
 
 } // namespace flatlas::rendering
