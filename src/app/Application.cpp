@@ -8,7 +8,7 @@
 Application::Application(int &argc, char **argv)
     : QApplication(argc, argv)
     , m_currentTheme(QStringLiteral("dark"))
-    , m_currentLanguage(QStringLiteral("de"))
+    , m_currentLanguage(QStringLiteral("en"))
 {
     setApplicationName(QStringLiteral("FLAtlas"));
     setApplicationVersion(QStringLiteral("2.0.0"));
@@ -63,7 +63,7 @@ void Application::initConfig()
 void Application::initTranslations()
 {
     auto &config = flatlas::core::Config::instance();
-    QString lang = config.getString("language", "de");
+    QString lang = config.getString("language", "en");
     flatlas::core::I18n::instance().setLanguage(lang);
     m_currentLanguage = lang;
 }

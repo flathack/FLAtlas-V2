@@ -34,13 +34,16 @@ void I18n::setLanguage(const QString &langCode)
 
     removeTranslators();
 
-    m_appTranslator = new QTranslator(this);
-    if (m_appTranslator->load(QStringLiteral(":/translations/flatlas_%1.qm").arg(langCode)))
-        QCoreApplication::installTranslator(m_appTranslator);
+    // English is the source language — no translator needed
+    if (langCode != QStringLiteral("en")) {
+        m_appTranslator = new QTranslator(this);
+        if (m_appTranslator->load(QStringLiteral(":/translations/flatlas_%1.qm").arg(langCode)))
+            QCoreApplication::installTranslator(m_appTranslator);
 
-    m_qtTranslator = new QTranslator(this);
-    if (m_qtTranslator->load(QStringLiteral(":/translations/qt_%1.qm").arg(langCode)))
-        QCoreApplication::installTranslator(m_qtTranslator);
+        m_qtTranslator = new QTranslator(this);
+        if (m_qtTranslator->load(QStringLiteral(":/translations/qt_%1.qm").arg(langCode)))
+            QCoreApplication::installTranslator(m_qtTranslator);
+    }
 
     m_language = langCode;
     emit languageChanged();

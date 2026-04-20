@@ -1,6 +1,5 @@
 #include "MainWindow.h"
 #include "WelcomePage.h"
-#include "BrowserPanel.h"
 #include "PropertiesPanel.h"
 #include "CenterTabWidget.h"
 #include "SettingsDialog.h"
@@ -93,13 +92,8 @@ MainWindow::MainWindow(QWidget *parent)
         auto profile = ctx.editingProfile();
         m_editingLabel->setText(tr("Currently Editing: %1").arg(profile.name));
         setWindowTitle(QStringLiteral("FLAtlas V2 – %1").arg(profile.name));
-    }
-
-    // Beim ersten Start automatisch den Mod Manager öffnen
-    if (!flatlas::core::Config::instance().getBool(QStringLiteral("firstRunDone"), false)) {
-        flatlas::core::Config::instance().setBool(QStringLiteral("firstRunDone"), true);
-        flatlas::core::Config::instance().save();
-        QMetaObject::invokeMethod(this, &MainWindow::openModManager, Qt::QueuedConnection);
+        // Auto-open Universe tab for restored context
+        QMetaObject::invokeMethod(this, &MainWindow::openUniverseFromContext, Qt::QueuedConnection);
     }
 
     // Auto-Update-Check bei Start
@@ -299,10 +293,11 @@ void MainWindow::createMenus()
     }
     auto *langMenu = settingsMenu->addMenu(tr("&Language"));
     for (const auto &lang : flatlas::core::I18n::availableLanguages()) {
-        langMenu->addAction(lang, this, [lang]() {
+        langMenu->addAction(lang, this, [this, lang]() {
             flatlas::core::I18n::instance().setLanguage(lang);
             flatlas::core::Config::instance().setString("language", lang);
             flatlas::core::Config::instance().save();
+            statusBar()->showMessage(tr("Language set to '%1'. Restart FLAtlas to fully apply.").arg(lang), 5000);
         });
     }
 
@@ -459,34 +454,42 @@ void MainWindow::createPanels()
                         "QProgressBar::chunk { background: #e67e22; }"));
     mainLayout->addWidget(m_progressBar);
 
-    // --- Content splitter: Browser | Pages | Properties ---
+    // --- Content splitter: Pages | Properties ---
     m_mainSplitter = new QSplitter(Qt::Horizontal, this);
 
-    m_browserPanel = new flatlas::ui::BrowserPanel(this);
     m_propertiesPanel = new flatlas::ui::PropertiesPanel(this);
 
-    m_mainSplitter->addWidget(m_browserPanel);
     m_mainSplitter->addWidget(m_centerTabs->contentWidget());
     m_mainSplitter->addWidget(m_propertiesPanel);
 
-    m_mainSplitter->setStretchFactor(0, 0);
-    m_mainSplitter->setStretchFactor(1, 1);
-    m_mainSplitter->setStretchFactor(2, 0);
-    m_mainSplitter->setSizes({220, 1100, 0});
+    m_mainSplitter->setStretchFactor(0, 1);
+    m_mainSplitter->setStretchFactor(1, 0);
+    m_mainSplitter->setSizes({1100, 0});
     m_propertiesPanel->setVisible(false);
 
     mainLayout->addWidget(m_mainSplitter, 1);
     setCentralWidget(central);
 
-    // Welcome page as first tab
-    auto *welcomePage = new flatlas::ui::WelcomePage(this);
-    m_centerTabs->addTab(welcomePage, tr("Welcome"));
-    connect(welcomePage, &flatlas::ui::WelcomePage::openModManagerRequested,
-            this, &MainWindow::openModManager);
+    // Mod Manager as pinned tab (always visible, not closable)
+    auto *modManagerPage = new flatlas::editors::ModManagerPage(this);
+    m_centerTabs->addPinnedTab(modManagerPage, tr("Mod Manager"));
+    connect(modManagerPage, &flatlas::editors::ModManagerPage::titleChanged,
+            this, [this, modManagerPage](const QString &title) {
+        int i = m_centerTabs->indexOf(modManagerPage);
+        if (i >= 0)
+            m_centerTabs->setTabText(i, title);
+    });
 
-    // Wire browser panel: double-click system → open in tab
-    connect(m_browserPanel, &flatlas::ui::BrowserPanel::systemSelected,
-            this, &MainWindow::openSystemFromUniverse);
+    // Welcome page or skip directly to Mod Manager
+    if (flatlas::core::Config::instance().getBool(QStringLiteral("skipWelcome"), false)) {
+        m_centerTabs->setCurrentIndex(0); // Mod Manager is index 0
+    } else {
+        auto *welcomePage = new flatlas::ui::WelcomePage(this);
+        int welcomeIdx = m_centerTabs->addTab(welcomePage, tr("Welcome"));
+        m_centerTabs->setCurrentIndex(welcomeIdx);
+        connect(welcomePage, &flatlas::ui::WelcomePage::openModManagerRequested,
+                this, [this]() { m_centerTabs->setCurrentIndex(0); });
+    }
 }
 
 void MainWindow::createStatusBar()
@@ -763,7 +766,7 @@ void MainWindow::openUniverseFromContext()
         return;
     }
 
-    int idx = m_centerTabs->addTab(editor,
+    int idx = m_centerTabs->addPinnedTab(editor,
         QStringLiteral("Universe (%1)").arg(editor->data()->systemCount()));
     m_centerTabs->setCurrentIndex(idx);
 
@@ -870,19 +873,8 @@ void MainWindow::openIdsEditor()
 
 void MainWindow::openModManager()
 {
-    auto *page = new flatlas::editors::ModManagerPage(this);
-
-    int idx = m_centerTabs->addTab(page, tr("Mod Manager"));
-    m_centerTabs->setCurrentIndex(idx);
-
-    connect(page, &flatlas::editors::ModManagerPage::titleChanged,
-            this, [this, page](const QString &title) {
-        int i = m_centerTabs->indexOf(page);
-        if (i >= 0)
-            m_centerTabs->setTabText(i, title);
-    });
-
-    statusBar()->showMessage(tr("Mod Manager opened"), 3000);
+    // Mod Manager is always pinned at index 0 — just switch to it
+    m_centerTabs->setCurrentIndex(0);
 }
 
 void MainWindow::openNpcEditor()

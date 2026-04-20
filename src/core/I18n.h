@@ -24,7 +24,7 @@ signals:
 private:
     I18n() = default;
     void removeTranslators();
-    QString m_language = QStringLiteral("de");
+    QString m_language = QStringLiteral("en");
     QTranslator *m_appTranslator = nullptr;
     QTranslator *m_qtTranslator = nullptr;
 };

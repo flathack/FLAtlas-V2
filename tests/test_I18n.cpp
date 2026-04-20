@@ -13,9 +13,9 @@ private slots:
         QCOMPARE(&a, &b);
     }
 
-    void defaultLanguageIsDe()
+    void defaultLanguageIsEn()
     {
-        QCOMPARE(I18n::instance().currentLanguage(), QStringLiteral("de"));
+        QCOMPARE(I18n::instance().currentLanguage(), QStringLiteral("en"));
     }
 
     void availableLanguages()
@@ -29,20 +29,20 @@ private slots:
     {
         auto &i18n = I18n::instance();
         QSignalSpy spy(&i18n, &I18n::languageChanged);
-        i18n.setLanguage(QStringLiteral("en"));
-        QCOMPARE(i18n.currentLanguage(), QStringLiteral("en"));
+        i18n.setLanguage(QStringLiteral("de"));
+        QCOMPARE(i18n.currentLanguage(), QStringLiteral("de"));
         QCOMPARE(spy.count(), 1);
 
         // Reset
-        i18n.setLanguage(QStringLiteral("de"));
+        i18n.setLanguage(QStringLiteral("en"));
     }
 
     void setLanguageSameNoSignal()
     {
         auto &i18n = I18n::instance();
-        i18n.setLanguage(QStringLiteral("de"));
+        i18n.setLanguage(QStringLiteral("en"));
         QSignalSpy spy(&i18n, &I18n::languageChanged);
-        i18n.setLanguage(QStringLiteral("de")); // same
+        i18n.setLanguage(QStringLiteral("en")); // same
         QCOMPARE(spy.count(), 0);
     }
 };

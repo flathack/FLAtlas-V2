@@ -7,7 +7,6 @@ class QLabel;
 class QProgressBar;
 class QTabBar;
 class QStackedWidget;
-namespace flatlas::ui { class BrowserPanel; }
 namespace flatlas::ui { class CenterTabWidget; }
 namespace flatlas::ui { class PropertiesPanel; }
 namespace flatlas::editors { class SystemEditorPage; }
@@ -56,7 +55,6 @@ private:
     flatlas::editors::SystemEditorPage *currentSystemEditor() const;
 
     QSplitter *m_mainSplitter = nullptr;
-    flatlas::ui::BrowserPanel *m_browserPanel = nullptr;
     flatlas::ui::CenterTabWidget *m_centerTabs = nullptr;
     flatlas::ui::PropertiesPanel *m_propertiesPanel = nullptr;
     flatlas::tools::HelpBrowser *m_helpBrowser = nullptr;

@@ -16,6 +16,7 @@ private:
     QComboBox *m_langCombo = nullptr;
     QComboBox *m_themeCombo = nullptr;
     QCheckBox *m_updateCheck = nullptr;
+    QCheckBox *m_skipWelcomeCheck = nullptr;
     QLabel *m_idsStatusLabel = nullptr;
 };
 } // namespace flatlas::ui

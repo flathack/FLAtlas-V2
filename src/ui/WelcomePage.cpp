@@ -80,12 +80,24 @@ WelcomePage::WelcomePage(QWidget *parent) : QWidget(parent)
     for (const auto &lang : flatlas::core::I18n::availableLanguages())
         m_langCombo->addItem(lang);
     m_langCombo->setCurrentText(flatlas::core::I18n::instance().currentLanguage());
-    connect(m_langCombo, &QComboBox::currentTextChanged, this, [](const QString &lang) {
+    connect(m_langCombo, &QComboBox::currentTextChanged, this, [this](const QString &lang) {
         flatlas::core::I18n::instance().setLanguage(lang);
         flatlas::core::Config::instance().setString(QStringLiteral("language"), lang);
         flatlas::core::Config::instance().save();
+        // Notify that restart is needed for full effect
+        if (auto *status = findChild<QLabel *>(QStringLiteral("langHint")))
+            status->setText(tr("Language set to '%1'. Restart FLAtlas to fully apply.").arg(lang));
     });
-    formLayout->addRow(tr("Language:"), m_langCombo);
+    auto *langRow = new QWidget(this);
+    auto *langRowLayout = new QHBoxLayout(langRow);
+    langRowLayout->setContentsMargins(0, 0, 0, 0);
+    langRowLayout->setSpacing(8);
+    langRowLayout->addWidget(m_langCombo);
+    auto *langHint = new QLabel(this);
+    langHint->setObjectName(QStringLiteral("langHint"));
+    langHint->setStyleSheet(QStringLiteral("QLabel { color: #cc9933; font-size: 11px; }"));
+    langRowLayout->addWidget(langHint, 1);
+    formLayout->addRow(tr("Language:"), langRow);
 
     m_themeCombo = new QComboBox(this);
     for (const auto &theme : flatlas::core::Theme::instance().availableThemes())
@@ -106,6 +118,15 @@ WelcomePage::WelcomePage(QWidget *parent) : QWidget(parent)
         flatlas::core::Config::instance().save();
     });
     formLayout->addRow(tr("Update Check"), m_updateCheck);
+
+    m_skipWelcomeCheck = new QCheckBox(tr("Don't show this page on next start"), this);
+    m_skipWelcomeCheck->setChecked(
+        flatlas::core::Config::instance().getBool(QStringLiteral("skipWelcome"), false));
+    connect(m_skipWelcomeCheck, &QCheckBox::toggled, this, [](bool checked) {
+        flatlas::core::Config::instance().setBool(QStringLiteral("skipWelcome"), checked);
+        flatlas::core::Config::instance().save();
+    });
+    formLayout->addRow(tr("Welcome Screen"), m_skipWelcomeCheck);
 
     layout->addWidget(quickStartFrame);
 
