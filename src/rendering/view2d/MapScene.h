@@ -24,9 +24,8 @@ public:
     void setGridVisible(bool visible);
     bool isGridVisible() const;
 
-    // Freelancer coordinates: Y-up, large values (e.g. -33000 to 33000)
-    // Qt coordinates: Y-down
-    static QPointF flToQt(float x, float y);
+    // System map is a top-down projection: X/Z in Freelancer space -> X/Y in Qt.
+    static QPointF flToQt(float x, float z);
     static QPointF qtToFl(qreal x, qreal y);
 
 signals:

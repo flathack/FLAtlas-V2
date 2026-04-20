@@ -101,9 +101,9 @@ bool MapScene::isGridVisible() const
     return m_gridVisible;
 }
 
-QPointF MapScene::flToQt(float x, float y)
+QPointF MapScene::flToQt(float x, float z)
 {
-    return QPointF(x * kScale, -y * kScale);
+    return QPointF(x * kScale, -z * kScale);
 }
 
 QPointF MapScene::qtToFl(qreal x, qreal y)
@@ -147,7 +147,7 @@ void MapScene::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObject
     auto *item = new SolarObjectItem(obj->nickname(), obj->type());
     item->updateFromObject(*obj);
 
-    const QPointF pos = flToQt(obj->position().x(), obj->position().y());
+    const QPointF pos = flToQt(obj->position().x(), obj->position().z());
     item->setPos(pos);
 
     item->setFlag(QGraphicsItem::ItemIsSelectable, true);
@@ -160,7 +160,7 @@ void MapScene::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObject
             [item, weak = std::weak_ptr(obj)]() {
         if (auto obj = weak.lock()) {
             item->updateFromObject(*obj);
-            item->setPos(flToQt(obj->position().x(), obj->position().y()));
+            item->setPos(flToQt(obj->position().x(), obj->position().z()));
         }
     });
 }
@@ -170,7 +170,7 @@ void MapScene::addZone(const std::shared_ptr<flatlas::domain::ZoneItem> &zone)
     auto *item = new ZoneItem2D(zone->nickname(), zone->shape());
     item->updateFromZone(*zone);
 
-    const QPointF pos = flToQt(zone->position().x(), zone->position().y());
+    const QPointF pos = flToQt(zone->position().x(), zone->position().z());
     item->setPos(pos);
 
     item->setFlag(QGraphicsItem::ItemIsSelectable, true);
@@ -182,7 +182,7 @@ void MapScene::addZone(const std::shared_ptr<flatlas::domain::ZoneItem> &zone)
             [item, weak = std::weak_ptr(zone)]() {
         if (auto zone = weak.lock()) {
             item->updateFromZone(*zone);
-            item->setPos(flToQt(zone->position().x(), zone->position().y()));
+            item->setPos(flToQt(zone->position().x(), zone->position().z()));
         }
     });
 }

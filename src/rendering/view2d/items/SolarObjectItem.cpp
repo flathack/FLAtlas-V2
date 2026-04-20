@@ -55,7 +55,7 @@ qreal SolarObjectItem::radiusForType(flatlas::domain::SolarObject::Type t)
 void SolarObjectItem::updateFromObject(const flatlas::domain::SolarObject &obj)
 {
     constexpr double kScale = 0.01;
-    setPos(obj.position().x() * kScale, -obj.position().y() * kScale);
+    setPos(obj.position().x() * kScale, -obj.position().z() * kScale);
 }
 
 } // namespace flatlas::rendering

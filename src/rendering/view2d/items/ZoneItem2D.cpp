@@ -45,7 +45,7 @@ void ZoneItem2D::updateFromZone(const flatlas::domain::ZoneItem &zone)
 {
     constexpr double kScale = 0.01;
 
-    setPos(zone.position().x() * kScale, -zone.position().y() * kScale);
+    setPos(zone.position().x() * kScale, -zone.position().z() * kScale);
 
     const qreal w = zone.size().x() * kScale;
     const qreal h = zone.size().z() * kScale;   // z → map-plane height
