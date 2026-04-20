@@ -96,6 +96,14 @@ target_include_directories(test_VersionCheck PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_VersionCheck PRIVATE Qt6::Test Qt6::Core Qt6::Widgets Qt6::Network flatlas_core)
 add_test(NAME test_VersionCheck COMMAND test_VersionCheck)
 
+# Phase 23 Help-System tests
+add_executable(test_HelpBrowser test_HelpBrowser.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/HelpBrowser.cpp
+)
+target_include_directories(test_HelpBrowser PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_HelpBrowser PRIVATE Qt6::Test Qt6::Core Qt6::Widgets)
+add_test(NAME test_HelpBrowser COMMAND test_HelpBrowser)
+
 # AppConfig is compiled into the FLAtlas executable, not a library.
 # Compile the source directly into the test.
 add_executable(test_AppConfig test_AppConfig.cpp ${CMAKE_SOURCE_DIR}/src/app/AppConfig.cpp)

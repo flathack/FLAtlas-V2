@@ -26,6 +26,7 @@
 #include "tools/UpdateChecker.h"
 #include "tools/UpdateDownloader.h"
 #include "tools/UpdateInstaller.h"
+#include "tools/HelpBrowser.h"
 #include "rendering/preview/ModelPreview.h"
 #include "rendering/preview/CharacterPreview.h"
 #include "domain/SystemDocument.h"
@@ -237,6 +238,10 @@ void MainWindow::createMenus()
 
     // --- Help ---
     auto *helpMenu = menuBar()->addMenu(tr("&Help"));
+    helpMenu->addAction(tr("&Help Contents"), QKeySequence::HelpContents, this, [this]() {
+        showContextHelp();
+    });
+    helpMenu->addSeparator();
     helpMenu->addAction(tr("Check for &Updates..."), this, [this]() {
         statusBar()->showMessage(tr("Checking for updates..."), 3000);
         auto *checker = new flatlas::tools::UpdateChecker(this);
@@ -263,7 +268,12 @@ void MainWindow::createMenus()
     });
     helpMenu->addSeparator();
     helpMenu->addAction(tr("&About FLAtlas..."), this, [this]() {
-        // TODO Phase 23
+        QMessageBox::about(this, tr("About FLAtlas"),
+            tr("<h2>FLAtlas V2</h2>"
+               "<p>Version %1</p>"
+               "<p>A comprehensive editor for Freelancer game data.</p>"
+               "<p>&copy; 2024–2025 flathack</p>")
+                .arg(flatlas::tools::UpdateChecker::currentVersion()));
     });
 }
 
@@ -296,6 +306,23 @@ void MainWindow::createPanels()
 void MainWindow::createStatusBar()
 {
     statusBar()->showMessage(tr("Ready"));
+}
+
+void MainWindow::showContextHelp()
+{
+    if (!m_helpBrowser)
+        m_helpBrowser = new flatlas::tools::HelpBrowser(this);
+
+    QString topicId = QStringLiteral("overview");
+    if (m_centerTabs && m_centerTabs->currentWidget()) {
+        const QString className = QString::fromUtf8(m_centerTabs->currentWidget()->metaObject()->className());
+        // Strip namespace prefix if present
+        const QString shortName = className.contains(QLatin1String("::"))
+            ? className.mid(className.lastIndexOf(QLatin1String("::")) + 2)
+            : className;
+        topicId = flatlas::tools::HelpBrowser::topicForContext(shortName);
+    }
+    m_helpBrowser->showTopic(topicId);
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)

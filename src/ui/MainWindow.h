@@ -13,6 +13,7 @@ namespace flatlas::editors { class TradeRoutePage; }
 namespace flatlas::editors { class IdsEditorPage; }
 namespace flatlas::editors { class ModManagerPage; }
 namespace flatlas::editors { class NpcEditorPage; }
+namespace flatlas::tools { class HelpBrowser; }
 
 /// FLAtlas-Hauptfenster – schlanke Orchestrierung, delegiert an Panels und Editoren.
 class MainWindow : public QMainWindow
@@ -46,10 +47,12 @@ private:
     void saveCurrentFile();
     void newSystem();
     void openSystemFromUniverse(const QString &nickname, const QString &systemFile);
+    void showContextHelp();
     flatlas::editors::SystemEditorPage *currentSystemEditor() const;
 
     QSplitter *m_mainSplitter = nullptr;
     flatlas::ui::BrowserPanel *m_browserPanel = nullptr;
     flatlas::ui::CenterTabWidget *m_centerTabs = nullptr;
     flatlas::ui::PropertiesPanel *m_propertiesPanel = nullptr;
+    flatlas::tools::HelpBrowser *m_helpBrowser = nullptr;
 };
