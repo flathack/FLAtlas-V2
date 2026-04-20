@@ -30,6 +30,7 @@
 #include <functional>
 #include <QGraphicsSceneMouseEvent>
 #include <QSignalBlocker>
+#include <QRectF>
 
 namespace flatlas::editors {
 
@@ -49,12 +50,27 @@ public:
     }
 
     std::function<void(const QString &)> onNodeDoubleClicked;
+    std::function<void()> onViewportReady;
 
 protected:
     void wheelEvent(QWheelEvent *event) override
     {
         const double factor = (event->angleDelta().y() > 0) ? 1.15 : 1.0 / 1.15;
         scale(factor, factor);
+    }
+
+    void showEvent(QShowEvent *event) override
+    {
+        QGraphicsView::showEvent(event);
+        if (onViewportReady)
+            onViewportReady();
+    }
+
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QGraphicsView::resizeEvent(event);
+        if (onViewportReady)
+            onViewportReady();
     }
 
     void mouseDoubleClickEvent(QMouseEvent *event) override
@@ -171,6 +187,9 @@ void UniverseEditorPage::setupUi()
     mapView->onNodeDoubleClicked = [this](const QString &nickname) {
         onMapItemDoubleClicked(nickname);
     };
+    mapView->onViewportReady = [this]() {
+        QMetaObject::invokeMethod(this, &UniverseEditorPage::fitMapInView, Qt::QueuedConnection);
+    };
     m_mapView = mapView;
 
     m_splitter->addWidget(m_systemTree);
@@ -191,11 +210,7 @@ void UniverseEditorPage::setupToolBar()
     m_toolBar->addAction(tr("Add System"), this, &UniverseEditorPage::onAddSystem);
     m_toolBar->addAction(tr("Delete System"), this, &UniverseEditorPage::onDeleteSystem);
     m_toolBar->addSeparator();
-    m_toolBar->addAction(tr("Fit View"), this, [this]() {
-        if (m_mapView && m_mapScene)
-            m_mapView->fitInView(m_mapScene->itemsBoundingRect().adjusted(-50, -50, 50, 50),
-                                  Qt::KeepAspectRatio);
-    });
+    m_toolBar->addAction(tr("Fit View"), this, &UniverseEditorPage::fitMapInView);
     m_toolBar->addSeparator();
     m_toolBar->addAction(tr("Shortest Path..."), this, &UniverseEditorPage::onFindShortestPath);
 }
@@ -299,12 +314,12 @@ void UniverseEditorPage::refreshMap()
     if (!m_highlightedPath.isEmpty())
         highlightPath(m_highlightedPath);
 
+    const QRectF contentRect = mapContentRect();
+    if (contentRect.isValid())
+        m_mapScene->setSceneRect(contentRect);
+
     // Fit view after scene is populated
-    QMetaObject::invokeMethod(this, [this]() {
-        if (m_mapView && m_mapScene && !m_mapScene->items().isEmpty())
-            m_mapView->fitInView(m_mapScene->itemsBoundingRect().adjusted(-30, -30, 30, 30),
-                                  Qt::KeepAspectRatio);
-    }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(this, &UniverseEditorPage::fitMapInView, Qt::QueuedConnection);
 }
 
 void UniverseEditorPage::drawConnections()
@@ -590,6 +605,71 @@ void UniverseEditorPage::syncSystemPositionFromMap(const QString &nickname)
             break;
         }
     }
+}
+
+QRectF UniverseEditorPage::mapContentRect() const
+{
+    if (!m_data || m_data->systems.isEmpty())
+        return {};
+
+    double minX = 0.0;
+    double maxX = 0.0;
+    double minY = 0.0;
+    double maxY = 0.0;
+    bool first = true;
+
+    for (const auto &sys : m_data->systems) {
+        const double x = sys.position.x() * m_mapScale;
+        const double y = sys.position.z() * m_mapScale;
+        if (first) {
+            minX = maxX = x;
+            minY = maxY = y;
+            first = false;
+        } else {
+            minX = std::min(minX, x);
+            maxX = std::max(maxX, x);
+            minY = std::min(minY, y);
+            maxY = std::max(maxY, y);
+        }
+    }
+
+    double width = maxX - minX;
+    double height = maxY - minY;
+
+    // Keep single-system and tiny maps comfortably visible.
+    const double minimumSpan = 120.0;
+    if (width < minimumSpan) {
+        const double expand = (minimumSpan - width) / 2.0;
+        minX -= expand;
+        maxX += expand;
+        width = minimumSpan;
+    }
+    if (height < minimumSpan) {
+        const double expand = (minimumSpan - height) / 2.0;
+        minY -= expand;
+        maxY += expand;
+        height = minimumSpan;
+    }
+
+    const double padX = std::max(24.0, width * 0.08);
+    const double padY = std::max(24.0, height * 0.08);
+    return QRectF(
+        QPointF(minX - padX, minY - padY),
+        QPointF(maxX + padX, maxY + padY));
+}
+
+void UniverseEditorPage::fitMapInView()
+{
+    if (!m_mapView || !m_mapScene || !m_data || m_data->systems.isEmpty())
+        return;
+
+    const QRectF rect = mapContentRect();
+    if (!rect.isValid() || rect.isEmpty())
+        return;
+
+    m_mapScene->setSceneRect(rect);
+    m_mapView->resetTransform();
+    m_mapView->fitInView(rect, Qt::KeepAspectRatio);
 }
 
 void UniverseEditorPage::onNodeMoved(const QString &nickname)

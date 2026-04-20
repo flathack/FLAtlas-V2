@@ -60,6 +60,8 @@ private:
     QString resolveSystemPath(const QString &relativePath) const;
     void clearConnectionLines();
     void syncSystemPositionFromMap(const QString &nickname);
+    QRectF mapContentRect() const;
+    void fitMapInView();
     void refreshTitle();
     void setDirty(bool dirty);
 
