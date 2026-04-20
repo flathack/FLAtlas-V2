@@ -4,7 +4,8 @@
         <!-- TODO: Add application icons -->
     </qresource>
     <qresource prefix="/images">
-        <!-- TODO: Add splash screen, backgrounds -->
+        <file alias="Splash-Screen.png">images/Splash-Screen.png</file>
+        <file alias="star-background.png">images/star-background.png</file>
     </qresource>
     <qresource prefix="/help">
         <!-- TODO: Add help HTML files -->

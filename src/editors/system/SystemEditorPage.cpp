@@ -21,6 +21,7 @@
 #include <QMessageBox>
 #include <QInputDialog>
 #include <QMetaEnum>
+#include <QPixmap>
 
 using namespace flatlas::domain;
 using namespace flatlas::rendering;
@@ -60,6 +61,8 @@ void SystemEditorPage::setupUi()
     m_mapScene = new MapScene(this);
     m_mapView = new SystemMapView(this);
     m_mapView->setMapScene(m_mapScene);
+    m_mapView->setBackgroundPixmap(QPixmap(QStringLiteral(":/images/star-background.png")),
+                                   QColor(15, 18, 24));
     m_splitter->addWidget(m_mapView);
 
     // 3D view (right)

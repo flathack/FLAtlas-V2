@@ -31,6 +31,8 @@
 #include <QGraphicsSceneMouseEvent>
 #include <QSignalBlocker>
 #include <QRectF>
+#include <QPainter>
+#include <QPixmap>
 
 namespace flatlas::editors {
 
@@ -51,6 +53,13 @@ public:
 
     std::function<void(const QString &)> onNodeDoubleClicked;
     std::function<void()> onViewportReady;
+    void setBackgroundPixmap(const QPixmap &pixmap, const QColor &fallbackColor = QColor(15, 18, 24))
+    {
+        m_backgroundPixmap = pixmap;
+        m_backgroundColor = fallbackColor;
+        m_backgroundDarkenAlpha = m_backgroundColor.lightness() >= 130 ? 0 : 180;
+        viewport()->update();
+    }
 
 protected:
     void wheelEvent(QWheelEvent *event) override
@@ -87,6 +96,28 @@ protected:
         }
         QGraphicsView::mouseDoubleClickEvent(event);
     }
+
+    void drawBackground(QPainter *painter, const QRectF &rect) override
+    {
+        painter->save();
+        painter->resetTransform();
+
+        const QRect viewportRect = viewport()->rect();
+        painter->fillRect(viewportRect, m_backgroundColor);
+        if (!m_backgroundPixmap.isNull()) {
+            painter->drawTiledPixmap(viewportRect, m_backgroundPixmap);
+            if (m_backgroundDarkenAlpha > 0)
+                painter->fillRect(viewportRect, QColor(0, 0, 0, m_backgroundDarkenAlpha));
+        }
+
+        painter->restore();
+        QGraphicsView::drawBackground(painter, rect);
+    }
+
+private:
+    QPixmap m_backgroundPixmap;
+    QColor m_backgroundColor = QColor(15, 18, 24);
+    int m_backgroundDarkenAlpha = 180;
 };
 
 // ─── Clickable system node ───────────────────────────────
@@ -182,8 +213,9 @@ void UniverseEditorPage::setupUi()
 
     // Map (right panel)
     m_mapScene = new QGraphicsScene(this);
-    m_mapScene->setBackgroundBrush(QColor(20, 20, 30));
     auto *mapView = new UniverseMapView(m_mapScene, this);
+    mapView->setBackgroundPixmap(QPixmap(QStringLiteral(":/images/star-background.png")),
+                                 QColor(15, 18, 24));
     mapView->onNodeDoubleClicked = [this](const QString &nickname) {
         onMapItemDoubleClicked(nickname);
     };

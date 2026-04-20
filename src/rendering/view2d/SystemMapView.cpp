@@ -5,6 +5,7 @@
 #include <QMenu>
 #include <QAction>
 #include <QContextMenuEvent>
+#include <QPainter>
 #include <QScrollBar>
 
 namespace flatlas::rendering {
@@ -31,6 +32,14 @@ void SystemMapView::setMapScene(MapScene *scene)
 {
     m_mapScene = scene;
     QGraphicsView::setScene(scene);
+}
+
+void SystemMapView::setBackgroundPixmap(const QPixmap &pixmap, const QColor &fallbackColor)
+{
+    m_backgroundPixmap = pixmap;
+    m_backgroundColor = fallbackColor;
+    m_backgroundDarkenAlpha = m_backgroundColor.lightness() >= 130 ? 0 : 180;
+    viewport()->update();
 }
 
 void SystemMapView::zoomToFit()
@@ -87,6 +96,23 @@ void SystemMapView::contextMenuEvent(QContextMenuEvent *event)
     menu.addAction(tr("Delete"));
     menu.addAction(tr("Properties..."));
     menu.exec(event->globalPos());
+}
+
+void SystemMapView::drawBackground(QPainter *painter, const QRectF &rect)
+{
+    painter->save();
+    painter->resetTransform();
+
+    const QRect viewportRect = viewport()->rect();
+    painter->fillRect(viewportRect, m_backgroundColor);
+    if (!m_backgroundPixmap.isNull()) {
+        painter->drawTiledPixmap(viewportRect, m_backgroundPixmap);
+        if (m_backgroundDarkenAlpha > 0)
+            painter->fillRect(viewportRect, QColor(0, 0, 0, m_backgroundDarkenAlpha));
+    }
+
+    painter->restore();
+    QGraphicsView::drawBackground(painter, rect);
 }
 
 } // namespace flatlas::rendering

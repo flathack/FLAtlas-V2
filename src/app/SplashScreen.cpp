@@ -3,19 +3,34 @@
 #include <QPixmap>
 
 SplashScreen::SplashScreen(QWidget * /*parent*/)
+    : SplashScreen(QPixmap(QStringLiteral(":/images/Splash-Screen.png")))
+{
+}
+
+SplashScreen::SplashScreen(const QPixmap &pixmap)
     : QSplashScreen()
 {
-    // Splash-Bild laden (Platzhalter: einfarbiger Hintergrund)
-    QPixmap pixmap(480, 320);
-    pixmap.fill(QColor(30, 30, 30));
-    setPixmap(pixmap);
+    QPixmap effectivePixmap = pixmap;
+    if (!effectivePixmap.isNull() && effectivePixmap.width() > 800) {
+        effectivePixmap = effectivePixmap.scaledToWidth(
+            800, Qt::SmoothTransformation);
+    }
 
-    // Fortschrittsbalken und Status-Label als Overlay
+    if (effectivePixmap.isNull()) {
+        QPixmap fallback(480, 320);
+        fallback.fill(QColor(30, 30, 30));
+        effectivePixmap = fallback;
+    }
+
+    setPixmap(effectivePixmap);
+
     auto *layout = new QVBoxLayout(this);
     layout->addStretch();
 
     m_statusLabel = new QLabel(tr("Starting..."), this);
-    m_statusLabel->setStyleSheet(QStringLiteral("color: white; font-size: 12px;"));
+    m_statusLabel->setStyleSheet(QStringLiteral(
+        "color: white; font-size: 12px; font-weight: 600; "
+        "background-color: rgba(0, 0, 0, 110); padding: 4px 8px; border-radius: 4px;"));
     m_statusLabel->setAlignment(Qt::AlignCenter);
     layout->addWidget(m_statusLabel);
 
@@ -25,8 +40,8 @@ SplashScreen::SplashScreen(QWidget * /*parent*/)
     m_progressBar->setTextVisible(false);
     m_progressBar->setFixedHeight(6);
     m_progressBar->setStyleSheet(QStringLiteral(
-        "QProgressBar { background: #333; border: none; }"
-        "QProgressBar::chunk { background: #2a82da; }"
+        "QProgressBar { background: rgba(15, 18, 24, 180); border: 1px solid rgba(255, 255, 255, 35); }"
+        "QProgressBar::chunk { background: #4bb1ff; }"
     ));
     layout->addWidget(m_progressBar);
     layout->setContentsMargins(20, 20, 20, 20);
