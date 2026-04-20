@@ -64,14 +64,17 @@ MainWindow::MainWindow(QWidget *parent)
     setMinimumSize(960, 620);
     resize(1600, 900);
 
+    // Editing-Kontext vor dem UI-Aufbau laden, damit z.B. der Mod Manager
+    // bereits beim ersten Rendern die gespeicherten Installationen sieht.
+    auto &ctx = flatlas::core::EditingContext::instance();
+    ctx.restore();
+
     createMenus();
     createPanels();
     createStatusBar();
     restoreWindowState();
 
-    // Editing-Kontext wiederherstellen und UI verbinden
-    auto &ctx = flatlas::core::EditingContext::instance();
-    ctx.restore();
+    // Editing-Kontext-Änderungen mit der UI verbinden
     connect(&ctx, &flatlas::core::EditingContext::contextChanged,
             this, [this](const QString &profileId) {
         auto profile = flatlas::core::EditingContext::instance().editingProfile();
