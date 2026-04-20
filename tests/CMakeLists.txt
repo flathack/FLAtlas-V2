@@ -79,6 +79,13 @@ flatlas_add_test(test_JumpConnection test_JumpConnection.cpp flatlas_editors Qt6
 # Phase 20 EXE/DLL handling tests
 flatlas_add_test(test_ExeHandling test_ExeHandling.cpp flatlas_infrastructure)
 
+# Phase 21 Scripting/Patching tests
+# SpStarter is compiled directly to avoid linking ScriptPatcher (triggers AV)
+add_executable(test_SpStarter test_SpStarter.cpp ${CMAKE_SOURCE_DIR}/src/tools/SpStarter.cpp)
+target_include_directories(test_SpStarter PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_SpStarter PRIVATE Qt6::Test Qt6::Core Qt6::Widgets flatlas_core)
+add_test(NAME test_SpStarter COMMAND test_SpStarter)
+
 # AppConfig is compiled into the FLAtlas executable, not a library.
 # Compile the source directly into the test.
 add_executable(test_AppConfig test_AppConfig.cpp ${CMAKE_SOURCE_DIR}/src/app/AppConfig.cpp)

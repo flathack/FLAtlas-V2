@@ -21,6 +21,8 @@
 #include "editors/infocard/InfocardEditor.h"
 #include "editors/news/NewsRumorEditor.h"
 #include "editors/jump/JumpConnectionDialog.h"
+#include "tools/ScriptPatcher.h"
+#include "tools/SpStarter.h"
 #include "rendering/preview/ModelPreview.h"
 #include "rendering/preview/CharacterPreview.h"
 #include "domain/SystemDocument.h"
@@ -108,6 +110,36 @@ void MainWindow::createMenus()
         auto *dlg = new flatlas::editors::JumpConnectionDialog(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->show();
+    });
+    toolsMenu->addSeparator();
+    toolsMenu->addAction(tr("Apply &OpenSP Patch..."), this, [this]() {
+        const QString exe = QFileDialog::getOpenFileName(
+            this, tr("Select Freelancer.exe"), {}, tr("Executable (*.exe)"));
+        if (exe.isEmpty()) return;
+        auto r = flatlas::tools::ScriptPatcher::applyOpenSpPatch(exe);
+        if (r.success)
+            statusBar()->showMessage(tr("OpenSP patch applied. Backup: %1").arg(r.backupPath), 5000);
+        else
+            statusBar()->showMessage(tr("Patch failed: %1").arg(r.errorMessage), 5000);
+    });
+    toolsMenu->addAction(tr("Apply &Resolution Patch..."), this, [this]() {
+        const QString exe = QFileDialog::getOpenFileName(
+            this, tr("Select Freelancer.exe"), {}, tr("Executable (*.exe)"));
+        if (exe.isEmpty()) return;
+        auto r = flatlas::tools::ScriptPatcher::applyResolutionPatch(exe, 1920, 1080);
+        if (r.success)
+            statusBar()->showMessage(tr("Resolution patch applied. Backup: %1").arg(r.backupPath), 5000);
+        else
+            statusBar()->showMessage(tr("Patch failed: %1").arg(r.errorMessage), 5000);
+    });
+    toolsMenu->addAction(tr("&Launch Freelancer..."), this, [this]() {
+        const QString exe = QFileDialog::getOpenFileName(
+            this, tr("Select Freelancer.exe"), {}, tr("Executable (*.exe)"));
+        if (exe.isEmpty()) return;
+        if (flatlas::tools::SpStarter::launch(exe))
+            statusBar()->showMessage(tr("Freelancer launched."), 3000);
+        else
+            statusBar()->showMessage(tr("Failed to launch Freelancer."), 5000);
     });
 
     // --- Settings ---
