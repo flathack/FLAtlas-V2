@@ -115,9 +115,21 @@ QPen ZoneItem2D::penForZone(const flatlas::domain::ZoneItem &zone)
         pen.setWidthF(1.1);
         return pen;
     }
-    if (name.contains(QStringLiteral("death")) || name.contains(QStringLiteral("destroy_vignette")) || damage > 0) {
+    if (name.contains(QStringLiteral("destroy_vignette"))) {
         QPen pen(QColor(150, 150, 150, 77));
         pen.setWidthF(1.5);
+        pen.setStyle(Qt::DotLine);
+        return pen;
+    }
+    if (name.contains(QStringLiteral("death")) || damage > 0) {
+        QPen pen(QColor(220, 70, 70, 170));
+        pen.setWidthF(1.5);
+        pen.setStyle(Qt::SolidLine);
+        return pen;
+    }
+    if (name.contains(QStringLiteral("vignette"))) {
+        QPen pen(QColor(150, 150, 150, 77));
+        pen.setWidthF(1.0);
         pen.setStyle(Qt::DotLine);
         return pen;
     }
