@@ -49,10 +49,12 @@ int CenterTabWidget::addPinnedTab(QWidget *widget, const QString &label)
     return idx;
 }
 
-void CenterTabWidget::removeTab(int index)
+void CenterTabWidget::removeTab(int index, bool force)
 {
-    if (index < 0 || index >= m_tabBar->count() || index < m_pinnedCount)
+    if (index < 0 || index >= m_tabBar->count() || (!force && index < m_pinnedCount))
         return;
+    if (force && index < m_pinnedCount)
+        --m_pinnedCount;
     QWidget *w = m_stack->widget(index);
     m_tabBar->removeTab(index);
     m_stack->removeWidget(w);

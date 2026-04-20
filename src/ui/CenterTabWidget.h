@@ -20,7 +20,7 @@ public:
 
     int addTab(QWidget *widget, const QString &label);
     int addPinnedTab(QWidget *widget, const QString &label);
-    void removeTab(int index);
+    void removeTab(int index, bool force = false);
     void setCurrentIndex(int index);
     int currentIndex() const;
     int count() const;

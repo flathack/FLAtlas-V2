@@ -58,6 +58,23 @@
 #include <QProcess>
 #include <QUrl>
 
+namespace {
+
+bool isContextBoundTab(QWidget *widget)
+{
+    return qobject_cast<flatlas::editors::UniverseEditorPage *>(widget)
+        || qobject_cast<flatlas::editors::SystemEditorPage *>(widget)
+        || qobject_cast<flatlas::editors::IniEditorPage *>(widget)
+        || qobject_cast<flatlas::editors::BaseEditorPage *>(widget)
+        || qobject_cast<flatlas::editors::TradeRoutePage *>(widget)
+        || qobject_cast<flatlas::editors::IdsEditorPage *>(widget)
+        || qobject_cast<flatlas::editors::NpcEditorPage *>(widget)
+        || qobject_cast<flatlas::editors::InfocardEditor *>(widget)
+        || qobject_cast<flatlas::editors::NewsRumorEditor *>(widget);
+}
+
+}
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
@@ -77,28 +94,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Editing-Kontext-Änderungen mit der UI verbinden
     connect(&ctx, &flatlas::core::EditingContext::contextChanged,
-            this, [this](const QString &profileId) {
-        auto profile = flatlas::core::EditingContext::instance().editingProfile();
-        if (profile.isValid()) {
-            m_editingLabel->setText(tr("Currently Editing: %1").arg(profile.name));
-            setWindowTitle(QStringLiteral("FLAtlas V2 – %1").arg(profile.name));
-            statusBar()->showMessage(tr("Editing context: %1").arg(profile.name), 5000);
-            // Auto-open Universe tab when editing context is set
-            openUniverseFromContext();
-        } else {
-            m_editingLabel->setText(tr("Currently Editing: -"));
-            setWindowTitle(QStringLiteral("FLAtlas V2"));
-        }
-        Q_UNUSED(profileId)
-    });
-    // Apply restored context to UI
-    if (ctx.hasContext()) {
-        auto profile = ctx.editingProfile();
-        m_editingLabel->setText(tr("Currently Editing: %1").arg(profile.name));
-        setWindowTitle(QStringLiteral("FLAtlas V2 – %1").arg(profile.name));
-        // Auto-open Universe tab for restored context
-        QMetaObject::invokeMethod(this, &MainWindow::openUniverseFromContext, Qt::QueuedConnection);
-    }
+            this, [this](const QString &) { handleEditingContextChanged(); });
+    QMetaObject::invokeMethod(this, &MainWindow::handleEditingContextChanged, Qt::QueuedConnection);
 
     // Auto-Update-Check bei Start
     auto *checker = new flatlas::tools::UpdateChecker(this);
@@ -764,19 +761,25 @@ void MainWindow::openUniverseFromContext()
     if (!ctx.hasContext())
         return;
 
-    // Check if a Universe tab is already open
-    for (int i = 0; i < m_centerTabs->count(); ++i) {
-        if (qobject_cast<flatlas::editors::UniverseEditorPage *>(m_centerTabs->widget(i))) {
-            m_centerTabs->setCurrentIndex(i);
-            return;
-        }
-    }
-
     QString dataDir = ctx.primaryGamePath() + QStringLiteral("/DATA");
     QString universeIni = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("UNIVERSE/universe.ini"));
     if (universeIni.isEmpty()) {
         statusBar()->showMessage(tr("Universe.ini not found in editing context"), 5000);
         return;
+    }
+
+    // Reuse an already-open Universe tab if present.
+    for (int i = 0; i < m_centerTabs->count(); ++i) {
+        if (auto *editor = qobject_cast<flatlas::editors::UniverseEditorPage *>(m_centerTabs->widget(i))) {
+            if (!editor->loadFile(universeIni)) {
+                statusBar()->showMessage(tr("Could not reload Universe from editing context"), 5000);
+                return;
+            }
+            m_centerTabs->setTabText(i, QStringLiteral("Universe (%1)").arg(editor->data()->systemCount()));
+            m_centerTabs->setCurrentIndex(i);
+            statusBar()->showMessage(tr("Universe reloaded from editing context"), 3000);
+            return;
+        }
     }
 
     auto *editor = new flatlas::editors::UniverseEditorPage(this);
@@ -801,6 +804,42 @@ void MainWindow::openUniverseFromContext()
             this, &MainWindow::openSystemFromUniverse);
 
     statusBar()->showMessage(tr("Universe loaded from editing context"), 3000);
+}
+
+void MainWindow::handleEditingContextChanged()
+{
+    auto &ctx = flatlas::core::EditingContext::instance();
+    const auto profile = ctx.editingProfile();
+
+    if (profile.isValid()) {
+        m_editingLabel->setText(tr("Currently Editing: %1").arg(profile.name));
+        setWindowTitle(QStringLiteral("FLAtlas V2 – %1").arg(profile.name));
+    } else {
+        m_editingLabel->setText(tr("Currently Editing: -"));
+        setWindowTitle(QStringLiteral("FLAtlas V2"));
+    }
+
+    closeContextBoundTabs();
+
+    if (profile.isValid()) {
+        openUniverseFromContext();
+        statusBar()->showMessage(tr("Editing context switched to %1").arg(profile.name), 5000);
+    } else {
+        statusBar()->showMessage(tr("Editing context cleared"), 3000);
+    }
+}
+
+void MainWindow::closeContextBoundTabs()
+{
+    if (!m_centerTabs)
+        return;
+
+    for (int i = m_centerTabs->count() - 1; i >= 0; --i) {
+        QWidget *widget = m_centerTabs->widget(i);
+        if (!widget || !isContextBoundTab(widget))
+            continue;
+        m_centerTabs->removeTab(i, true);
+    }
 }
 
 void MainWindow::openSystemFromUniverse(const QString &nickname, const QString &systemFile)
@@ -860,6 +899,18 @@ void MainWindow::openBaseEditor()
 void MainWindow::openTradeRoutes()
 {
     auto *page = new flatlas::editors::TradeRoutePage(this);
+    auto &ctx = flatlas::core::EditingContext::instance();
+    if (ctx.hasContext()) {
+        const QString dataDir = flatlas::core::PathUtils::ciResolvePath(
+            ctx.primaryGamePath(), QStringLiteral("DATA"));
+        if (!dataDir.isEmpty()) {
+            page->setDataPath(dataDir);
+            auto *universeEditor = qobject_cast<flatlas::editors::UniverseEditorPage *>(m_centerTabs->currentWidget());
+            if (universeEditor && universeEditor->data())
+                page->setUniverseData(universeEditor->data());
+            page->scanAndCalculate();
+        }
+    }
 
     int idx = m_centerTabs->addTab(page, tr("Trade Routes"));
     m_centerTabs->setCurrentIndex(idx);
@@ -877,6 +928,13 @@ void MainWindow::openTradeRoutes()
 void MainWindow::openIdsEditor()
 {
     auto *editor = new flatlas::editors::IdsEditorPage(this);
+    auto &ctx = flatlas::core::EditingContext::instance();
+    if (ctx.hasContext()) {
+        const QString exeDir = flatlas::core::PathUtils::ciResolvePath(
+            ctx.primaryGamePath(), QStringLiteral("EXE"));
+        if (!exeDir.isEmpty())
+            editor->loadFreelancerDir(exeDir);
+    }
 
     int idx = m_centerTabs->addTab(editor, tr("IDS Editor"));
     m_centerTabs->setCurrentIndex(idx);

@@ -51,6 +51,8 @@ private:
     void newSystem();
     void openSystemFromUniverse(const QString &nickname, const QString &systemFile);
     void openUniverseFromContext();
+    void handleEditingContextChanged();
+    void closeContextBoundTabs();
     void showContextHelp();
     void launchFreelancerFromContext();
     flatlas::editors::SystemEditorPage *currentSystemEditor() const;
