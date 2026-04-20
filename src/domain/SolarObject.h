@@ -2,7 +2,9 @@
 // domain/SolarObject.h – Freelancer-Objekt (Planet, Station, etc.)
 
 #include <QObject>
+#include <QPair>
 #include <QString>
+#include <QVector>
 #include <QVector3D>
 
 namespace flatlas::domain {
@@ -65,6 +67,9 @@ public:
     QString comment() const { return m_comment; }
     void setComment(const QString &c) { m_comment = c; emit changed(); }
 
+    QVector<QPair<QString, QString>> rawEntries() const { return m_rawEntries; }
+    void setRawEntries(const QVector<QPair<QString, QString>> &entries) { m_rawEntries = entries; emit changed(); }
+
 signals:
     void changed();
 
@@ -78,6 +83,7 @@ private:
     QString m_comment;
     QVector3D m_position;
     QVector3D m_rotation;
+    QVector<QPair<QString, QString>> m_rawEntries;
     int m_idsName = 0;
     int m_idsInfo = 0;
     Type m_type = Other;

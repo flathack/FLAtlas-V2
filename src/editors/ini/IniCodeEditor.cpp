@@ -122,7 +122,7 @@ void IniCodeEditor::highlightCurrentLine() {
 
     if (!isReadOnly()) {
         QTextEdit::ExtraSelection selection;
-        selection.format.setBackground(QColor(Qt::yellow).lighter(180));
+        selection.format.setBackground(QColor(46, 62, 84, 110));
         selection.format.setProperty(QTextFormat::FullWidthSelection, true);
         selection.cursor = textCursor();
         selection.cursor.clearSelection();

@@ -18,6 +18,8 @@ class QPushButton;
 class QComboBox;
 class QGroupBox;
 
+namespace flatlas::editors { class IniCodeEditor; class IniSyntaxHighlighter; }
+
 namespace flatlas::editors {
 
 class SystemEditorPage : public QWidget {
@@ -60,6 +62,10 @@ private:
     void updateSidebarButtons();
     void refreshObjectJumpList();
     void jumpToSelectedFromSidebar();
+    void updateIniEditorForSelection(const QString &nickname = QString());
+    QString serializeSelectionToIni(const QString &nickname) const;
+    void applyIniEditorChanges();
+    void openSystemIniExternally() const;
     void createQuickObject(flatlas::domain::SolarObject::Type type,
                            const QString &suggestedNickname,
                            const QString &defaultArchetype = QString());
@@ -88,9 +94,15 @@ private:
     QLabel *m_sceneView3DPlaceholder = nullptr;
     QToolBar *m_toolBar = nullptr;
     QSplitter *m_splitter = nullptr;
+    QSplitter *m_leftSidebarSplitter = nullptr;
     QTreeWidget *m_objectTree = nullptr;
+    IniCodeEditor *m_iniEditor = nullptr;
+    IniSyntaxHighlighter *m_iniEditorHighlighter = nullptr;
+    QPushButton *m_applyIniButton = nullptr;
+    QPushButton *m_openSystemIniButton = nullptr;
     QAction *m_toggle3DAction = nullptr;
     bool m_is3DViewEnabled = false;
+    QString m_selectedNickname;
     flatlas::rendering::SystemDisplayFilterSettings m_displayFilterSettings;
     QWidget *m_rightSidebar = nullptr;
     QLabel *m_selectionTitleLabel = nullptr;

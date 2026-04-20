@@ -141,6 +141,61 @@ static QString shapeToString(ZoneItem::Shape s)
     return QStringLiteral("SPHERE");
 }
 
+static void upsertEntry(QVector<IniEntry> &entries, const QString &key, const QString &value)
+{
+    for (auto &entry : entries) {
+        if (entry.first.compare(key, Qt::CaseInsensitive) == 0) {
+            entry.second = value;
+            return;
+        }
+    }
+    entries.append({key, value});
+}
+
+static void removeEntry(QVector<IniEntry> &entries, const QString &key)
+{
+    for (int i = entries.size() - 1; i >= 0; --i) {
+        if (entries[i].first.compare(key, Qt::CaseInsensitive) == 0)
+            entries.removeAt(i);
+    }
+}
+
+static void setOptionalEntry(QVector<IniEntry> &entries, const QString &key, const QString &value)
+{
+    if (value.trimmed().isEmpty()) {
+        removeEntry(entries, key);
+        return;
+    }
+    upsertEntry(entries, key, value);
+}
+
+static void setOptionalIntEntry(QVector<IniEntry> &entries, const QString &key, int value)
+{
+    if (value == 0) {
+        removeEntry(entries, key);
+        return;
+    }
+    upsertEntry(entries, key, QString::number(value));
+}
+
+static void setOptionalFloatEntry(QVector<IniEntry> &entries, const QString &key, float value)
+{
+    if (qFuzzyIsNull(value)) {
+        removeEntry(entries, key);
+        return;
+    }
+    upsertEntry(entries, key, QString::number(static_cast<double>(value)));
+}
+
+static void setOptionalVec3Entry(QVector<IniEntry> &entries, const QString &key, const QVector3D &value)
+{
+    if (value.isNull()) {
+        removeEntry(entries, key);
+        return;
+    }
+    upsertEntry(entries, key, vec3ToString(value));
+}
+
 static void applyUniverseNavMapScale(SystemDocument *doc, const QString &filePath)
 {
     if (!doc || filePath.isEmpty())
@@ -222,31 +277,7 @@ std::unique_ptr<SystemDocument> SystemPersistence::load(const QString &filePath)
         // ── Object ──────────────────────────────────────────────────
         if (sectionName == QLatin1String("object")) {
             auto obj = std::make_shared<SolarObject>();
-            obj->setNickname(sec.value(QStringLiteral("nickname")));
-            obj->setArchetype(sec.value(QStringLiteral("archetype")));
-
-            const QString posStr = sec.value(QStringLiteral("pos"));
-            if (!posStr.isEmpty())
-                obj->setPosition(parseVec3(posStr));
-
-            const QString rotStr = sec.value(QStringLiteral("rotate"));
-            if (!rotStr.isEmpty())
-                obj->setRotation(parseVec3(rotStr));
-
-            bool ok = false;
-            int idsName = sec.value(QStringLiteral("ids_name")).toInt(&ok);
-            if (ok) obj->setIdsName(idsName);
-
-            int idsInfo = sec.value(QStringLiteral("ids_info")).toInt(&ok);
-            if (ok) obj->setIdsInfo(idsInfo);
-
-            obj->setBase(sec.value(QStringLiteral("base")));
-            obj->setDockWith(sec.value(QStringLiteral("dock_with")));
-            obj->setGotoTarget(sec.value(QStringLiteral("goto")));
-            obj->setLoadout(sec.value(QStringLiteral("loadout")));
-            obj->setComment(sec.value(QStringLiteral("comment")));
-            obj->setType(detectObjectType(sec));
-
+            applyObjectSection(*obj, sec);
             doc->addObject(std::move(obj));
             continue;
         }
@@ -254,47 +285,7 @@ std::unique_ptr<SystemDocument> SystemPersistence::load(const QString &filePath)
         // ── Zone ────────────────────────────────────────────────────
         if (sectionName == QLatin1String("zone")) {
             auto zone = std::make_shared<ZoneItem>();
-            zone->setNickname(sec.value(QStringLiteral("nickname")));
-
-            const QString posStr = sec.value(QStringLiteral("pos"));
-            if (!posStr.isEmpty())
-                zone->setPosition(parseVec3(posStr));
-
-            const QString sizeStr = sec.value(QStringLiteral("size"));
-            if (!sizeStr.isEmpty())
-                zone->setSize(parseZoneSize(sizeStr));
-
-            const QString rotStr = sec.value(QStringLiteral("rotate"));
-            if (!rotStr.isEmpty())
-                zone->setRotation(parseVec3(rotStr));
-
-            const QString shapeStr = sec.value(QStringLiteral("shape"));
-            if (!shapeStr.isEmpty())
-                zone->setShape(parseShape(shapeStr));
-
-            zone->setZoneType(sec.value(QStringLiteral("zone_type")));
-            zone->setUsage(sec.value(QStringLiteral("usage")));
-            zone->setPopType(sec.value(QStringLiteral("pop_type")));
-            zone->setPathLabel(sec.value(QStringLiteral("path_label")));
-            zone->setComment(sec.value(QStringLiteral("comment")));
-
-            const QString tightStr = sec.value(QStringLiteral("tightness"));
-            if (!tightStr.isEmpty())
-                zone->setTightnessXyz(parseVec3(tightStr));
-
-            bool ok = false;
-            int dmg = sec.value(QStringLiteral("damage")).toInt(&ok);
-            if (ok) zone->setDamage(dmg);
-
-            float interf = sec.value(QStringLiteral("interference")).toFloat(&ok);
-            if (ok) zone->setInterference(interf);
-
-            float drag = sec.value(QStringLiteral("drag_modifier")).toFloat(&ok);
-            if (ok) zone->setDragScale(drag);
-
-            int sort = sec.value(QStringLiteral("sort")).toInt(&ok);
-            if (ok) zone->setSortKey(sort);
-
+            applyZoneSection(*zone, sec);
             doc->addZone(std::move(zone));
             continue;
         }
@@ -322,77 +313,117 @@ static IniSection buildSystemInfo(const SystemDocument &doc)
     return sec;
 }
 
-static IniSection buildObjectSection(const SolarObject &obj)
+IniSection SystemPersistence::serializeObjectSection(const SolarObject &obj)
 {
     IniSection sec;
     sec.name = QStringLiteral("Object");
+    sec.entries = obj.rawEntries();
 
-    sec.entries.append({QStringLiteral("nickname"), obj.nickname()});
-
-    if (obj.idsName() != 0)
-        sec.entries.append({QStringLiteral("ids_name"), QString::number(obj.idsName())});
-    if (obj.idsInfo() != 0)
-        sec.entries.append({QStringLiteral("ids_info"), QString::number(obj.idsInfo())});
-
-    if (!obj.position().isNull())
-        sec.entries.append({QStringLiteral("pos"), vec3ToString(obj.position())});
-    if (!obj.rotation().isNull())
-        sec.entries.append({QStringLiteral("rotate"), vec3ToString(obj.rotation())});
-
-    if (!obj.archetype().isEmpty())
-        sec.entries.append({QStringLiteral("archetype"), obj.archetype()});
-    if (!obj.base().isEmpty())
-        sec.entries.append({QStringLiteral("base"), obj.base()});
-    if (!obj.dockWith().isEmpty())
-        sec.entries.append({QStringLiteral("dock_with"), obj.dockWith()});
-    if (!obj.gotoTarget().isEmpty())
-        sec.entries.append({QStringLiteral("goto"), obj.gotoTarget()});
-    if (!obj.loadout().isEmpty())
-        sec.entries.append({QStringLiteral("loadout"), obj.loadout()});
-    if (!obj.comment().isEmpty())
-        sec.entries.append({QStringLiteral("comment"), obj.comment()});
+    upsertEntry(sec.entries, QStringLiteral("nickname"), obj.nickname());
+    setOptionalIntEntry(sec.entries, QStringLiteral("ids_name"), obj.idsName());
+    setOptionalIntEntry(sec.entries, QStringLiteral("ids_info"), obj.idsInfo());
+    setOptionalVec3Entry(sec.entries, QStringLiteral("pos"), obj.position());
+    setOptionalVec3Entry(sec.entries, QStringLiteral("rotate"), obj.rotation());
+    setOptionalEntry(sec.entries, QStringLiteral("archetype"), obj.archetype());
+    setOptionalEntry(sec.entries, QStringLiteral("base"), obj.base());
+    setOptionalEntry(sec.entries, QStringLiteral("dock_with"), obj.dockWith());
+    setOptionalEntry(sec.entries, QStringLiteral("goto"), obj.gotoTarget());
+    setOptionalEntry(sec.entries, QStringLiteral("loadout"), obj.loadout());
+    setOptionalEntry(sec.entries, QStringLiteral("comment"), obj.comment());
 
     return sec;
 }
 
-static IniSection buildZoneSection(const ZoneItem &zone)
+IniSection SystemPersistence::serializeZoneSection(const ZoneItem &zone)
 {
     IniSection sec;
     sec.name = QStringLiteral("Zone");
+    sec.entries = zone.rawEntries();
 
-    sec.entries.append({QStringLiteral("nickname"), zone.nickname()});
-
-    if (!zone.position().isNull())
-        sec.entries.append({QStringLiteral("pos"), vec3ToString(zone.position())});
-    if (!zone.size().isNull())
-        sec.entries.append({QStringLiteral("size"), vec3ToString(zone.size())});
-    if (!zone.rotation().isNull())
-        sec.entries.append({QStringLiteral("rotate"), vec3ToString(zone.rotation())});
-
-    sec.entries.append({QStringLiteral("shape"), shapeToString(zone.shape())});
-
-    if (!zone.zoneType().isEmpty())
-        sec.entries.append({QStringLiteral("zone_type"), zone.zoneType()});
-    if (!zone.usage().isEmpty())
-        sec.entries.append({QStringLiteral("usage"), zone.usage()});
-    if (!zone.popType().isEmpty())
-        sec.entries.append({QStringLiteral("pop_type"), zone.popType()});
-    if (!zone.pathLabel().isEmpty())
-        sec.entries.append({QStringLiteral("path_label"), zone.pathLabel()});
-    if (!zone.comment().isEmpty())
-        sec.entries.append({QStringLiteral("comment"), zone.comment()});
-    if (!zone.tightnessXyz().isNull())
-        sec.entries.append({QStringLiteral("tightness"), vec3ToString(zone.tightnessXyz())});
-    if (zone.damage() != 0)
-        sec.entries.append({QStringLiteral("damage"), QString::number(zone.damage())});
-    if (zone.interference() != 0.0f)
-        sec.entries.append({QStringLiteral("interference"), QString::number(static_cast<double>(zone.interference()))});
-    if (zone.dragScale() != 0.0f)
-        sec.entries.append({QStringLiteral("drag_modifier"), QString::number(static_cast<double>(zone.dragScale()))});
-    if (zone.sortKey() != 0)
-        sec.entries.append({QStringLiteral("sort"), QString::number(zone.sortKey())});
+    upsertEntry(sec.entries, QStringLiteral("nickname"), zone.nickname());
+    setOptionalVec3Entry(sec.entries, QStringLiteral("pos"), zone.position());
+    setOptionalVec3Entry(sec.entries, QStringLiteral("size"), zone.size());
+    setOptionalVec3Entry(sec.entries, QStringLiteral("rotate"), zone.rotation());
+    upsertEntry(sec.entries, QStringLiteral("shape"), shapeToString(zone.shape()));
+    setOptionalEntry(sec.entries, QStringLiteral("zone_type"), zone.zoneType());
+    setOptionalEntry(sec.entries, QStringLiteral("usage"), zone.usage());
+    setOptionalEntry(sec.entries, QStringLiteral("pop_type"), zone.popType());
+    setOptionalEntry(sec.entries, QStringLiteral("path_label"), zone.pathLabel());
+    setOptionalEntry(sec.entries, QStringLiteral("comment"), zone.comment());
+    setOptionalVec3Entry(sec.entries, QStringLiteral("tightness"), zone.tightnessXyz());
+    setOptionalIntEntry(sec.entries, QStringLiteral("damage"), zone.damage());
+    setOptionalFloatEntry(sec.entries, QStringLiteral("interference"), zone.interference());
+    setOptionalFloatEntry(sec.entries, QStringLiteral("drag_modifier"), zone.dragScale());
+    setOptionalIntEntry(sec.entries, QStringLiteral("sort"), zone.sortKey());
 
     return sec;
+}
+
+void SystemPersistence::applyObjectSection(SolarObject &obj, const IniSection &sec)
+{
+    obj.setRawEntries(sec.entries);
+    obj.setNickname(sec.value(QStringLiteral("nickname")));
+    obj.setArchetype(sec.value(QStringLiteral("archetype")));
+
+    const QString posStr = sec.value(QStringLiteral("pos"));
+    obj.setPosition(posStr.isEmpty() ? QVector3D() : parseVec3(posStr));
+
+    const QString rotStr = sec.value(QStringLiteral("rotate"));
+    obj.setRotation(rotStr.isEmpty() ? QVector3D() : parseVec3(rotStr));
+
+    bool ok = false;
+    const int idsName = sec.value(QStringLiteral("ids_name")).toInt(&ok);
+    obj.setIdsName(ok ? idsName : 0);
+
+    const int idsInfo = sec.value(QStringLiteral("ids_info")).toInt(&ok);
+    obj.setIdsInfo(ok ? idsInfo : 0);
+
+    obj.setBase(sec.value(QStringLiteral("base")));
+    obj.setDockWith(sec.value(QStringLiteral("dock_with")));
+    obj.setGotoTarget(sec.value(QStringLiteral("goto")));
+    obj.setLoadout(sec.value(QStringLiteral("loadout")));
+    obj.setComment(sec.value(QStringLiteral("comment")));
+    obj.setType(detectObjectType(sec));
+}
+
+void SystemPersistence::applyZoneSection(ZoneItem &zone, const IniSection &sec)
+{
+    zone.setRawEntries(sec.entries);
+    zone.setNickname(sec.value(QStringLiteral("nickname")));
+
+    const QString posStr = sec.value(QStringLiteral("pos"));
+    zone.setPosition(posStr.isEmpty() ? QVector3D() : parseVec3(posStr));
+
+    const QString sizeStr = sec.value(QStringLiteral("size"));
+    zone.setSize(sizeStr.isEmpty() ? QVector3D() : parseZoneSize(sizeStr));
+
+    const QString rotStr = sec.value(QStringLiteral("rotate"));
+    zone.setRotation(rotStr.isEmpty() ? QVector3D() : parseVec3(rotStr));
+
+    const QString shapeStr = sec.value(QStringLiteral("shape"));
+    zone.setShape(shapeStr.isEmpty() ? ZoneItem::Sphere : parseShape(shapeStr));
+
+    zone.setZoneType(sec.value(QStringLiteral("zone_type")));
+    zone.setUsage(sec.value(QStringLiteral("usage")));
+    zone.setPopType(sec.value(QStringLiteral("pop_type")));
+    zone.setPathLabel(sec.value(QStringLiteral("path_label")));
+    zone.setComment(sec.value(QStringLiteral("comment")));
+
+    const QString tightStr = sec.value(QStringLiteral("tightness"));
+    zone.setTightnessXyz(tightStr.isEmpty() ? QVector3D() : parseVec3(tightStr));
+
+    bool ok = false;
+    const int dmg = sec.value(QStringLiteral("damage")).toInt(&ok);
+    zone.setDamage(ok ? dmg : 0);
+
+    const float interf = sec.value(QStringLiteral("interference")).toFloat(&ok);
+    zone.setInterference(ok ? interf : 0.0f);
+
+    const float drag = sec.value(QStringLiteral("drag_modifier")).toFloat(&ok);
+    zone.setDragScale(ok ? drag : 0.0f);
+
+    const int sort = sec.value(QStringLiteral("sort")).toInt(&ok);
+    zone.setSortKey(ok ? sort : 0);
 }
 
 bool SystemPersistence::save(const SystemDocument &doc, const QString &filePath)
@@ -404,11 +435,11 @@ bool SystemPersistence::save(const SystemDocument &doc, const QString &filePath)
 
     // [Object] sections
     for (const auto &obj : doc.objects())
-        ini.append(buildObjectSection(*obj));
+        ini.append(serializeObjectSection(*obj));
 
     // [Zone] sections
     for (const auto &zone : doc.zones())
-        ini.append(buildZoneSection(*zone));
+        ini.append(serializeZoneSection(*zone));
 
     // extra sections (LightSource, Ambient, etc.)
     const auto it = s_extras.constFind(&doc);

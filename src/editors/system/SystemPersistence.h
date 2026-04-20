@@ -6,7 +6,7 @@
 #include <QString>
 #include "../../infrastructure/parser/IniParser.h"
 
-namespace flatlas::domain { class SystemDocument; }
+namespace flatlas::domain { class SystemDocument; class SolarObject; class ZoneItem; }
 
 namespace flatlas::editors {
 
@@ -28,6 +28,13 @@ public:
 
     /// Entfernt gespeicherte Extra-Sections (Aufräumen bei Dokumentschließung).
     static void clearExtras(const flatlas::domain::SystemDocument *doc);
+
+    static flatlas::infrastructure::IniSection serializeObjectSection(const flatlas::domain::SolarObject &obj);
+    static flatlas::infrastructure::IniSection serializeZoneSection(const flatlas::domain::ZoneItem &zone);
+    static void applyObjectSection(flatlas::domain::SolarObject &obj,
+                                   const flatlas::infrastructure::IniSection &sec);
+    static void applyZoneSection(flatlas::domain::ZoneItem &zone,
+                                 const flatlas::infrastructure::IniSection &sec);
 
 private:
     static QHash<const flatlas::domain::SystemDocument *,

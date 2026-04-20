@@ -4,6 +4,8 @@
 #include "SystemDisplayFilterDialog.h"
 #include "SystemPersistence.h"
 #include "SystemUndoCommands.h"
+#include "editors/ini/IniCodeEditor.h"
+#include "editors/ini/IniSyntaxHighlighter.h"
 
 #include "core/Config.h"
 #include "core/EditingContext.h"
@@ -34,9 +36,12 @@
 #include <QGroupBox>
 #include <QFrame>
 #include <QFileInfo>
+#include <QDesktopServices>
+#include <QUrl>
 
 using namespace flatlas::domain;
 using namespace flatlas::rendering;
+using namespace flatlas::infrastructure;
 
 namespace flatlas::editors {
 
@@ -113,11 +118,46 @@ void SystemEditorPage::setupUi()
 
     m_splitter = new QSplitter(Qt::Horizontal, this);
 
-    // Object tree (left)
-    m_objectTree = new QTreeWidget(this);
+    auto *leftSidebar = new QWidget(this);
+    auto *leftSidebarLayout = new QVBoxLayout(leftSidebar);
+    leftSidebarLayout->setContentsMargins(0, 0, 0, 0);
+    leftSidebarLayout->setSpacing(0);
+
+    m_leftSidebarSplitter = new QSplitter(Qt::Vertical, leftSidebar);
+    leftSidebarLayout->addWidget(m_leftSidebarSplitter);
+
+    // Object tree (left top)
+    m_objectTree = new QTreeWidget(m_leftSidebarSplitter);
     m_objectTree->setHeaderLabels({tr("Nickname"), tr("Type")});
     m_objectTree->setMinimumWidth(200);
-    m_splitter->addWidget(m_objectTree);
+    m_leftSidebarSplitter->addWidget(m_objectTree);
+
+    auto *iniEditorHost = new QWidget(m_leftSidebarSplitter);
+    auto *iniEditorLayout = new QVBoxLayout(iniEditorHost);
+    iniEditorLayout->setContentsMargins(8, 8, 8, 8);
+    iniEditorLayout->setSpacing(6);
+
+    auto *iniEditorTitle = new QLabel(tr("Objekt-Editor"), iniEditorHost);
+    iniEditorTitle->setStyleSheet(QStringLiteral("font-size:18px; font-weight:600;"));
+    iniEditorLayout->addWidget(iniEditorTitle);
+
+    m_iniEditor = new IniCodeEditor(iniEditorHost);
+    m_iniEditorHighlighter = new IniSyntaxHighlighter(m_iniEditor->document());
+    m_iniEditor->setPlaceholderText(tr("Wähle links ein Objekt oder eine Zone aus."));
+    iniEditorLayout->addWidget(m_iniEditor, 1);
+
+    m_applyIniButton = new QPushButton(tr("Übernehmen"), iniEditorHost);
+    iniEditorLayout->addWidget(m_applyIniButton);
+
+    m_openSystemIniButton = new QPushButton(tr("System ini öffnen"), iniEditorHost);
+    iniEditorLayout->addWidget(m_openSystemIniButton);
+
+    m_leftSidebarSplitter->addWidget(iniEditorHost);
+    m_leftSidebarSplitter->setStretchFactor(0, 1);
+    m_leftSidebarSplitter->setStretchFactor(1, 1);
+    m_leftSidebarSplitter->setSizes({360, 420});
+
+    m_splitter->addWidget(leftSidebar);
 
     // Map view (center)
     m_mapScene = new MapScene(this);
@@ -181,6 +221,8 @@ void SystemEditorPage::setupToolBar()
 void SystemEditorPage::connectSignals()
 {
     connect(m_mapScene, &MapScene::objectSelected, this, &SystemEditorPage::onObjectSelected);
+    connect(m_applyIniButton, &QPushButton::clicked, this, &SystemEditorPage::applyIniEditorChanges);
+    connect(m_openSystemIniButton, &QPushButton::clicked, this, &SystemEditorPage::openSystemIniExternally);
 
     // 3D → 2D selection sync
 
@@ -521,9 +563,12 @@ void SystemEditorPage::setupRightSidebar()
 
 void SystemEditorPage::refreshObjectList()
 {
+    const QString previousSelection = m_selectedNickname;
     m_objectTree->clear();
-    if (!m_document)
+    if (!m_document) {
+        updateIniEditorForSelection();
         return;
+    }
 
     auto *objRoot = new QTreeWidgetItem(m_objectTree, {tr("Objects")});
     objRoot->setExpanded(true);
@@ -546,6 +591,18 @@ void SystemEditorPage::refreshObjectList()
     m_systemStatsLabel->setText(tr("Objekte: %1\nZonen: %2")
                                     .arg(m_document->objects().size())
                                     .arg(m_document->zones().size()));
+    if (!previousSelection.trimmed().isEmpty()) {
+        const QList<QTreeWidgetItem *> matches = m_objectTree->findItems(previousSelection,
+                                                                         Qt::MatchExactly | Qt::MatchRecursive,
+                                                                         0);
+        for (QTreeWidgetItem *match : matches) {
+            if (match->parent()) {
+                m_objectTree->setCurrentItem(match);
+                break;
+            }
+        }
+    }
+    updateIniEditorForSelection(m_objectTree->currentItem() ? m_objectTree->currentItem()->text(0) : QString());
     updateSidebarButtons();
 }
 
@@ -553,6 +610,20 @@ void SystemEditorPage::onObjectSelected(const QString &nickname)
 {
     if (!m_document)
         return;
+
+    m_selectedNickname = nickname;
+
+    if (m_objectTree) {
+        const QList<QTreeWidgetItem *> matches = m_objectTree->findItems(nickname,
+                                                                         Qt::MatchExactly | Qt::MatchRecursive,
+                                                                         0);
+        for (QTreeWidgetItem *match : matches) {
+            if (match->parent() && m_objectTree->currentItem() != match) {
+                m_objectTree->setCurrentItem(match);
+                break;
+            }
+        }
+    }
 
     // Sync 3D selection
     if (m_sceneView3D && m_is3DViewEnabled)
@@ -565,6 +636,7 @@ void SystemEditorPage::onObjectSelected(const QString &nickname)
                 m_objectJumpCombo->setCurrentText(nickname);
             updateSidebarButtons();
             showObjectProperties(obj.get());
+            updateIniEditorForSelection(nickname);
             return;
         }
     }
@@ -575,11 +647,14 @@ void SystemEditorPage::onObjectSelected(const QString &nickname)
                 m_objectJumpCombo->setCurrentText(nickname);
             updateSidebarButtons();
             showZoneProperties(zone.get());
+            updateIniEditorForSelection(nickname);
             return;
         }
     }
 
+    m_selectedNickname.clear();
     updateSelectionSummary();
+    updateIniEditorForSelection();
     updateSidebarButtons();
 }
 
@@ -661,6 +736,7 @@ void SystemEditorPage::onDuplicateSelected()
             dup->setComment(obj->comment());
             dup->setIdsName(obj->idsName());
             dup->setIdsInfo(obj->idsInfo());
+            dup->setRawEntries(obj->rawEntries());
 
             auto *cmd = new AddObjectCommand(m_document.get(), dup,
                                               tr("Duplicate Object"));
@@ -680,6 +756,15 @@ void SystemEditorPage::onDuplicateSelected()
             dup->setRotation(zone->rotation());
             dup->setZoneType(zone->zoneType());
             dup->setComment(zone->comment());
+            dup->setUsage(zone->usage());
+            dup->setPopType(zone->popType());
+            dup->setPathLabel(zone->pathLabel());
+            dup->setTightnessXyz(zone->tightnessXyz());
+            dup->setDamage(zone->damage());
+            dup->setInterference(zone->interference());
+            dup->setDragScale(zone->dragScale());
+            dup->setSortKey(zone->sortKey());
+            dup->setRawEntries(zone->rawEntries());
 
             auto *cmd = new AddZoneCommand(m_document.get(), dup,
                                             tr("Duplicate Zone"));
@@ -700,6 +785,107 @@ void SystemEditorPage::showZoneProperties(ZoneItem *zone)
 {
     Q_UNUSED(zone);
     // TODO Phase 5+: Populate PropertiesPanel with zone data
+}
+
+QString SystemEditorPage::serializeSelectionToIni(const QString &nickname) const
+{
+    if (!m_document || nickname.trimmed().isEmpty())
+        return {};
+
+    for (const auto &obj : m_document->objects()) {
+        if (obj->nickname() == nickname) {
+            IniDocument doc;
+            doc.append(SystemPersistence::serializeObjectSection(*obj));
+            return IniParser::serialize(doc).trimmed();
+        }
+    }
+
+    for (const auto &zone : m_document->zones()) {
+        if (zone->nickname() == nickname) {
+            IniDocument doc;
+            doc.append(SystemPersistence::serializeZoneSection(*zone));
+            return IniParser::serialize(doc).trimmed();
+        }
+    }
+
+    return {};
+}
+
+void SystemEditorPage::updateIniEditorForSelection(const QString &nickname)
+{
+    if (!m_iniEditor || !m_applyIniButton || !m_openSystemIniButton) {
+        return;
+    }
+
+    const QString selected = nickname.trimmed();
+    const QString iniText = serializeSelectionToIni(selected);
+    const bool hasSelection = !iniText.isEmpty();
+
+    m_iniEditor->setPlainText(hasSelection ? iniText : QString());
+    m_iniEditor->setEnabled(hasSelection);
+    m_applyIniButton->setEnabled(hasSelection);
+    m_openSystemIniButton->setEnabled(m_document && !m_document->filePath().trimmed().isEmpty());
+}
+
+void SystemEditorPage::applyIniEditorChanges()
+{
+    if (!m_document || !m_iniEditor)
+        return;
+
+    const QString text = m_iniEditor->toPlainText().trimmed();
+    if (text.isEmpty()) {
+        QMessageBox::warning(this, tr("Leerer Inhalt"),
+                             tr("Der Objekt-Editor enthält keine INI-Section."));
+        return;
+    }
+
+    const IniDocument parsed = IniParser::parseText(text);
+    if (parsed.size() != 1) {
+        QMessageBox::warning(this, tr("Ungültige Section"),
+                             tr("Bitte genau eine [Object]- oder [Zone]-Section einfügen."));
+        return;
+    }
+
+    const IniSection &section = parsed.first();
+    const QString sectionName = section.name.trimmed().toLower();
+    const QString previousNickname = m_selectedNickname;
+
+    if (sectionName == QStringLiteral("object")) {
+        for (const auto &obj : m_document->objects()) {
+            if (obj->nickname() == previousNickname) {
+                SystemPersistence::applyObjectSection(*obj, section);
+                m_document->setDirty(true);
+                m_selectedNickname = obj->nickname();
+                refreshObjectList();
+                onObjectSelected(m_selectedNickname);
+                return;
+            }
+        }
+    }
+
+    if (sectionName == QStringLiteral("zone")) {
+        for (const auto &zone : m_document->zones()) {
+            if (zone->nickname() == previousNickname) {
+                SystemPersistence::applyZoneSection(*zone, section);
+                m_document->setDirty(true);
+                m_selectedNickname = zone->nickname();
+                refreshObjectList();
+                onObjectSelected(m_selectedNickname);
+                return;
+            }
+        }
+    }
+
+    QMessageBox::warning(this, tr("Section passt nicht"),
+                         tr("Die Section passt nicht zum aktuell ausgewählten Eintrag."));
+}
+
+void SystemEditorPage::openSystemIniExternally() const
+{
+    if (!m_document || m_document->filePath().trimmed().isEmpty())
+        return;
+
+    QDesktopServices::openUrl(QUrl::fromLocalFile(m_document->filePath()));
 }
 
 void SystemEditorPage::updateSelectionSummary(const QString &nickname)

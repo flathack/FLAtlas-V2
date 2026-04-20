@@ -2,7 +2,9 @@
 // domain/ZoneItem.h – Zone im System
 
 #include <QObject>
+#include <QPair>
 #include <QString>
+#include <QVector>
 #include <QVector3D>
 
 namespace flatlas::domain {
@@ -66,6 +68,9 @@ public:
     int sortKey() const { return m_sortKey; }
     void setSortKey(int k) { m_sortKey = k; emit changed(); }
 
+    QVector<QPair<QString, QString>> rawEntries() const { return m_rawEntries; }
+    void setRawEntries(const QVector<QPair<QString, QString>> &entries) { m_rawEntries = entries; emit changed(); }
+
 signals:
     void changed();
 
@@ -80,6 +85,7 @@ private:
     QVector3D m_size;
     QVector3D m_rotation;
     QVector3D m_tightnessXyz;
+    QVector<QPair<QString, QString>> m_rawEntries;
     Shape m_shape = Sphere;
     int m_damage = 0;
     float m_interference = 0.0f;
