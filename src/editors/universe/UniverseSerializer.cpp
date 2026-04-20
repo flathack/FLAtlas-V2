@@ -31,9 +31,8 @@ static QString posToString(const QVector3D &v)
     return QStringLiteral("%1, %2").arg(v.x(), 0, 'f', 0).arg(v.z(), 0, 'f', 0);
 }
 
-/// Classify whether an [Object] is a jump gate/hole/alien_gate based on archetype.
-static QString classifyJumpKind(const QString &archetype, const QString &gotoVal,
-                                 const QString &jumpEffect)
+/// Classify an [Object] with goto as gate/hole/other based on archetype.
+static QString classifyJumpKind(const QString &archetype, const QString &gotoVal)
 {
     QString arch = archetype.toLower().trimmed();
 
@@ -47,9 +46,8 @@ static QString classifyJumpKind(const QString &archetype, const QString &gotoVal
         arch.contains(QStringLiteral("jump_hole")))
         return QStringLiteral("hole");
 
-    // Alien gates: have jump_effect + goto but non-standard archetype
-    if (!jumpEffect.isEmpty() && !gotoVal.isEmpty())
-        return QStringLiteral("alien_gate");
+    if (!gotoVal.isEmpty())
+        return QStringLiteral("other");
 
     return {};
 }
@@ -69,19 +67,21 @@ static QVector<JumpConnection> scanSystemConnections(const QString &systemNickna
 
         QString archetype = section.value(QStringLiteral("archetype"));
         QString gotoVal = section.value(QStringLiteral("goto"));
-        QString jumpEffect = section.value(QStringLiteral("jump_effect"));
         QString objNickname = section.value(QStringLiteral("nickname"));
 
-        QString kind = classifyJumpKind(archetype, gotoVal, jumpEffect);
+        QString kind = classifyJumpKind(archetype, gotoVal);
         if (kind.isEmpty())
             continue;
 
         // Determine destination system from goto field: "target_system, target_object, tunnel"
         QString destSystem;
+        QString destObject;
         if (!gotoVal.isEmpty()) {
             QStringList gotoParts = gotoVal.split(QLatin1Char(','));
             if (!gotoParts.isEmpty())
                 destSystem = gotoParts[0].trimmed();
+            if (gotoParts.size() >= 2)
+                destObject = gotoParts[1].trimmed();
         }
 
         // Fallback: parse nickname like "Li01_to_Li02_jumphole"
@@ -101,6 +101,8 @@ static QVector<JumpConnection> scanSystemConnections(const QString &systemNickna
         conn.fromSystem = systemNickname;
         conn.fromObject = objNickname;
         conn.toSystem = destSystem;
+        conn.toObject = destObject;
+        conn.kind = kind;
         result.append(conn);
     }
 
@@ -145,7 +147,7 @@ std::unique_ptr<UniverseData> UniverseSerializer::load(const QString &filePath)
     // baseDir is typically .../DATA/UNIVERSE, so go up one level
     QString dataDir = QFileInfo(baseDir).absolutePath();
 
-    QSet<QPair<QString, QString>> seenEdges; // deduplicate bidirectional connections
+    QSet<QString> seenEdges; // deduplicate bidirectional connections per kind
     for (const auto &sys : universe->systems) {
         QString sysFilePath;
         if (!sys.filePath.isEmpty()) {
@@ -159,10 +161,13 @@ std::unique_ptr<UniverseData> UniverseSerializer::load(const QString &filePath)
 
         auto conns = scanSystemConnections(sys.nickname, sysFilePath);
         for (const auto &conn : conns) {
-            // Deduplicate: only keep one direction per pair
-            auto key = qMakePair(conn.fromSystem.toLower(), conn.toSystem.toLower());
-            auto reverseKey = qMakePair(conn.toSystem.toLower(), conn.fromSystem.toLower());
-            if (!seenEdges.contains(key) && !seenEdges.contains(reverseKey)) {
+            const QString a = conn.fromSystem.toLower();
+            const QString b = conn.toSystem.toLower();
+            const QString left = (a < b) ? a : b;
+            const QString right = (a < b) ? b : a;
+            const QString key = left + QStringLiteral("|") + right +
+                                QStringLiteral("|") + conn.kind.toLower();
+            if (!seenEdges.contains(key)) {
                 seenEdges.insert(key);
                 universe->connections.append(conn);
             }

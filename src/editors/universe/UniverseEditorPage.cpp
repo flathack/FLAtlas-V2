@@ -18,10 +18,14 @@
 #include <QMessageBox>
 #include <QInputDialog>
 #include <QWheelEvent>
+#include <QMouseEvent>
 #include <QAction>
+#include <QDir>
+#include <QFileInfo>
 #include "tools/PathFinderDialog.h"
 #include <cmath>
 #include <algorithm>
+#include <functional>
 
 namespace flatlas::editors {
 
@@ -40,11 +44,28 @@ public:
         setViewportUpdateMode(QGraphicsView::SmartViewportUpdate);
     }
 
+    std::function<void(const QString &)> onNodeDoubleClicked;
+
 protected:
     void wheelEvent(QWheelEvent *event) override
     {
         const double factor = (event->angleDelta().y() > 0) ? 1.15 : 1.0 / 1.15;
         scale(factor, factor);
+    }
+
+    void mouseDoubleClickEvent(QMouseEvent *event) override
+    {
+        if (onNodeDoubleClicked) {
+            auto *item = itemAt(event->pos());
+            // Walk up to find an item tagged with the system nickname.
+            while (item && item->data(0).toString().isEmpty())
+                item = item->parentItem();
+            if (item) {
+                onNodeDoubleClicked(item->data(0).toString());
+                return;
+            }
+        }
+        QGraphicsView::mouseDoubleClickEvent(event);
     }
 };
 
@@ -63,6 +84,7 @@ public:
         setBrush(QBrush(QColor(100, 180, 255)));
         setPen(QPen(QColor(40, 80, 140), 1.5));
         setToolTip(nickname);
+        setData(0, nickname);
         setFlag(QGraphicsItem::ItemIsSelectable, true);
         setZValue(10);
 
@@ -119,7 +141,11 @@ void UniverseEditorPage::setupUi()
     // Map (right panel)
     m_mapScene = new QGraphicsScene(this);
     m_mapScene->setBackgroundBrush(QColor(20, 20, 30));
-    m_mapView = new UniverseMapView(m_mapScene, this);
+    auto *mapView = new UniverseMapView(m_mapScene, this);
+    mapView->onNodeDoubleClicked = [this](const QString &nickname) {
+        onMapItemDoubleClicked(nickname);
+    };
+    m_mapView = mapView;
 
     m_splitter->addWidget(m_systemTree);
     m_splitter->addWidget(m_mapView);
@@ -222,20 +248,21 @@ void UniverseEditorPage::refreshMap()
     const double mapScale = 500.0 / maxCoord;
 
     // Draw system nodes
-    QHash<QString, SystemNodeItem *> nodeMap;
     for (const auto &sys : m_data->systems) {
         double x = sys.position.x() * mapScale;
-        double y = -sys.position.z() * mapScale; // Flip Z for top-down view
+        double y = sys.position.z() * mapScale; // Y increases downward (FL row convention)
         auto *node = new SystemNodeItem(sys.nickname, x, y);
         m_mapScene->addItem(node);
-        nodeMap.insert(sys.nickname.toLower(), node);
     }
 
     drawConnections();
 
-    // Fit view
-    m_mapView->fitInView(m_mapScene->itemsBoundingRect().adjusted(-50, -50, 50, 50),
-                          Qt::KeepAspectRatio);
+    // Fit view after scene is populated
+    QMetaObject::invokeMethod(this, [this]() {
+        if (m_mapView && m_mapScene && !m_mapScene->items().isEmpty())
+            m_mapView->fitInView(m_mapScene->itemsBoundingRect().adjusted(-30, -30, 30, 30),
+                                  Qt::KeepAspectRatio);
+    }, Qt::QueuedConnection);
 }
 
 void UniverseEditorPage::drawConnections()
@@ -254,18 +281,29 @@ void UniverseEditorPage::drawConnections()
     QHash<QString, QPointF> posMap;
     for (const auto &sys : m_data->systems) {
         double x = sys.position.x() * mapScale;
-        double y = -sys.position.z() * mapScale;
+        double y = sys.position.z() * mapScale;
         posMap.insert(sys.nickname.toLower(), QPointF(x, y));
     }
 
-    // Draw connection lines
-    QPen linePen(QColor(80, 120, 180, 160), 1.0);
+    // Color-code connections by kind
+    QPen gatePen(QColor(60, 180, 60, 200), 1.5);      // green = jump gate
+    QPen holePen(QColor(200, 100, 40, 200), 1.2);      // orange = jump hole
+    QPen otherPen(QColor(160, 60, 200, 160), 1.0);     // purple = alien gate / other
+    gatePen.setStyle(Qt::SolidLine);
+    holePen.setStyle(Qt::DashLine);
+    otherPen.setStyle(Qt::DotLine);
+
     for (const auto &conn : m_data->connections) {
         auto fromIt = posMap.find(conn.fromSystem.toLower());
         auto toIt = posMap.find(conn.toSystem.toLower());
         if (fromIt != posMap.end() && toIt != posMap.end()) {
+            QPen pen = otherPen;
+            if (conn.kind == QStringLiteral("gate"))
+                pen = gatePen;
+            else if (conn.kind == QStringLiteral("hole"))
+                pen = holePen;
             auto *line = m_mapScene->addLine(
-                QLineF(fromIt.value(), toIt.value()), linePen);
+                QLineF(fromIt.value(), toIt.value()), pen);
             line->setZValue(1); // Behind nodes
         }
     }
@@ -297,16 +335,20 @@ void UniverseEditorPage::onSystemDoubleClicked(QTreeWidgetItem *item, int)
     if (!item || !m_data) return;
     QString nickname = item->data(0, Qt::UserRole).toString();
     const SystemInfo *sys = m_data->findSystem(nickname);
-    if (sys && !sys->filePath.isEmpty())
-        emit openSystemRequested(sys->nickname, sys->filePath);
+    if (sys && !sys->filePath.isEmpty()) {
+        QString resolved = resolveSystemPath(sys->filePath);
+        emit openSystemRequested(sys->nickname, resolved);
+    }
 }
 
 void UniverseEditorPage::onMapItemDoubleClicked(const QString &nickname)
 {
     if (!m_data) return;
     const SystemInfo *sys = m_data->findSystem(nickname);
-    if (sys && !sys->filePath.isEmpty())
-        emit openSystemRequested(sys->nickname, sys->filePath);
+    if (sys && !sys->filePath.isEmpty()) {
+        QString resolved = resolveSystemPath(sys->filePath);
+        emit openSystemRequested(sys->nickname, resolved);
+    }
 }
 
 // ─── Add / Delete ────────────────────────────────────────
@@ -402,7 +444,7 @@ void UniverseEditorPage::highlightPath(const QStringList &systemPath)
     QHash<QString, QPointF> posMap;
     for (const auto &sys : m_data->systems) {
         double x = sys.position.x() * mapScale;
-        double y = -sys.position.z() * mapScale;
+        double y = sys.position.z() * mapScale;
         posMap.insert(sys.nickname.toLower(), QPointF(x, y));
     }
 
@@ -442,6 +484,19 @@ void UniverseEditorPage::onFindShortestPath()
             this, &UniverseEditorPage::highlightPath);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->show();
+}
+
+QString UniverseEditorPage::resolveSystemPath(const QString &relativePath) const
+{
+    // universe.ini lives in DATA/UNIVERSE; system file paths are relative to DATA
+    QString dataDir = QFileInfo(m_filePath).absolutePath(); // .../DATA/UNIVERSE
+    dataDir = QFileInfo(dataDir).absolutePath();            // .../DATA
+    QString resolved = QDir(dataDir).filePath(relativePath);
+    if (QFileInfo::exists(resolved))
+        return resolved;
+    // Try lowercase
+    resolved = QDir(dataDir).filePath(relativePath.toLower());
+    return resolved;
 }
 
 } // namespace flatlas::editors

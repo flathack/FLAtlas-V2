@@ -21,6 +21,7 @@ struct JumpConnection {
     QString fromObject;
     QString toSystem;
     QString toObject;
+    QString kind = QStringLiteral("other");   // "gate", "hole", or "other"
 };
 
 class UniverseData {

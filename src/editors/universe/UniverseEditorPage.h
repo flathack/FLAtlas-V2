@@ -53,6 +53,7 @@ private:
     void highlightPath(const QStringList &systemPath);
     void clearPathHighlight();
     void onFindShortestPath();
+    QString resolveSystemPath(const QString &relativePath) const;
 
     std::unique_ptr<flatlas::domain::UniverseData> m_data;
     QString m_filePath;
