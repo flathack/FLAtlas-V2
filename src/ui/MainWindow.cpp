@@ -18,6 +18,7 @@
 #include "editors/ids/IdsEditorPage.h"
 #include "editors/modmanager/ModManagerPage.h"
 #include "editors/npc/NpcEditorPage.h"
+#include "editors/infocard/InfocardEditor.h"
 #include "rendering/preview/ModelPreview.h"
 #include "rendering/preview/CharacterPreview.h"
 #include "domain/SystemDocument.h"
@@ -61,6 +62,7 @@ void MainWindow::createMenus()
     fileMenu->addAction(tr("&IDS Editor"), this, [this]() { openIdsEditor(); });
     fileMenu->addAction(tr("&Mod Manager"), this, [this]() { openModManager(); });
     fileMenu->addAction(tr("&NPC Editor"), this, [this]() { openNpcEditor(); });
+    fileMenu->addAction(tr("Info&card Editor"), this, [this]() { openInfocardEditor(); });
     fileMenu->addAction(tr("Open &INI..."), this, [this]() { openIniFile(); });
     fileMenu->addSeparator();
     fileMenu->addAction(tr("&Save"), QKeySequence::Save, this, [this]() { saveCurrentFile(); });
@@ -501,4 +503,21 @@ void MainWindow::openNpcEditor()
     });
 
     statusBar()->showMessage(tr("NPC Editor opened"), 3000);
+}
+
+void MainWindow::openInfocardEditor()
+{
+    auto *editor = new flatlas::editors::InfocardEditor(this);
+
+    int idx = m_centerTabs->addTab(editor, tr("Infocard Editor"));
+    m_centerTabs->setCurrentIndex(idx);
+
+    connect(editor, &flatlas::editors::InfocardEditor::titleChanged,
+            this, [this, editor](const QString &title) {
+        int i = m_centerTabs->indexOf(editor);
+        if (i >= 0)
+            m_centerTabs->setTabText(i, title);
+    });
+
+    statusBar()->showMessage(tr("Infocard Editor opened"), 3000);
 }

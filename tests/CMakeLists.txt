@@ -67,6 +67,9 @@ flatlas_add_test(test_FlightMode      test_FlightMode.cpp      flatlas_rendering
 # Phase 16 Model/Character preview tests
 flatlas_add_test(test_ModelPreview    test_ModelPreview.cpp    flatlas_rendering Qt6::Widgets)
 
+# Phase 17 Infocard editor tests
+flatlas_add_test(test_InfocardEditor  test_InfocardEditor.cpp  flatlas_editors Qt6::Widgets)
+
 # AppConfig is compiled into the FLAtlas executable, not a library.
 # Compile the source directly into the test.
 add_executable(test_AppConfig test_AppConfig.cpp ${CMAKE_SOURCE_DIR}/src/app/AppConfig.cpp)

@@ -40,6 +40,7 @@ private:
     void openIdsEditor();
     void openModManager();
     void openNpcEditor();
+    void openInfocardEditor();
     void saveCurrentSystem();
     void saveCurrentFile();
     void newSystem();
