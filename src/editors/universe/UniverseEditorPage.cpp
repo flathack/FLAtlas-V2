@@ -27,6 +27,7 @@
 #include "tools/PathFinderDialog.h"
 #include <cmath>
 #include <algorithm>
+#include <limits>
 #include <functional>
 #include <QGraphicsSceneMouseEvent>
 #include <QSignalBlocker>
@@ -35,6 +36,8 @@
 #include <QPixmap>
 #include <QWidget>
 #include <QTabBar>
+#include <QPen>
+#include <QBrush>
 
 namespace flatlas::editors {
 
@@ -374,6 +377,7 @@ void UniverseEditorPage::refreshMap()
 {
     m_mapScene->clear();
     m_connectionItems.clear();
+    m_externalConnectionItems.clear();
     m_pathHighlightItems.clear();
     if (!m_data) return;
 
@@ -436,9 +440,13 @@ void UniverseEditorPage::drawConnections()
     QPen gatePen(QColor(90, 170, 255, 210), 1.0);       // blue = jump gate
     QPen holePen(QColor(255, 150, 70, 220), 1.0);      // orange = jump hole
     QPen otherPen(QColor(90, 210, 120, 190), 1.0);     // green = other
+    QPen sectorPen(QColor(190, 110, 255, 220), 1.2);   // purple = external sector link
     gatePen.setStyle(Qt::SolidLine);
     holePen.setStyle(Qt::SolidLine);
     otherPen.setStyle(Qt::SolidLine);
+    sectorPen.setStyle(Qt::SolidLine);
+
+    const QRectF bounds = mapContentRect();
 
     for (const auto &conn : m_data->connections) {
         auto fromIt = posMap.find(conn.fromSystem.toLower());
@@ -453,7 +461,60 @@ void UniverseEditorPage::drawConnections()
                 QLineF(fromIt.value(), toIt.value()), pen);
             line->setZValue(1); // Behind nodes
             m_connectionItems.append(line);
+            continue;
         }
+
+        if (m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0)
+            continue;
+
+        const bool fromVisible = fromIt != posMap.end();
+        const bool toVisible = toIt != posMap.end();
+        if (fromVisible == toVisible)
+            continue;
+
+        const QString visibleNickname = fromVisible ? conn.fromSystem : conn.toSystem;
+        const QString hiddenNickname = fromVisible ? conn.toSystem : conn.fromSystem;
+        const SystemInfo *visibleSys = m_data->findSystem(visibleNickname);
+        const SystemInfo *hiddenSys = m_data->findSystem(hiddenNickname);
+        if (!visibleSys || !hiddenSys)
+            continue;
+
+        const QString targetSector = externalSectorForSystem(*hiddenSys);
+        if (targetSector.isEmpty())
+            continue;
+
+        const QPointF fromPoint = fromVisible ? fromIt.value() : toIt.value();
+        const QPointF hiddenUniversePos(hiddenSys->position.x() * m_mapScale,
+                                        hiddenSys->position.z() * m_mapScale);
+        QPointF edgePoint = connectionEdgePoint(fromPoint, hiddenUniversePos, bounds);
+        if (edgePoint == fromPoint) {
+            QPointF fallback = hiddenUniversePos;
+            if (fallback == fromPoint)
+                fallback += QPointF(1.0, 0.0);
+            edgePoint = connectionEdgePoint(fromPoint, fallback, bounds.adjusted(-40, -40, 40, 40));
+        }
+
+        auto *line = m_mapScene->addLine(QLineF(fromPoint, edgePoint), sectorPen);
+        line->setZValue(1);
+        m_externalConnectionItems.append(line);
+
+        const QString labelText = sectorDisplayName(targetSector);
+        auto *label = m_mapScene->addSimpleText(labelText, QFont(QStringLiteral("Segoe UI"), 7));
+        label->setBrush(QColor(220, 180, 255));
+        label->setZValue(2);
+        QPointF labelPos = edgePoint;
+        const QRectF labelRect = label->boundingRect();
+        const qreal margin = 6.0;
+        if (std::abs(edgePoint.x() - bounds.left()) < 2.0)
+            labelPos += QPointF(margin, -labelRect.height() * 0.5);
+        else if (std::abs(edgePoint.x() - bounds.right()) < 2.0)
+            labelPos += QPointF(-labelRect.width() - margin, -labelRect.height() * 0.5);
+        else if (std::abs(edgePoint.y() - bounds.top()) < 2.0)
+            labelPos += QPointF(-labelRect.width() * 0.5, margin);
+        else
+            labelPos += QPointF(-labelRect.width() * 0.5, -labelRect.height() - margin);
+        label->setPos(labelPos);
+        m_externalConnectionItems.append(label);
     }
 }
 
@@ -664,6 +725,60 @@ void UniverseEditorPage::clearConnectionLines()
         delete item;
     }
     m_connectionItems.clear();
+
+    for (auto *item : m_externalConnectionItems) {
+        if (item)
+            m_mapScene->removeItem(item);
+        delete item;
+    }
+    m_externalConnectionItems.clear();
+}
+
+QString UniverseEditorPage::externalSectorForSystem(const SystemInfo &sys) const
+{
+    QString fallback;
+    for (auto it = sys.sectorPositions.constBegin(); it != sys.sectorPositions.constEnd(); ++it) {
+        if (it.key().compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0)
+            continue;
+        if (it.key().compare(m_activeSector, Qt::CaseInsensitive) != 0)
+            return it.key();
+        fallback = it.key();
+    }
+    return fallback;
+}
+
+QPointF UniverseEditorPage::connectionEdgePoint(const QPointF &from, const QPointF &towards, const QRectF &bounds) const
+{
+    QPointF delta = towards - from;
+    if (std::abs(delta.x()) < 1e-6 && std::abs(delta.y()) < 1e-6)
+        return from;
+
+    double bestT = std::numeric_limits<double>::infinity();
+    QPointF bestPoint = from;
+
+    auto consider = [&](double t, const QPointF &point) {
+        if (t > 0.0 && t < bestT &&
+            point.x() >= bounds.left() - 1.0 && point.x() <= bounds.right() + 1.0 &&
+            point.y() >= bounds.top() - 1.0 && point.y() <= bounds.bottom() + 1.0) {
+            bestT = t;
+            bestPoint = point;
+        }
+    };
+
+    if (std::abs(delta.x()) > 1e-6) {
+        double tLeft = (bounds.left() - from.x()) / delta.x();
+        consider(tLeft, QPointF(bounds.left(), from.y() + delta.y() * tLeft));
+        double tRight = (bounds.right() - from.x()) / delta.x();
+        consider(tRight, QPointF(bounds.right(), from.y() + delta.y() * tRight));
+    }
+    if (std::abs(delta.y()) > 1e-6) {
+        double tTop = (bounds.top() - from.y()) / delta.y();
+        consider(tTop, QPointF(from.x() + delta.x() * tTop, bounds.top()));
+        double tBottom = (bounds.bottom() - from.y()) / delta.y();
+        consider(tBottom, QPointF(from.x() + delta.x() * tBottom, bounds.bottom()));
+    }
+
+    return bestPoint;
 }
 
 bool UniverseEditorPage::systemVisibleInActiveSector(const SystemInfo &sys) const

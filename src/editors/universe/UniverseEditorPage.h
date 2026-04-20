@@ -60,6 +60,8 @@ private:
     void onFindShortestPath();
     QString resolveSystemPath(const QString &relativePath) const;
     void clearConnectionLines();
+    QString externalSectorForSystem(const flatlas::domain::SystemInfo &sys) const;
+    QPointF connectionEdgePoint(const QPointF &from, const QPointF &towards, const QRectF &bounds) const;
     void syncSystemPositionFromMap(const QString &nickname);
     bool systemVisibleInActiveSector(const flatlas::domain::SystemInfo &sys) const;
     QPointF scenePositionForSystem(const flatlas::domain::SystemInfo &sys) const;
@@ -88,6 +90,7 @@ private:
     QGraphicsScene *m_mapScene = nullptr;
     QGraphicsView *m_mapView = nullptr;
     QVector<QGraphicsLineItem *> m_connectionItems;
+    QVector<QGraphicsItem *> m_externalConnectionItems;
     QVector<QGraphicsItem *> m_pathHighlightItems;
     QStringList m_highlightedPath;
     QString m_activeSector = QStringLiteral("universe");
