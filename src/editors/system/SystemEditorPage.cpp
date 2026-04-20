@@ -22,7 +22,9 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
+#include <QScrollArea>
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QToolBar>
 #include <QTreeWidget>
 #include <QAction>
@@ -34,9 +36,11 @@
 #include <QPushButton>
 #include <QComboBox>
 #include <QGroupBox>
+#include <QSet>
 #include <QFrame>
 #include <QFileInfo>
 #include <QDesktopServices>
+#include <QSignalBlocker>
 #include <QUrl>
 
 using namespace flatlas::domain;
@@ -103,6 +107,16 @@ SystemEditorPage::SystemEditorPage(QWidget *parent)
 
 SystemEditorPage::~SystemEditorPage()
 {
+    m_isShuttingDown = true;
+    if (m_mapScene)
+        disconnect(m_mapScene, nullptr, this, nullptr);
+    if (m_mapView)
+        disconnect(m_mapView, nullptr, this, nullptr);
+    if (m_objectTree)
+        disconnect(m_objectTree, nullptr, this, nullptr);
+    if (m_sceneView3D)
+        disconnect(m_sceneView3D, nullptr, this, nullptr);
+
     if (m_document)
         SystemPersistence::clearExtras(m_document.get());
 }
@@ -129,19 +143,39 @@ void SystemEditorPage::setupUi()
     // Object tree (left top)
     m_objectTree = new QTreeWidget(m_leftSidebarSplitter);
     m_objectTree->setHeaderLabels({tr("Nickname"), tr("Type")});
+    m_objectTree->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_objectTree->setMinimumWidth(200);
     m_leftSidebarSplitter->addWidget(m_objectTree);
 
-    auto *iniEditorHost = new QWidget(m_leftSidebarSplitter);
-    auto *iniEditorLayout = new QVBoxLayout(iniEditorHost);
-    iniEditorLayout->setContentsMargins(8, 8, 8, 8);
-    iniEditorLayout->setSpacing(6);
+    auto *editorHost = new QWidget(m_leftSidebarSplitter);
+    auto *editorLayout = new QVBoxLayout(editorHost);
+    editorLayout->setContentsMargins(8, 8, 8, 8);
+    editorLayout->setSpacing(6);
 
-    auto *iniEditorTitle = new QLabel(tr("Objekt-Editor"), iniEditorHost);
+    auto *iniEditorTitle = new QLabel(tr("Objekt-Editor"), editorHost);
     iniEditorTitle->setStyleSheet(QStringLiteral("font-size:18px; font-weight:600;"));
-    iniEditorLayout->addWidget(iniEditorTitle);
+    editorLayout->addWidget(iniEditorTitle);
 
-    m_iniEditor = new IniCodeEditor(iniEditorHost);
+    m_editorStack = new QStackedWidget(editorHost);
+    editorLayout->addWidget(m_editorStack, 1);
+    m_emptyEditorPage = new QWidget(m_editorStack);
+    auto *emptyLayout = new QVBoxLayout(m_emptyEditorPage);
+    emptyLayout->setContentsMargins(0, 0, 0, 0);
+    emptyLayout->setSpacing(6);
+    m_emptyEditorLabel = new QLabel(tr("Wähle links ein Objekt oder eine Zone aus."), m_emptyEditorPage);
+    m_emptyEditorLabel->setWordWrap(true);
+    m_emptyEditorLabel->setStyleSheet(QStringLiteral("color:#9ca3af; padding:6px 2px;"));
+    emptyLayout->addWidget(m_emptyEditorLabel);
+    emptyLayout->addStretch(1);
+    m_editorStack->addWidget(m_emptyEditorPage);
+
+    m_singleEditorPage = new QWidget(m_editorStack);
+    auto *singleEditorLayout = new QVBoxLayout(m_singleEditorPage);
+    singleEditorLayout->setContentsMargins(0, 0, 0, 0);
+    singleEditorLayout->setSpacing(6);
+    auto *iniEditorHost = editorHost;
+    auto *iniEditorLayout = singleEditorLayout;
+    m_iniEditor = new IniCodeEditor(editorHost);
     m_iniEditorHighlighter = new IniSyntaxHighlighter(m_iniEditor->document());
     m_iniEditor->setPlaceholderText(tr("Wähle links ein Objekt oder eine Zone aus."));
     iniEditorLayout->addWidget(m_iniEditor, 1);
@@ -151,6 +185,26 @@ void SystemEditorPage::setupUi()
 
     m_openSystemIniButton = new QPushButton(tr("System ini öffnen"), iniEditorHost);
     iniEditorLayout->addWidget(m_openSystemIniButton);
+    m_editorStack->addWidget(m_singleEditorPage);
+
+    m_multiSelectionPage = new QWidget(m_editorStack);
+    auto *multiLayout = new QVBoxLayout(m_multiSelectionPage);
+    multiLayout->setContentsMargins(0, 0, 0, 0);
+    multiLayout->setSpacing(6);
+    m_multiSelectionLabel = new QLabel(tr("Mehrfachauswahl"), m_multiSelectionPage);
+    m_multiSelectionLabel->setStyleSheet(QStringLiteral("font-size:15px; font-weight:600;"));
+    multiLayout->addWidget(m_multiSelectionLabel);
+    m_multiSelectionScrollArea = new QScrollArea(m_multiSelectionPage);
+    m_multiSelectionScrollArea->setWidgetResizable(true);
+    m_multiSelectionScrollArea->setFrameShape(QFrame::NoFrame);
+    m_multiSelectionListHost = new QWidget(m_multiSelectionScrollArea);
+    m_multiSelectionListLayout = new QVBoxLayout(m_multiSelectionListHost);
+    m_multiSelectionListLayout->setContentsMargins(0, 0, 0, 0);
+    m_multiSelectionListLayout->setSpacing(6);
+    m_multiSelectionListLayout->addStretch(1);
+    m_multiSelectionScrollArea->setWidget(m_multiSelectionListHost);
+    multiLayout->addWidget(m_multiSelectionScrollArea, 1);
+    m_editorStack->addWidget(m_multiSelectionPage);
 
     m_leftSidebarSplitter->addWidget(iniEditorHost);
     m_leftSidebarSplitter->setStretchFactor(0, 1);
@@ -220,19 +274,15 @@ void SystemEditorPage::setupToolBar()
 
 void SystemEditorPage::connectSignals()
 {
-    connect(m_mapScene, &MapScene::objectSelected, this, &SystemEditorPage::onObjectSelected);
+    connect(m_mapScene, &MapScene::selectionNicknamesChanged, this, &SystemEditorPage::onCanvasSelectionChanged);
     connect(m_applyIniButton, &QPushButton::clicked, this, &SystemEditorPage::applyIniEditorChanges);
     connect(m_openSystemIniButton, &QPushButton::clicked, this, &SystemEditorPage::openSystemIniExternally);
+    connect(m_mapView, &SystemMapView::itemsMoved, this, &SystemEditorPage::onItemsMoved);
 
     // 3D → 2D selection sync
 
-    connect(m_objectTree, &QTreeWidget::currentItemChanged,
-            this, [this](QTreeWidgetItem *current, QTreeWidgetItem *) {
-        if (!current || !m_document)
-            return;
-        const QString nickname = current->text(0);
-        onObjectSelected(nickname);
-    });
+    connect(m_objectTree, &QTreeWidget::itemSelectionChanged,
+            this, &SystemEditorPage::onTreeSelectionChanged);
 }
 
 bool SystemEditorPage::loadFile(const QString &filePath)
@@ -242,6 +292,7 @@ bool SystemEditorPage::loadFile(const QString &filePath)
         return false;
 
     m_document = std::move(doc);
+    m_selectedNicknames.clear();
     loadDisplayFilterSettings();
     m_mapScene->loadDocument(m_document.get());
     m_mapView->setSystemName(m_document->name());
@@ -261,6 +312,7 @@ void SystemEditorPage::setDocument(std::unique_ptr<SystemDocument> doc)
     if (m_document)
         SystemPersistence::clearExtras(m_document.get());
     m_document = std::move(doc);
+    m_selectedNicknames.clear();
     loadDisplayFilterSettings();
     m_mapScene->loadDocument(m_document.get());
     m_mapView->setSystemName(m_document->name());
@@ -309,7 +361,10 @@ void SystemEditorPage::ensureSceneView3D()
 
     m_sceneView3D = new SceneView3D(m_rightSidebar);
 
-    connect(m_sceneView3D, &SceneView3D::objectSelected, this, &SystemEditorPage::onObjectSelected);
+    connect(m_sceneView3D, &SceneView3D::objectSelected,
+            this, [this](const QString &nickname) {
+        onCanvasSelectionChanged({nickname});
+    });
 }
 
 void SystemEditorPage::set3DViewEnabled(bool enabled)
@@ -335,6 +390,12 @@ void SystemEditorPage::openDisplayFilterDialog()
     saveDisplayFilterSettings();
     if (m_mapView)
         m_mapView->setDisplayFilterSettings(m_displayFilterSettings);
+    pruneSelectionByCurrentFilter();
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+    updateIniEditorForSelection();
+    updateSidebarButtons();
 }
 
 void SystemEditorPage::loadDisplayFilterSettings()
@@ -563,7 +624,7 @@ void SystemEditorPage::setupRightSidebar()
 
 void SystemEditorPage::refreshObjectList()
 {
-    const QString previousSelection = m_selectedNickname;
+    const QStringList previousSelection = m_selectedNicknames;
     m_objectTree->clear();
     if (!m_document) {
         updateIniEditorForSelection();
@@ -571,6 +632,7 @@ void SystemEditorPage::refreshObjectList()
     }
 
     auto *objRoot = new QTreeWidgetItem(m_objectTree, {tr("Objects")});
+    objRoot->setFlags(objRoot->flags() & ~Qt::ItemIsSelectable);
     objRoot->setExpanded(true);
     for (const auto &obj : m_document->objects()) {
         auto *item = new QTreeWidgetItem(objRoot);
@@ -579,6 +641,7 @@ void SystemEditorPage::refreshObjectList()
     }
 
     auto *zoneRoot = new QTreeWidgetItem(m_objectTree, {tr("Zones")});
+    zoneRoot->setFlags(zoneRoot->flags() & ~Qt::ItemIsSelectable);
     zoneRoot->setExpanded(true);
     for (const auto &zone : m_document->zones()) {
         auto *item = new QTreeWidgetItem(zoneRoot);
@@ -591,68 +654,69 @@ void SystemEditorPage::refreshObjectList()
     m_systemStatsLabel->setText(tr("Objekte: %1\nZonen: %2")
                                     .arg(m_document->objects().size())
                                     .arg(m_document->zones().size()));
-    if (!previousSelection.trimmed().isEmpty()) {
-        const QList<QTreeWidgetItem *> matches = m_objectTree->findItems(previousSelection,
-                                                                         Qt::MatchExactly | Qt::MatchRecursive,
-                                                                         0);
-        for (QTreeWidgetItem *match : matches) {
-            if (match->parent()) {
-                m_objectTree->setCurrentItem(match);
+    syncTreeSelectionFromNicknames(previousSelection);
+    if (m_mapScene)
+        syncSceneSelectionFromNicknames(previousSelection);
+    updateIniEditorForSelection();
+    updateSidebarButtons();
+    updateSelectionSummary();
+}
+
+void SystemEditorPage::onCanvasSelectionChanged(const QStringList &nicknames)
+{
+    if (m_isShuttingDown)
+        return;
+    m_selectedNicknames = nicknames;
+    pruneSelectionByCurrentFilter();
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+
+    const QString primaryNickname = primarySelectedNickname();
+    if (m_sceneView3D && m_is3DViewEnabled && m_selectedNicknames.size() == 1)
+        m_sceneView3D->selectObject(primaryNickname);
+
+    if (m_objectJumpCombo && !primaryNickname.isEmpty())
+        m_objectJumpCombo->setCurrentText(primaryNickname);
+
+    if (m_document && m_selectedNicknames.size() == 1) {
+        for (const auto &obj : m_document->objects()) {
+            if (obj->nickname() == primaryNickname) {
+                showObjectProperties(obj.get());
+                break;
+            }
+        }
+        for (const auto &zone : m_document->zones()) {
+            if (zone->nickname() == primaryNickname) {
+                showZoneProperties(zone.get());
                 break;
             }
         }
     }
-    updateIniEditorForSelection(m_objectTree->currentItem() ? m_objectTree->currentItem()->text(0) : QString());
+
+    updateSelectionSummary();
+    updateIniEditorForSelection();
     updateSidebarButtons();
 }
 
-void SystemEditorPage::onObjectSelected(const QString &nickname)
+void SystemEditorPage::onTreeSelectionChanged()
 {
-    if (!m_document)
+    if (m_isShuttingDown)
         return;
-
-    m_selectedNickname = nickname;
-
-    if (m_objectTree) {
-        const QList<QTreeWidgetItem *> matches = m_objectTree->findItems(nickname,
-                                                                         Qt::MatchExactly | Qt::MatchRecursive,
-                                                                         0);
-        for (QTreeWidgetItem *match : matches) {
-            if (match->parent() && m_objectTree->currentItem() != match) {
-                m_objectTree->setCurrentItem(match);
-                break;
-            }
-        }
+    QStringList nicknames;
+    const auto selectedItems = m_objectTree->selectedItems();
+    nicknames.reserve(selectedItems.size());
+    for (QTreeWidgetItem *item : selectedItems) {
+        if (item && item->parent())
+            nicknames.append(item->text(0));
     }
+    nicknames.removeDuplicates();
 
-    // Sync 3D selection
-    if (m_sceneView3D && m_is3DViewEnabled)
-        m_sceneView3D->selectObject(nickname);
+    m_selectedNicknames = nicknames;
+    pruneSelectionByCurrentFilter();
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
 
-    for (const auto &obj : m_document->objects()) {
-        if (obj->nickname() == nickname) {
-            updateSelectionSummary(nickname);
-            if (m_objectJumpCombo)
-                m_objectJumpCombo->setCurrentText(nickname);
-            updateSidebarButtons();
-            showObjectProperties(obj.get());
-            updateIniEditorForSelection(nickname);
-            return;
-        }
-    }
-    for (const auto &zone : m_document->zones()) {
-        if (zone->nickname() == nickname) {
-            updateSelectionSummary(nickname);
-            if (m_objectJumpCombo)
-                m_objectJumpCombo->setCurrentText(nickname);
-            updateSidebarButtons();
-            showZoneProperties(zone.get());
-            updateIniEditorForSelection(nickname);
-            return;
-        }
-    }
+    if (m_sceneView3D && m_is3DViewEnabled && m_selectedNicknames.size() == 1)
+        m_sceneView3D->selectObject(primarySelectedNickname());
 
-    m_selectedNickname.clear();
     updateSelectionSummary();
     updateIniEditorForSelection();
     updateSidebarButtons();
@@ -681,45 +745,46 @@ void SystemEditorPage::onAddObject()
 
 void SystemEditorPage::onDeleteSelected()
 {
-    if (!m_document || !m_objectTree->currentItem())
+    if (!m_document || m_selectedNicknames.isEmpty())
         return;
 
-    auto *item = m_objectTree->currentItem();
-    if (!item->parent())
-        return; // root node
-
-    const QString nickname = item->text(0);
-
-    // Try objects first
-    for (const auto &obj : m_document->objects()) {
-        if (obj->nickname() == nickname) {
-            auto *cmd = new RemoveObjectCommand(m_document.get(), obj);
-            flatlas::core::UndoManager::instance().push(cmd);
-            refreshObjectList();
-            return;
+    QVector<std::shared_ptr<SolarObject>> objectsToRemove;
+    QVector<std::shared_ptr<ZoneItem>> zonesToRemove;
+    for (const QString &nickname : m_selectedNicknames) {
+        for (const auto &obj : m_document->objects()) {
+            if (obj->nickname() == nickname) {
+                objectsToRemove.append(obj);
+                break;
+            }
+        }
+        for (const auto &zone : m_document->zones()) {
+            if (zone->nickname() == nickname) {
+                zonesToRemove.append(zone);
+                break;
+            }
         }
     }
-    // Try zones
-    for (const auto &zone : m_document->zones()) {
-        if (zone->nickname() == nickname) {
-            auto *cmd = new RemoveZoneCommand(m_document.get(), zone);
-            flatlas::core::UndoManager::instance().push(cmd);
-            refreshObjectList();
-            return;
-        }
-    }
+
+    if (objectsToRemove.isEmpty() && zonesToRemove.isEmpty())
+        return;
+
+    auto *stack = flatlas::core::UndoManager::instance().stack();
+    stack->beginMacro(tr("Delete Selection"));
+    for (const auto &obj : objectsToRemove)
+        stack->push(new RemoveObjectCommand(m_document.get(), obj));
+    for (const auto &zone : zonesToRemove)
+        stack->push(new RemoveZoneCommand(m_document.get(), zone));
+    stack->endMacro();
+
+    m_selectedNicknames.clear();
+    refreshObjectList();
 }
 
 void SystemEditorPage::onDuplicateSelected()
 {
-    if (!m_document || !m_objectTree->currentItem())
+    if (!m_document || m_selectedNicknames.size() != 1)
         return;
-
-    auto *item = m_objectTree->currentItem();
-    if (!item->parent())
-        return;
-
-    const QString nickname = item->text(0);
+    const QString nickname = m_selectedNicknames.first();
 
     for (const auto &obj : m_document->objects()) {
         if (obj->nickname() == nickname) {
@@ -787,10 +852,11 @@ void SystemEditorPage::showZoneProperties(ZoneItem *zone)
     // TODO Phase 5+: Populate PropertiesPanel with zone data
 }
 
-QString SystemEditorPage::serializeSelectionToIni(const QString &nickname) const
+QString SystemEditorPage::serializeSelectionToIni() const
 {
-    if (!m_document || nickname.trimmed().isEmpty())
+    if (!m_document || m_selectedNicknames.size() != 1)
         return {};
+    const QString nickname = m_selectedNicknames.first().trimmed();
 
     for (const auto &obj : m_document->objects()) {
         if (obj->nickname() == nickname) {
@@ -811,20 +877,195 @@ QString SystemEditorPage::serializeSelectionToIni(const QString &nickname) const
     return {};
 }
 
-void SystemEditorPage::updateIniEditorForSelection(const QString &nickname)
+void SystemEditorPage::updateIniEditorForSelection()
 {
-    if (!m_iniEditor || !m_applyIniButton || !m_openSystemIniButton) {
+    if (m_isShuttingDown)
+        return;
+    if (!m_editorStack || !m_iniEditor || !m_applyIniButton || !m_openSystemIniButton) {
         return;
     }
 
-    const QString selected = nickname.trimmed();
-    const QString iniText = serializeSelectionToIni(selected);
+    const QString iniText = serializeSelectionToIni();
     const bool hasSelection = !iniText.isEmpty();
 
     m_iniEditor->setPlainText(hasSelection ? iniText : QString());
     m_iniEditor->setEnabled(hasSelection);
     m_applyIniButton->setEnabled(hasSelection);
+    if (!hasSelection) {
+        if (m_selectedNicknames.isEmpty())
+            m_iniEditor->setPlaceholderText(tr("Wähle links ein Objekt oder eine Zone aus."));
+        else
+            m_iniEditor->setPlaceholderText(tr("Mehrfachauswahl aktiv. Der Objekt-Editor unterstützt nur genau einen Eintrag."));
+    }
     m_openSystemIniButton->setEnabled(m_document && !m_document->filePath().trimmed().isEmpty());
+    updateEditorModeUi();
+}
+
+void SystemEditorPage::updateEditorModeUi()
+{
+    if (m_isShuttingDown)
+        return;
+    if (!m_editorStack)
+        return;
+
+    if (m_selectedNicknames.isEmpty()) {
+        if (m_emptyEditorLabel)
+            m_emptyEditorLabel->setText(tr("Wähle links ein Objekt oder eine Zone aus."));
+        m_editorStack->setCurrentWidget(m_emptyEditorPage);
+        return;
+    }
+
+    if (m_selectedNicknames.size() == 1) {
+        m_editorStack->setCurrentWidget(m_singleEditorPage);
+        return;
+    }
+
+    if (m_multiSelectionLabel) {
+        m_multiSelectionLabel->setText(tr("%1 markierte Einträge").arg(m_selectedNicknames.size()));
+    }
+    rebuildMultiSelectionEditorList();
+    m_editorStack->setCurrentWidget(m_multiSelectionPage);
+}
+
+void SystemEditorPage::rebuildMultiSelectionEditorList()
+{
+    if (m_isShuttingDown)
+        return;
+    if (!m_multiSelectionListLayout)
+        return;
+
+    while (m_multiSelectionListLayout->count() > 1) {
+        QLayoutItem *item = m_multiSelectionListLayout->takeAt(0);
+        if (!item)
+            continue;
+        if (QWidget *widget = item->widget())
+            delete widget;
+        delete item;
+    }
+
+    for (const QString &nickname : m_selectedNicknames) {
+        QString kindText = tr("Objekt");
+        if (m_document) {
+            for (const auto &zone : m_document->zones()) {
+                if (zone->nickname() == nickname) {
+                    kindText = tr("Zone");
+                    break;
+                }
+            }
+        }
+        m_multiSelectionListLayout->insertWidget(m_multiSelectionListLayout->count() - 1,
+                                                 buildMultiSelectionRow(nickname, kindText));
+    }
+}
+
+QWidget *SystemEditorPage::buildMultiSelectionRow(const QString &nickname, const QString &kindText)
+{
+    auto *row = new QFrame(m_multiSelectionListHost);
+    row->setFrameShape(QFrame::StyledPanel);
+    row->setStyleSheet(QStringLiteral("QFrame { border: 1px solid #2a3444; border-radius: 4px; background:#131a24; }"));
+    auto *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(8, 6, 8, 6);
+    layout->setSpacing(8);
+
+    auto *textHost = new QWidget(row);
+    auto *textLayout = new QVBoxLayout(textHost);
+    textLayout->setContentsMargins(0, 0, 0, 0);
+    textLayout->setSpacing(2);
+    auto *title = new QLabel(nickname, textHost);
+    title->setStyleSheet(QStringLiteral("font-weight:600;"));
+    auto *subtitle = new QLabel(kindText, textHost);
+    subtitle->setStyleSheet(QStringLiteral("color:#9ca3af; font-size:11px;"));
+    textLayout->addWidget(title);
+    textLayout->addWidget(subtitle);
+    layout->addWidget(textHost, 1);
+
+    auto *removeButton = new QPushButton(tr("Aus Auswahl"), row);
+    removeButton->setMinimumHeight(26);
+    connect(removeButton, &QPushButton::clicked, this, [this, nickname]() {
+        removeNicknameFromSelection(nickname);
+    });
+    layout->addWidget(removeButton);
+
+    return row;
+}
+
+void SystemEditorPage::removeNicknameFromSelection(const QString &nickname)
+{
+    if (m_isShuttingDown)
+        return;
+    m_selectedNicknames.removeAll(nickname);
+    m_selectedNicknames.removeDuplicates();
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+    updateIniEditorForSelection();
+    updateSidebarButtons();
+}
+
+void SystemEditorPage::pruneSelectionByCurrentFilter()
+{
+    if (!m_document)
+        return;
+
+    QStringList filtered;
+    filtered.reserve(m_selectedNicknames.size());
+    for (const QString &nickname : m_selectedNicknames) {
+        if (isNicknameVisibleUnderCurrentFilter(nickname))
+            filtered.append(nickname);
+    }
+    filtered.removeDuplicates();
+    m_selectedNicknames = filtered;
+}
+
+bool SystemEditorPage::isNicknameVisibleUnderCurrentFilter(const QString &nickname) const
+{
+    if (!m_document)
+        return false;
+
+    for (const auto &obj : m_document->objects()) {
+        if (obj->nickname() == nickname)
+            return isObjectVisibleUnderCurrentFilter(*obj);
+    }
+    for (const auto &zone : m_document->zones()) {
+        if (zone->nickname() == nickname)
+            return isZoneVisibleUnderCurrentFilter(*zone);
+    }
+    return false;
+}
+
+bool SystemEditorPage::isObjectVisibleUnderCurrentFilter(const SolarObject &obj) const
+{
+    SolarObjectDisplayContext context;
+    context.nickname = obj.nickname();
+    context.archetype = obj.archetype();
+    context.type = obj.type();
+
+    bool visible = m_displayFilterSettings.objectVisibleForType(obj.type());
+    for (const SystemDisplayFilterRule &rule : m_displayFilterSettings.rules) {
+        if (!matchesDisplayFilterRule(rule, context))
+            continue;
+        if (rule.target == DisplayFilterTarget::Label)
+            continue;
+        visible = (rule.action == DisplayFilterAction::Show);
+    }
+    return visible;
+}
+
+bool SystemEditorPage::isZoneVisibleUnderCurrentFilter(const ZoneItem &zone) const
+{
+    SolarObjectDisplayContext context;
+    context.nickname = zone.nickname();
+    context.typeNameOverride = QStringLiteral("Zone");
+
+    bool visible = true;
+    for (const SystemDisplayFilterRule &rule : m_displayFilterSettings.rules) {
+        if (!matchesDisplayFilterRule(rule, context))
+            continue;
+        if (rule.target == DisplayFilterTarget::Label)
+            continue;
+        visible = (rule.action == DisplayFilterAction::Show);
+    }
+    return visible;
 }
 
 void SystemEditorPage::applyIniEditorChanges()
@@ -848,16 +1089,22 @@ void SystemEditorPage::applyIniEditorChanges()
 
     const IniSection &section = parsed.first();
     const QString sectionName = section.name.trimmed().toLower();
-    const QString previousNickname = m_selectedNickname;
+    if (m_selectedNicknames.size() != 1) {
+        QMessageBox::information(this, tr("Mehrfachauswahl"),
+                                 tr("Der Objekt-Editor kann nur genau einen Eintrag gleichzeitig bearbeiten."));
+        return;
+    }
+
+    const QString previousNickname = m_selectedNicknames.first();
 
     if (sectionName == QStringLiteral("object")) {
         for (const auto &obj : m_document->objects()) {
             if (obj->nickname() == previousNickname) {
                 SystemPersistence::applyObjectSection(*obj, section);
                 m_document->setDirty(true);
-                m_selectedNickname = obj->nickname();
+                m_selectedNicknames = {obj->nickname()};
                 refreshObjectList();
-                onObjectSelected(m_selectedNickname);
+                onCanvasSelectionChanged(m_selectedNicknames);
                 return;
             }
         }
@@ -868,9 +1115,9 @@ void SystemEditorPage::applyIniEditorChanges()
             if (zone->nickname() == previousNickname) {
                 SystemPersistence::applyZoneSection(*zone, section);
                 m_document->setDirty(true);
-                m_selectedNickname = zone->nickname();
+                m_selectedNicknames = {zone->nickname()};
                 refreshObjectList();
-                onObjectSelected(m_selectedNickname);
+                onCanvasSelectionChanged(m_selectedNicknames);
                 return;
             }
         }
@@ -888,27 +1135,40 @@ void SystemEditorPage::openSystemIniExternally() const
     QDesktopServices::openUrl(QUrl::fromLocalFile(m_document->filePath()));
 }
 
-void SystemEditorPage::updateSelectionSummary(const QString &nickname)
+void SystemEditorPage::updateSelectionSummary()
 {
+    if (m_isShuttingDown)
+        return;
     if (!m_selectionTitleLabel || !m_selectionSubtitleLabel || !m_document) {
         if (m_selectionTitleLabel)
             m_selectionTitleLabel->setText(tr("Kein Objekt ausgewählt"));
         if (m_selectionSubtitleLabel)
             m_selectionSubtitleLabel->setText(tr("Wähle ein Objekt oder eine Zone in der Karte oder Liste aus."));
+        emit selectionStatusChanged(tr("0 Objekte markiert"));
         return;
     }
 
-    if (nickname.trimmed().isEmpty()) {
+    if (m_selectedNicknames.isEmpty()) {
         m_selectionTitleLabel->setText(tr("Kein Objekt ausgewählt"));
         m_selectionSubtitleLabel->setText(tr("Wähle ein Objekt oder eine Zone in der Karte oder Liste aus."));
+        emit selectionStatusChanged(tr("0 Objekte markiert"));
         return;
     }
 
+    if (m_selectedNicknames.size() > 1) {
+        m_selectionTitleLabel->setText(tr("%1 Objekte markiert").arg(m_selectedNicknames.size()));
+        m_selectionSubtitleLabel->setText(tr("Mehrfachauswahl aktiv. Bearbeiten und Löschen wirken auf die aktuelle Auswahl."));
+        emit selectionStatusChanged(tr("%1 Objekte markiert").arg(m_selectedNicknames.size()));
+        return;
+    }
+
+    const QString nickname = m_selectedNicknames.first();
     for (const auto &obj : m_document->objects()) {
         if (obj->nickname() == nickname) {
             m_selectionTitleLabel->setText(obj->nickname());
             m_selectionSubtitleLabel->setText(tr("Objekt · %1")
                                                   .arg(QString::fromLatin1(QMetaEnum::fromType<SolarObject::Type>().valueToKey(obj->type()))));
+            emit selectionStatusChanged(tr("1 Objekt markiert"));
             return;
         }
     }
@@ -918,22 +1178,27 @@ void SystemEditorPage::updateSelectionSummary(const QString &nickname)
             m_selectionTitleLabel->setText(zone->nickname());
             const QString zoneType = zone->zoneType().trimmed().isEmpty() ? tr("Zone") : zone->zoneType().trimmed();
             m_selectionSubtitleLabel->setText(tr("Zone · %1").arg(zoneType));
+            emit selectionStatusChanged(tr("1 Objekt markiert"));
             return;
         }
     }
 
     m_selectionTitleLabel->setText(tr("Kein Objekt ausgewählt"));
     m_selectionSubtitleLabel->setText(tr("Wähle ein Objekt oder eine Zone in der Karte oder Liste aus."));
+    emit selectionStatusChanged(tr("0 Objekte markiert"));
 }
 
 void SystemEditorPage::updateSidebarButtons()
 {
-    const QString selectedNickname = m_objectTree && m_objectTree->currentItem() ? m_objectTree->currentItem()->text(0) : QString();
+    if (m_isShuttingDown)
+        return;
+    const QString selectedNickname = primarySelectedNickname();
+    const bool hasSingleSelection = m_selectedNicknames.size() == 1;
     bool isObject = false;
     bool isZone = false;
     SolarObject::Type objectType = SolarObject::Other;
 
-    if (m_document) {
+    if (m_document && hasSingleSelection) {
         for (const auto &obj : m_document->objects()) {
             if (obj->nickname() == selectedNickname) {
                 isObject = true;
@@ -952,19 +1217,19 @@ void SystemEditorPage::updateSidebarButtons()
     }
 
     if (m_editTradelaneButton)
-        m_editTradelaneButton->setEnabled(isObject && objectType == SolarObject::TradeLane);
+        m_editTradelaneButton->setEnabled(hasSingleSelection && isObject && objectType == SolarObject::TradeLane);
     if (m_deleteSidebarButton)
-        m_deleteSidebarButton->setEnabled(isObject || isZone);
+        m_deleteSidebarButton->setEnabled(!m_selectedNicknames.isEmpty());
     if (m_editZonePopulationButton)
-        m_editZonePopulationButton->setEnabled(isZone);
+        m_editZonePopulationButton->setEnabled(hasSingleSelection && isZone);
     if (m_editRingButton)
-        m_editRingButton->setEnabled(isObject && (objectType == SolarObject::Planet || objectType == SolarObject::DockingRing));
+        m_editRingButton->setEnabled(hasSingleSelection && isObject && (objectType == SolarObject::Planet || objectType == SolarObject::DockingRing));
     if (m_addExclusionZoneButton)
-        m_addExclusionZoneButton->setEnabled(isZone);
+        m_addExclusionZoneButton->setEnabled(hasSingleSelection && isZone);
     if (m_editBaseButton)
-        m_editBaseButton->setEnabled(isObject && objectType == SolarObject::Station);
+        m_editBaseButton->setEnabled(hasSingleSelection && isObject && objectType == SolarObject::Station);
     if (m_baseBuilderButton)
-        m_baseBuilderButton->setEnabled(isObject && objectType == SolarObject::Station);
+        m_baseBuilderButton->setEnabled(hasSingleSelection && isObject && objectType == SolarObject::Station);
     if (m_saveFileButton)
         m_saveFileButton->setEnabled(m_document != nullptr);
     if (m_objectJumpButton)
@@ -995,25 +1260,84 @@ void SystemEditorPage::jumpToSelectedFromSidebar()
     const QString nickname = m_objectJumpCombo->currentText().trimmed();
     if (nickname.isEmpty())
         return;
-
+    syncSceneSelectionFromNicknames({nickname});
     for (QGraphicsItem *item : m_mapScene->items()) {
-        if (auto *solarItem = dynamic_cast<flatlas::rendering::SolarObjectItem *>(item)) {
-            if (solarItem->nickname() == nickname) {
-                m_mapView->centerOn(solarItem);
-                solarItem->setSelected(true);
-                onObjectSelected(nickname);
-                return;
-            }
+        if (auto *solarItem = dynamic_cast<flatlas::rendering::SolarObjectItem *>(item); solarItem && solarItem->nickname() == nickname) {
+            m_mapView->centerOn(solarItem);
+            return;
         }
-        if (auto *zoneItem = dynamic_cast<flatlas::rendering::ZoneItem2D *>(item)) {
-            if (zoneItem->nickname() == nickname) {
-                m_mapView->centerOn(zoneItem);
-                zoneItem->setSelected(true);
-                onObjectSelected(nickname);
-                return;
-            }
+        if (auto *zoneItem = dynamic_cast<flatlas::rendering::ZoneItem2D *>(item); zoneItem && zoneItem->nickname() == nickname) {
+            m_mapView->centerOn(zoneItem);
+            return;
         }
     }
+}
+
+void SystemEditorPage::onItemsMoved(const QHash<QString, QPointF> &oldPositions,
+                                    const QHash<QString, QPointF> &newPositions)
+{
+    if (!m_document || oldPositions.isEmpty() || newPositions.isEmpty())
+        return;
+
+    auto *stack = flatlas::core::UndoManager::instance().stack();
+    stack->beginMacro(tr("Move Selection"));
+
+    for (const auto &obj : m_document->objects()) {
+        if (!oldPositions.contains(obj->nickname()) || !newPositions.contains(obj->nickname()))
+            continue;
+        const QPointF oldFl = MapScene::qtToFl(oldPositions.value(obj->nickname()).x(), oldPositions.value(obj->nickname()).y());
+        const QPointF newFl = MapScene::qtToFl(newPositions.value(obj->nickname()).x(), newPositions.value(obj->nickname()).y());
+        const QVector3D oldPos(oldFl.x(), obj->position().y(), oldFl.y());
+        const QVector3D newPos(newFl.x(), obj->position().y(), newFl.y());
+        stack->push(new MoveObjectCommand(obj.get(), oldPos, newPos));
+    }
+
+    for (const auto &zone : m_document->zones()) {
+        if (!oldPositions.contains(zone->nickname()) || !newPositions.contains(zone->nickname()))
+            continue;
+        const QPointF oldFl = MapScene::qtToFl(oldPositions.value(zone->nickname()).x(), oldPositions.value(zone->nickname()).y());
+        const QPointF newFl = MapScene::qtToFl(newPositions.value(zone->nickname()).x(), newPositions.value(zone->nickname()).y());
+        const QVector3D oldPos(oldFl.x(), zone->position().y(), oldFl.y());
+        const QVector3D newPos(newFl.x(), zone->position().y(), newFl.y());
+        stack->push(new MoveZoneCommand(zone.get(), oldPos, newPos));
+    }
+
+    stack->endMacro();
+}
+
+void SystemEditorPage::syncTreeSelectionFromNicknames(const QStringList &nicknames)
+{
+    if (!m_objectTree)
+        return;
+
+    const QSet<QString> selectedSet(nicknames.begin(), nicknames.end());
+    QSignalBlocker blocker(m_objectTree);
+    m_objectTree->clearSelection();
+
+    QTreeWidgetItem *firstMatch = nullptr;
+    const QList<QTreeWidgetItem *> matches = m_objectTree->findItems(QStringLiteral("*"),
+                                                                     Qt::MatchWildcard | Qt::MatchRecursive,
+                                                                     0);
+    for (QTreeWidgetItem *item : matches) {
+        if (!item->parent())
+            continue;
+        const bool selected = selectedSet.contains(item->text(0));
+        item->setSelected(selected);
+        if (selected && !firstMatch)
+            firstMatch = item;
+    }
+    m_objectTree->setCurrentItem(firstMatch);
+}
+
+void SystemEditorPage::syncSceneSelectionFromNicknames(const QStringList &nicknames)
+{
+    if (m_mapScene)
+        m_mapScene->selectNicknames(nicknames);
+}
+
+QString SystemEditorPage::primarySelectedNickname() const
+{
+    return m_selectedNicknames.isEmpty() ? QString() : m_selectedNicknames.first();
 }
 
 void SystemEditorPage::createQuickObject(SolarObject::Type type,

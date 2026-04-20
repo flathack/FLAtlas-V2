@@ -85,6 +85,33 @@ private:
     std::shared_ptr<domain::ZoneItem> m_zone;
 };
 
+class MoveZoneCommand : public QUndoCommand {
+public:
+    explicit MoveZoneCommand(domain::ZoneItem* zone,
+                             const QVector3D& oldPos,
+                             const QVector3D& newPos,
+                             const QString& text = QStringLiteral("Move Zone"))
+        : QUndoCommand(text), m_zone(zone), m_oldPos(oldPos), m_newPos(newPos) {}
+
+    void undo() override { m_zone->setPosition(m_oldPos); }
+    void redo() override { m_zone->setPosition(m_newPos); }
+
+    int id() const override { return 2; }
+
+    bool mergeWith(const QUndoCommand* other) override {
+        auto cmd = dynamic_cast<const MoveZoneCommand*>(other);
+        if (!cmd || cmd->m_zone != m_zone)
+            return false;
+        m_newPos = cmd->m_newPos;
+        return true;
+    }
+
+private:
+    domain::ZoneItem* m_zone;
+    QVector3D m_oldPos;
+    QVector3D m_newPos;
+};
+
 class RemoveZoneCommand : public QUndoCommand {
 public:
     explicit RemoveZoneCommand(domain::SystemDocument* doc,

@@ -7,6 +7,8 @@
 #include "domain/ZoneItem.h"
 #include <QPainter>
 #include <QPen>
+#include <QSet>
+#include <QSignalBlocker>
 #include <cmath>
 
 namespace {
@@ -18,6 +20,15 @@ double referenceHalfExtentWorld(const flatlas::domain::SystemDocument *doc)
 {
     const double navMapScale = (doc && doc->navMapScale() > 0.0) ? doc->navMapScale() : 1.0;
     return (kFreelancerNavCellWorld * (kFreelancerNavCellsPerAxis / 2.0)) / navMapScale;
+}
+
+QString itemNickname(QGraphicsItem *item)
+{
+    if (auto *soi = dynamic_cast<flatlas::rendering::SolarObjectItem *>(item))
+        return soi->nickname();
+    if (auto *zi = dynamic_cast<flatlas::rendering::ZoneItem2D *>(item))
+        return zi->nickname();
+    return {};
 }
 
 }
@@ -87,12 +98,20 @@ void MapScene::loadDocument(flatlas::domain::SystemDocument *doc)
         const auto sel = selectedItems();
         if (sel.isEmpty()) {
             emit selectionCleared();
+            emit selectionNicknamesChanged({});
             return;
         }
-        if (auto *soi = dynamic_cast<SolarObjectItem *>(sel.first()))
-            emit objectSelected(soi->nickname());
-        else if (auto *zi = dynamic_cast<ZoneItem2D *>(sel.first()))
-            emit objectSelected(zi->nickname());
+        QStringList nicknames;
+        nicknames.reserve(sel.size());
+        for (QGraphicsItem *item : sel) {
+            const QString nickname = itemNickname(item);
+            if (!nickname.isEmpty())
+                nicknames.append(nickname);
+        }
+        nicknames.removeDuplicates();
+        emit selectionNicknamesChanged(nicknames);
+        if (!nicknames.isEmpty())
+            emit objectSelected(nicknames.first());
     });
 }
 
@@ -126,7 +145,7 @@ void MapScene::setMoveEnabled(bool enabled)
     m_moveEnabled = enabled;
     const auto sceneItems = items();
     for (QGraphicsItem *item : sceneItems) {
-        if (dynamic_cast<SolarObjectItem *>(item))
+        if (dynamic_cast<SolarObjectItem *>(item) || dynamic_cast<ZoneItem2D *>(item))
             item->setFlag(QGraphicsItem::ItemIsMovable, m_moveEnabled);
     }
 }
@@ -134,6 +153,44 @@ void MapScene::setMoveEnabled(bool enabled)
 bool MapScene::isMoveEnabled() const
 {
     return m_moveEnabled;
+}
+
+QStringList MapScene::selectedNicknames() const
+{
+    QStringList nicknames;
+    const auto sel = selectedItems();
+    nicknames.reserve(sel.size());
+    for (QGraphicsItem *item : sel) {
+        const QString nickname = itemNickname(item);
+        if (!nickname.isEmpty())
+            nicknames.append(nickname);
+    }
+    nicknames.removeDuplicates();
+    return nicknames;
+}
+
+void MapScene::selectNicknames(const QStringList &nicknames)
+{
+    const QSet<QString> selectedSet(nicknames.begin(), nicknames.end());
+    QSignalBlocker blocker(this);
+    clearSelection();
+    for (QGraphicsItem *item : items()) {
+        const QString nickname = itemNickname(item);
+        if (!nickname.isEmpty() && selectedSet.contains(nickname))
+            item->setSelected(true);
+    }
+    blocker.unblock();
+
+    if (selectedSet.isEmpty()) {
+        emit selectionCleared();
+        emit selectionNicknamesChanged({});
+        return;
+    }
+
+    const QStringList currentSelection = selectedNicknames();
+    emit selectionNicknamesChanged(currentSelection);
+    if (!currentSelection.isEmpty())
+        emit objectSelected(currentSelection.first());
 }
 
 QPointF MapScene::flToQt(float x, float z)
@@ -216,6 +273,7 @@ void MapScene::addZone(const std::shared_ptr<flatlas::domain::ZoneItem> &zone)
     item->setPos(pos);
 
     item->setFlag(QGraphicsItem::ItemIsSelectable, true);
+    item->setFlag(QGraphicsItem::ItemIsMovable, m_moveEnabled);
 
     addItem(item);
 

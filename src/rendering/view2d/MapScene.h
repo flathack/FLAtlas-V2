@@ -1,5 +1,6 @@
 #pragma once
 #include <QGraphicsScene>
+#include <QStringList>
 #include <memory>
 
 namespace flatlas::domain {
@@ -25,6 +26,8 @@ public:
     bool isGridVisible() const;
     void setMoveEnabled(bool enabled);
     bool isMoveEnabled() const;
+    QStringList selectedNicknames() const;
+    void selectNicknames(const QStringList &nicknames);
 
     // System map is a top-down projection: X/Z in Freelancer space -> X/Y in Qt.
     static QPointF flToQt(float x, float z);
@@ -33,6 +36,7 @@ public:
 signals:
     void objectSelected(const QString &nickname);
     void selectionCleared();
+    void selectionNicknamesChanged(const QStringList &nicknames);
 
 protected:
     void drawBackground(QPainter *painter, const QRectF &rect) override;

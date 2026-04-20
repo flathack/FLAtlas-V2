@@ -576,6 +576,10 @@ void MainWindow::openSystemFile()
         if (i >= 0)
             m_centerTabs->setTabText(i, title);
     });
+    connect(editor, &flatlas::editors::SystemEditorPage::selectionStatusChanged,
+            this, [this](const QString &message) {
+        statusBar()->showMessage(message);
+    });
 
     statusBar()->showMessage(tr("Loaded: %1").arg(filePath), 3000);
 }
@@ -625,6 +629,10 @@ void MainWindow::newSystem()
         int i = m_centerTabs->indexOf(editor);
         if (i >= 0)
             m_centerTabs->setTabText(i, title);
+    });
+    connect(editor, &flatlas::editors::SystemEditorPage::selectionStatusChanged,
+            this, [this](const QString &message) {
+        statusBar()->showMessage(message);
     });
 
     statusBar()->showMessage(tr("New system created"), 3000);
@@ -880,6 +888,10 @@ void MainWindow::openSystemFromUniverse(const QString &nickname, const QString &
         int i = m_centerTabs->indexOf(editor);
         if (i >= 0)
             m_centerTabs->setTabText(i, title);
+    });
+    connect(editor, &flatlas::editors::SystemEditorPage::selectionStatusChanged,
+            this, [this](const QString &message) {
+        statusBar()->showMessage(message);
     });
 
     statusBar()->showMessage(tr("Opened system: %1").arg(nickname), 3000);

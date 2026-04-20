@@ -7,9 +7,13 @@
 #include <QMenu>
 #include <QAction>
 #include <QContextMenuEvent>
+#include <QLineF>
 #include <QPainter>
 #include <QFont>
 #include <QFontMetrics>
+#include <QApplication>
+#include <QPainterPath>
+#include <QRubberBand>
 #include <QScrollBar>
 #include <QTimer>
 
@@ -26,7 +30,7 @@ SystemMapView::SystemMapView(QWidget *parent)
 {
     setRenderHint(QPainter::Antialiasing);
     setRenderHint(QPainter::SmoothPixmapTransform, false);
-    setDragMode(QGraphicsView::RubberBandDrag);
+    setDragMode(QGraphicsView::NoDrag);
     setViewportUpdateMode(QGraphicsView::BoundingRectViewportUpdate);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     setResizeAnchor(QGraphicsView::AnchorUnderMouse);
@@ -140,6 +144,18 @@ void SystemMapView::mousePressEvent(QMouseEvent *event)
         event->accept();
         return;
     }
+    if (event->button() == Qt::LeftButton && m_mapScene && !m_mapScene->isMoveEnabled()) {
+        if (!m_rubberBand)
+            m_rubberBand = new QRubberBand(QRubberBand::Rectangle, viewport());
+        m_rubberBandOrigin = event->pos();
+        m_rubberBandSelecting = true;
+        m_rubberBandDragged = false;
+        m_rubberBand->setGeometry(QRect(m_rubberBandOrigin, QSize()));
+        m_rubberBand->hide();
+        event->accept();
+        return;
+    }
+    beginTrackedSelectionMove(event);
     QGraphicsView::mousePressEvent(event);
 }
 
@@ -150,6 +166,17 @@ void SystemMapView::mouseMoveEvent(QMouseEvent *event)
         m_lastPanPosition = event->pos();
         horizontalScrollBar()->setValue(horizontalScrollBar()->value() - delta.x());
         verticalScrollBar()->setValue(verticalScrollBar()->value() - delta.y());
+        event->accept();
+        return;
+    }
+    if (m_rubberBandSelecting) {
+        const QRect selectionRect = QRect(m_rubberBandOrigin, event->pos()).normalized();
+        const bool dragged = (event->pos() - m_rubberBandOrigin).manhattanLength() >= QApplication::startDragDistance();
+        m_rubberBandDragged = dragged;
+        if (dragged) {
+            m_rubberBand->setGeometry(selectionRect);
+            m_rubberBand->show();
+        }
         event->accept();
         return;
     }
@@ -164,7 +191,38 @@ void SystemMapView::mouseReleaseEvent(QMouseEvent *event)
         event->accept();
         return;
     }
+    if (m_rubberBandSelecting && event->button() == Qt::LeftButton) {
+        const QRect selectionRect = QRect(m_rubberBandOrigin, event->pos()).normalized();
+        if (m_rubberBand)
+            m_rubberBand->hide();
+
+        if (m_rubberBandDragged) {
+            updateRubberBandSelection(selectionRect, event->modifiers());
+        } else if (m_mapScene) {
+            const QString nickname = itemNicknameAtViewportPos(event->pos());
+            QStringList selection;
+            if (!nickname.isEmpty()) {
+                if (event->modifiers() & Qt::ControlModifier) {
+                    selection = m_mapScene->selectedNicknames();
+                    if (selection.contains(nickname))
+                        selection.removeAll(nickname);
+                    else
+                        selection.append(nickname);
+                } else {
+                    selection = {nickname};
+                }
+            }
+            m_mapScene->selectNicknames(selection);
+        }
+
+        m_rubberBandSelecting = false;
+        m_rubberBandDragged = false;
+        event->accept();
+        return;
+    }
     QGraphicsView::mouseReleaseEvent(event);
+    if (event->button() == Qt::LeftButton)
+        finishTrackedSelectionMove();
 }
 
 void SystemMapView::contextMenuEvent(QContextMenuEvent *event)
@@ -311,6 +369,100 @@ void SystemMapView::updateItemDetailForScale()
         else if (auto *zoneItem = dynamic_cast<ZoneItem2D *>(item))
             zoneItem->applyDisplayFilter(m_displayFilterSettings);
     }
+}
+
+void SystemMapView::beginTrackedSelectionMove(QMouseEvent *event)
+{
+    m_trackingSelectionMove = false;
+    m_moveStartPositions.clear();
+
+    if (!m_mapScene || !m_mapScene->isMoveEnabled() || event->button() != Qt::LeftButton)
+        return;
+
+    QGraphicsItem *hitItem = itemAt(event->pos());
+    if (!hitItem || !hitItem->isSelected())
+        return;
+
+    const auto sceneItems = m_mapScene->selectedItems();
+    for (QGraphicsItem *item : sceneItems) {
+        QString nickname;
+        if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item))
+            nickname = solarItem->nickname();
+        else if (auto *zoneItem = dynamic_cast<ZoneItem2D *>(item))
+            nickname = zoneItem->nickname();
+
+        if (!nickname.isEmpty())
+            m_moveStartPositions.insert(nickname, item->scenePos());
+    }
+
+    m_trackingSelectionMove = !m_moveStartPositions.isEmpty();
+}
+
+void SystemMapView::finishTrackedSelectionMove()
+{
+    if (!m_trackingSelectionMove || !m_mapScene) {
+        m_moveStartPositions.clear();
+        m_trackingSelectionMove = false;
+        return;
+    }
+
+    QHash<QString, QPointF> movedFrom;
+    QHash<QString, QPointF> movedTo;
+    const auto sceneItems = m_mapScene->selectedItems();
+    for (QGraphicsItem *item : sceneItems) {
+        QString nickname;
+        if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item))
+            nickname = solarItem->nickname();
+        else if (auto *zoneItem = dynamic_cast<ZoneItem2D *>(item))
+            nickname = zoneItem->nickname();
+
+        if (nickname.isEmpty() || !m_moveStartPositions.contains(nickname))
+            continue;
+
+        const QPointF oldPos = m_moveStartPositions.value(nickname);
+        const QPointF newPos = item->scenePos();
+        if (QLineF(oldPos, newPos).length() <= 0.0001)
+            continue;
+
+        movedFrom.insert(nickname, oldPos);
+        movedTo.insert(nickname, newPos);
+    }
+
+    m_moveStartPositions.clear();
+    m_trackingSelectionMove = false;
+
+    if (!movedFrom.isEmpty())
+        emit itemsMoved(movedFrom, movedTo);
+}
+
+void SystemMapView::updateRubberBandSelection(const QRect &viewportRect, Qt::KeyboardModifiers modifiers)
+{
+    if (!m_mapScene || viewportRect.isNull())
+        return;
+
+    const QPolygonF scenePolygon = mapToScene(viewportRect);
+    QPainterPath selectionPath;
+    selectionPath.addPolygon(scenePolygon);
+    selectionPath.closeSubpath();
+
+    if (!(modifiers & Qt::ControlModifier))
+        m_mapScene->clearSelection();
+
+    m_mapScene->setSelectionArea(selectionPath,
+                                 (modifiers & Qt::ControlModifier) ? Qt::AddToSelection : Qt::ReplaceSelection,
+                                 Qt::IntersectsItemShape,
+                                 viewportTransform());
+}
+
+QString SystemMapView::itemNicknameAtViewportPos(const QPoint &pos) const
+{
+    if (QGraphicsItem *item = itemAt(pos)) {
+        if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item))
+            return solarItem->nickname();
+        if (auto *zoneItem = dynamic_cast<ZoneItem2D *>(item))
+            return zoneItem->nickname();
+    }
+    return {};
 }
 
 } // namespace flatlas::rendering

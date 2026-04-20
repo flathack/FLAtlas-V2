@@ -2,6 +2,9 @@
 // editors/system/SystemEditorPage.h – System-Editor (Phase 5)
 
 #include <QWidget>
+#include <QHash>
+#include <QPointF>
+#include <QStringList>
 #include "rendering/view2d/SystemDisplayFilter.h"
 #include <memory>
 
@@ -17,6 +20,10 @@ class QAction;
 class QPushButton;
 class QComboBox;
 class QGroupBox;
+class QFrame;
+class QScrollArea;
+class QVBoxLayout;
+class QStackedWidget;
 
 namespace flatlas::editors { class IniCodeEditor; class IniSyntaxHighlighter; }
 
@@ -45,6 +52,7 @@ public:
 
 signals:
     void titleChanged(const QString &title);
+    void selectionStatusChanged(const QString &message);
 
 private:
     void setupUi();
@@ -58,12 +66,12 @@ private:
     void saveDisplayFilterSettings() const;
     QString displayFilterConfigKey() const;
     void setupRightSidebar();
-    void updateSelectionSummary(const QString &nickname = QString());
+    void updateSelectionSummary();
     void updateSidebarButtons();
     void refreshObjectJumpList();
     void jumpToSelectedFromSidebar();
-    void updateIniEditorForSelection(const QString &nickname = QString());
-    QString serializeSelectionToIni(const QString &nickname) const;
+    void updateIniEditorForSelection();
+    QString serializeSelectionToIni() const;
     void applyIniEditorChanges();
     void openSystemIniExternally() const;
     void createQuickObject(flatlas::domain::SolarObject::Type type,
@@ -79,12 +87,26 @@ private:
     void onCreateBase();
     void onCreateDockingRing();
     void refreshObjectList();
-    void onObjectSelected(const QString &nickname);
+    void onCanvasSelectionChanged(const QStringList &nicknames);
+    void onTreeSelectionChanged();
     void onAddObject();
     void onDeleteSelected();
     void onDuplicateSelected();
+    void onItemsMoved(const QHash<QString, QPointF> &oldPositions,
+                      const QHash<QString, QPointF> &newPositions);
     void showObjectProperties(flatlas::domain::SolarObject *obj);
     void showZoneProperties(flatlas::domain::ZoneItem *zone);
+    void syncTreeSelectionFromNicknames(const QStringList &nicknames);
+    void syncSceneSelectionFromNicknames(const QStringList &nicknames);
+    QString primarySelectedNickname() const;
+    void pruneSelectionByCurrentFilter();
+    bool isNicknameVisibleUnderCurrentFilter(const QString &nickname) const;
+    bool isObjectVisibleUnderCurrentFilter(const flatlas::domain::SolarObject &obj) const;
+    bool isZoneVisibleUnderCurrentFilter(const flatlas::domain::ZoneItem &zone) const;
+    void updateEditorModeUi();
+    void rebuildMultiSelectionEditorList();
+    QWidget *buildMultiSelectionRow(const QString &nickname, const QString &kindText);
+    void removeNicknameFromSelection(const QString &nickname);
 
     std::unique_ptr<flatlas::domain::SystemDocument> m_document;
     flatlas::rendering::MapScene *m_mapScene = nullptr;
@@ -96,13 +118,22 @@ private:
     QSplitter *m_splitter = nullptr;
     QSplitter *m_leftSidebarSplitter = nullptr;
     QTreeWidget *m_objectTree = nullptr;
+    QStackedWidget *m_editorStack = nullptr;
+    QWidget *m_emptyEditorPage = nullptr;
+    QLabel *m_emptyEditorLabel = nullptr;
+    QWidget *m_singleEditorPage = nullptr;
     IniCodeEditor *m_iniEditor = nullptr;
     IniSyntaxHighlighter *m_iniEditorHighlighter = nullptr;
     QPushButton *m_applyIniButton = nullptr;
     QPushButton *m_openSystemIniButton = nullptr;
+    QWidget *m_multiSelectionPage = nullptr;
+    QLabel *m_multiSelectionLabel = nullptr;
+    QScrollArea *m_multiSelectionScrollArea = nullptr;
+    QWidget *m_multiSelectionListHost = nullptr;
+    QVBoxLayout *m_multiSelectionListLayout = nullptr;
     QAction *m_toggle3DAction = nullptr;
     bool m_is3DViewEnabled = false;
-    QString m_selectedNickname;
+    QStringList m_selectedNicknames;
     flatlas::rendering::SystemDisplayFilterSettings m_displayFilterSettings;
     QWidget *m_rightSidebar = nullptr;
     QLabel *m_selectionTitleLabel = nullptr;
@@ -136,6 +167,7 @@ private:
     QLabel *m_systemFileInfoLabel = nullptr;
     QLabel *m_systemStatsLabel = nullptr;
     QPushButton *m_saveFileButton = nullptr;
+    bool m_isShuttingDown = false;
 };
 
 } // namespace flatlas::editors

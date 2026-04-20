@@ -1,13 +1,19 @@
 #pragma once
 #include <QGraphicsView>
 #include <QColor>
+#include <QHash>
 #include <QPixmap>
 #include <QPoint>
+#include <QRect>
 #include "SystemDisplayFilter.h"
+
+class QRubberBand;
 
 namespace flatlas::rendering {
 
 class MapScene;
+class ZoneItem2D;
+class SolarObjectItem;
 
 class SystemMapView : public QGraphicsView {
     Q_OBJECT
@@ -25,6 +31,8 @@ public:
 
 signals:
     void objectSelected(const QString &nickname);
+    void itemsMoved(const QHash<QString, QPointF> &oldPositions,
+                    const QHash<QString, QPointF> &newPositions);
 
 protected:
     void wheelEvent(QWheelEvent *event) override;
@@ -40,6 +48,10 @@ protected:
 private:
     void applyInitialFitIfNeeded();
     void updateItemDetailForScale();
+    void beginTrackedSelectionMove(QMouseEvent *event);
+    void finishTrackedSelectionMove();
+    void updateRubberBandSelection(const QRect &viewportRect, Qt::KeyboardModifiers modifiers);
+    QString itemNicknameAtViewportPos(const QPoint &pos) const;
 
     MapScene *m_mapScene = nullptr;
     bool m_panning = false;
@@ -52,6 +64,12 @@ private:
     double m_minZoomScale = 0.01;
     bool m_pendingInitialFit = false;
     int m_pendingInitialFitPasses = 0;
+    bool m_trackingSelectionMove = false;
+    QHash<QString, QPointF> m_moveStartPositions;
+    QRubberBand *m_rubberBand = nullptr;
+    QPoint m_rubberBandOrigin;
+    bool m_rubberBandSelecting = false;
+    bool m_rubberBandDragged = false;
 };
 
 } // namespace flatlas::rendering
