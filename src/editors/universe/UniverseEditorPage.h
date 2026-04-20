@@ -5,6 +5,7 @@
 #include <memory>
 
 namespace flatlas::domain { class UniverseData; struct SystemInfo; }
+namespace flatlas::infrastructure { class IdsStringTable; }
 class QGraphicsScene;
 class QGraphicsView;
 class QGraphicsItem;
@@ -71,6 +72,10 @@ private:
     QRectF mapContentRect() const;
     void fitMapInView();
     void setMoveEnabled(bool enabled);
+    void reloadIdsStrings();
+    QString resolvedSystemName(const flatlas::domain::SystemInfo &sys) const;
+    QString mapLabelForSystem(const flatlas::domain::SystemInfo &sys) const;
+    QString listLabelForSystem(const flatlas::domain::SystemInfo &sys) const;
     void refreshTitle();
     void setDirty(bool dirty);
 
@@ -94,6 +99,7 @@ private:
     QVector<QGraphicsItem *> m_pathHighlightItems;
     QStringList m_highlightedPath;
     QString m_activeSector = QStringLiteral("universe");
+    std::unique_ptr<flatlas::infrastructure::IdsStringTable> m_idsStrings;
 };
 
 } // namespace flatlas::editors

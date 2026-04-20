@@ -1,13 +1,50 @@
 // infrastructure/freelancer/IdsStringTable.cpp – IDS-String-Tabelle (Phase 12)
 
 #include "IdsStringTable.h"
+#include "core/PathUtils.h"
 #include "infrastructure/io/DllResources.h"
+#include "infrastructure/parser/IniParser.h"
 
 #include <QDir>
 #include <QFile>
 #include <QTextStream>
 
 namespace flatlas::infrastructure {
+
+namespace {
+
+QStringList resourceDllsFromFreelancerIni(const QString &exeDir)
+{
+    const QString freelancerIniPath =
+        flatlas::core::PathUtils::ciResolvePath(exeDir, QStringLiteral("freelancer.ini"));
+    if (freelancerIniPath.isEmpty())
+        return {};
+
+    const IniDocument ini = IniParser::parseFile(freelancerIniPath);
+    if (ini.isEmpty())
+        return {};
+
+    QStringList dllPaths;
+    for (const IniSection &section : ini) {
+        if (section.name.compare(QStringLiteral("Resources"), Qt::CaseInsensitive) != 0)
+            continue;
+
+        for (const QString &dllValue : section.values(QStringLiteral("DLL"))) {
+            const QString dllName = dllValue.trimmed();
+            if (dllName.isEmpty())
+                continue;
+
+            const QString dllPath = flatlas::core::PathUtils::ciResolvePath(exeDir, dllName);
+            if (!dllPath.isEmpty())
+                dllPaths.append(dllPath);
+        }
+        break;
+    }
+
+    return dllPaths;
+}
+
+}
 
 void IdsStringTable::loadFromDll(const QString &dllPath)
 {
@@ -18,24 +55,7 @@ void IdsStringTable::loadFromDll(const QString &dllPath)
 
 void IdsStringTable::loadFromFreelancerDir(const QString &exeDir)
 {
-    // Standard Freelancer string DLLs in EXE directory
-    QStringList dllNames = {
-        QStringLiteral("resources.dll"),
-        QStringLiteral("infocards.dll"),
-        QStringLiteral("misctext.dll"),
-        QStringLiteral("nameresources.dll"),
-        QStringLiteral("equipresources.dll"),
-        QStringLiteral("offerbriberesources.dll"),
-        QStringLiteral("misctextinfo2.dll"),
-    };
-
-    QDir dir(exeDir);
-    QStringList paths;
-    for (const auto &name : dllNames) {
-        QString path = dir.filePath(name);
-        if (QFile::exists(path))
-            paths.append(path);
-    }
+    QStringList paths = resourceDllsFromFreelancerIni(exeDir);
 
     if (!paths.isEmpty()) {
         auto merged = DllResources::loadMultipleDlls(paths);

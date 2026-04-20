@@ -28,11 +28,13 @@ public:
 private:
     static QColor colorForType(flatlas::domain::SolarObject::Type t);
     static qreal radiusForType(flatlas::domain::SolarObject::Type t);
+    static qreal radiusForObject(const flatlas::domain::SolarObject &obj);
 
     QString m_nickname;
     QString m_archetype;
     flatlas::domain::SolarObject::Type m_objType;
     QGraphicsSimpleTextItem *m_labelItem = nullptr;
+    qreal m_currentRadius = 0.0;
     bool m_objectVisibleByFilter = true;
     bool m_labelVisibleByFilter = true;
 };

@@ -2,8 +2,10 @@
 
 #include "UniverseEditorPage.h"
 #include "UniverseSerializer.h"
+#include "core/EditingContext.h"
 #include "core/PathUtils.h"
 #include "domain/UniverseData.h"
+#include "infrastructure/freelancer/IdsStringTable.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -131,7 +133,7 @@ static constexpr double NODE_RADIUS = 6.0;
 
 class SystemNodeItem : public QGraphicsEllipseItem {
 public:
-    SystemNodeItem(const QString &nickname, double x, double y)
+    SystemNodeItem(const QString &nickname, const QString &labelText, double x, double y)
         : QGraphicsEllipseItem(-NODE_RADIUS, -NODE_RADIUS,
                                 NODE_RADIUS * 2, NODE_RADIUS * 2)
         , m_nickname(nickname)
@@ -139,14 +141,14 @@ public:
         setPos(x, y);
         setBrush(Qt::NoBrush);
         setPen(Qt::NoPen);
-        setToolTip(nickname);
+        setToolTip(labelText == nickname ? nickname : QStringLiteral("%1 (%2)").arg(labelText, nickname));
         setData(0, nickname);
         setFlag(QGraphicsItem::ItemIsSelectable, true);
         setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
         setZValue(10);
 
         // Label
-        auto *label = new QGraphicsSimpleTextItem(nickname, this);
+        auto *label = new QGraphicsSimpleTextItem(labelText, this);
         label->setFont(QFont(QStringLiteral("Segoe UI"), 7));
         label->setBrush(QColor(220, 220, 220));
         label->setPos(NODE_RADIUS + 2, -5);
@@ -213,8 +215,15 @@ private:
 
 UniverseEditorPage::UniverseEditorPage(QWidget *parent)
     : QWidget(parent)
+    , m_idsStrings(std::make_unique<flatlas::infrastructure::IdsStringTable>())
 {
     setupUi();
+    connect(&flatlas::core::EditingContext::instance(), &flatlas::core::EditingContext::contextChanged,
+            this, [this](const QString &) {
+                reloadIdsStrings();
+                refreshSystemList();
+                refreshMap();
+            });
 }
 
 UniverseEditorPage::~UniverseEditorPage() = default;
@@ -312,6 +321,7 @@ bool UniverseEditorPage::loadFile(const QString &filePath)
     m_dirty = false;
     m_highlightedPath.clear();
     m_activeSector = QStringLiteral("universe");
+    reloadIdsStrings();
 
     rebuildSectorTabs();
     refreshSystemList();
@@ -362,7 +372,7 @@ void UniverseEditorPage::refreshSystemList()
         if (!systemVisibleInActiveSector(sys))
             continue;
         auto *item = new QTreeWidgetItem(m_systemTree);
-        item->setText(0, sys.nickname);
+        item->setText(0, listLabelForSystem(sys));
         const QPointF pos = scenePositionForSystem(sys);
         item->setText(1, QStringLiteral("%1, %2")
                         .arg(pos.x(), 0, 'f', 0)
@@ -399,7 +409,7 @@ void UniverseEditorPage::refreshMap()
         const QPointF pos = scenePositionForSystem(sys);
         double x = pos.x() * m_mapScale;
         double y = pos.y() * m_mapScale; // Y increases downward (FL row convention)
-        auto *node = new SystemNodeItem(sys.nickname, x, y);
+        auto *node = new SystemNodeItem(sys.nickname, mapLabelForSystem(sys), x, y);
         node->setFlag(QGraphicsItem::ItemIsMovable, m_moveEnabled);
         node->onSelected = [this](const QString &nickname) { onNodeSelected(nickname); };
         node->onMoved = [this](const QString &nickname) { onNodeMoved(nickname); };
@@ -1002,6 +1012,55 @@ void UniverseEditorPage::setMoveEnabled(bool enabled)
             continue;
         node->setFlag(QGraphicsItem::ItemIsMovable, enabled);
     }
+}
+
+void UniverseEditorPage::reloadIdsStrings()
+{
+    if (!m_idsStrings)
+        m_idsStrings = std::make_unique<flatlas::infrastructure::IdsStringTable>();
+
+    m_idsStrings = std::make_unique<flatlas::infrastructure::IdsStringTable>();
+
+    const QString gamePath = flatlas::core::EditingContext::instance().primaryGamePath();
+    if (gamePath.trimmed().isEmpty())
+        return;
+
+    const QString exeDir = flatlas::core::PathUtils::ciResolvePath(gamePath, QStringLiteral("EXE"));
+    const QString lookupDir = exeDir.isEmpty() ? gamePath : exeDir;
+    m_idsStrings->loadFromFreelancerDir(lookupDir);
+}
+
+QString UniverseEditorPage::resolvedSystemName(const SystemInfo &sys) const
+{
+    if (m_idsStrings && sys.idsName > 0) {
+        const QString idsText = m_idsStrings->getString(sys.idsName).trimmed();
+        if (!idsText.isEmpty())
+            return idsText;
+    }
+
+    if (m_idsStrings && sys.stridName > 0) {
+        const QString stridText = m_idsStrings->getString(sys.stridName).trimmed();
+        if (!stridText.isEmpty())
+            return stridText;
+    }
+
+    if (!sys.displayName.trimmed().isEmpty() && sys.displayName.trimmed().compare(sys.nickname, Qt::CaseInsensitive) != 0)
+        return sys.displayName.trimmed();
+
+    return sys.nickname.trimmed();
+}
+
+QString UniverseEditorPage::mapLabelForSystem(const SystemInfo &sys) const
+{
+    return resolvedSystemName(sys);
+}
+
+QString UniverseEditorPage::listLabelForSystem(const SystemInfo &sys) const
+{
+    const QString resolved = resolvedSystemName(sys);
+    if (resolved.compare(sys.nickname, Qt::CaseInsensitive) == 0)
+        return sys.nickname;
+    return QStringLiteral("%1 - %2").arg(sys.nickname, resolved);
 }
 
 void UniverseEditorPage::onNodeMoved(const QString &nickname)

@@ -2,6 +2,7 @@
 #include <QPen>
 #include <QBrush>
 #include <QFont>
+#include <QRegularExpression>
 
 namespace flatlas::rendering {
 
@@ -13,6 +14,7 @@ SolarObjectItem::SolarObjectItem(const QString &nickname,
     , m_objType(objType)
 {
     const qreal r = radiusForType(objType);
+    m_currentRadius = r;
     setRect(-r, -r, 2 * r, 2 * r);
 
     const QColor col = colorForType(objType);
@@ -59,15 +61,53 @@ qreal SolarObjectItem::radiusForType(flatlas::domain::SolarObject::Type t)
     }
 }
 
+qreal SolarObjectItem::radiusForObject(const flatlas::domain::SolarObject &obj)
+{
+    constexpr qreal kScale = 0.01;
+    static const QRegularExpression trailingNumber(QStringLiteral("_(\\d+(?:\\.\\d+)?)$"));
+
+    const auto radiusFromArchetype = [&](const QString &archetype) -> qreal {
+        const auto match = trailingNumber.match(archetype);
+        if (!match.hasMatch())
+            return 0.0;
+
+        bool ok = false;
+        const qreal value = match.captured(1).toDouble(&ok);
+        if (!ok || value <= 0.0)
+            return 0.0;
+
+        return value * kScale;
+    };
+
+    const QString archetype = obj.archetype().trimmed().toLower();
+    if (obj.type() == flatlas::domain::SolarObject::Planet || archetype.contains(QStringLiteral("planet"))) {
+        const qreal radius = radiusFromArchetype(archetype);
+        if (radius > 0.0)
+            return radius;
+    }
+
+    if (obj.type() == flatlas::domain::SolarObject::Sun || archetype.contains(QStringLiteral("sun")) || archetype.contains(QStringLiteral("star"))) {
+        const qreal radius = radiusFromArchetype(archetype);
+        if (radius > 0.0)
+            return radius;
+    }
+
+    return radiusForType(obj.type());
+}
+
 void SolarObjectItem::updateFromObject(const flatlas::domain::SolarObject &obj)
 {
     constexpr double kScale = 0.01;
     m_nickname = obj.nickname();
     m_archetype = obj.archetype();
     m_objType = obj.type();
+    m_currentRadius = radiusForObject(obj);
+    setRect(-m_currentRadius, -m_currentRadius, 2 * m_currentRadius, 2 * m_currentRadius);
     setPos(obj.position().x() * kScale, obj.position().z() * kScale);
-    if (m_labelItem)
+    if (m_labelItem) {
         m_labelItem->setText(m_nickname);
+        m_labelItem->setPos(m_currentRadius + 3.0, -m_currentRadius - 2.0);
+    }
 }
 
 void SolarObjectItem::setLabelVisibleForScale(qreal scale)
