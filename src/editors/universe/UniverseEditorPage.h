@@ -68,6 +68,7 @@ private:
     std::unique_ptr<flatlas::domain::UniverseData> m_data;
     QString m_filePath;
     bool m_dirty = false;
+    int m_pendingInitialFitPasses = 0;
     double m_mapScale = 1.0;
 
     QSplitter *m_splitter = nullptr;

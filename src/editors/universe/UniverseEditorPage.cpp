@@ -220,7 +220,8 @@ void UniverseEditorPage::setupUi()
         onMapItemDoubleClicked(nickname);
     };
     mapView->onViewportReady = [this]() {
-        QMetaObject::invokeMethod(this, &UniverseEditorPage::fitMapInView, Qt::QueuedConnection);
+        if (m_pendingInitialFitPasses > 0)
+            QMetaObject::invokeMethod(this, &UniverseEditorPage::fitMapInView, Qt::QueuedConnection);
     };
     m_mapView = mapView;
 
@@ -350,7 +351,8 @@ void UniverseEditorPage::refreshMap()
     if (contentRect.isValid())
         m_mapScene->setSceneRect(contentRect);
 
-    // Fit view after scene is populated
+    // Fit the map once after loading/rebuilding the scene.
+    m_pendingInitialFitPasses = 3;
     QMetaObject::invokeMethod(this, &UniverseEditorPage::fitMapInView, Qt::QueuedConnection);
 }
 
@@ -694,6 +696,8 @@ void UniverseEditorPage::fitMapInView()
 {
     if (!m_mapView || !m_mapScene || !m_data || m_data->systems.isEmpty())
         return;
+    if (m_mapView->viewport()->width() <= 1 || m_mapView->viewport()->height() <= 1)
+        return;
 
     const QRectF rect = mapContentRect();
     if (!rect.isValid() || rect.isEmpty())
@@ -702,6 +706,8 @@ void UniverseEditorPage::fitMapInView()
     m_mapScene->setSceneRect(rect);
     m_mapView->resetTransform();
     m_mapView->fitInView(rect, Qt::KeepAspectRatio);
+    if (m_pendingInitialFitPasses > 0)
+        --m_pendingInitialFitPasses;
 }
 
 void UniverseEditorPage::onNodeMoved(const QString &nickname)
