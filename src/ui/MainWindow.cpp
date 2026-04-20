@@ -20,6 +20,7 @@
 #include "editors/npc/NpcEditorPage.h"
 #include "editors/infocard/InfocardEditor.h"
 #include "editors/news/NewsRumorEditor.h"
+#include "editors/jump/JumpConnectionDialog.h"
 #include "rendering/preview/ModelPreview.h"
 #include "rendering/preview/CharacterPreview.h"
 #include "domain/SystemDocument.h"
@@ -100,6 +101,11 @@ void MainWindow::createMenus()
     });
     toolsMenu->addAction(tr("&Character Preview..."), this, [this]() {
         auto *dlg = new flatlas::rendering::CharacterPreview(this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->show();
+    });
+    toolsMenu->addAction(tr("&Jump Connection..."), this, [this]() {
+        auto *dlg = new flatlas::editors::JumpConnectionDialog(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->show();
     });
