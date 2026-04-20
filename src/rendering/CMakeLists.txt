@@ -11,6 +11,11 @@ add_library(flatlas_rendering STATIC
     view3d/SkyRenderer.h view3d/SkyRenderer.cpp
     view3d/MaterialFactory.h view3d/MaterialFactory.cpp
     flight/FlightController.h flight/FlightController.cpp
+    flight/FlightCamera.h flight/FlightCamera.cpp
+    flight/FlightHud.h flight/FlightHud.cpp
+    flight/Autopilot.h flight/Autopilot.cpp
+    flight/DustParticles.h flight/DustParticles.cpp
+    flight/FlightNavigation.h flight/FlightNavigation.cpp
     preview/ModelPreview.h preview/ModelPreview.cpp
     preview/ModelCache.h preview/ModelCache.cpp
     pathgen/ShortestPath.h pathgen/ShortestPath.cpp
