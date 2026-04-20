@@ -23,6 +23,9 @@
 #include "editors/jump/JumpConnectionDialog.h"
 #include "tools/ScriptPatcher.h"
 #include "tools/SpStarter.h"
+#include "tools/UpdateChecker.h"
+#include "tools/UpdateDownloader.h"
+#include "tools/UpdateInstaller.h"
 #include "rendering/preview/ModelPreview.h"
 #include "rendering/preview/CharacterPreview.h"
 #include "domain/SystemDocument.h"
@@ -38,6 +41,8 @@
 #include <QApplication>
 #include <QFileDialog>
 #include <QMessageBox>
+#include <QProgressDialog>
+#include <QStandardPaths>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -50,6 +55,75 @@ MainWindow::MainWindow(QWidget *parent)
     createPanels();
     createStatusBar();
     restoreWindowState();
+
+    // Auto-Update-Check bei Start
+    auto *checker = new flatlas::tools::UpdateChecker(this);
+    connect(checker, &flatlas::tools::UpdateChecker::updateCheckFinished,
+            this, [this, checker](const flatlas::tools::UpdateInfo &info) {
+        checker->deleteLater();
+        if (!info.errorMessage.isEmpty()) {
+            statusBar()->showMessage(tr("Update check failed: %1").arg(info.errorMessage), 5000);
+            return;
+        }
+        if (!info.available)
+            return;
+
+        auto answer = QMessageBox::question(
+            this,
+            tr("Update Available"),
+            tr("Version %1 is available (current: %2).\n\n%3\n\nDownload and install?")
+                .arg(info.latestVersion, info.currentVersion,
+                     info.releaseNotes.left(500)),
+            QMessageBox::Yes | QMessageBox::No);
+
+        if (answer != QMessageBox::Yes || !info.downloadUrl.isValid())
+            return;
+
+        // Download starten
+        const QString zipPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+                                + QStringLiteral("/flatlas_update.zip");
+        auto *dl = new flatlas::tools::UpdateDownloader(this);
+        auto *progress = new QProgressDialog(tr("Downloading update..."), tr("Cancel"), 0, 100, this);
+        progress->setWindowModality(Qt::WindowModal);
+        progress->setMinimumDuration(0);
+
+        connect(dl, &flatlas::tools::UpdateDownloader::progressChanged,
+                progress, &QProgressDialog::setValue);
+        connect(progress, &QProgressDialog::canceled, dl, &flatlas::tools::UpdateDownloader::cancel);
+        connect(dl, &flatlas::tools::UpdateDownloader::downloadFailed,
+                this, [this, dl, progress](const QString &err) {
+            progress->close();
+            progress->deleteLater();
+            dl->deleteLater();
+            QMessageBox::warning(this, tr("Download Failed"), err);
+        });
+        connect(dl, &flatlas::tools::UpdateDownloader::downloadFinished,
+                this, [this, dl, progress](const QString &filePath) {
+            progress->close();
+            progress->deleteLater();
+            dl->deleteLater();
+
+            auto *installer = new flatlas::tools::UpdateInstaller(this);
+            auto result = installer->prepare(filePath, QCoreApplication::applicationDirPath());
+            if (!result.success) {
+                QMessageBox::warning(this, tr("Update Failed"), result.errorMessage);
+                installer->deleteLater();
+                return;
+            }
+            auto restart = QMessageBox::question(
+                this, tr("Update Ready"),
+                tr("Update prepared. Restart now to apply?"),
+                QMessageBox::Yes | QMessageBox::No);
+            if (restart == QMessageBox::Yes) {
+                installer->executeAndRestart();
+            } else {
+                installer->deleteLater();
+            }
+        });
+
+        dl->download(info.downloadUrl, zipPath);
+    });
+    checker->checkForUpdates();
 }
 
 MainWindow::~MainWindow() = default;
@@ -163,6 +237,31 @@ void MainWindow::createMenus()
 
     // --- Help ---
     auto *helpMenu = menuBar()->addMenu(tr("&Help"));
+    helpMenu->addAction(tr("Check for &Updates..."), this, [this]() {
+        statusBar()->showMessage(tr("Checking for updates..."), 3000);
+        auto *checker = new flatlas::tools::UpdateChecker(this);
+        connect(checker, &flatlas::tools::UpdateChecker::updateCheckFinished,
+                this, [this, checker](const flatlas::tools::UpdateInfo &info) {
+            checker->deleteLater();
+            if (!info.errorMessage.isEmpty()) {
+                QMessageBox::warning(this, tr("Update Check"), info.errorMessage);
+                return;
+            }
+            if (info.available) {
+                QMessageBox::information(
+                    this, tr("Update Available"),
+                    tr("Version %1 is available (current: %2).\n\n%3")
+                        .arg(info.latestVersion, info.currentVersion,
+                             info.releaseNotes.left(500)));
+            } else {
+                QMessageBox::information(
+                    this, tr("No Update"),
+                    tr("You are running the latest version (%1).").arg(info.currentVersion));
+            }
+        });
+        checker->checkForUpdates();
+    });
+    helpMenu->addSeparator();
     helpMenu->addAction(tr("&About FLAtlas..."), this, [this]() {
         // TODO Phase 23
     });

@@ -86,6 +86,16 @@ target_include_directories(test_SpStarter PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_SpStarter PRIVATE Qt6::Test Qt6::Core Qt6::Widgets flatlas_core)
 add_test(NAME test_SpStarter COMMAND test_SpStarter)
 
+# Phase 22 Auto-Updater tests
+find_package(Qt6 REQUIRED COMPONENTS Network)
+add_executable(test_VersionCheck test_VersionCheck.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/UpdateChecker.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/UpdateDownloader.cpp
+)
+target_include_directories(test_VersionCheck PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_VersionCheck PRIVATE Qt6::Test Qt6::Core Qt6::Widgets Qt6::Network flatlas_core)
+add_test(NAME test_VersionCheck COMMAND test_VersionCheck)
+
 # AppConfig is compiled into the FLAtlas executable, not a library.
 # Compile the source directly into the test.
 add_executable(test_AppConfig test_AppConfig.cpp ${CMAKE_SOURCE_DIR}/src/app/AppConfig.cpp)
