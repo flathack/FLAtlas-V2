@@ -14,6 +14,7 @@ class QSplitter;
 class QTreeWidget;
 class QTreeWidgetItem;
 class QAction;
+class QTabBar;
 
 namespace flatlas::editors {
 
@@ -60,6 +61,11 @@ private:
     QString resolveSystemPath(const QString &relativePath) const;
     void clearConnectionLines();
     void syncSystemPositionFromMap(const QString &nickname);
+    bool systemVisibleInActiveSector(const flatlas::domain::SystemInfo &sys) const;
+    QPointF scenePositionForSystem(const flatlas::domain::SystemInfo &sys) const;
+    QString sectorDisplayName(const QString &sectorKey) const;
+    void rebuildSectorTabs();
+    void applySector(const QString &sectorKey);
     QRectF mapContentRect() const;
     void fitMapInView();
     void setMoveEnabled(bool enabled);
@@ -77,12 +83,14 @@ private:
     QToolBar *m_toolBar = nullptr;
     QToolBar *m_mapToolBar = nullptr;
     QAction *m_moveAction = nullptr;
+    QTabBar *m_sectorTabs = nullptr;
     QTreeWidget *m_systemTree = nullptr;
     QGraphicsScene *m_mapScene = nullptr;
     QGraphicsView *m_mapView = nullptr;
     QVector<QGraphicsLineItem *> m_connectionItems;
     QVector<QGraphicsItem *> m_pathHighlightItems;
     QStringList m_highlightedPath;
+    QString m_activeSector = QStringLiteral("universe");
 };
 
 } // namespace flatlas::editors

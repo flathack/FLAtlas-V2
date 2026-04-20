@@ -5,6 +5,9 @@
 #include <QPair>
 #include <QVector>
 #include <QVector3D>
+#include <QHash>
+#include <QPointF>
+#include <QStringList>
 
 namespace flatlas::domain {
 
@@ -16,6 +19,7 @@ struct SystemInfo {
     int idsName = 0;
     int stridName = 0;
     QVector<QPair<QString, QString>> rawEntries;
+    QHash<QString, QPointF> sectorPositions;
 };
 
 struct JumpConnection {
@@ -26,14 +30,24 @@ struct JumpConnection {
     QString kind = QStringLiteral("other");   // "gate", "hole", or "other"
 };
 
+struct SectorDefinition {
+    QString key;
+    QString displayName;
+    QString sourceMap = QStringLiteral("universe");
+    QStringList labelIds;
+};
+
 class UniverseData {
 public:
     void addSystem(const SystemInfo &info);
     const SystemInfo *findSystem(const QString &nickname) const;
+    SystemInfo *findSystem(const QString &nickname);
     int systemCount() const;
 
     QVector<SystemInfo> systems;
     QVector<JumpConnection> connections;
+    QVector<SectorDefinition> sectors;
+    bool multiverseDetected = false;
 };
 
 } // namespace flatlas::domain

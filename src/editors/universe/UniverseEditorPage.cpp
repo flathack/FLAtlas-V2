@@ -34,6 +34,7 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QWidget>
+#include <QTabBar>
 
 namespace flatlas::editors {
 
@@ -223,6 +224,18 @@ void UniverseEditorPage::setupUi()
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
 
+    m_sectorTabs = new QTabBar(this);
+    m_sectorTabs->setDocumentMode(true);
+    m_sectorTabs->setDrawBase(false);
+    m_sectorTabs->setExpanding(false);
+    m_sectorTabs->setVisible(false);
+    connect(m_sectorTabs, &QTabBar::currentChanged, this, [this](int index) {
+        if (!m_sectorTabs || index < 0 || index >= m_sectorTabs->count())
+            return;
+        applySector(m_sectorTabs->tabData(index).toString());
+    });
+    mainLayout->addWidget(m_sectorTabs);
+
     m_splitter = new QSplitter(Qt::Horizontal, this);
 
     // System tree (left panel)
@@ -295,7 +308,9 @@ bool UniverseEditorPage::loadFile(const QString &filePath)
     m_filePath = filePath;
     m_dirty = false;
     m_highlightedPath.clear();
+    m_activeSector = QStringLiteral("universe");
 
+    rebuildSectorTabs();
     refreshSystemList();
     refreshMap();
     refreshTitle();
@@ -341,11 +356,14 @@ void UniverseEditorPage::refreshSystemList()
     if (!m_data) return;
 
     for (const auto &sys : m_data->systems) {
+        if (!systemVisibleInActiveSector(sys))
+            continue;
         auto *item = new QTreeWidgetItem(m_systemTree);
         item->setText(0, sys.nickname);
+        const QPointF pos = scenePositionForSystem(sys);
         item->setText(1, QStringLiteral("%1, %2")
-                        .arg(sys.position.x(), 0, 'f', 0)
-                        .arg(sys.position.z(), 0, 'f', 0));
+                        .arg(pos.x(), 0, 'f', 0)
+                        .arg(pos.y(), 0, 'f', 0));
         item->setData(0, Qt::UserRole, sys.nickname);
     }
 }
@@ -362,15 +380,21 @@ void UniverseEditorPage::refreshMap()
     // Compute adaptive scale: normalize so largest coordinate → 500 scene units
     double maxCoord = 1.0;
     for (const auto &sys : m_data->systems) {
-        maxCoord = std::max(maxCoord, static_cast<double>(std::abs(sys.position.x())));
-        maxCoord = std::max(maxCoord, static_cast<double>(std::abs(sys.position.z())));
+        if (!systemVisibleInActiveSector(sys))
+            continue;
+        const QPointF pos = scenePositionForSystem(sys);
+        maxCoord = std::max(maxCoord, std::abs(pos.x()));
+        maxCoord = std::max(maxCoord, std::abs(pos.y()));
     }
     m_mapScale = 500.0 / maxCoord;
 
     // Draw system nodes
     for (const auto &sys : m_data->systems) {
-        double x = sys.position.x() * m_mapScale;
-        double y = sys.position.z() * m_mapScale; // Y increases downward (FL row convention)
+        if (!systemVisibleInActiveSector(sys))
+            continue;
+        const QPointF pos = scenePositionForSystem(sys);
+        double x = pos.x() * m_mapScale;
+        double y = pos.y() * m_mapScale; // Y increases downward (FL row convention)
         auto *node = new SystemNodeItem(sys.nickname, x, y);
         node->setFlag(QGraphicsItem::ItemIsMovable, m_moveEnabled);
         node->onSelected = [this](const QString &nickname) { onNodeSelected(nickname); };
@@ -400,8 +424,11 @@ void UniverseEditorPage::drawConnections()
     // Build node position map
     QHash<QString, QPointF> posMap;
     for (const auto &sys : m_data->systems) {
-        double x = sys.position.x() * m_mapScale;
-        double y = sys.position.z() * m_mapScale;
+        if (!systemVisibleInActiveSector(sys))
+            continue;
+        const QPointF pos = scenePositionForSystem(sys);
+        double x = pos.x() * m_mapScale;
+        double y = pos.y() * m_mapScale;
         posMap.insert(sys.nickname.toLower(), QPointF(x, y));
     }
 
@@ -639,9 +666,84 @@ void UniverseEditorPage::clearConnectionLines()
     m_connectionItems.clear();
 }
 
+bool UniverseEditorPage::systemVisibleInActiveSector(const SystemInfo &sys) const
+{
+    if (m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0)
+        return true;
+    return sys.sectorPositions.contains(m_activeSector);
+}
+
+QPointF UniverseEditorPage::scenePositionForSystem(const SystemInfo &sys) const
+{
+    if (m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) != 0) {
+        const auto it = sys.sectorPositions.constFind(m_activeSector);
+        if (it != sys.sectorPositions.constEnd())
+            return it.value();
+    }
+    return QPointF(sys.position.x(), sys.position.z());
+}
+
+QString UniverseEditorPage::sectorDisplayName(const QString &sectorKey) const
+{
+    if (!m_data)
+        return sectorKey;
+
+    for (const auto &sector : m_data->sectors) {
+        if (sector.key.compare(sectorKey, Qt::CaseInsensitive) == 0)
+            return sector.displayName;
+    }
+    return sectorKey;
+}
+
+void UniverseEditorPage::rebuildSectorTabs()
+{
+    if (!m_sectorTabs)
+        return;
+
+    m_sectorTabs->blockSignals(true);
+    while (m_sectorTabs->count() > 0)
+        m_sectorTabs->removeTab(0);
+
+    if (!m_data || m_data->sectors.size() <= 1) {
+        m_sectorTabs->setVisible(false);
+        m_sectorTabs->blockSignals(false);
+        return;
+    }
+
+    int activeIndex = 0;
+    for (int i = 0; i < m_data->sectors.size(); ++i) {
+        const auto &sector = m_data->sectors[i];
+        const int tabIndex = m_sectorTabs->addTab(sector.displayName);
+        m_sectorTabs->setTabData(tabIndex, sector.key);
+        if (sector.key.compare(m_activeSector, Qt::CaseInsensitive) == 0)
+            activeIndex = tabIndex;
+    }
+
+    m_sectorTabs->setCurrentIndex(activeIndex);
+    m_sectorTabs->setVisible(m_sectorTabs->count() > 1);
+    m_sectorTabs->blockSignals(false);
+}
+
+void UniverseEditorPage::applySector(const QString &sectorKey)
+{
+    m_activeSector = sectorKey.trimmed().isEmpty() ? QStringLiteral("universe") : sectorKey.trimmed();
+
+    if (m_moveAction) {
+        const bool editable = m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0;
+        m_moveAction->setEnabled(editable);
+        if (!editable && m_moveAction->isChecked())
+            m_moveAction->setChecked(false);
+    }
+
+    refreshSystemList();
+    refreshMap();
+    refreshTitle();
+}
+
 void UniverseEditorPage::syncSystemPositionFromMap(const QString &nickname)
 {
-    if (!m_data || m_mapScale <= 0.0)
+    if (!m_data || m_mapScale <= 0.0 ||
+        m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) != 0)
         return;
 
     QPointF scenePos;
@@ -669,9 +771,10 @@ void UniverseEditorPage::syncSystemPositionFromMap(const QString &nickname)
         auto *item = m_systemTree->topLevelItem(i);
         if (item && item->data(0, Qt::UserRole).toString().compare(nickname, Qt::CaseInsensitive) == 0) {
             if (const auto *sys = m_data->findSystem(nickname)) {
+                const QPointF pos = scenePositionForSystem(*sys);
                 item->setText(1, QStringLiteral("%1, %2")
-                    .arg(sys->position.x(), 0, 'f', 0)
-                    .arg(sys->position.z(), 0, 'f', 0));
+                    .arg(pos.x(), 0, 'f', 0)
+                    .arg(pos.y(), 0, 'f', 0));
             }
             break;
         }
@@ -690,8 +793,11 @@ QRectF UniverseEditorPage::mapContentRect() const
     bool first = true;
 
     for (const auto &sys : m_data->systems) {
-        const double x = sys.position.x() * m_mapScale;
-        const double y = sys.position.z() * m_mapScale;
+        if (!systemVisibleInActiveSector(sys))
+            continue;
+        const QPointF pos = scenePositionForSystem(sys);
+        const double x = pos.x() * m_mapScale;
+        const double y = pos.y() * m_mapScale;
         if (first) {
             minX = maxX = x;
             minY = maxY = y;
@@ -703,6 +809,9 @@ QRectF UniverseEditorPage::mapContentRect() const
             maxY = std::max(maxY, y);
         }
     }
+
+    if (first)
+        return {};
 
     double width = maxX - minX;
     double height = maxY - minY;
@@ -783,6 +892,8 @@ void UniverseEditorPage::refreshTitle()
         return;
 
     QString title = QStringLiteral("Universe (%1 systems)").arg(m_data->systemCount());
+    if (m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) != 0)
+        title += QStringLiteral(" - %1").arg(sectorDisplayName(m_activeSector));
     if (m_dirty)
         title += QLatin1Char('*');
     emit titleChanged(title);

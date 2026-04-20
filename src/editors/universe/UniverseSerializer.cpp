@@ -8,6 +8,8 @@
 #include <QDir>
 #include <QSet>
 #include <QRegularExpression>
+#include <QHash>
+#include <QPointF>
 
 namespace flatlas::editors {
 
@@ -30,6 +32,90 @@ static QVector3D parsePos(const QString &val)
 static QString posToString(const QVector3D &v)
 {
     return QStringLiteral("%1, %2").arg(v.x(), 0, 'f', 0).arg(v.z(), 0, 'f', 0);
+}
+
+static QString sectorDisplayName(const QString &sectorKey)
+{
+    if (sectorKey.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0)
+        return QStringLiteral("Sirius");
+
+    static const QRegularExpression sectorRe(QStringLiteral("^sector(\\d+)$"),
+                                             QRegularExpression::CaseInsensitiveOption);
+    const auto match = sectorRe.match(sectorKey.trimmed());
+    if (match.hasMatch())
+        return QStringLiteral("Sector %1").arg(match.captured(1));
+
+    return sectorKey.trimmed();
+}
+
+struct MultiUniverseParseResult {
+    QHash<QString, QHash<QString, QPointF>> systemSectorPositions;
+    QVector<SectorDefinition> sectors;
+};
+
+static MultiUniverseParseResult parseMultiUniverse(const QString &universeDir)
+{
+    MultiUniverseParseResult result;
+
+    const QString multiUniversePath =
+        flatlas::core::PathUtils::ciResolvePath(universeDir, QStringLiteral("multiuniverse.ini"));
+    if (multiUniversePath.isEmpty())
+        return result;
+
+    const IniDocument doc = IniParser::parseFile(multiUniversePath);
+    QHash<QString, int> sectorIndexByKey;
+
+    for (const auto &section : doc) {
+        if (section.name.compare(QStringLiteral("sector"), Qt::CaseInsensitive) != 0)
+            continue;
+
+        QString sectorKey;
+        for (const auto &entry : section.entries) {
+            if (entry.first.compare(QStringLiteral("mapping"), Qt::CaseInsensitive) == 0) {
+                sectorKey = entry.second.split(QLatin1Char(',')).value(0).trimmed().toLower();
+                break;
+            }
+        }
+        if (sectorKey.isEmpty())
+            continue;
+
+        if (!sectorIndexByKey.contains(sectorKey)) {
+            SectorDefinition def;
+            def.key = sectorKey;
+            def.displayName = sectorDisplayName(sectorKey);
+            def.sourceMap = sectorKey;
+            sectorIndexByKey.insert(sectorKey, result.sectors.size());
+            result.sectors.append(def);
+        }
+
+        SectorDefinition &sectorDef = result.sectors[sectorIndexByKey.value(sectorKey)];
+        for (const auto &entry : section.entries) {
+            if (entry.first.compare(QStringLiteral("label"), Qt::CaseInsensitive) == 0) {
+                const QString labelId = entry.second.split(QLatin1Char(',')).value(0).trimmed();
+                if (!labelId.isEmpty() && !sectorDef.labelIds.contains(labelId))
+                    sectorDef.labelIds.append(labelId);
+                continue;
+            }
+            if (entry.first.compare(QStringLiteral("system"), Qt::CaseInsensitive) != 0)
+                continue;
+
+            const QStringList parts = entry.second.split(QLatin1Char(','));
+            if (parts.size() < 3)
+                continue;
+
+            const QString nickname = parts[0].trimmed().toUpper();
+            bool okX = false;
+            bool okY = false;
+            const double x = parts[1].trimmed().toDouble(&okX);
+            const double y = parts[2].trimmed().toDouble(&okY);
+            if (nickname.isEmpty() || !okX || !okY)
+                continue;
+
+            result.systemSectorPositions[nickname].insert(sectorKey, QPointF(x, y));
+        }
+    }
+
+    return result;
 }
 
 static IniSection buildSystemSection(const SystemInfo &sys)
@@ -182,11 +268,26 @@ std::unique_ptr<UniverseData> UniverseSerializer::load(const QString &filePath)
 
     auto universe = std::make_unique<UniverseData>();
     const QString universeDir = QFileInfo(filePath).absolutePath();
+    const MultiUniverseParseResult multiUniverse = parseMultiUniverse(universeDir);
+    QSet<QString> reservedSectorNicknames;
+    for (const auto &sector : multiUniverse.sectors)
+        reservedSectorNicknames.insert(sector.key.trimmed().toLower());
+
+    SectorDefinition baseSector;
+    baseSector.key = QStringLiteral("universe");
+    baseSector.displayName = QStringLiteral("Sirius");
+    baseSector.sourceMap = QStringLiteral("universe");
+    universe->sectors.append(baseSector);
+    for (const auto &sector : multiUniverse.sectors)
+        universe->sectors.append(sector);
+    universe->multiverseDetected = !multiUniverse.sectors.isEmpty();
 
     for (const auto &section : doc) {
         if (section.name.compare(QStringLiteral("System"), Qt::CaseInsensitive) == 0) {
             SystemInfo sys;
             sys.nickname = section.value(QStringLiteral("nickname"));
+            if (reservedSectorNicknames.contains(sys.nickname.trimmed().toLower()))
+                continue;
             sys.filePath = section.value(QStringLiteral("file"));
             sys.idsName = section.value(QStringLiteral("ids_name"), QStringLiteral("0")).toInt();
             sys.stridName = section.value(QStringLiteral("strid_name"), QStringLiteral("0")).toInt();
@@ -201,6 +302,16 @@ std::unique_ptr<UniverseData> UniverseSerializer::load(const QString &filePath)
             sys.displayName = sys.nickname;
 
             universe->addSystem(sys);
+
+            if (SystemInfo *stored = universe->findSystem(sys.nickname)) {
+                stored->sectorPositions.insert(QStringLiteral("universe"),
+                                               QPointF(sys.position.x(), sys.position.z()));
+                const auto sectorIt = multiUniverse.systemSectorPositions.constFind(sys.nickname.toUpper());
+                if (sectorIt != multiUniverse.systemSectorPositions.constEnd()) {
+                    for (auto it = sectorIt.value().constBegin(); it != sectorIt.value().constEnd(); ++it)
+                        stored->sectorPositions.insert(it.key(), it.value());
+                }
+            }
         }
     }
 

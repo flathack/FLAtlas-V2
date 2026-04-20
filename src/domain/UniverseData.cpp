@@ -16,6 +16,15 @@ const SystemInfo *UniverseData::findSystem(const QString &nickname) const
     return nullptr;
 }
 
+SystemInfo *UniverseData::findSystem(const QString &nickname)
+{
+    for (auto &s : systems) {
+        if (s.nickname.compare(nickname, Qt::CaseInsensitive) == 0)
+            return &s;
+    }
+    return nullptr;
+}
+
 int UniverseData::systemCount() const
 {
     return systems.size();
