@@ -51,6 +51,7 @@ private:
     void saveCurrentFile();
     void newSystem();
     void openSystemFromUniverse(const QString &nickname, const QString &systemFile);
+    void openUniverseFromContext();
     void showContextHelp();
     flatlas::editors::SystemEditorPage *currentSystemEditor() const;
 

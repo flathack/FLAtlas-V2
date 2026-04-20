@@ -20,6 +20,8 @@
 #include <QWheelEvent>
 #include <QAction>
 #include "tools/PathFinderDialog.h"
+#include <cmath>
+#include <algorithm>
 
 namespace flatlas::editors {
 
@@ -206,18 +208,24 @@ void UniverseEditorPage::refreshSystemList()
 
 // ─── Map rendering ───────────────────────────────────────
 
-static constexpr double MAP_SCALE = 0.01; // Universe coordinates → scene coordinates
-
 void UniverseEditorPage::refreshMap()
 {
     m_mapScene->clear();
     if (!m_data) return;
 
+    // Compute adaptive scale: normalize so largest coordinate → 500 scene units
+    double maxCoord = 1.0;
+    for (const auto &sys : m_data->systems) {
+        maxCoord = std::max(maxCoord, static_cast<double>(std::abs(sys.position.x())));
+        maxCoord = std::max(maxCoord, static_cast<double>(std::abs(sys.position.z())));
+    }
+    const double mapScale = 500.0 / maxCoord;
+
     // Draw system nodes
     QHash<QString, SystemNodeItem *> nodeMap;
     for (const auto &sys : m_data->systems) {
-        double x = sys.position.x() * MAP_SCALE;
-        double y = -sys.position.z() * MAP_SCALE; // Flip Z for top-down view
+        double x = sys.position.x() * mapScale;
+        double y = -sys.position.z() * mapScale; // Flip Z for top-down view
         auto *node = new SystemNodeItem(sys.nickname, x, y);
         m_mapScene->addItem(node);
         nodeMap.insert(sys.nickname.toLower(), node);
@@ -234,11 +242,19 @@ void UniverseEditorPage::drawConnections()
 {
     if (!m_data) return;
 
+    // Compute adaptive scale (same as refreshMap)
+    double maxCoord = 1.0;
+    for (const auto &sys : m_data->systems) {
+        maxCoord = std::max(maxCoord, static_cast<double>(std::abs(sys.position.x())));
+        maxCoord = std::max(maxCoord, static_cast<double>(std::abs(sys.position.z())));
+    }
+    const double mapScale = 500.0 / maxCoord;
+
     // Build node position map
     QHash<QString, QPointF> posMap;
     for (const auto &sys : m_data->systems) {
-        double x = sys.position.x() * MAP_SCALE;
-        double y = -sys.position.z() * MAP_SCALE;
+        double x = sys.position.x() * mapScale;
+        double y = -sys.position.z() * mapScale;
         posMap.insert(sys.nickname.toLower(), QPointF(x, y));
     }
 
@@ -374,11 +390,19 @@ void UniverseEditorPage::highlightPath(const QStringList &systemPath)
     clearPathHighlight();
     if (!m_data || systemPath.size() < 2) return;
 
+    // Compute adaptive scale (same as refreshMap)
+    double maxCoord = 1.0;
+    for (const auto &sys : m_data->systems) {
+        maxCoord = std::max(maxCoord, static_cast<double>(std::abs(sys.position.x())));
+        maxCoord = std::max(maxCoord, static_cast<double>(std::abs(sys.position.z())));
+    }
+    const double mapScale = 500.0 / maxCoord;
+
     // Positionen sammeln
     QHash<QString, QPointF> posMap;
     for (const auto &sys : m_data->systems) {
-        double x = sys.position.x() * MAP_SCALE;
-        double y = -sys.position.z() * MAP_SCALE;
+        double x = sys.position.x() * mapScale;
+        double y = -sys.position.z() * mapScale;
         posMap.insert(sys.nickname.toLower(), QPointF(x, y));
     }
 

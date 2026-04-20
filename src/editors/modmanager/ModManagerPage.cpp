@@ -17,6 +17,7 @@
 #include <QDir>
 #include <QProcess>
 #include <QFileInfo>
+#include <QFileIconProvider>
 
 namespace flatlas::editors {
 
@@ -154,15 +155,26 @@ void ModManagerPage::refreshProfileTable()
     const QString editingId = ctx.editingProfileId();
 
     m_profileTable->setRowCount(profiles.size());
+    QFileIconProvider iconProvider;
     for (int i = 0; i < profiles.size(); ++i) {
         const auto &p = profiles[i];
 
         auto *nameItem = new QTableWidgetItem(p.name);
         nameItem->setData(Qt::UserRole, p.id);
         if (p.id == editingId) {
-            nameItem->setIcon(QIcon()); // Could add a green icon here
             nameItem->setText(QStringLiteral("\u2714 ") + p.name);
         }
+
+        // Try to find Freelancer.exe and use its icon
+        QDir dir(p.sourcePath());
+        QString exePath;
+        if (dir.exists(QStringLiteral("EXE/Freelancer.exe")))
+            exePath = dir.filePath(QStringLiteral("EXE/Freelancer.exe"));
+        else if (dir.exists(QStringLiteral("Freelancer.exe")))
+            exePath = dir.filePath(QStringLiteral("Freelancer.exe"));
+        if (!exePath.isEmpty())
+            nameItem->setIcon(iconProvider.icon(QFileInfo(exePath)));
+
         m_profileTable->setItem(i, 0, nameItem);
         m_profileTable->setItem(i, 1, new QTableWidgetItem(p.mode));
         m_profileTable->setItem(i, 2, new QTableWidgetItem(p.sourcePath()));

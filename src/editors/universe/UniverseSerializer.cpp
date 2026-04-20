@@ -4,6 +4,9 @@
 #include "infrastructure/parser/IniParser.h"
 #include <QFile>
 #include <QFileInfo>
+#include <QDir>
+#include <QSet>
+#include <QRegularExpression>
 
 namespace flatlas::editors {
 
@@ -28,6 +31,82 @@ static QString posToString(const QVector3D &v)
     return QStringLiteral("%1, %2").arg(v.x(), 0, 'f', 0).arg(v.z(), 0, 'f', 0);
 }
 
+/// Classify whether an [Object] is a jump gate/hole/alien_gate based on archetype.
+static QString classifyJumpKind(const QString &archetype, const QString &gotoVal,
+                                 const QString &jumpEffect)
+{
+    QString arch = archetype.toLower().trimmed();
+
+    if (arch.contains(QStringLiteral("jumpgate")) ||
+        arch.contains(QStringLiteral("jump_gate")) ||
+        arch.contains(QStringLiteral("jumppoint_gate")) ||
+        arch.contains(QStringLiteral("nomad_gate")))
+        return QStringLiteral("gate");
+
+    if (arch.contains(QStringLiteral("jumphole")) ||
+        arch.contains(QStringLiteral("jump_hole")))
+        return QStringLiteral("hole");
+
+    // Alien gates: have jump_effect + goto but non-standard archetype
+    if (!jumpEffect.isEmpty() && !gotoVal.isEmpty())
+        return QStringLiteral("alien_gate");
+
+    return {};
+}
+
+/// Scan a single system INI file for jump objects, return connections.
+static QVector<JumpConnection> scanSystemConnections(const QString &systemNickname,
+                                                      const QString &systemFilePath)
+{
+    QVector<JumpConnection> result;
+    if (systemFilePath.isEmpty() || !QFile::exists(systemFilePath))
+        return result;
+
+    IniDocument doc = IniParser::parseFile(systemFilePath);
+    for (const IniSection &section : doc) {
+        if (section.name.compare(QStringLiteral("Object"), Qt::CaseInsensitive) != 0)
+            continue;
+
+        QString archetype = section.value(QStringLiteral("archetype"));
+        QString gotoVal = section.value(QStringLiteral("goto"));
+        QString jumpEffect = section.value(QStringLiteral("jump_effect"));
+        QString objNickname = section.value(QStringLiteral("nickname"));
+
+        QString kind = classifyJumpKind(archetype, gotoVal, jumpEffect);
+        if (kind.isEmpty())
+            continue;
+
+        // Determine destination system from goto field: "target_system, target_object, tunnel"
+        QString destSystem;
+        if (!gotoVal.isEmpty()) {
+            QStringList gotoParts = gotoVal.split(QLatin1Char(','));
+            if (!gotoParts.isEmpty())
+                destSystem = gotoParts[0].trimmed();
+        }
+
+        // Fallback: parse nickname like "Li01_to_Li02_jumphole"
+        if (destSystem.isEmpty() && !objNickname.isEmpty()) {
+            static QRegularExpression re(QStringLiteral("to_([A-Za-z0-9]+)"),
+                                          QRegularExpression::CaseInsensitiveOption);
+            auto match = re.match(objNickname);
+            if (match.hasMatch())
+                destSystem = match.captured(1);
+        }
+
+        if (destSystem.isEmpty() ||
+            destSystem.compare(systemNickname, Qt::CaseInsensitive) == 0)
+            continue;
+
+        JumpConnection conn;
+        conn.fromSystem = systemNickname;
+        conn.fromObject = objNickname;
+        conn.toSystem = destSystem;
+        result.append(conn);
+    }
+
+    return result;
+}
+
 // ─── load ─────────────────────────────────────────────────
 
 std::unique_ptr<UniverseData> UniverseSerializer::load(const QString &filePath)
@@ -38,6 +117,8 @@ std::unique_ptr<UniverseData> UniverseSerializer::load(const QString &filePath)
 
     auto universe = std::make_unique<UniverseData>();
     QString baseDir = QFileInfo(filePath).absolutePath();
+    // Base dir is typically DATA/UNIVERSE; we need the DATA dir parent
+    QDir universeDir(baseDir);
 
     for (const auto &section : doc) {
         if (section.name.compare(QStringLiteral("System"), Qt::CaseInsensitive) == 0) {
@@ -60,9 +141,33 @@ std::unique_ptr<UniverseData> UniverseSerializer::load(const QString &filePath)
     }
 
     // Build jump connections by scanning system files for jump objects
-    // (This is done lazily or on demand; for now store what we have from universe.ini)
-    // Jump connections are typically derived from system files, not universe.ini itself.
-    // We'll populate them when systems are opened.
+    // System file paths in universe.ini are relative to the DATA directory
+    // baseDir is typically .../DATA/UNIVERSE, so go up one level
+    QString dataDir = QFileInfo(baseDir).absolutePath();
+
+    QSet<QPair<QString, QString>> seenEdges; // deduplicate bidirectional connections
+    for (const auto &sys : universe->systems) {
+        QString sysFilePath;
+        if (!sys.filePath.isEmpty()) {
+            // Resolve relative to DATA dir
+            sysFilePath = QDir(dataDir).filePath(sys.filePath);
+            if (!QFile::exists(sysFilePath)) {
+                // Try case-insensitive
+                sysFilePath = QDir(dataDir).filePath(sys.filePath.toLower());
+            }
+        }
+
+        auto conns = scanSystemConnections(sys.nickname, sysFilePath);
+        for (const auto &conn : conns) {
+            // Deduplicate: only keep one direction per pair
+            auto key = qMakePair(conn.fromSystem.toLower(), conn.toSystem.toLower());
+            auto reverseKey = qMakePair(conn.toSystem.toLower(), conn.fromSystem.toLower());
+            if (!seenEdges.contains(key) && !seenEdges.contains(reverseKey)) {
+                seenEdges.insert(key);
+                universe->connections.append(conn);
+            }
+        }
+    }
 
     return universe;
 }

@@ -33,6 +33,8 @@
 #include "rendering/preview/CharacterPreview.h"
 #include "domain/SystemDocument.h"
 #include "domain/UniverseData.h"
+#include "infrastructure/freelancer/UniverseScanner.h"
+#include "core/PathUtils.h"
 
 #include <QCloseEvent>
 #include <QMenuBar>
@@ -78,6 +80,8 @@ MainWindow::MainWindow(QWidget *parent)
             m_editingLabel->setText(tr("Currently Editing: %1").arg(profile.name));
             setWindowTitle(QStringLiteral("FLAtlas V2 – %1").arg(profile.name));
             statusBar()->showMessage(tr("Editing context: %1").arg(profile.name), 5000);
+            // Auto-open Universe tab when editing context is set
+            openUniverseFromContext();
         } else {
             m_editingLabel->setText(tr("Currently Editing: -"));
             setWindowTitle(QStringLiteral("FLAtlas V2"));
@@ -174,18 +178,6 @@ void MainWindow::createMenus()
 {
     // --- File ---
     auto *fileMenu = menuBar()->addMenu(tr("&File"));
-    fileMenu->addAction(tr("&New System..."), this, [this]() { newSystem(); });
-    fileMenu->addAction(tr("Open &System..."), this, [this]() { openSystemFile(); });
-    fileMenu->addAction(tr("Open &Universe..."), this, [this]() { openUniverseFile(); });
-    fileMenu->addAction(tr("Open &Base Editor"), this, [this]() { openBaseEditor(); });
-    fileMenu->addAction(tr("&Trade Routes"), this, [this]() { openTradeRoutes(); });
-    fileMenu->addAction(tr("&IDS Editor"), this, [this]() { openIdsEditor(); });
-    fileMenu->addAction(tr("&Mod Manager"), this, [this]() { openModManager(); });
-    fileMenu->addAction(tr("&NPC Editor"), this, [this]() { openNpcEditor(); });
-    fileMenu->addAction(tr("Info&card Editor"), this, [this]() { openInfocardEditor(); });
-    fileMenu->addAction(tr("Ne&ws/Rumor Editor"), this, [this]() { openNewsRumorEditor(); });
-    fileMenu->addAction(tr("Open &INI..."), this, [this]() { openIniFile(); });
-    fileMenu->addSeparator();
     fileMenu->addAction(tr("&Save"), QKeySequence::Save, this, [this]() { saveCurrentFile(); });
     fileMenu->addSeparator();
     fileMenu->addAction(tr("&Settings..."), this, [this]() {
@@ -211,7 +203,24 @@ void MainWindow::createMenus()
 
     // --- Tools ---
     auto *toolsMenu = menuBar()->addMenu(tr("&Tools"));
-    toolsMenu->addAction(tr("&Trade Route Analysis..."), this, []() { /* TODO Phase 11 */ });
+
+    // -- Editors --
+    toolsMenu->addAction(tr("&New System..."), this, [this]() { newSystem(); });
+    toolsMenu->addAction(tr("Open &System..."), this, [this]() { openSystemFile(); });
+    toolsMenu->addAction(tr("Open &Universe..."), this, [this]() { openUniverseFile(); });
+    toolsMenu->addAction(tr("Open &INI..."), this, [this]() { openIniFile(); });
+    toolsMenu->addSeparator();
+    toolsMenu->addAction(tr("&Base Editor"), this, [this]() { openBaseEditor(); });
+    toolsMenu->addAction(tr("&Trade Routes"), this, [this]() { openTradeRoutes(); });
+    toolsMenu->addAction(tr("&IDS Editor"), this, [this]() { openIdsEditor(); });
+    toolsMenu->addAction(tr("&Mod Manager"), this, [this]() { openModManager(); });
+    toolsMenu->addAction(tr("&NPC Editor"), this, [this]() { openNpcEditor(); });
+    toolsMenu->addAction(tr("Info&card Editor"), this, [this]() { openInfocardEditor(); });
+    toolsMenu->addAction(tr("Ne&ws/Rumor Editor"), this, [this]() { openNewsRumorEditor(); });
+    toolsMenu->addSeparator();
+
+    // -- Tools --
+    toolsMenu->addAction(tr("Trade Route &Analysis..."), this, []() { /* TODO Phase 11 */ });
     toolsMenu->addAction(tr("&Model Viewer..."), this, [this]() {
         auto *dlg = new flatlas::rendering::ModelPreview(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
@@ -474,6 +483,10 @@ void MainWindow::createPanels()
     m_centerTabs->addTab(welcomePage, tr("Welcome"));
     connect(welcomePage, &flatlas::ui::WelcomePage::openModManagerRequested,
             this, &MainWindow::openModManager);
+
+    // Wire browser panel: double-click system → open in tab
+    connect(m_browserPanel, &flatlas::ui::BrowserPanel::systemSelected,
+            this, &MainWindow::openSystemFromUniverse);
 }
 
 void MainWindow::createStatusBar()
@@ -720,6 +733,51 @@ void MainWindow::openUniverseFile()
             this, &MainWindow::openSystemFromUniverse);
 
     statusBar()->showMessage(tr("Loaded Universe: %1").arg(filePath), 3000);
+}
+
+void MainWindow::openUniverseFromContext()
+{
+    auto &ctx = flatlas::core::EditingContext::instance();
+    if (!ctx.hasContext())
+        return;
+
+    // Check if a Universe tab is already open
+    for (int i = 0; i < m_centerTabs->count(); ++i) {
+        if (qobject_cast<flatlas::editors::UniverseEditorPage *>(m_centerTabs->widget(i))) {
+            m_centerTabs->setCurrentIndex(i);
+            return;
+        }
+    }
+
+    QString dataDir = ctx.primaryGamePath() + QStringLiteral("/DATA");
+    QString universeIni = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("UNIVERSE/universe.ini"));
+    if (universeIni.isEmpty()) {
+        statusBar()->showMessage(tr("Universe.ini not found in editing context"), 5000);
+        return;
+    }
+
+    auto *editor = new flatlas::editors::UniverseEditorPage(this);
+    if (!editor->loadFile(universeIni)) {
+        statusBar()->showMessage(tr("Could not load Universe from editing context"), 5000);
+        delete editor;
+        return;
+    }
+
+    int idx = m_centerTabs->addTab(editor,
+        QStringLiteral("Universe (%1)").arg(editor->data()->systemCount()));
+    m_centerTabs->setCurrentIndex(idx);
+
+    connect(editor, &flatlas::editors::UniverseEditorPage::titleChanged,
+            this, [this, editor](const QString &title) {
+        int i = m_centerTabs->indexOf(editor);
+        if (i >= 0)
+            m_centerTabs->setTabText(i, title);
+    });
+
+    connect(editor, &flatlas::editors::UniverseEditorPage::openSystemRequested,
+            this, &MainWindow::openSystemFromUniverse);
+
+    statusBar()->showMessage(tr("Universe loaded from editing context"), 3000);
 }
 
 void MainWindow::openSystemFromUniverse(const QString &nickname, const QString &systemFile)

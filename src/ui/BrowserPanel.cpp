@@ -1,4 +1,6 @@
 #include "BrowserPanel.h"
+#include "core/EditingContext.h"
+#include "infrastructure/freelancer/UniverseScanner.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLineEdit>
@@ -8,6 +10,8 @@
 #include <QStandardItemModel>
 #include <QSortFilterProxyModel>
 #include <QItemSelectionModel>
+#include <QDir>
+#include <algorithm>
 namespace flatlas::ui {
 BrowserPanel::BrowserPanel(QWidget *parent) : QWidget(parent)
 {
@@ -32,10 +36,11 @@ BrowserPanel::BrowserPanel(QWidget *parent) : QWidget(parent)
         QStringLiteral("QPushButton { background: #1a2535; color: #8899bb; border: 1px solid #2a3a4a;"
                         " padding: 5px; border-radius: 2px; text-align: left; }"
                         "QPushButton:hover { background: #223045; color: #aabbdd; }"));
+    connect(m_refreshBtn, &QPushButton::clicked, this, &BrowserPanel::refreshFromContext);
     layout->addWidget(m_refreshBtn);
 
     // Systems header
-    m_systemsLabel = new QLabel(tr("Systems (click to load):"), this);
+    m_systemsLabel = new QLabel(tr("Systems:"), this);
     m_systemsLabel->setStyleSheet(
         QStringLiteral("QLabel { color: #7799aa; font-size: 11px; margin-top: 6px; }"));
     layout->addWidget(m_systemsLabel);
@@ -51,34 +56,13 @@ BrowserPanel::BrowserPanel(QWidget *parent) : QWidget(parent)
     m_proxyModel->setFilterCaseSensitivity(Qt::CaseInsensitive);
     m_proxyModel->setRecursiveFilteringEnabled(true);
 
-    // Dummy Freelancer systems organized by faction
-    struct FactionSystems { const char *faction; QStringList systems; };
-    const FactionSystems factions[] = {
-        {"Liberty",       {"New York", "California", "Colorado", "Texas"}},
-        {"Bretonia",      {"New London", "Cambridge", "Leeds", "Edinburgh"}},
-        {"Kusari",        {"New Tokyo", "Hokkaido", "Kyushu", "Shikoku"}},
-        {"Rheinland",     {"New Berlin", "Hamburg", "Stuttgart", "Frankfurt"}},
-        {"Border Worlds", {"Omega-3", "Omega-5", "Omega-7", "Omega-11"}},
-    };
-    for (const auto &f : factions) {
-        auto *factionItem = new QStandardItem(QString::fromLatin1(f.faction));
-        factionItem->setEditable(false);
-        for (const auto &sys : f.systems) {
-            auto *sysItem = new QStandardItem(sys);
-            sysItem->setEditable(false);
-            factionItem->appendRow(sysItem);
-        }
-        m_model->appendRow(factionItem);
-    }
-
     m_treeView = new QTreeView(this);
     m_treeView->setHeaderHidden(true);
     m_treeView->setModel(m_proxyModel);
-    m_treeView->expandAll();
     layout->addWidget(m_treeView, 1);
 
     // Status label at bottom
-    m_statusLabel = new QLabel(QStringLiteral("\u2714 20 systems"), this);
+    m_statusLabel = new QLabel(tr("Set editing context to load systems"), this);
     m_statusLabel->setStyleSheet(
         QStringLiteral("QLabel { color: #4a9977; font-size: 11px; padding: 2px 0; }"));
     layout->addWidget(m_statusLabel);
@@ -86,12 +70,63 @@ BrowserPanel::BrowserPanel(QWidget *parent) : QWidget(parent)
     connect(m_filterEdit, &QLineEdit::textChanged,
             m_proxyModel, &QSortFilterProxyModel::setFilterFixedString);
 
-    connect(m_treeView->selectionModel(), &QItemSelectionModel::currentChanged,
-            this, [this](const QModelIndex &current, const QModelIndex &) {
-        if (!current.isValid() || current.model()->hasChildren(current))
-            return; // ignore faction-level clicks
-        emit systemSelected(current.data().toString());
+    connect(m_treeView, &QTreeView::doubleClicked,
+            this, [this](const QModelIndex &index) {
+        if (!index.isValid())
+            return;
+        const QString nickname = index.data(Qt::UserRole).toString();
+        const QString filePath = index.data(Qt::UserRole + 1).toString();
+        if (!nickname.isEmpty() && !filePath.isEmpty())
+            emit systemSelected(nickname, filePath);
     });
+
+    // Connect to editing context changes
+    connect(&flatlas::core::EditingContext::instance(),
+            &flatlas::core::EditingContext::contextChanged,
+            this, &BrowserPanel::refreshFromContext);
+
+    // Load if context already set
+    if (flatlas::core::EditingContext::instance().hasContext())
+        refreshFromContext();
+}
+
+void BrowserPanel::refreshFromContext()
+{
+    auto &ctx = flatlas::core::EditingContext::instance();
+    if (!ctx.hasContext()) {
+        m_model->clear();
+        m_systems.clear();
+        m_dataDir.clear();
+        m_statusLabel->setText(tr("Set editing context to load systems"));
+        return;
+    }
+
+    m_dataDir = ctx.primaryGamePath() + QStringLiteral("/DATA");
+    auto universeData = flatlas::infrastructure::UniverseScanner::scan(m_dataDir);
+    m_systems = universeData.systems;
+
+    // Sort by nickname
+    std::sort(m_systems.begin(), m_systems.end(),
+              [](const flatlas::domain::SystemInfo &a, const flatlas::domain::SystemInfo &b) {
+        return a.nickname.compare(b.nickname, Qt::CaseInsensitive) < 0;
+    });
+
+    m_model->clear();
+    for (const auto &sys : m_systems) {
+        QString displayText = sys.nickname;
+        if (!sys.displayName.isEmpty())
+            displayText = sys.nickname + QStringLiteral(" - ") + sys.displayName;
+
+        auto *item = new QStandardItem(displayText);
+        item->setEditable(false);
+        item->setData(sys.nickname, Qt::UserRole);
+        // Resolve full path from DATA dir
+        QString fullPath = QDir(m_dataDir).filePath(sys.filePath);
+        item->setData(fullPath, Qt::UserRole + 1);
+        m_model->appendRow(item);
+    }
+
+    m_statusLabel->setText(QStringLiteral("\u2714 %1 systems").arg(m_systems.size()));
 }
 
 void BrowserPanel::loadSystems(const QStringList &systemNames)
