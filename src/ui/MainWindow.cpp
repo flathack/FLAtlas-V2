@@ -18,6 +18,8 @@
 #include "editors/ids/IdsEditorPage.h"
 #include "editors/modmanager/ModManagerPage.h"
 #include "editors/npc/NpcEditorPage.h"
+#include "rendering/preview/ModelPreview.h"
+#include "rendering/preview/CharacterPreview.h"
 #include "domain/SystemDocument.h"
 #include "domain/UniverseData.h"
 
@@ -87,8 +89,16 @@ void MainWindow::createMenus()
     // --- Tools ---
     auto *toolsMenu = menuBar()->addMenu(tr("&Tools"));
     toolsMenu->addAction(tr("&Trade Route Analysis..."), this, []() { /* TODO Phase 11 */ });
-    toolsMenu->addAction(tr("&Model Viewer..."), this, []() { /* TODO Phase 16 */ });
-    toolsMenu->addAction(tr("&Character Preview..."), this, []() { /* TODO Phase 16 */ });
+    toolsMenu->addAction(tr("&Model Viewer..."), this, [this]() {
+        auto *dlg = new flatlas::rendering::ModelPreview(this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->show();
+    });
+    toolsMenu->addAction(tr("&Character Preview..."), this, [this]() {
+        auto *dlg = new flatlas::rendering::CharacterPreview(this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->show();
+    });
 
     // --- Settings ---
     auto *settingsMenu = menuBar()->addMenu(tr("&Settings"));

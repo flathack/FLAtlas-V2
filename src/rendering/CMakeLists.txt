@@ -17,6 +17,7 @@ add_library(flatlas_rendering STATIC
     flight/DustParticles.h flight/DustParticles.cpp
     flight/FlightNavigation.h flight/FlightNavigation.cpp
     preview/ModelPreview.h preview/ModelPreview.cpp
+    preview/CharacterPreview.h preview/CharacterPreview.cpp
     preview/ModelCache.h preview/ModelCache.cpp
     pathgen/ShortestPath.h pathgen/ShortestPath.cpp
 )
