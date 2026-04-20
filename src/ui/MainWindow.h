@@ -41,6 +41,7 @@ private:
     void openModManager();
     void openNpcEditor();
     void openInfocardEditor();
+    void openNewsRumorEditor();
     void saveCurrentSystem();
     void saveCurrentFile();
     void newSystem();
