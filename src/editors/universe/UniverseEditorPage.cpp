@@ -33,6 +33,7 @@
 #include <QRectF>
 #include <QPainter>
 #include <QPixmap>
+#include <QWidget>
 
 namespace flatlas::editors {
 
@@ -137,7 +138,6 @@ public:
         setToolTip(nickname);
         setData(0, nickname);
         setFlag(QGraphicsItem::ItemIsSelectable, true);
-        setFlag(QGraphicsItem::ItemIsMovable, true);
         setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
         setZValue(10);
 
@@ -225,8 +225,24 @@ void UniverseEditorPage::setupUi()
     };
     m_mapView = mapView;
 
+    auto *mapPanel = new QWidget(this);
+    auto *mapLayout = new QVBoxLayout(mapPanel);
+    mapLayout->setContentsMargins(0, 0, 0, 0);
+    mapLayout->setSpacing(0);
+
+    m_mapToolBar = new QToolBar(mapPanel);
+    m_mapToolBar->setIconSize(QSize(16, 16));
+    m_mapToolBar->setMovable(false);
+    m_moveAction = m_mapToolBar->addAction(tr("Move"));
+    m_moveAction->setCheckable(true);
+    m_moveAction->setChecked(false);
+    connect(m_moveAction, &QAction::toggled, this, &UniverseEditorPage::setMoveEnabled);
+
+    mapLayout->addWidget(m_mapToolBar);
+    mapLayout->addWidget(m_mapView);
+
     m_splitter->addWidget(m_systemTree);
-    m_splitter->addWidget(m_mapView);
+    m_splitter->addWidget(mapPanel);
     m_splitter->setStretchFactor(0, 0);
     m_splitter->setStretchFactor(1, 1);
     m_splitter->setSizes({240, 800});
@@ -337,6 +353,7 @@ void UniverseEditorPage::refreshMap()
         double x = sys.position.x() * m_mapScale;
         double y = sys.position.z() * m_mapScale; // Y increases downward (FL row convention)
         auto *node = new SystemNodeItem(sys.nickname, x, y);
+        node->setFlag(QGraphicsItem::ItemIsMovable, m_moveEnabled);
         node->onSelected = [this](const QString &nickname) { onNodeSelected(nickname); };
         node->onMoved = [this](const QString &nickname) { onNodeMoved(nickname); };
         node->onMoveFinished = [this](const QString &nickname) { onNodeMoveFinished(nickname); };
@@ -708,6 +725,21 @@ void UniverseEditorPage::fitMapInView()
     m_mapView->fitInView(rect, Qt::KeepAspectRatio);
     if (m_pendingInitialFitPasses > 0)
         --m_pendingInitialFitPasses;
+}
+
+void UniverseEditorPage::setMoveEnabled(bool enabled)
+{
+    m_moveEnabled = enabled;
+
+    if (!m_mapScene)
+        return;
+
+    for (auto *gItem : m_mapScene->items()) {
+        auto *node = dynamic_cast<SystemNodeItem *>(gItem);
+        if (!node)
+            continue;
+        node->setFlag(QGraphicsItem::ItemIsMovable, enabled);
+    }
 }
 
 void UniverseEditorPage::onNodeMoved(const QString &nickname)

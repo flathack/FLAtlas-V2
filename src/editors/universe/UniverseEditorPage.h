@@ -13,6 +13,7 @@ class QToolBar;
 class QSplitter;
 class QTreeWidget;
 class QTreeWidgetItem;
+class QAction;
 
 namespace flatlas::editors {
 
@@ -62,17 +63,21 @@ private:
     void syncSystemPositionFromMap(const QString &nickname);
     QRectF mapContentRect() const;
     void fitMapInView();
+    void setMoveEnabled(bool enabled);
     void refreshTitle();
     void setDirty(bool dirty);
 
     std::unique_ptr<flatlas::domain::UniverseData> m_data;
     QString m_filePath;
     bool m_dirty = false;
+    bool m_moveEnabled = false;
     int m_pendingInitialFitPasses = 0;
     double m_mapScale = 1.0;
 
     QSplitter *m_splitter = nullptr;
     QToolBar *m_toolBar = nullptr;
+    QToolBar *m_mapToolBar = nullptr;
+    QAction *m_moveAction = nullptr;
     QTreeWidget *m_systemTree = nullptr;
     QGraphicsScene *m_mapScene = nullptr;
     QGraphicsView *m_mapView = nullptr;
