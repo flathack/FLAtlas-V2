@@ -3,6 +3,7 @@
 #include <QQuaternion>
 #include <QString>
 #include "domain/ZoneItem.h"
+#include "rendering/view2d/SystemDisplayFilter.h"
 
 namespace flatlas::rendering {
 
@@ -17,6 +18,7 @@ public:
 
     QString nickname() const { return m_nickname; }
     void updateFromZone(const flatlas::domain::ZoneItem &zone);
+    void applyDisplayFilter(const SystemDisplayFilterSettings &settings);
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = nullptr) override;
 
 private:
@@ -30,6 +32,7 @@ private:
     flatlas::domain::ZoneItem::Shape m_shape;
     bool m_drawAsRect = false;
     bool m_drawCylinderAsEllipse = false;
+    bool m_visibleByFilter = true;
 };
 
 } // namespace flatlas::rendering

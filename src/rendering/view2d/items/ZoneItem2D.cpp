@@ -270,6 +270,24 @@ void ZoneItem2D::updateFromZone(const flatlas::domain::ZoneItem &zone)
     setRect(-halfWidth, -halfHeight, halfWidth * 2.0, halfHeight * 2.0);
 }
 
+void ZoneItem2D::applyDisplayFilter(const SystemDisplayFilterSettings &settings)
+{
+    SolarObjectDisplayContext context;
+    context.nickname = m_nickname;
+    context.typeNameOverride = QStringLiteral("Zone");
+
+    bool visible = true;
+    for (const SystemDisplayFilterRule &rule : settings.rules) {
+        if (!matchesDisplayFilterRule(rule, context))
+            continue;
+        if (rule.target == DisplayFilterTarget::Object || rule.target == DisplayFilterTarget::Both)
+            visible = (rule.action == DisplayFilterAction::Show);
+    }
+
+    m_visibleByFilter = visible;
+    setVisible(m_visibleByFilter);
+}
+
 void ZoneItem2D::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
     Q_UNUSED(option)

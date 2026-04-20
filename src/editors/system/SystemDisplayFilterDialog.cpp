@@ -84,22 +84,35 @@ void SystemDisplayFilterDialog::buildUi()
 
     auto *quickGroup = new QGroupBox(tr("Quick Toggles"), this);
     auto *quickLayout = new QGridLayout(quickGroup);
-    quickLayout->addWidget(new QLabel(tr("Object Group"), quickGroup), 0, 0);
-    quickLayout->addWidget(new QLabel(tr("Show Objects"), quickGroup), 0, 1);
-    quickLayout->addWidget(new QLabel(tr("Show Labels"), quickGroup), 0, 2);
+    quickLayout->setHorizontalSpacing(10);
+    quickLayout->setVerticalSpacing(6);
 
-    int row = 1;
+    constexpr int kColumns = 2;
+    int index = 0;
     for (SolarObject::Type type : filterableTypes()) {
-        auto *nameLabel = new QLabel(displayNameForType(type), quickGroup);
-        auto *objectCheck = new QCheckBox(quickGroup);
-        auto *labelCheck = new QCheckBox(quickGroup);
+        auto *rowHost = new QWidget(quickGroup);
+        auto *rowLayout = new QHBoxLayout(rowHost);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        rowLayout->setSpacing(6);
+
+        auto *nameLabel = new QLabel(displayNameForType(type), rowHost);
+        auto *objectCheck = new QCheckBox(rowHost);
+        auto *labelCheck = new QCheckBox(rowHost);
+        objectCheck->setToolTip(tr("Objekte anzeigen"));
+        labelCheck->setToolTip(tr("Texte anzeigen"));
         m_objectTypeChecks.insert(static_cast<int>(type), objectCheck);
         m_labelTypeChecks.insert(static_cast<int>(type), labelCheck);
 
-        quickLayout->addWidget(nameLabel, row, 0);
-        quickLayout->addWidget(objectCheck, row, 1);
-        quickLayout->addWidget(labelCheck, row, 2);
-        ++row;
+        rowLayout->addWidget(nameLabel);
+        rowLayout->addWidget(objectCheck);
+        rowLayout->addWidget(new QLabel(tr("Txt"), rowHost));
+        rowLayout->addWidget(labelCheck);
+        rowLayout->addStretch(1);
+
+        const int row = index / kColumns;
+        const int column = index % kColumns;
+        quickLayout->addWidget(rowHost, row, column);
+        ++index;
     }
     mainLayout->addWidget(quickGroup);
 

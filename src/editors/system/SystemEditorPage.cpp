@@ -51,6 +51,43 @@ QPushButton *makeSidebarButton(const QString &text, QWidget *parent)
     return button;
 }
 
+SystemDisplayFilterRule makeDefaultDisplayRule(const QString &id,
+                                               const QString &name,
+                                               DisplayFilterTarget target,
+                                               const QString &pattern)
+{
+    SystemDisplayFilterRule rule;
+    rule.id = id;
+    rule.name = name;
+    rule.enabled = true;
+    rule.target = target;
+    rule.field = DisplayFilterField::Nickname;
+    rule.matchMode = DisplayFilterMatchMode::Contains;
+    rule.action = DisplayFilterAction::Hide;
+    rule.pattern = pattern;
+    return rule;
+}
+
+SystemDisplayFilterSettings defaultDisplayFilterSettings()
+{
+    SystemDisplayFilterSettings settings;
+    settings.rules = {
+        makeDefaultDisplayRule(QStringLiteral("default-hide-tradelane-label"),
+                               QStringLiteral("HIDE Trade_Lane_Ring LABEL"),
+                               DisplayFilterTarget::Label,
+                               QStringLiteral("Trade_Lane_Ring")),
+        makeDefaultDisplayRule(QStringLiteral("default-hide-patrol"),
+                               QStringLiteral("HIDE patrol LABEL + ZONE"),
+                               DisplayFilterTarget::Both,
+                               QStringLiteral("_path_")),
+        makeDefaultDisplayRule(QStringLiteral("default-hide-destroy-vignette"),
+                               QStringLiteral("Hide destroy_vignette LABEL + ZONE"),
+                               DisplayFilterTarget::Both,
+                               QStringLiteral("destroy_vignette"))
+    };
+    return settings;
+}
+
 }
 
 SystemEditorPage::SystemEditorPage(QWidget *parent)
@@ -260,8 +297,13 @@ void SystemEditorPage::openDisplayFilterDialog()
 
 void SystemEditorPage::loadDisplayFilterSettings()
 {
-    m_displayFilterSettings = flatlas::rendering::SystemDisplayFilterSettings::fromJson(
-        flatlas::core::Config::instance().getJsonObject(displayFilterConfigKey()));
+    const QJsonObject rawSettings = flatlas::core::Config::instance().getJsonObject(displayFilterConfigKey());
+    if (!rawSettings.contains(QStringLiteral("rules"))) {
+        m_displayFilterSettings = defaultDisplayFilterSettings();
+        return;
+    }
+
+    m_displayFilterSettings = flatlas::rendering::SystemDisplayFilterSettings::fromJson(rawSettings);
 }
 
 void SystemEditorPage::saveDisplayFilterSettings() const

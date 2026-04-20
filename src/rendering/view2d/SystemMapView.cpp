@@ -1,6 +1,7 @@
 #include "SystemMapView.h"
 #include "MapScene.h"
 #include "items/SolarObjectItem.h"
+#include "items/ZoneItem2D.h"
 #include <QWheelEvent>
 #include <QMouseEvent>
 #include <QMenu>
@@ -307,6 +308,8 @@ void SystemMapView::updateItemDetailForScale()
     for (QGraphicsItem *item : sceneItems) {
         if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item))
             solarItem->applyDisplayFilter(m_displayFilterSettings, scale);
+        else if (auto *zoneItem = dynamic_cast<ZoneItem2D *>(item))
+            zoneItem->applyDisplayFilter(m_displayFilterSettings);
     }
 }
 

@@ -66,6 +66,7 @@ struct SolarObjectDisplayContext {
     QString nickname;
     QString archetype;
     flatlas::domain::SolarObject::Type type = flatlas::domain::SolarObject::Other;
+    QString typeNameOverride;
 };
 
 QString displayFilterTargetToString(DisplayFilterTarget target);

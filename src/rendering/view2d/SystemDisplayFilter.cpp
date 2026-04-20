@@ -19,7 +19,9 @@ QString fieldValue(DisplayFilterField field, const SolarObjectDisplayContext &co
     case DisplayFilterField::Archetype:
         return context.archetype;
     case DisplayFilterField::Type:
-        return typeName(context.type);
+        return !context.typeNameOverride.trimmed().isEmpty()
+            ? context.typeNameOverride
+            : typeName(context.type);
     }
     return {};
 }
