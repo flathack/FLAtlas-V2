@@ -27,6 +27,7 @@
 #include "tools/UpdateDownloader.h"
 #include "tools/UpdateInstaller.h"
 #include "tools/HelpBrowser.h"
+#include "tools/PathFinderDialog.h"
 #include "rendering/preview/ModelPreview.h"
 #include "rendering/preview/CharacterPreview.h"
 #include "domain/SystemDocument.h"
@@ -183,6 +184,26 @@ void MainWindow::createMenus()
     });
     toolsMenu->addAction(tr("&Jump Connection..."), this, [this]() {
         auto *dlg = new flatlas::editors::JumpConnectionDialog(this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->show();
+    });
+    toolsMenu->addAction(tr("&Shortest Path..."), this, [this]() {
+        // Versuche UniverseData vom aktiven UniverseEditorPage zu holen
+        const flatlas::domain::UniverseData *udata = nullptr;
+        if (m_centerTabs) {
+            for (int i = 0; i < m_centerTabs->count(); ++i) {
+                if (auto *uep = qobject_cast<flatlas::editors::UniverseEditorPage *>(m_centerTabs->widget(i))) {
+                    udata = uep->data();
+                    break;
+                }
+            }
+        }
+        if (!udata) {
+            QMessageBox::information(this, tr("Shortest Path"),
+                tr("Please open a Universe file first."));
+            return;
+        }
+        auto *dlg = new flatlas::tools::PathFinderDialog(udata, this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->show();
     });

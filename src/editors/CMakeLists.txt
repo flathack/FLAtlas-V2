@@ -32,6 +32,7 @@ target_link_libraries(flatlas_editors PUBLIC
     flatlas_domain
     flatlas_infrastructure
     flatlas_rendering
+    flatlas_tools
     Qt6::Core
     Qt6::Widgets
 )

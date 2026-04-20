@@ -1,4 +1,4 @@
-# flatlas_tools – Patcher, Starter, Help, Updater
+# flatlas_tools – Patcher, Starter, Help, Updater, Pathfinding
 add_library(flatlas_tools STATIC
     ScriptPatcher.h ScriptPatcher.cpp
     SpStarter.h SpStarter.cpp
@@ -6,6 +6,8 @@ add_library(flatlas_tools STATIC
     UpdateChecker.h UpdateChecker.cpp
     UpdateDownloader.h UpdateDownloader.cpp
     UpdateInstaller.h UpdateInstaller.cpp
+    ShortestPathGenerator.h ShortestPathGenerator.cpp
+    PathFinderDialog.h PathFinderDialog.cpp
 )
 
 target_include_directories(flatlas_tools PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)

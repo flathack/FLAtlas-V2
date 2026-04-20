@@ -7,6 +7,7 @@
 namespace flatlas::domain { class UniverseData; struct SystemInfo; }
 class QGraphicsScene;
 class QGraphicsView;
+class QGraphicsItem;
 class QToolBar;
 class QSplitter;
 class QTreeWidget;
@@ -48,6 +49,11 @@ private:
     void onAddSystem();
     void onDeleteSystem();
 
+    /// Hervorhebung eines Pfades auf der Karte.
+    void highlightPath(const QStringList &systemPath);
+    void clearPathHighlight();
+    void onFindShortestPath();
+
     std::unique_ptr<flatlas::domain::UniverseData> m_data;
     QString m_filePath;
 
@@ -56,6 +62,7 @@ private:
     QTreeWidget *m_systemTree = nullptr;
     QGraphicsScene *m_mapScene = nullptr;
     QGraphicsView *m_mapView = nullptr;
+    QVector<QGraphicsItem *> m_pathHighlightItems;
 };
 
 } // namespace flatlas::editors

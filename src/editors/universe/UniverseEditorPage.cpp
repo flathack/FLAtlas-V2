@@ -19,6 +19,7 @@
 #include <QInputDialog>
 #include <QWheelEvent>
 #include <QAction>
+#include "tools/PathFinderDialog.h"
 
 namespace flatlas::editors {
 
@@ -141,6 +142,8 @@ void UniverseEditorPage::setupToolBar()
             m_mapView->fitInView(m_mapScene->itemsBoundingRect().adjusted(-50, -50, 50, 50),
                                   Qt::KeepAspectRatio);
     });
+    m_toolBar->addSeparator();
+    m_toolBar->addAction(tr("Shortest Path..."), this, &UniverseEditorPage::onFindShortestPath);
 }
 
 // ─── File I/O ────────────────────────────────────────────
@@ -353,6 +356,68 @@ void UniverseEditorPage::onDeleteSystem()
     refreshSystemList();
     refreshMap();
     emit titleChanged(QStringLiteral("Universe (%1 systems)*").arg(m_data->systemCount()));
+}
+
+// ─── Path Finder ─────────────────────────────────────────
+
+void UniverseEditorPage::clearPathHighlight()
+{
+    for (auto *item : m_pathHighlightItems) {
+        m_mapScene->removeItem(item);
+        delete item;
+    }
+    m_pathHighlightItems.clear();
+}
+
+void UniverseEditorPage::highlightPath(const QStringList &systemPath)
+{
+    clearPathHighlight();
+    if (!m_data || systemPath.size() < 2) return;
+
+    // Positionen sammeln
+    QHash<QString, QPointF> posMap;
+    for (const auto &sys : m_data->systems) {
+        double x = sys.position.x() * MAP_SCALE;
+        double y = -sys.position.z() * MAP_SCALE;
+        posMap.insert(sys.nickname.toLower(), QPointF(x, y));
+    }
+
+    // Pfadlinien zeichnen (gelb, dick)
+    QPen pathPen(QColor(255, 200, 0), 3.0);
+    for (int i = 0; i + 1 < systemPath.size(); ++i) {
+        auto fromIt = posMap.find(systemPath[i].toLower());
+        auto toIt = posMap.find(systemPath[i + 1].toLower());
+        if (fromIt != posMap.end() && toIt != posMap.end()) {
+            auto *line = m_mapScene->addLine(
+                QLineF(fromIt.value(), toIt.value()), pathPen);
+            line->setZValue(10); // Über normalen Verbindungen
+            m_pathHighlightItems.append(line);
+        }
+    }
+
+    // Pfad-Knoten hervorheben (gelbe Kreise)
+    for (const auto &sysName : systemPath) {
+        auto posIt = posMap.find(sysName.toLower());
+        if (posIt != posMap.end()) {
+            auto *circle = m_mapScene->addEllipse(
+                posIt.value().x() - 6, posIt.value().y() - 6, 12, 12,
+                QPen(QColor(255, 200, 0), 2.0),
+                QBrush(QColor(255, 200, 0, 80)));
+            circle->setZValue(11);
+            m_pathHighlightItems.append(circle);
+        }
+    }
+}
+
+void UniverseEditorPage::onFindShortestPath()
+{
+    if (!m_data) return;
+
+    auto *dialog = new flatlas::tools::PathFinderDialog(m_data.get(), this);
+    connect(dialog, &flatlas::tools::PathFinderDialog::pathFound,
+            this, &UniverseEditorPage::highlightPath);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->show();
 }
 
 } // namespace flatlas::editors

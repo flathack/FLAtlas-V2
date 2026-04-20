@@ -104,6 +104,15 @@ target_include_directories(test_HelpBrowser PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_HelpBrowser PRIVATE Qt6::Test Qt6::Core Qt6::Widgets)
 add_test(NAME test_HelpBrowser COMMAND test_HelpBrowser)
 
+# Phase 24 Shortest-Path-Generator tests
+add_executable(test_ShortestPath test_ShortestPath.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/ShortestPathGenerator.cpp
+    ${CMAKE_SOURCE_DIR}/src/domain/UniverseData.cpp
+)
+target_include_directories(test_ShortestPath PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_ShortestPath PRIVATE Qt6::Test Qt6::Core Qt6::Gui)
+add_test(NAME test_ShortestPath COMMAND test_ShortestPath)
+
 # AppConfig is compiled into the FLAtlas executable, not a library.
 # Compile the source directly into the test.
 add_executable(test_AppConfig test_AppConfig.cpp ${CMAKE_SOURCE_DIR}/src/app/AppConfig.cpp)
