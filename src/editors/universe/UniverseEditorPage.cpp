@@ -133,8 +133,8 @@ public:
         , m_nickname(nickname)
     {
         setPos(x, y);
-        setBrush(QBrush(QColor(100, 180, 255)));
-        setPen(QPen(QColor(40, 80, 140), 1.5));
+        setBrush(Qt::NoBrush);
+        setPen(Qt::NoPen);
         setToolTip(nickname);
         setData(0, nickname);
         setFlag(QGraphicsItem::ItemIsSelectable, true);
@@ -170,6 +170,37 @@ protected:
             onMoveFinished(m_nickname);
     }
 
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override
+    {
+        Q_UNUSED(option)
+        Q_UNUSED(widget)
+
+        painter->setRenderHint(QPainter::Antialiasing, true);
+
+        const bool selected = isSelected();
+        const QColor coreColor = selected ? QColor(255, 220, 120) : QColor(185, 225, 255);
+        const QColor glowColor = selected ? QColor(255, 200, 80, 110) : QColor(120, 190, 255, 80);
+        const QColor haloColor = selected ? QColor(255, 170, 60, 55) : QColor(110, 180, 255, 35);
+
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(haloColor);
+        painter->drawEllipse(QPointF(0.0, 0.0), NODE_RADIUS + 4.0, NODE_RADIUS + 4.0);
+
+        painter->setBrush(glowColor);
+        painter->drawEllipse(QPointF(0.0, 0.0), NODE_RADIUS + 2.2, NODE_RADIUS + 2.2);
+
+        QRadialGradient coreGradient(QPointF(-1.4, -1.4), NODE_RADIUS + 1.8);
+        coreGradient.setColorAt(0.0, QColor(255, 255, 255, 255));
+        coreGradient.setColorAt(0.35, coreColor.lighter(125));
+        coreGradient.setColorAt(0.75, coreColor);
+        coreGradient.setColorAt(1.0, QColor(coreColor.red(), coreColor.green(), coreColor.blue(), 150));
+        painter->setBrush(coreGradient);
+        painter->drawEllipse(QPointF(0.0, 0.0), NODE_RADIUS, NODE_RADIUS);
+
+        painter->setBrush(QColor(255, 255, 255, selected ? 210 : 180));
+        painter->drawEllipse(QPointF(-1.4, -1.4), 1.8, 1.8);
+    }
+
 private:
     QString m_nickname;
 };
@@ -191,9 +222,6 @@ void UniverseEditorPage::setupUi()
     auto *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
-
-    setupToolBar();
-    mainLayout->addWidget(m_toolBar);
 
     m_splitter = new QSplitter(Qt::Horizontal, this);
 
@@ -233,6 +261,12 @@ void UniverseEditorPage::setupUi()
     m_mapToolBar = new QToolBar(mapPanel);
     m_mapToolBar->setIconSize(QSize(16, 16));
     m_mapToolBar->setMovable(false);
+    m_mapToolBar->addAction(tr("Add System"), this, &UniverseEditorPage::onAddSystem);
+    m_mapToolBar->addAction(tr("Delete System"), this, &UniverseEditorPage::onDeleteSystem);
+    m_mapToolBar->addSeparator();
+    m_mapToolBar->addAction(tr("Fit View"), this, &UniverseEditorPage::fitMapInView);
+    m_mapToolBar->addAction(tr("Shortest Path..."), this, &UniverseEditorPage::onFindShortestPath);
+    m_mapToolBar->addSeparator();
     m_moveAction = m_mapToolBar->addAction(tr("Move"));
     m_moveAction->setCheckable(true);
     m_moveAction->setChecked(false);
@@ -249,21 +283,6 @@ void UniverseEditorPage::setupUi()
 
     mainLayout->addWidget(m_splitter);
 }
-
-void UniverseEditorPage::setupToolBar()
-{
-    m_toolBar = new QToolBar(this);
-    m_toolBar->setIconSize(QSize(16, 16));
-    m_toolBar->setMovable(false);
-
-    m_toolBar->addAction(tr("Add System"), this, &UniverseEditorPage::onAddSystem);
-    m_toolBar->addAction(tr("Delete System"), this, &UniverseEditorPage::onDeleteSystem);
-    m_toolBar->addSeparator();
-    m_toolBar->addAction(tr("Fit View"), this, &UniverseEditorPage::fitMapInView);
-    m_toolBar->addSeparator();
-    m_toolBar->addAction(tr("Shortest Path..."), this, &UniverseEditorPage::onFindShortestPath);
-}
-
 // ─── File I/O ────────────────────────────────────────────
 
 bool UniverseEditorPage::loadFile(const QString &filePath)
@@ -387,12 +406,12 @@ void UniverseEditorPage::drawConnections()
     }
 
     // Color-code connections by kind
-    QPen gatePen(QColor(60, 180, 60, 200), 1.5);      // green = jump gate
-    QPen holePen(QColor(200, 100, 40, 200), 1.2);      // orange = jump hole
-    QPen otherPen(QColor(160, 60, 200, 160), 1.0);     // purple = alien gate / other
+    QPen gatePen(QColor(90, 170, 255, 210), 1.0);       // blue = jump gate
+    QPen holePen(QColor(255, 150, 70, 220), 1.0);      // orange = jump hole
+    QPen otherPen(QColor(90, 210, 120, 190), 1.0);     // green = other
     gatePen.setStyle(Qt::SolidLine);
-    holePen.setStyle(Qt::DashLine);
-    otherPen.setStyle(Qt::DotLine);
+    holePen.setStyle(Qt::SolidLine);
+    otherPen.setStyle(Qt::SolidLine);
 
     for (const auto &conn : m_data->connections) {
         auto fromIt = posMap.find(conn.fromSystem.toLower());
@@ -423,11 +442,12 @@ void UniverseEditorPage::onSystemSelected(QTreeWidgetItem *item, int)
         auto *node = dynamic_cast<SystemNodeItem *>(gItem);
         if (node) {
             if (node->nickname().compare(nickname, Qt::CaseInsensitive) == 0) {
-                node->setBrush(QBrush(QColor(255, 200, 60)));
+                node->setSelected(true);
                 m_mapView->centerOn(node);
             } else {
-                node->setBrush(QBrush(QColor(100, 180, 255)));
+                node->setSelected(false);
             }
+            node->update();
         }
     }
 }

@@ -41,7 +41,6 @@ signals:
 
 private:
     void setupUi();
-    void setupToolBar();
     void refreshSystemList();
     void refreshMap();
     void drawConnections();
