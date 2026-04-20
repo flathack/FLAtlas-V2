@@ -34,6 +34,7 @@ protected:
 
 private:
     void applyInitialFitIfNeeded();
+    void updateItemDetailForScale();
 
     MapScene *m_mapScene = nullptr;
     bool m_panning = false;

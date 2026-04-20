@@ -20,6 +20,7 @@ public:
     flatlas::domain::SolarObject::Type objectType() const { return m_objType; }
 
     void updateFromObject(const flatlas::domain::SolarObject &obj);
+    void setLabelVisibleForScale(qreal scale);
 
 private:
     static QColor colorForType(flatlas::domain::SolarObject::Type t);

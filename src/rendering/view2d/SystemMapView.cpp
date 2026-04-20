@@ -1,5 +1,6 @@
 #include "SystemMapView.h"
 #include "MapScene.h"
+#include "items/SolarObjectItem.h"
 #include <QWheelEvent>
 #include <QMouseEvent>
 #include <QMenu>
@@ -23,13 +24,16 @@ SystemMapView::SystemMapView(QWidget *parent)
     : QGraphicsView(parent)
 {
     setRenderHint(QPainter::Antialiasing);
-    setRenderHint(QPainter::SmoothPixmapTransform);
+    setRenderHint(QPainter::SmoothPixmapTransform, false);
     setDragMode(QGraphicsView::RubberBandDrag);
-    setViewportUpdateMode(QGraphicsView::SmartViewportUpdate);
+    setViewportUpdateMode(QGraphicsView::BoundingRectViewportUpdate);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     setResizeAnchor(QGraphicsView::AnchorUnderMouse);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setCacheMode(QGraphicsView::CacheBackground);
+    setOptimizationFlag(QGraphicsView::DontSavePainterState, true);
+    setOptimizationFlag(QGraphicsView::DontAdjustForAntialiasing, true);
 }
 
 MapScene *SystemMapView::mapScene() const
@@ -92,6 +96,7 @@ void SystemMapView::zoomToFit()
     setTransformationAnchor(previousAnchor);
     setResizeAnchor(previousResizeAnchor);
     m_minZoomScale = qMax(0.0001, transform().m11());
+    updateItemDetailForScale();
     if (--m_pendingInitialFitPasses <= 0) {
         m_pendingInitialFit = false;
         m_pendingInitialFitPasses = 0;
@@ -114,6 +119,7 @@ void SystemMapView::wheelEvent(QWheelEvent *event)
             scale(m_minZoomScale, m_minZoomScale);
         }
     }
+    updateItemDetailForScale();
     event->accept();
 }
 
@@ -269,6 +275,19 @@ void SystemMapView::applyInitialFitIfNeeded()
     if (viewport()->width() <= 1 || viewport()->height() <= 1)
         return;
     zoomToFit();
+}
+
+void SystemMapView::updateItemDetailForScale()
+{
+    if (!scene())
+        return;
+
+    const qreal scale = transform().m11();
+    const auto sceneItems = scene()->items();
+    for (QGraphicsItem *item : sceneItems) {
+        if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item))
+            solarItem->setLabelVisibleForScale(scale);
+    }
 }
 
 } // namespace flatlas::rendering

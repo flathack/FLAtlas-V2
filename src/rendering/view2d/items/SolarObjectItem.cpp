@@ -65,4 +65,14 @@ void SolarObjectItem::updateFromObject(const flatlas::domain::SolarObject &obj)
     setPos(obj.position().x() * kScale, obj.position().z() * kScale);
 }
 
+void SolarObjectItem::setLabelVisibleForScale(qreal scale)
+{
+    if (!m_labelItem)
+        return;
+
+    constexpr qreal kLabelScaleThreshold = 2.0;
+    const bool shouldShow = isSelected() || scale >= kLabelScaleThreshold;
+    m_labelItem->setVisible(shouldShow);
+}
+
 } // namespace flatlas::rendering
