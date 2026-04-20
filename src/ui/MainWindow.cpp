@@ -58,6 +58,13 @@ MainWindow::MainWindow(QWidget *parent)
     createStatusBar();
     restoreWindowState();
 
+    // Beim ersten Start automatisch den Mod Manager öffnen
+    if (!flatlas::core::Config::instance().getBool(QStringLiteral("firstRunDone"), false)) {
+        flatlas::core::Config::instance().setBool(QStringLiteral("firstRunDone"), true);
+        flatlas::core::Config::instance().save();
+        QMetaObject::invokeMethod(this, &MainWindow::openModManager, Qt::QueuedConnection);
+    }
+
     // Auto-Update-Check bei Start
     auto *checker = new flatlas::tools::UpdateChecker(this);
     connect(checker, &flatlas::tools::UpdateChecker::updateCheckFinished,
