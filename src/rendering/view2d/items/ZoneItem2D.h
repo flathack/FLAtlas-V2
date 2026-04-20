@@ -23,6 +23,8 @@ private:
     static QQuaternion rotationQuaternionFromFl(float rx, float ry, float rz);
     static bool usesLegacyCylinderYaw(const QString &nickname);
     static qreal boxScreenRotation(const flatlas::domain::ZoneItem &zone, qreal sx, qreal sz);
+    static QPen penForZone(const flatlas::domain::ZoneItem &zone);
+    static QBrush brushForZone(const flatlas::domain::ZoneItem &zone);
 
     QString m_nickname;
     flatlas::domain::ZoneItem::Shape m_shape;

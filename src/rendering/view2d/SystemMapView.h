@@ -15,6 +15,7 @@ public:
     MapScene *mapScene() const;
     void setMapScene(MapScene *scene);
     void setBackgroundPixmap(const QPixmap &pixmap, const QColor &fallbackColor = QColor(15, 18, 24));
+    void setSystemName(const QString &name);
     void zoomToFit();
 
 signals:
@@ -34,6 +35,8 @@ private:
     QPixmap m_backgroundPixmap;
     QColor m_backgroundColor = QColor(15, 18, 24);
     int m_backgroundDarkenAlpha = 180;
+    QString m_systemName;
+    double m_minZoomScale = 0.01;
 };
 
 } // namespace flatlas::rendering

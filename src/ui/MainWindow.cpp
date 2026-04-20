@@ -389,8 +389,8 @@ void MainWindow::createPanels()
                         "QTabBar::tab:selected { background: #232d3f;"
                         "  color: #e0a030; border-bottom: 2px solid #e67e22; }"
                         "QTabBar::tab:hover { background: #222a3a; color: #bbccdd; }"
-                        "QTabBar::close-button { image: url(close.png); }"
-                        "QTabBar::close-button:hover { background: #443333; }"));
+                        "QTabBar::close-button { subcontrol-origin: padding; subcontrol-position: right; }"
+                        "QTabBar::close-button:hover { background: #443333; border-radius: 3px; }"));
     tabBarLayout->addWidget(m_centerTabs->tabBar(), 1);
 
     // Right panel: FLAtlas Settings + indicators

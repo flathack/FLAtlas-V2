@@ -138,6 +138,7 @@ bool SystemEditorPage::loadFile(const QString &filePath)
 
     m_document = std::move(doc);
     m_mapScene->loadDocument(m_document.get());
+    m_mapView->setSystemName(m_document->name());
     if (m_is3DViewEnabled) {
         ensureSceneView3D();
         m_sceneView3D->loadDocument(m_document.get());
@@ -154,6 +155,7 @@ void SystemEditorPage::setDocument(std::unique_ptr<SystemDocument> doc)
         SystemPersistence::clearExtras(m_document.get());
     m_document = std::move(doc);
     m_mapScene->loadDocument(m_document.get());
+    m_mapView->setSystemName(m_document->name());
     if (m_is3DViewEnabled) {
         ensureSceneView3D();
         m_sceneView3D->loadDocument(m_document.get());

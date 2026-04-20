@@ -90,12 +90,115 @@ qreal ZoneItem2D::boxScreenRotation(const flatlas::domain::ZoneItem &zone, qreal
     return -std::atan2(axis.x(), axis.z()) * (180.0 / M_PI);
 }
 
+QPen ZoneItem2D::penForZone(const flatlas::domain::ZoneItem &zone)
+{
+    const QString name = zone.nickname().toLower();
+    const QString usage = zone.usage().toLower();
+    const QString popType = zone.popType().toLower();
+    const QString pathLabel = zone.pathLabel().toLower();
+    const int damage = zone.damage();
+
+    if (usage == QStringLiteral("patrol") || name.contains(QStringLiteral("_path_")) || !pathLabel.isEmpty()) {
+        QPen pen(QColor(150, 150, 150, 200));
+        pen.setWidthF(1.2);
+        pen.setStyle(Qt::DotLine);
+        return pen;
+    }
+    if (popType.contains(QStringLiteral("trade_path"))) {
+        QPen pen(QColor(90, 190, 220, 170));
+        pen.setWidthF(1.0);
+        pen.setStyle(Qt::DashLine);
+        return pen;
+    }
+    if (name.contains(QStringLiteral("pop_ambient")) || popType.contains(QStringLiteral("background"))) {
+        QPen pen(QColor(210, 155, 70, 180));
+        pen.setWidthF(1.1);
+        return pen;
+    }
+    if (name.contains(QStringLiteral("death")) || name.contains(QStringLiteral("destroy_vignette")) || damage > 0) {
+        QPen pen(QColor(150, 150, 150, 200));
+        pen.setWidthF(1.5);
+        return pen;
+    }
+    if (name.contains(QStringLiteral("nebula")) || name.contains(QStringLiteral("badlands"))) {
+        QPen pen(QColor(150, 80, 220, 180));
+        pen.setWidthF(1.0);
+        return pen;
+    }
+    if (name.contains(QStringLiteral("debris")) || name.contains(QStringLiteral("asteroid"))) {
+        QPen pen(QColor(180, 130, 60, 180));
+        pen.setWidthF(1.0);
+        return pen;
+    }
+    if (name.contains(QStringLiteral("tradelane"))) {
+        QPen pen(QColor(60, 180, 220, 160));
+        pen.setWidthF(1.0);
+        pen.setStyle(Qt::DashLine);
+        return pen;
+    }
+    if (name.contains(QStringLiteral("jumpgate")) || name.contains(QStringLiteral("hole"))) {
+        QPen pen(QColor(180, 100, 220, 200));
+        pen.setWidthF(1.5);
+        return pen;
+    }
+    if (name.contains(QStringLiteral("exclusion"))) {
+        QPen pen(QColor(220, 100, 50, 140));
+        pen.setWidthF(1.0);
+        pen.setStyle(Qt::DotLine);
+        return pen;
+    }
+    if (name.contains(QStringLiteral("path")) || name.contains(QStringLiteral("patrol")) || name.contains(QStringLiteral("vignette"))) {
+        QPen pen(QColor(100, 100, 150, 90));
+        pen.setWidthF(1.0);
+        pen.setStyle(Qt::DotLine);
+        return pen;
+    }
+
+    QPen pen(QColor(80, 160, 200, 150));
+    pen.setWidthF(1.0);
+    return pen;
+}
+
+QBrush ZoneItem2D::brushForZone(const flatlas::domain::ZoneItem &zone)
+{
+    const QString name = zone.nickname().toLower();
+    const QString usage = zone.usage().toLower();
+    const QString popType = zone.popType().toLower();
+    const QString pathLabel = zone.pathLabel().toLower();
+    const int damage = zone.damage();
+
+    if (usage == QStringLiteral("patrol") || name.contains(QStringLiteral("_path_")) || !pathLabel.isEmpty())
+        return QBrush(QColor(150, 150, 150, 102));
+    if (popType.contains(QStringLiteral("trade_path")))
+        return QBrush(Qt::NoBrush);
+    if (name.contains(QStringLiteral("pop_ambient")) || popType.contains(QStringLiteral("background")))
+        return QBrush(QColor(190, 145, 60, 16));
+    if (name.contains(QStringLiteral("death")) || name.contains(QStringLiteral("destroy_vignette")) || damage > 0)
+        return QBrush(QColor(150, 150, 150, 102));
+    if (name.contains(QStringLiteral("nebula")) || name.contains(QStringLiteral("badlands")))
+        return QBrush(QColor(120, 60, 200, 18));
+    if (name.contains(QStringLiteral("debris")) || name.contains(QStringLiteral("asteroid")))
+        return QBrush(QColor(160, 120, 50, 18));
+    if (name.contains(QStringLiteral("tradelane")))
+        return QBrush(QColor(60, 180, 220, 12));
+    if (name.contains(QStringLiteral("jumpgate")) || name.contains(QStringLiteral("hole")))
+        return QBrush(QColor(160, 80, 200, 18));
+    if (name.contains(QStringLiteral("exclusion")))
+        return QBrush(QColor(200, 80, 40, 8));
+    if (name.contains(QStringLiteral("path")) || name.contains(QStringLiteral("patrol")) || name.contains(QStringLiteral("vignette")))
+        return QBrush(Qt::NoBrush);
+
+    return QBrush(QColor(60, 140, 180, 14));
+}
+
 void ZoneItem2D::updateFromZone(const flatlas::domain::ZoneItem &zone)
 {
     constexpr qreal kScale = 0.01;
 
     m_shape = zone.shape();
     m_nickname = zone.nickname();
+    setPen(penForZone(zone));
+    setBrush(brushForZone(zone));
 
     setPos(zone.position().x() * kScale, zone.position().z() * kScale);
     setRotation(0.0);

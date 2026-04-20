@@ -34,6 +34,36 @@ static QVector3D parseVec3(const QString &text)
     return (okX && okY && okZ) ? QVector3D(x, y, z) : QVector3D();
 }
 
+static QVector3D parseZoneSize(const QString &text)
+{
+    const QStringList parts = text.split(QLatin1Char(','), Qt::SkipEmptyParts);
+    if (parts.isEmpty())
+        return {};
+
+    bool ok0 = false;
+    const float s0 = parts.value(0).trimmed().toFloat(&ok0);
+    if (!ok0)
+        return {};
+
+    if (parts.size() == 1)
+        return QVector3D(s0, s0, s0);
+
+    bool ok1 = false;
+    const float s1 = parts.value(1).trimmed().toFloat(&ok1);
+    if (!ok1)
+        return {};
+
+    if (parts.size() == 2)
+        return QVector3D(s0, s1, s0);
+
+    bool ok2 = false;
+    const float s2 = parts.value(2).trimmed().toFloat(&ok2);
+    if (!ok2)
+        return {};
+
+    return QVector3D(s0, s1, s2);
+}
+
 static QString vec3ToString(const QVector3D &v)
 {
     return QStringLiteral("%1, %2, %3")
@@ -232,7 +262,7 @@ std::unique_ptr<SystemDocument> SystemPersistence::load(const QString &filePath)
 
             const QString sizeStr = sec.value(QStringLiteral("size"));
             if (!sizeStr.isEmpty())
-                zone->setSize(parseVec3(sizeStr));
+                zone->setSize(parseZoneSize(sizeStr));
 
             const QString rotStr = sec.value(QStringLiteral("rotate"));
             if (!rotStr.isEmpty())
@@ -243,6 +273,9 @@ std::unique_ptr<SystemDocument> SystemPersistence::load(const QString &filePath)
                 zone->setShape(parseShape(shapeStr));
 
             zone->setZoneType(sec.value(QStringLiteral("zone_type")));
+            zone->setUsage(sec.value(QStringLiteral("usage")));
+            zone->setPopType(sec.value(QStringLiteral("pop_type")));
+            zone->setPathLabel(sec.value(QStringLiteral("path_label")));
             zone->setComment(sec.value(QStringLiteral("comment")));
 
             const QString tightStr = sec.value(QStringLiteral("tightness"));
@@ -272,6 +305,8 @@ std::unique_ptr<SystemDocument> SystemPersistence::load(const QString &filePath)
 
     s_extras[doc.get()] = extras;
     applyUniverseNavMapScale(doc.get(), filePath);
+    if (doc->name().trimmed().isEmpty())
+        doc->setName(QFileInfo(filePath).completeBaseName());
     doc->setDirty(false);
     return doc;
 }
@@ -338,6 +373,12 @@ static IniSection buildZoneSection(const ZoneItem &zone)
 
     if (!zone.zoneType().isEmpty())
         sec.entries.append({QStringLiteral("zone_type"), zone.zoneType()});
+    if (!zone.usage().isEmpty())
+        sec.entries.append({QStringLiteral("usage"), zone.usage()});
+    if (!zone.popType().isEmpty())
+        sec.entries.append({QStringLiteral("pop_type"), zone.popType()});
+    if (!zone.pathLabel().isEmpty())
+        sec.entries.append({QStringLiteral("path_label"), zone.pathLabel()});
     if (!zone.comment().isEmpty())
         sec.entries.append({QStringLiteral("comment"), zone.comment()});
     if (!zone.tightnessXyz().isNull())

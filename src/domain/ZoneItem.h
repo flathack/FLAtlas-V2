@@ -39,6 +39,15 @@ public:
     QString zoneType() const { return m_zoneType; }
     void setZoneType(const QString &t) { m_zoneType = t; emit changed(); }
 
+    QString usage() const { return m_usage; }
+    void setUsage(const QString &u) { m_usage = u; emit changed(); }
+
+    QString popType() const { return m_popType; }
+    void setPopType(const QString &p) { m_popType = p; emit changed(); }
+
+    QString pathLabel() const { return m_pathLabel; }
+    void setPathLabel(const QString &p) { m_pathLabel = p; emit changed(); }
+
     QString comment() const { return m_comment; }
     void setComment(const QString &c) { m_comment = c; emit changed(); }
 
@@ -63,6 +72,9 @@ signals:
 private:
     QString m_nickname;
     QString m_zoneType;
+    QString m_usage;
+    QString m_popType;
+    QString m_pathLabel;
     QString m_comment;
     QVector3D m_position;
     QVector3D m_size;
