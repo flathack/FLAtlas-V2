@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    name: Windows (Qt 6.8 / MinGW)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt 6.8
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_mingw'
+          modules: 'qt3d'
+          cache: true
+
+      - name: Configure CMake
+        run: >
+          cmake -B build
+          -G "MinGW Makefiles"
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run Tests
+        working-directory: build
+        run: ctest --output-on-failure --parallel 4
+        env:
+          QT3D_RENDERER: opengl
+          QT_QPA_PLATFORM: offscreen
+
+      - name: Upload build artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FLAtlas-windows-x64
+          path: build/src/FLAtlas.exe
+          retention-days: 14
