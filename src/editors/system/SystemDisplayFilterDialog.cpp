@@ -275,18 +275,23 @@ void SystemDisplayFilterDialog::saveRuleFromEditor()
     if (rule.name.isEmpty() || rule.pattern.isEmpty())
         return;
 
+    m_editingRuleId = rule.id;
+
     for (int i = 0; i < m_settings.rules.size(); ++i) {
         if (m_settings.rules[i].id == rule.id) {
             m_settings.rules[i] = rule;
             populateRulesTable();
             m_rulesTable->selectRow(i);
+            loadRuleIntoEditor(i);
             return;
         }
     }
 
     m_settings.rules.append(rule);
     populateRulesTable();
-    m_rulesTable->selectRow(m_settings.rules.size() - 1);
+    const int newRow = m_settings.rules.size() - 1;
+    m_rulesTable->selectRow(newRow);
+    loadRuleIntoEditor(newRow);
 }
 
 QString SystemDisplayFilterDialog::displayNameForType(SolarObject::Type type) const
