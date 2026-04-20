@@ -118,6 +118,24 @@ bool MapScene::isGridVisible() const
     return m_gridVisible;
 }
 
+void MapScene::setMoveEnabled(bool enabled)
+{
+    if (m_moveEnabled == enabled)
+        return;
+
+    m_moveEnabled = enabled;
+    const auto sceneItems = items();
+    for (QGraphicsItem *item : sceneItems) {
+        if (dynamic_cast<SolarObjectItem *>(item))
+            item->setFlag(QGraphicsItem::ItemIsMovable, m_moveEnabled);
+    }
+}
+
+bool MapScene::isMoveEnabled() const
+{
+    return m_moveEnabled;
+}
+
 QPointF MapScene::flToQt(float x, float z)
 {
     return QPointF(x * kScale, z * kScale);
@@ -175,7 +193,7 @@ void MapScene::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObject
     item->setPos(pos);
 
     item->setFlag(QGraphicsItem::ItemIsSelectable, true);
-    item->setFlag(QGraphicsItem::ItemIsMovable, true);
+    item->setFlag(QGraphicsItem::ItemIsMovable, m_moveEnabled);
 
     addItem(item);
 

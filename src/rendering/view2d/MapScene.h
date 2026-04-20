@@ -23,6 +23,8 @@ public:
 
     void setGridVisible(bool visible);
     bool isGridVisible() const;
+    void setMoveEnabled(bool enabled);
+    bool isMoveEnabled() const;
 
     // System map is a top-down projection: X/Z in Freelancer space -> X/Y in Qt.
     static QPointF flToQt(float x, float z);
@@ -41,6 +43,7 @@ private:
 
     flatlas::domain::SystemDocument *m_document = nullptr;
     bool m_gridVisible = true;
+    bool m_moveEnabled = false;
     static constexpr double kScale = 0.01; // Freelancer coords → scene coords
 };
 
