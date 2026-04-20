@@ -2,6 +2,7 @@
 
 #include "UniverseEditorPage.h"
 #include "UniverseSerializer.h"
+#include "core/PathUtils.h"
 #include "domain/UniverseData.h"
 
 #include <QVBoxLayout>
@@ -21,11 +22,14 @@
 #include <QMouseEvent>
 #include <QAction>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include "tools/PathFinderDialog.h"
 #include <cmath>
 #include <algorithm>
 #include <functional>
+#include <QGraphicsSceneMouseEvent>
+#include <QSignalBlocker>
 
 namespace flatlas::editors {
 
@@ -86,6 +90,8 @@ public:
         setToolTip(nickname);
         setData(0, nickname);
         setFlag(QGraphicsItem::ItemIsSelectable, true);
+        setFlag(QGraphicsItem::ItemIsMovable, true);
+        setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
         setZValue(10);
 
         // Label
@@ -96,6 +102,26 @@ public:
     }
 
     QString nickname() const { return m_nickname; }
+    std::function<void(const QString &)> onSelected;
+    std::function<void(const QString &)> onMoved;
+    std::function<void(const QString &)> onMoveFinished;
+
+protected:
+    QVariant itemChange(GraphicsItemChange change, const QVariant &value) override
+    {
+        if (change == QGraphicsItem::ItemSelectedHasChanged && value.toBool() && onSelected)
+            onSelected(m_nickname);
+        if (change == QGraphicsItem::ItemPositionHasChanged && onMoved)
+            onMoved(m_nickname);
+        return QGraphicsEllipseItem::itemChange(change, value);
+    }
+
+    void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override
+    {
+        QGraphicsEllipseItem::mouseReleaseEvent(event);
+        if (onMoveFinished)
+            onMoveFinished(m_nickname);
+    }
 
 private:
     QString m_nickname;
@@ -184,11 +210,12 @@ bool UniverseEditorPage::loadFile(const QString &filePath)
 
     m_data = std::move(data);
     m_filePath = filePath;
+    m_dirty = false;
+    m_highlightedPath.clear();
 
     refreshSystemList();
     refreshMap();
-
-    emit titleChanged(QStringLiteral("Universe (%1 systems)").arg(m_data->systemCount()));
+    refreshTitle();
     return true;
 }
 
@@ -196,15 +223,23 @@ bool UniverseEditorPage::save()
 {
     if (m_filePath.isEmpty() || !m_data)
         return false;
-    return UniverseSerializer::save(*m_data, m_filePath);
+    if (!UniverseSerializer::save(*m_data, m_filePath))
+        return false;
+    setDirty(false);
+    return true;
 }
 
 bool UniverseEditorPage::saveAs(const QString &filePath)
 {
     if (!m_data)
         return false;
+    if (!m_filePath.isEmpty() && m_filePath != filePath && QFileInfo::exists(m_filePath)) {
+        QFile::remove(filePath);
+        QFile::copy(m_filePath, filePath);
+    }
     if (UniverseSerializer::save(*m_data, filePath)) {
         m_filePath = filePath;
+        setDirty(false);
         return true;
     }
     return false;
@@ -237,6 +272,8 @@ void UniverseEditorPage::refreshSystemList()
 void UniverseEditorPage::refreshMap()
 {
     m_mapScene->clear();
+    m_connectionItems.clear();
+    m_pathHighlightItems.clear();
     if (!m_data) return;
 
     // Compute adaptive scale: normalize so largest coordinate → 500 scene units
@@ -245,17 +282,22 @@ void UniverseEditorPage::refreshMap()
         maxCoord = std::max(maxCoord, static_cast<double>(std::abs(sys.position.x())));
         maxCoord = std::max(maxCoord, static_cast<double>(std::abs(sys.position.z())));
     }
-    const double mapScale = 500.0 / maxCoord;
+    m_mapScale = 500.0 / maxCoord;
 
     // Draw system nodes
     for (const auto &sys : m_data->systems) {
-        double x = sys.position.x() * mapScale;
-        double y = sys.position.z() * mapScale; // Y increases downward (FL row convention)
+        double x = sys.position.x() * m_mapScale;
+        double y = sys.position.z() * m_mapScale; // Y increases downward (FL row convention)
         auto *node = new SystemNodeItem(sys.nickname, x, y);
+        node->onSelected = [this](const QString &nickname) { onNodeSelected(nickname); };
+        node->onMoved = [this](const QString &nickname) { onNodeMoved(nickname); };
+        node->onMoveFinished = [this](const QString &nickname) { onNodeMoveFinished(nickname); };
         m_mapScene->addItem(node);
     }
 
     drawConnections();
+    if (!m_highlightedPath.isEmpty())
+        highlightPath(m_highlightedPath);
 
     // Fit view after scene is populated
     QMetaObject::invokeMethod(this, [this]() {
@@ -268,20 +310,13 @@ void UniverseEditorPage::refreshMap()
 void UniverseEditorPage::drawConnections()
 {
     if (!m_data) return;
-
-    // Compute adaptive scale (same as refreshMap)
-    double maxCoord = 1.0;
-    for (const auto &sys : m_data->systems) {
-        maxCoord = std::max(maxCoord, static_cast<double>(std::abs(sys.position.x())));
-        maxCoord = std::max(maxCoord, static_cast<double>(std::abs(sys.position.z())));
-    }
-    const double mapScale = 500.0 / maxCoord;
+    clearConnectionLines();
 
     // Build node position map
     QHash<QString, QPointF> posMap;
     for (const auto &sys : m_data->systems) {
-        double x = sys.position.x() * mapScale;
-        double y = sys.position.z() * mapScale;
+        double x = sys.position.x() * m_mapScale;
+        double y = sys.position.z() * m_mapScale;
         posMap.insert(sys.nickname.toLower(), QPointF(x, y));
     }
 
@@ -305,6 +340,7 @@ void UniverseEditorPage::drawConnections()
             auto *line = m_mapScene->addLine(
                 QLineF(fromIt.value(), toIt.value()), pen);
             line->setZValue(1); // Behind nodes
+            m_connectionItems.append(line);
         }
     }
 }
@@ -328,6 +364,23 @@ void UniverseEditorPage::onSystemSelected(QTreeWidgetItem *item, int)
             }
         }
     }
+}
+
+void UniverseEditorPage::onNodeSelected(const QString &nickname)
+{
+    if (!m_systemTree)
+        return;
+
+    const QSignalBlocker blocker(m_systemTree);
+    for (int i = 0; i < m_systemTree->topLevelItemCount(); ++i) {
+        auto *item = m_systemTree->topLevelItem(i);
+        if (item && item->data(0, Qt::UserRole).toString().compare(nickname, Qt::CaseInsensitive) == 0) {
+            m_systemTree->setCurrentItem(item);
+            break;
+        }
+    }
+
+    onSystemSelected(m_systemTree->currentItem(), 0);
 }
 
 void UniverseEditorPage::onSystemDoubleClicked(QTreeWidgetItem *item, int)
@@ -379,7 +432,7 @@ void UniverseEditorPage::onAddSystem()
     m_data->addSystem(info);
     refreshSystemList();
     refreshMap();
-    emit titleChanged(QStringLiteral("Universe (%1 systems)*").arg(m_data->systemCount()));
+    setDirty(true);
 }
 
 void UniverseEditorPage::onDeleteSystem()
@@ -413,7 +466,7 @@ void UniverseEditorPage::onDeleteSystem()
 
     refreshSystemList();
     refreshMap();
-    emit titleChanged(QStringLiteral("Universe (%1 systems)*").arg(m_data->systemCount()));
+    setDirty(true);
 }
 
 // ─── Path Finder ─────────────────────────────────────────
@@ -429,22 +482,15 @@ void UniverseEditorPage::clearPathHighlight()
 
 void UniverseEditorPage::highlightPath(const QStringList &systemPath)
 {
+    m_highlightedPath = systemPath;
     clearPathHighlight();
     if (!m_data || systemPath.size() < 2) return;
-
-    // Compute adaptive scale (same as refreshMap)
-    double maxCoord = 1.0;
-    for (const auto &sys : m_data->systems) {
-        maxCoord = std::max(maxCoord, static_cast<double>(std::abs(sys.position.x())));
-        maxCoord = std::max(maxCoord, static_cast<double>(std::abs(sys.position.z())));
-    }
-    const double mapScale = 500.0 / maxCoord;
 
     // Positionen sammeln
     QHash<QString, QPointF> posMap;
     for (const auto &sys : m_data->systems) {
-        double x = sys.position.x() * mapScale;
-        double y = sys.position.z() * mapScale;
+        double x = sys.position.x() * m_mapScale;
+        double y = sys.position.z() * m_mapScale;
         posMap.insert(sys.nickname.toLower(), QPointF(x, y));
     }
 
@@ -491,12 +537,91 @@ QString UniverseEditorPage::resolveSystemPath(const QString &relativePath) const
     // universe.ini lives in DATA/UNIVERSE; system file paths are relative to DATA
     QString dataDir = QFileInfo(m_filePath).absolutePath(); // .../DATA/UNIVERSE
     dataDir = QFileInfo(dataDir).absolutePath();            // .../DATA
-    QString resolved = QDir(dataDir).filePath(relativePath);
-    if (QFileInfo::exists(resolved))
+    QString resolved = flatlas::core::PathUtils::ciResolvePath(dataDir, relativePath);
+    if (!resolved.isEmpty())
         return resolved;
-    // Try lowercase
-    resolved = QDir(dataDir).filePath(relativePath.toLower());
-    return resolved;
+    return QDir(dataDir).filePath(relativePath);
+}
+
+void UniverseEditorPage::clearConnectionLines()
+{
+    for (auto *item : m_connectionItems) {
+        if (item)
+            m_mapScene->removeItem(item);
+        delete item;
+    }
+    m_connectionItems.clear();
+}
+
+void UniverseEditorPage::syncSystemPositionFromMap(const QString &nickname)
+{
+    if (!m_data || m_mapScale <= 0.0)
+        return;
+
+    QPointF scenePos;
+    bool foundNode = false;
+    for (auto *gItem : m_mapScene->items()) {
+        auto *node = dynamic_cast<SystemNodeItem *>(gItem);
+        if (node && node->nickname().compare(nickname, Qt::CaseInsensitive) == 0) {
+            scenePos = node->pos();
+            foundNode = true;
+            break;
+        }
+    }
+    if (!foundNode)
+        return;
+
+    for (auto &sys : m_data->systems) {
+        if (sys.nickname.compare(nickname, Qt::CaseInsensitive) == 0) {
+            sys.position.setX(static_cast<float>(scenePos.x() / m_mapScale));
+            sys.position.setZ(static_cast<float>(scenePos.y() / m_mapScale));
+            break;
+        }
+    }
+
+    for (int i = 0; i < m_systemTree->topLevelItemCount(); ++i) {
+        auto *item = m_systemTree->topLevelItem(i);
+        if (item && item->data(0, Qt::UserRole).toString().compare(nickname, Qt::CaseInsensitive) == 0) {
+            if (const auto *sys = m_data->findSystem(nickname)) {
+                item->setText(1, QStringLiteral("%1, %2")
+                    .arg(sys->position.x(), 0, 'f', 0)
+                    .arg(sys->position.z(), 0, 'f', 0));
+            }
+            break;
+        }
+    }
+}
+
+void UniverseEditorPage::onNodeMoved(const QString &nickname)
+{
+    syncSystemPositionFromMap(nickname);
+    drawConnections();
+    if (!m_highlightedPath.isEmpty())
+        highlightPath(m_highlightedPath);
+}
+
+void UniverseEditorPage::onNodeMoveFinished(const QString &nickname)
+{
+    syncSystemPositionFromMap(nickname);
+    setDirty(true);
+    onNodeSelected(nickname);
+}
+
+void UniverseEditorPage::refreshTitle()
+{
+    if (!m_data)
+        return;
+
+    QString title = QStringLiteral("Universe (%1 systems)").arg(m_data->systemCount());
+    if (m_dirty)
+        title += QLatin1Char('*');
+    emit titleChanged(title);
+}
+
+void UniverseEditorPage::setDirty(bool dirty)
+{
+    m_dirty = dirty;
+    refreshTitle();
 }
 
 } // namespace flatlas::editors

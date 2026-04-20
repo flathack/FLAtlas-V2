@@ -2,6 +2,7 @@
 // domain/UniverseData.h – Universe-Datenmodell
 
 #include <QString>
+#include <QPair>
 #include <QVector>
 #include <QVector3D>
 
@@ -14,6 +15,7 @@ struct SystemInfo {
     QVector3D position;
     int idsName = 0;
     int stridName = 0;
+    QVector<QPair<QString, QString>> rawEntries;
 };
 
 struct JumpConnection {

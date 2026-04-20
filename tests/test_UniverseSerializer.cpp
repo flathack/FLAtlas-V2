@@ -1,4 +1,5 @@
 #include <QtTest>
+#include <QFile>
 #include <QTemporaryFile>
 #include <QTemporaryDir>
 #include "editors/universe/UniverseSerializer.h"
@@ -176,6 +177,62 @@ private slots:
         // pos = x, z (2D position)
         QCOMPARE(data->systems[0].position.x(), -33000.0f);
         QCOMPARE(data->systems[0].position.z(), 75000.0f);
+    }
+
+    void savePreservesNonSystemSections()
+    {
+        QTemporaryFile file;
+        file.setAutoRemove(true);
+        QVERIFY(file.open());
+        file.write("[Base]\n"
+                   "nickname = Li01_01_Base\n"
+                   "file = universe\\systems\\Li01\\Bases\\Li01_01_Base.ini\n"
+                   "\n"
+                   "[System]\n"
+                   "nickname = Li01\n"
+                   "file = universe\\systems\\Li01\\Li01.ini\n"
+                   "pos = -33000, 0\n");
+        file.close();
+
+        auto data = UniverseSerializer::load(file.fileName());
+        QVERIFY(data);
+        data->systems[0].position = QVector3D(-12000, 0, 45000);
+
+        QVERIFY(UniverseSerializer::save(*data, file.fileName()));
+
+        QFile reloaded(file.fileName());
+        QVERIFY(reloaded.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString text = QString::fromUtf8(reloaded.readAll());
+        QVERIFY(text.contains(QStringLiteral("[Base]")));
+        QVERIFY(text.contains(QStringLiteral("nickname = Li01_01_Base")));
+        QVERIFY(text.contains(QStringLiteral("pos = -12000, 45000")));
+    }
+
+    void savePreservesUnknownSystemEntries()
+    {
+        QTemporaryFile file;
+        file.setAutoRemove(true);
+        QVERIFY(file.open());
+        file.write("[System]\n"
+                   "nickname = Li01\n"
+                   "file = universe\\systems\\Li01\\Li01.ini\n"
+                   "navmapscale = 1.5\n"
+                   "msg_id_prefix = gcs_refer_system_Li01\n"
+                   "pos = -33000, 0\n");
+        file.close();
+
+        auto data = UniverseSerializer::load(file.fileName());
+        QVERIFY(data);
+        data->systems[0].position = QVector3D(1200, 0, 3400);
+
+        QVERIFY(UniverseSerializer::save(*data, file.fileName()));
+
+        QFile reloaded(file.fileName());
+        QVERIFY(reloaded.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString text = QString::fromUtf8(reloaded.readAll());
+        QVERIFY(text.contains(QStringLiteral("navmapscale = 1.5")));
+        QVERIFY(text.contains(QStringLiteral("msg_id_prefix = gcs_refer_system_Li01")));
+        QVERIFY(text.contains(QStringLiteral("pos = 1200, 3400")));
     }
 };
 

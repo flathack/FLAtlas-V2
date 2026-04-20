@@ -31,6 +31,68 @@ static QString posToString(const QVector3D &v)
     return QStringLiteral("%1, %2").arg(v.x(), 0, 'f', 0).arg(v.z(), 0, 'f', 0);
 }
 
+static IniSection buildSystemSection(const SystemInfo &sys)
+{
+    IniSection section;
+    section.name = QStringLiteral("System");
+
+    if (sys.rawEntries.isEmpty()) {
+        section.entries.append({QStringLiteral("nickname"), sys.nickname});
+        section.entries.append({QStringLiteral("file"), sys.filePath});
+        if (sys.idsName > 0)
+            section.entries.append({QStringLiteral("ids_name"), QString::number(sys.idsName)});
+        if (sys.stridName > 0)
+            section.entries.append({QStringLiteral("strid_name"), QString::number(sys.stridName)});
+        section.entries.append({QStringLiteral("pos"), posToString(sys.position)});
+        return section;
+    }
+
+    bool wroteNickname = false;
+    bool wroteFile = false;
+    bool wrotePos = false;
+    bool wroteIdsName = false;
+    bool wroteStridName = false;
+
+    for (const auto &entry : sys.rawEntries) {
+        const QString lowered = entry.first.trimmed().toLower();
+        if (lowered == QStringLiteral("nickname")) {
+            section.entries.append({entry.first, sys.nickname});
+            wroteNickname = true;
+        } else if (lowered == QStringLiteral("file")) {
+            section.entries.append({entry.first, sys.filePath});
+            wroteFile = true;
+        } else if (lowered == QStringLiteral("pos")) {
+            section.entries.append({entry.first, posToString(sys.position)});
+            wrotePos = true;
+        } else if (lowered == QStringLiteral("ids_name")) {
+            if (sys.idsName > 0) {
+                section.entries.append({entry.first, QString::number(sys.idsName)});
+                wroteIdsName = true;
+            }
+        } else if (lowered == QStringLiteral("strid_name")) {
+            if (sys.stridName > 0) {
+                section.entries.append({entry.first, QString::number(sys.stridName)});
+                wroteStridName = true;
+            }
+        } else {
+            section.entries.append(entry);
+        }
+    }
+
+    if (!wroteNickname)
+        section.entries.append({QStringLiteral("nickname"), sys.nickname});
+    if (!wroteFile)
+        section.entries.append({QStringLiteral("file"), sys.filePath});
+    if (sys.idsName > 0 && !wroteIdsName)
+        section.entries.append({QStringLiteral("ids_name"), QString::number(sys.idsName)});
+    if (sys.stridName > 0 && !wroteStridName)
+        section.entries.append({QStringLiteral("strid_name"), QString::number(sys.stridName)});
+    if (!wrotePos)
+        section.entries.append({QStringLiteral("pos"), posToString(sys.position)});
+
+    return section;
+}
+
 /// Classify an [Object] with goto as gate/hole/other based on archetype.
 static QString classifyJumpKind(const QString &archetype, const QString &gotoVal)
 {
@@ -129,6 +191,7 @@ std::unique_ptr<UniverseData> UniverseSerializer::load(const QString &filePath)
             sys.filePath = section.value(QStringLiteral("file"));
             sys.idsName = section.value(QStringLiteral("ids_name"), QStringLiteral("0")).toInt();
             sys.stridName = section.value(QStringLiteral("strid_name"), QStringLiteral("0")).toInt();
+            sys.rawEntries = section.entries;
 
             // Parse pos (2D: x, z)
             QString posStr = section.value(QStringLiteral("pos"));
@@ -182,21 +245,37 @@ std::unique_ptr<UniverseData> UniverseSerializer::load(const QString &filePath)
 bool UniverseSerializer::save(const UniverseData &data, const QString &filePath)
 {
     IniDocument doc;
+    QHash<QString, const SystemInfo *> systemsByNickname;
+    for (const auto &sys : data.systems)
+        systemsByNickname.insert(sys.nickname.trimmed().toLower(), &sys);
 
-    for (const auto &sys : data.systems) {
-        IniSection section;
-        section.name = QStringLiteral("System");
-        section.entries.append({QStringLiteral("nickname"), sys.nickname});
-        section.entries.append({QStringLiteral("file"), sys.filePath});
+    if (QFile::exists(filePath)) {
+        const IniDocument existing = IniParser::parseFile(filePath);
+        QSet<QString> writtenSystems;
 
-        if (sys.idsName > 0)
-            section.entries.append({QStringLiteral("ids_name"), QString::number(sys.idsName)});
-        if (sys.stridName > 0)
-            section.entries.append({QStringLiteral("strid_name"), QString::number(sys.stridName)});
+        for (const auto &section : existing) {
+            if (section.name.compare(QStringLiteral("System"), Qt::CaseInsensitive) != 0) {
+                doc.append(section);
+                continue;
+            }
 
-        section.entries.append({QStringLiteral("pos"), posToString(sys.position)});
+            const QString nickname = section.value(QStringLiteral("nickname")).trimmed().toLower();
+            const auto it = systemsByNickname.constFind(nickname);
+            if (it == systemsByNickname.constEnd())
+                continue;
 
-        doc.append(section);
+            doc.append(buildSystemSection(*it.value()));
+            writtenSystems.insert(nickname);
+        }
+
+        for (const auto &sys : data.systems) {
+            const QString nickname = sys.nickname.trimmed().toLower();
+            if (!writtenSystems.contains(nickname))
+                doc.append(buildSystemSection(sys));
+        }
+    } else {
+        for (const auto &sys : data.systems)
+            doc.append(buildSystemSection(sys));
     }
 
     QFile file(filePath);
