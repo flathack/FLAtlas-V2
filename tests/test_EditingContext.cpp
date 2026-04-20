@@ -54,6 +54,8 @@ private slots:
         auto &ctx = flatlas::core::EditingContext::instance();
         QString savedId = ctx.editingProfileId();
         int savedCount = ctx.profiles().size();
+        QSignalSpy profilesSpy(&ctx, &flatlas::core::EditingContext::profilesChanged);
+        QSignalSpy contextSpy(&ctx, &flatlas::core::EditingContext::contextChanged);
 
         // Simulate restart: restore from config
         ctx.restore();
@@ -61,6 +63,9 @@ private slots:
         QCOMPARE(ctx.profiles().size(), savedCount);
         QCOMPARE(ctx.editingProfileId(), savedId);
         QVERIFY(ctx.hasContext());
+        QCOMPARE(profilesSpy.count(), 1);
+        QCOMPARE(contextSpy.count(), 1);
+        QCOMPARE(contextSpy.takeFirst().at(0).toString(), savedId);
     }
 
     void testClearContext()

@@ -74,6 +74,9 @@ void EditingContext::restore()
         if (!found)
             m_editingId.clear();
     }
+
+    emit profilesChanged();
+    emit contextChanged(m_editingId);
 }
 
 void EditingContext::persist() const
