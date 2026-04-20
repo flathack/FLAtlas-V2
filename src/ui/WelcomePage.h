@@ -1,15 +1,21 @@
 #pragma once
 #include <QWidget>
 class QListWidget;
+class QComboBox;
+class QCheckBox;
+class QPushButton;
+class QLabel;
 namespace flatlas::ui {
 class WelcomePage : public QWidget {
     Q_OBJECT
 public:
     explicit WelcomePage(QWidget *parent = nullptr);
-    void updateRecentFiles();
 signals:
-    void openFileRequested(const QString &path);
+    void openModManagerRequested();
 private:
-    QListWidget *m_recentList = nullptr;
+    QComboBox *m_langCombo = nullptr;
+    QComboBox *m_themeCombo = nullptr;
+    QCheckBox *m_updateCheck = nullptr;
+    QLabel *m_idsStatusLabel = nullptr;
 };
 } // namespace flatlas::ui

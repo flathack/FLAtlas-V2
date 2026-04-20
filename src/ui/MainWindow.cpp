@@ -472,6 +472,8 @@ void MainWindow::createPanels()
     // Welcome page as first tab
     auto *welcomePage = new flatlas::ui::WelcomePage(this);
     m_centerTabs->addTab(welcomePage, tr("Welcome"));
+    connect(welcomePage, &flatlas::ui::WelcomePage::openModManagerRequested,
+            this, &MainWindow::openModManager);
 }
 
 void MainWindow::createStatusBar()
