@@ -2,9 +2,73 @@
 #include "Config.h"
 
 #include <QDir>
+#include <QFileInfo>
+#include <QSet>
 #include <QUuid>
 
 namespace flatlas::core {
+
+static QString normalizeComparablePath(QString path)
+{
+    path = path.trimmed();
+    if (path.isEmpty())
+        return {};
+
+    path = QDir::fromNativeSeparators(path);
+    path = QDir::cleanPath(path);
+
+#ifdef Q_OS_WIN
+    path = path.toLower();
+#endif
+    return path;
+}
+
+static QSet<QString> profilePathVariants(const ModProfile &profile)
+{
+    QSet<QString> variants;
+    const QString source = profile.sourcePath().trimmed();
+    if (source.isEmpty())
+        return variants;
+
+    variants.insert(normalizeComparablePath(source));
+
+    const QFileInfo rawInfo(source);
+    variants.insert(normalizeComparablePath(rawInfo.absoluteFilePath()));
+
+    const QString cleaned = QDir::cleanPath(source);
+    variants.insert(normalizeComparablePath(cleaned));
+
+    const QFileInfo cleanedInfo(cleaned);
+    variants.insert(normalizeComparablePath(cleanedInfo.absoluteFilePath()));
+
+    if (rawInfo.exists()) {
+        const QString canonical = rawInfo.canonicalFilePath();
+        if (!canonical.isEmpty())
+            variants.insert(normalizeComparablePath(canonical));
+    }
+    if (cleanedInfo.exists()) {
+        const QString canonical = cleanedInfo.canonicalFilePath();
+        if (!canonical.isEmpty())
+            variants.insert(normalizeComparablePath(canonical));
+    }
+
+    variants.remove(QString());
+    return variants;
+}
+
+static bool profilesReferToSameLocation(const ModProfile &lhs, const ModProfile &rhs)
+{
+    const QSet<QString> lhsVariants = profilePathVariants(lhs);
+    const QSet<QString> rhsVariants = profilePathVariants(rhs);
+    if (lhsVariants.isEmpty() || rhsVariants.isEmpty())
+        return false;
+
+    for (const auto &candidate : lhsVariants) {
+        if (rhsVariants.contains(candidate))
+            return true;
+    }
+    return false;
+}
 
 // ── ModProfile ───────────────────────────────────────────────────────
 
@@ -52,15 +116,32 @@ EditingContext &EditingContext::instance()
 void EditingContext::restore()
 {
     auto &cfg = Config::instance();
+    bool changed = false;
 
     // Restore profiles
     m_profiles.clear();
     const auto arr = cfg.getJsonArray(QStringLiteral("modmanager.profiles"));
+    QVector<ModProfile> uniqueProfiles;
     for (const auto &v : arr) {
         auto p = ModProfile::fromJson(v.toObject());
-        if (p.isValid())
-            m_profiles.append(p);
+        if (!p.isValid())
+            continue;
+
+        bool duplicate = false;
+        for (const auto &existing : uniqueProfiles) {
+            if (profilesReferToSameLocation(existing, p)) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (duplicate) {
+                changed = true;
+                continue;
+        }
+
+        uniqueProfiles.append(p);
     }
+    m_profiles = uniqueProfiles;
 
     // Restore active editing ID
     m_editingId = cfg.getString(QStringLiteral("modmanager.editing_id"));
@@ -71,9 +152,14 @@ void EditingContext::restore()
         for (const auto &p : m_profiles) {
             if (p.id == m_editingId) { found = true; break; }
         }
-        if (!found)
+        if (!found) {
             m_editingId.clear();
+            changed = true;
+        }
     }
+
+    if (changed)
+        persist();
 
     emit profilesChanged();
     emit contextChanged(m_editingId);
@@ -91,14 +177,21 @@ void EditingContext::persist() const
     cfg.save();
 }
 
-void EditingContext::addProfile(const ModProfile &profile)
+bool EditingContext::addProfile(const ModProfile &profile)
 {
     ModProfile p = profile;
     if (p.id.isEmpty())
         p.id = QUuid::createUuid().toString(QUuid::WithoutBraces).left(12);
+
+    for (const auto &existing : m_profiles) {
+        if (profilesReferToSameLocation(existing, p))
+            return false;
+    }
+
     m_profiles.append(p);
     persist();
     emit profilesChanged();
+    return true;
 }
 
 void EditingContext::removeProfile(const QString &profileId)

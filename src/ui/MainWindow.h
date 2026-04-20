@@ -52,6 +52,7 @@ private:
     void openSystemFromUniverse(const QString &nickname, const QString &systemFile);
     void openUniverseFromContext();
     void showContextHelp();
+    void launchFreelancerFromContext();
     flatlas::editors::SystemEditorPage *currentSystemEditor() const;
 
     QSplitter *m_mainSplitter = nullptr;

@@ -40,7 +40,7 @@ public:
 
     // ── Profile management ──────────────────────────────────
     const QVector<ModProfile> &profiles() const { return m_profiles; }
-    void addProfile(const ModProfile &profile);
+    bool addProfile(const ModProfile &profile);
     void removeProfile(const QString &profileId);
     ModProfile profileById(const QString &id) const;
 

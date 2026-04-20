@@ -55,6 +55,7 @@
 #include <QTabBar>
 #include <QStackedWidget>
 #include <QDesktopServices>
+#include <QProcess>
 #include <QUrl>
 
 MainWindow::MainWindow(QWidget *parent)
@@ -274,15 +275,7 @@ void MainWindow::createMenus()
         else
             statusBar()->showMessage(tr("Patch failed: %1").arg(r.errorMessage), 5000);
     });
-    toolsMenu->addAction(tr("&Launch Freelancer..."), this, [this]() {
-        const QString exe = QFileDialog::getOpenFileName(
-            this, tr("Select Freelancer.exe"), {}, tr("Executable (*.exe)"));
-        if (exe.isEmpty()) return;
-        if (flatlas::tools::SpStarter::launch(exe))
-            statusBar()->showMessage(tr("Freelancer launched."), 3000);
-        else
-            statusBar()->showMessage(tr("Failed to launch Freelancer."), 5000);
-    });
+    toolsMenu->addAction(tr("&Launch Freelancer..."), this, &MainWindow::launchFreelancerFromContext);
 
     // --- Settings ---
     auto *settingsMenu = menuBar()->addMenu(tr("&Settings"));
@@ -362,15 +355,7 @@ void MainWindow::createMenus()
                         " padding: 5px 16px; border-radius: 3px; font-weight: bold; }"
                         "QPushButton:hover { background: #2fc553; }"));
     cornerLayout->addWidget(launchBtn);
-    connect(launchBtn, &QPushButton::clicked, this, [this]() {
-        const QString exe = QFileDialog::getOpenFileName(
-            this, tr("Select Freelancer.exe"), {}, tr("Executable (*.exe)"));
-        if (exe.isEmpty()) return;
-        if (flatlas::tools::SpStarter::launch(exe))
-            statusBar()->showMessage(tr("Freelancer launched."), 3000);
-        else
-            statusBar()->showMessage(tr("Failed to launch Freelancer."), 5000);
-    });
+    connect(launchBtn, &QPushButton::clicked, this, &MainWindow::launchFreelancerFromContext);
 
     auto *feedbackBtn = new QPushButton(tr("Discord"), this);
     feedbackBtn->setStyleSheet(
@@ -515,6 +500,38 @@ void MainWindow::showContextHelp()
         topicId = flatlas::tools::HelpBrowser::topicForContext(shortName);
     }
     m_helpBrowser->showTopic(topicId);
+}
+
+void MainWindow::launchFreelancerFromContext()
+{
+    auto &ctx = flatlas::core::EditingContext::instance();
+    QString gamePath = ctx.primaryGamePath();
+    if (gamePath.isEmpty()) {
+        QMessageBox::information(
+            this,
+            tr("Launch Freelancer"),
+            tr("No editing context set. Select an installation first."));
+        return;
+    }
+
+    QDir dir(gamePath);
+    QString exe;
+    if (dir.exists(QStringLiteral("EXE/Freelancer.exe")))
+        exe = dir.filePath(QStringLiteral("EXE/Freelancer.exe"));
+    else if (dir.exists(QStringLiteral("Freelancer.exe")))
+        exe = dir.filePath(QStringLiteral("Freelancer.exe"));
+
+    if (exe.isEmpty()) {
+        exe = QFileDialog::getOpenFileName(
+            this, tr("Select Freelancer.exe"), gamePath, tr("Executable (*.exe)"));
+        if (exe.isEmpty())
+            return;
+    }
+
+    if (QProcess::startDetached(exe, {}, QFileInfo(exe).absolutePath()))
+        statusBar()->showMessage(tr("Freelancer launched."), 3000);
+    else
+        statusBar()->showMessage(tr("Failed to launch Freelancer."), 5000);
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)

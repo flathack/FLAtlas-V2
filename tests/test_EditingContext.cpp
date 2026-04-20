@@ -25,12 +25,27 @@ private slots:
         p.name = QStringLiteral("TestMod");
         p.mode = QStringLiteral("direct");
         p.directPath = m_tmpDir.path();
-        ctx.addProfile(p);
+        QVERIFY(ctx.addProfile(p));
 
         QCOMPARE(ctx.profiles().size(), 1);
         QCOMPARE(ctx.profiles().first().name, QStringLiteral("TestMod"));
         QVERIFY(!ctx.profiles().first().id.isEmpty());
         QCOMPARE(spy.count(), 1);
+    }
+
+    void testRejectDuplicateProfileByPath()
+    {
+        auto &ctx = flatlas::core::EditingContext::instance();
+        QSignalSpy spy(&ctx, &flatlas::core::EditingContext::profilesChanged);
+
+        flatlas::core::ModProfile duplicate;
+        duplicate.name = QStringLiteral("Duplicate TestMod");
+        duplicate.mode = QStringLiteral("direct");
+        duplicate.directPath = QDir(m_tmpDir.path()).filePath(QStringLiteral("."));
+
+        QVERIFY(!ctx.addProfile(duplicate));
+        QCOMPARE(ctx.profiles().size(), 1);
+        QCOMPARE(spy.count(), 0);
     }
 
     void testSetEditingProfile()
@@ -116,6 +131,37 @@ private slots:
         p.repoFolder = QStringLiteral("Crossfire");
 
         QCOMPARE(p.sourcePath(), QStringLiteral("C:/Mods/Crossfire"));
+    }
+
+    void testRestoreRemovesDuplicatePaths()
+    {
+        auto &cfg = flatlas::core::Config::instance();
+        QJsonArray arr;
+
+        QJsonObject p1;
+        p1[QStringLiteral("id")] = QStringLiteral("dup-1");
+        p1[QStringLiteral("name")] = QStringLiteral("One");
+        p1[QStringLiteral("mode")] = QStringLiteral("direct");
+        p1[QStringLiteral("direct_path")] = m_tmpDir.path();
+        arr.append(p1);
+
+        QJsonObject p2;
+        p2[QStringLiteral("id")] = QStringLiteral("dup-2");
+        p2[QStringLiteral("name")] = QStringLiteral("Two");
+        p2[QStringLiteral("mode")] = QStringLiteral("direct");
+        p2[QStringLiteral("direct_path")] = QDir(m_tmpDir.path()).filePath(QStringLiteral("."));
+        arr.append(p2);
+
+        cfg.setJsonArray(QStringLiteral("modmanager.profiles"), arr);
+        cfg.setString(QStringLiteral("modmanager.editing_id"), QStringLiteral("dup-2"));
+        QVERIFY(cfg.save());
+
+        auto &ctx = flatlas::core::EditingContext::instance();
+        ctx.restore();
+
+        QCOMPARE(ctx.profiles().size(), 1);
+        QCOMPARE(ctx.profiles().first().id, QStringLiteral("dup-1"));
+        QVERIFY(ctx.editingProfileId().isEmpty());
     }
 
 private:

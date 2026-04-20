@@ -2,6 +2,7 @@
 
 #include "ModManagerPage.h"
 #include "core/EditingContext.h"
+#include "core/PathUtils.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -215,6 +216,17 @@ void ModManagerPage::onAddDirectClicked()
     if (dir.isEmpty())
         return;
 
+    const QString freelancerExe = flatlas::core::PathUtils::ciResolvePath(
+        dir, QStringLiteral("EXE/Freelancer.exe"));
+    if (freelancerExe.isEmpty()) {
+        QMessageBox::warning(
+            this,
+            tr("Invalid Installation"),
+            tr("The selected folder is not a valid Freelancer installation.\n\n"
+               "Required file not found:\nEXE\\Freelancer.exe"));
+        return;
+    }
+
     // Derive name from directory name
     QString name = QDir(dir).dirName();
     if (name.isEmpty())
@@ -225,7 +237,14 @@ void ModManagerPage::onAddDirectClicked()
     profile.mode = QStringLiteral("direct");
     profile.directPath = dir;
 
-    flatlas::core::EditingContext::instance().addProfile(profile);
+    if (!flatlas::core::EditingContext::instance().addProfile(profile)) {
+        QMessageBox::information(
+            this,
+            tr("Installation Already Added"),
+            tr("This Freelancer installation is already in the list."));
+        return;
+    }
+
     m_statusLabel->setText(tr("Added: %1").arg(name));
 }
 
