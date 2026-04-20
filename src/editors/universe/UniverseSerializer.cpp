@@ -1,6 +1,7 @@
 // editors/universe/UniverseSerializer.cpp – Universe.ini Laden/Speichern (Phase 9)
 
 #include "UniverseSerializer.h"
+#include "core/PathUtils.h"
 #include "infrastructure/parser/IniParser.h"
 #include <QFile>
 #include <QFileInfo>
@@ -180,9 +181,7 @@ std::unique_ptr<UniverseData> UniverseSerializer::load(const QString &filePath)
         return nullptr;
 
     auto universe = std::make_unique<UniverseData>();
-    QString baseDir = QFileInfo(filePath).absolutePath();
-    // Base dir is typically DATA/UNIVERSE; we need the DATA dir parent
-    QDir universeDir(baseDir);
+    const QString universeDir = QFileInfo(filePath).absolutePath();
 
     for (const auto &section : doc) {
         if (section.name.compare(QStringLiteral("System"), Qt::CaseInsensitive) == 0) {
@@ -205,21 +204,17 @@ std::unique_ptr<UniverseData> UniverseSerializer::load(const QString &filePath)
         }
     }
 
-    // Build jump connections by scanning system files for jump objects
-    // System file paths in universe.ini are relative to the DATA directory
-    // baseDir is typically .../DATA/UNIVERSE, so go up one level
-    QString dataDir = QFileInfo(baseDir).absolutePath();
+    // Build jump connections by scanning system files for jump objects.
+    // In universe.ini, system file paths are relative to the universe.ini folder,
+    // typically .../DATA/UNIVERSE.
 
     QSet<QString> seenEdges; // deduplicate bidirectional connections per kind
     for (const auto &sys : universe->systems) {
         QString sysFilePath;
         if (!sys.filePath.isEmpty()) {
-            // Resolve relative to DATA dir
-            sysFilePath = QDir(dataDir).filePath(sys.filePath);
-            if (!QFile::exists(sysFilePath)) {
-                // Try case-insensitive
-                sysFilePath = QDir(dataDir).filePath(sys.filePath.toLower());
-            }
+            sysFilePath = flatlas::core::PathUtils::ciResolvePath(universeDir, sys.filePath);
+            if (sysFilePath.isEmpty())
+                sysFilePath = QDir(universeDir).filePath(sys.filePath);
         }
 
         auto conns = scanSystemConnections(sys.nickname, sysFilePath);

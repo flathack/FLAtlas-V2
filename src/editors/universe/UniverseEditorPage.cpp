@@ -123,7 +123,7 @@ private:
 
 // ─── Clickable system node ───────────────────────────────
 
-static constexpr double NODE_RADIUS = 8.0;
+static constexpr double NODE_RADIUS = 6.0;
 
 class SystemNodeItem : public QGraphicsEllipseItem {
 public:
@@ -145,7 +145,7 @@ public:
         auto *label = new QGraphicsSimpleTextItem(nickname, this);
         label->setFont(QFont(QStringLiteral("Segoe UI"), 7));
         label->setBrush(QColor(220, 220, 220));
-        label->setPos(NODE_RADIUS + 2, -6);
+        label->setPos(NODE_RADIUS + 2, -5);
     }
 
     QString nickname() const { return m_nickname; }
