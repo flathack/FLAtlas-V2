@@ -6,6 +6,8 @@
 #include <QAction>
 #include <QContextMenuEvent>
 #include <QPainter>
+#include <QFont>
+#include <QFontMetrics>
 #include <QScrollBar>
 
 namespace flatlas::rendering {
@@ -44,10 +46,17 @@ void SystemMapView::setBackgroundPixmap(const QPixmap &pixmap, const QColor &fal
 
 void SystemMapView::zoomToFit()
 {
-    if (!scene() || scene()->items().isEmpty())
+    if (!scene())
         return;
-    fitInView(scene()->itemsBoundingRect().adjusted(-20, -20, 20, 20),
-              Qt::KeepAspectRatio);
+    QRectF targetRect = scene()->sceneRect();
+    if (targetRect.isNull() || targetRect.width() <= 0.0 || targetRect.height() <= 0.0)
+        targetRect = scene()->itemsBoundingRect();
+    if (targetRect.isNull() || targetRect.width() <= 0.0 || targetRect.height() <= 0.0)
+        return;
+
+    const double padX = targetRect.width() / 8.0;
+    const double padY = targetRect.height() / 8.0;
+    fitInView(targetRect.adjusted(-padX, -padY, padX, padY), Qt::KeepAspectRatio);
 }
 
 void SystemMapView::wheelEvent(QWheelEvent *event)
@@ -113,6 +122,51 @@ void SystemMapView::drawBackground(QPainter *painter, const QRectF &rect)
 
     painter->restore();
     QGraphicsView::drawBackground(painter, rect);
+}
+
+void SystemMapView::drawForeground(QPainter *painter, const QRectF &rect)
+{
+    QGraphicsView::drawForeground(painter, rect);
+
+    if (!scene())
+        return;
+
+    const QRectF sceneRect = scene()->sceneRect();
+    if (sceneRect.isNull() || sceneRect.width() <= 0.0 || sceneRect.height() <= 0.0)
+        return;
+
+    painter->save();
+    painter->resetTransform();
+
+    QFont font(QStringLiteral("Segoe UI"), 11, QFont::Bold);
+    painter->setFont(font);
+    painter->setPen(QColor(230, 235, 245, 235));
+    const QFontMetrics fm(font);
+
+    const double cellWidth = sceneRect.width() / 8.0;
+    const double cellHeight = sceneRect.height() / 8.0;
+    const int bottomMargin = 22;
+    const int leftMargin = 16;
+
+    for (int i = 0; i < 8; ++i) {
+        const double sceneX = sceneRect.left() + (cellWidth * (static_cast<double>(i) + 0.5));
+        const QPoint viewPoint = mapFromScene(QPointF(sceneX, sceneRect.bottom()));
+        const QString label(QChar(static_cast<char>('A' + i)));
+        painter->drawText(viewPoint.x() - (fm.horizontalAdvance(label) / 2),
+                          viewport()->height() - bottomMargin,
+                          label);
+    }
+
+    for (int i = 0; i < 8; ++i) {
+        const double sceneY = sceneRect.top() + (cellHeight * (static_cast<double>(i) + 0.5));
+        const QPoint viewPoint = mapFromScene(QPointF(sceneRect.left(), sceneY));
+        const QString label = QString::number(i + 1);
+        painter->drawText(leftMargin - fm.horizontalAdvance(label),
+                          viewPoint.y() + (fm.height() / 3),
+                          label);
+    }
+
+    painter->restore();
 }
 
 } // namespace flatlas::rendering

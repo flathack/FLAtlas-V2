@@ -1,6 +1,7 @@
 #include "SolarObjectItem.h"
 #include <QPen>
 #include <QBrush>
+#include <QFont>
 
 namespace flatlas::rendering {
 
@@ -20,6 +21,12 @@ SolarObjectItem::SolarObjectItem(const QString &nickname,
 
     setFlags(ItemIsSelectable | ItemIsMovable | ItemSendsGeometryChanges);
     setToolTip(nickname);
+
+    m_labelItem = new QGraphicsSimpleTextItem(nickname, this);
+    m_labelItem->setBrush(QColor(220, 220, 230));
+    m_labelItem->setFont(QFont(QStringLiteral("Segoe UI"), 7));
+    m_labelItem->setPos(r + 3.0, -r - 2.0);
+    m_labelItem->setFlag(QGraphicsItem::ItemIgnoresTransformations, true);
 }
 
 QColor SolarObjectItem::colorForType(flatlas::domain::SolarObject::Type t)
@@ -55,7 +62,7 @@ qreal SolarObjectItem::radiusForType(flatlas::domain::SolarObject::Type t)
 void SolarObjectItem::updateFromObject(const flatlas::domain::SolarObject &obj)
 {
     constexpr double kScale = 0.01;
-    setPos(obj.position().x() * kScale, -obj.position().z() * kScale);
+    setPos(obj.position().x() * kScale, obj.position().z() * kScale);
 }
 
 } // namespace flatlas::rendering

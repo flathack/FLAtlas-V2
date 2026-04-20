@@ -4,8 +4,11 @@
 #include "../../domain/SystemDocument.h"
 #include "../../domain/SolarObject.h"
 #include "../../domain/ZoneItem.h"
+#include "../../core/PathUtils.h"
 
 #include <QFile>
+#include <QFileInfo>
+#include <QDir>
 #include <QTextStream>
 #include <QVector3D>
 
@@ -108,6 +111,58 @@ static QString shapeToString(ZoneItem::Shape s)
     return QStringLiteral("SPHERE");
 }
 
+static void applyUniverseNavMapScale(SystemDocument *doc, const QString &filePath)
+{
+    if (!doc || filePath.isEmpty())
+        return;
+
+    const QFileInfo systemInfo(filePath);
+    const QString universeDir = QDir(systemInfo.absolutePath()).absoluteFilePath(QStringLiteral("../.."));
+    const QString universePath =
+        flatlas::core::PathUtils::ciResolvePath(universeDir, QStringLiteral("universe.ini"));
+    if (universePath.isEmpty())
+        return;
+
+    const IniDocument universeDoc = IniParser::parseFile(universePath);
+    if (universeDoc.isEmpty())
+        return;
+
+    const QString normalizedSystemPath =
+        flatlas::core::PathUtils::normalizePath(systemInfo.absoluteFilePath()).toLower();
+    const QString systemNickname = doc->name().trimmed();
+
+    for (const IniSection &section : universeDoc) {
+        if (section.name.compare(QStringLiteral("system"), Qt::CaseInsensitive) != 0)
+            continue;
+
+        bool matches = false;
+        const QString relativeFile = section.value(QStringLiteral("file")).trimmed();
+        if (!relativeFile.isEmpty()) {
+            QString resolvedPath = flatlas::core::PathUtils::ciResolvePath(universeDir, relativeFile);
+            if (resolvedPath.isEmpty())
+                resolvedPath = QDir(universeDir).absoluteFilePath(relativeFile);
+
+            const QString normalizedResolved =
+                flatlas::core::PathUtils::normalizePath(QFileInfo(resolvedPath).absoluteFilePath()).toLower();
+            matches = !normalizedResolved.isEmpty() && normalizedResolved == normalizedSystemPath;
+        }
+
+        if (!matches && !systemNickname.isEmpty()) {
+            const QString nickname = section.value(QStringLiteral("nickname")).trimmed();
+            matches = nickname.compare(systemNickname, Qt::CaseInsensitive) == 0;
+        }
+
+        if (!matches)
+            continue;
+
+        bool ok = false;
+        const double navMapScale = section.value(QStringLiteral("NavMapScale")).toDouble(&ok);
+        if (ok && navMapScale > 0.0)
+            doc->setNavMapScale(navMapScale);
+        return;
+    }
+}
+
 // ─── load ─────────────────────────────────────────────────────────────────────
 
 std::unique_ptr<SystemDocument> SystemPersistence::load(const QString &filePath)
@@ -127,6 +182,10 @@ std::unique_ptr<SystemDocument> SystemPersistence::load(const QString &filePath)
         // ── SystemInfo ──────────────────────────────────────────────
         if (sectionName == QLatin1String("systeminfo")) {
             doc->setName(sec.value(QStringLiteral("nickname")));
+            bool ok = false;
+            const double navMapScale = sec.value(QStringLiteral("NavMapScale")).toDouble(&ok);
+            if (ok && navMapScale > 0.0)
+                doc->setNavMapScale(navMapScale);
             continue;
         }
 
@@ -212,6 +271,7 @@ std::unique_ptr<SystemDocument> SystemPersistence::load(const QString &filePath)
     }
 
     s_extras[doc.get()] = extras;
+    applyUniverseNavMapScale(doc.get(), filePath);
     doc->setDirty(false);
     return doc;
 }
@@ -223,6 +283,7 @@ static IniSection buildSystemInfo(const SystemDocument &doc)
     IniSection sec;
     sec.name = QStringLiteral("SystemInfo");
     sec.entries.append({QStringLiteral("nickname"), doc.name()});
+    sec.entries.append({QStringLiteral("NavMapScale"), QString::number(doc.navMapScale(), 'f', 6)});
     return sec;
 }
 

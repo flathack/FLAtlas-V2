@@ -16,10 +16,12 @@ public:
 
     QString nickname() const { return m_nickname; }
     void updateFromZone(const flatlas::domain::ZoneItem &zone);
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = nullptr) override;
 
 private:
     QString m_nickname;
     flatlas::domain::ZoneItem::Shape m_shape;
+    bool m_drawAsRect = false;
 };
 
 } // namespace flatlas::rendering

@@ -13,6 +13,9 @@ void SystemDocument::setName(const QString &name) { if (m_name != name) { m_name
 QString SystemDocument::filePath() const { return m_filePath; }
 void SystemDocument::setFilePath(const QString &path) { m_filePath = path; }
 
+double SystemDocument::navMapScale() const { return m_navMapScale; }
+void SystemDocument::setNavMapScale(double scale) { m_navMapScale = scale > 0.0 ? scale : 1.0; }
+
 bool SystemDocument::isDirty() const { return m_dirty; }
 void SystemDocument::setDirty(bool dirty) { if (m_dirty != dirty) { m_dirty = dirty; emit dirtyChanged(); } }
 

@@ -9,6 +9,19 @@
 #include <QPen>
 #include <cmath>
 
+namespace {
+
+constexpr double kFreelancerNavCellWorld = 30000.0;
+constexpr int kFreelancerNavCellsPerAxis = 8;
+
+double referenceHalfExtentWorld(const flatlas::domain::SystemDocument *doc)
+{
+    const double navMapScale = (doc && doc->navMapScale() > 0.0) ? doc->navMapScale() : 1.0;
+    return (kFreelancerNavCellWorld * (kFreelancerNavCellsPerAxis / 2.0)) / navMapScale;
+}
+
+}
+
 namespace flatlas::rendering {
 
 MapScene::MapScene(QObject *parent)
@@ -16,7 +29,8 @@ MapScene::MapScene(QObject *parent)
 {
     // Default scene rect covering a typical Freelancer system
     // ±33000 FL units → ±330 scene units
-    setSceneRect(-400, -400, 800, 800);
+    const double halfExtentScene = referenceHalfExtentWorld(nullptr) * kScale;
+    setSceneRect(-halfExtentScene, -halfExtentScene, halfExtentScene * 2.0, halfExtentScene * 2.0);
 }
 
 void MapScene::loadDocument(flatlas::domain::SystemDocument *doc)
@@ -25,6 +39,9 @@ void MapScene::loadDocument(flatlas::domain::SystemDocument *doc)
     m_document = doc;
     if (!doc)
         return;
+
+    const double halfExtentScene = referenceHalfExtentWorld(doc) * kScale;
+    setSceneRect(-halfExtentScene, -halfExtentScene, halfExtentScene * 2.0, halfExtentScene * 2.0);
 
     for (const auto &obj : doc->objects())
         addSolarObject(obj);
@@ -103,12 +120,12 @@ bool MapScene::isGridVisible() const
 
 QPointF MapScene::flToQt(float x, float z)
 {
-    return QPointF(x * kScale, -z * kScale);
+    return QPointF(x * kScale, z * kScale);
 }
 
 QPointF MapScene::qtToFl(qreal x, qreal y)
 {
-    return QPointF(x / kScale, -y / kScale);
+    return QPointF(x / kScale, y / kScale);
 }
 
 void MapScene::drawBackground(QPainter *painter, const QRectF &rect)
@@ -118,28 +135,35 @@ void MapScene::drawBackground(QPainter *painter, const QRectF &rect)
     if (!m_gridVisible)
         return;
 
-    // Grid spacing: 1000 FL units = 10 scene units
-    const double gridSpacing = 10.0;
+    const double gridHalfExtent = referenceHalfExtentWorld(m_document) * kScale;
+    const QRectF gridRect(-gridHalfExtent, -gridHalfExtent, gridHalfExtent * 2.0, gridHalfExtent * 2.0);
+    const QRectF visibleGrid = rect.intersected(gridRect);
+    if (visibleGrid.isNull() || visibleGrid.width() <= 0.0 || visibleGrid.height() <= 0.0)
+        return;
 
-    const double left = std::floor(rect.left() / gridSpacing) * gridSpacing;
-    const double top  = std::floor(rect.top() / gridSpacing) * gridSpacing;
+    const double gridSpacing = gridRect.width() / static_cast<double>(kFreelancerNavCellsPerAxis);
+    const double left = std::floor((visibleGrid.left() - gridRect.left()) / gridSpacing) * gridSpacing + gridRect.left();
+    const double top  = std::floor((visibleGrid.top() - gridRect.top()) / gridSpacing) * gridSpacing + gridRect.top();
 
     QPen gridPen(QColor(60, 60, 60), 0);
     painter->setPen(gridPen);
+    painter->setClipRect(visibleGrid);
 
     // Vertical lines
-    for (double x = left; x <= rect.right(); x += gridSpacing)
-        painter->drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()));
+    for (double x = left; x <= visibleGrid.right(); x += gridSpacing)
+        painter->drawLine(QPointF(x, visibleGrid.top()), QPointF(x, visibleGrid.bottom()));
 
     // Horizontal lines
-    for (double y = top; y <= rect.bottom(); y += gridSpacing)
-        painter->drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y));
+    for (double y = top; y <= visibleGrid.bottom(); y += gridSpacing)
+        painter->drawLine(QPointF(visibleGrid.left(), y), QPointF(visibleGrid.right(), y));
+
+    painter->setClipping(false);
 
     // Origin cross (brighter)
     QPen originPen(QColor(100, 100, 100), 0);
     painter->setPen(originPen);
-    painter->drawLine(QPointF(rect.left(), 0), QPointF(rect.right(), 0));
-    painter->drawLine(QPointF(0, rect.top()), QPointF(0, rect.bottom()));
+    painter->drawLine(QPointF(visibleGrid.left(), 0), QPointF(visibleGrid.right(), 0));
+    painter->drawLine(QPointF(0, visibleGrid.top()), QPointF(0, visibleGrid.bottom()));
 }
 
 void MapScene::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObject> &obj)

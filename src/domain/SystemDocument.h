@@ -30,6 +30,9 @@ public:
     QString filePath() const;
     void setFilePath(const QString &path);
 
+    double navMapScale() const;
+    void setNavMapScale(double scale);
+
     bool isDirty() const;
     void setDirty(bool dirty);
 
@@ -53,6 +56,7 @@ signals:
 private:
     QString m_name;
     QString m_filePath;
+    double m_navMapScale = 1.0;
     bool m_dirty = false;
     QVector<std::shared_ptr<SolarObject>> m_objects;
     QVector<std::shared_ptr<ZoneItem>> m_zones;

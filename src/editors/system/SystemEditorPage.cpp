@@ -77,11 +77,12 @@ void SystemEditorPage::setupUi()
     m_sceneView3DPlaceholder->setAlignment(Qt::AlignCenter);
     sceneHostLayout->addWidget(m_sceneView3DPlaceholder);
     m_splitter->addWidget(m_sceneView3DHost);
+    m_sceneView3DHost->hide();
 
     m_splitter->setStretchFactor(0, 0);
     m_splitter->setStretchFactor(1, 1);
     m_splitter->setStretchFactor(2, 1);
-    m_splitter->setSizes({220, 500, 500});
+    m_splitter->setSizes({220, 1000, 0});
 
     mainLayout->addWidget(m_splitter);
 
@@ -112,11 +113,6 @@ void SystemEditorPage::setupToolBar()
     gridAction->setChecked(true);
     connect(gridAction, &QAction::toggled, m_mapScene, &MapScene::setGridVisible);
 
-    m_toolBar->addSeparator();
-
-    m_toggle3DAction = m_toolBar->addAction(tr("3D View"));
-    m_toggle3DAction->setCheckable(true);
-    connect(m_toggle3DAction, &QAction::toggled, this, &SystemEditorPage::set3DViewEnabled);
 }
 
 void SystemEditorPage::connectSignals()
@@ -147,6 +143,7 @@ bool SystemEditorPage::loadFile(const QString &filePath)
         m_sceneView3D->loadDocument(m_document.get());
     }
     refreshObjectList();
+    m_mapView->zoomToFit();
     emit titleChanged(m_document->name());
     return true;
 }
@@ -162,6 +159,7 @@ void SystemEditorPage::setDocument(std::unique_ptr<SystemDocument> doc)
         m_sceneView3D->loadDocument(m_document.get());
     }
     refreshObjectList();
+    m_mapView->zoomToFit();
     emit titleChanged(m_document->name());
 }
 

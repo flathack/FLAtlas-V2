@@ -1,5 +1,6 @@
 #pragma once
 #include <QGraphicsEllipseItem>
+#include <QGraphicsSimpleTextItem>
 #include <QString>
 #include <QColor>
 #include "domain/SolarObject.h"
@@ -26,6 +27,7 @@ private:
 
     QString m_nickname;
     flatlas::domain::SolarObject::Type m_objType;
+    QGraphicsSimpleTextItem *m_labelItem = nullptr;
 };
 
 } // namespace flatlas::rendering
