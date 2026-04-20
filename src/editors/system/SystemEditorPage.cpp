@@ -22,6 +22,7 @@
 #include <QInputDialog>
 #include <QMetaEnum>
 #include <QPixmap>
+#include <QLabel>
 
 using namespace flatlas::domain;
 using namespace flatlas::rendering;
@@ -65,9 +66,17 @@ void SystemEditorPage::setupUi()
                                    QColor(15, 18, 24));
     m_splitter->addWidget(m_mapView);
 
-    // 3D view (right)
-    m_sceneView3D = new SceneView3D(this);
-    m_splitter->addWidget(m_sceneView3D);
+    // 3D view host (right). The heavy Qt3D view is created lazily for stability.
+    m_sceneView3DHost = new QWidget(this);
+    auto *sceneHostLayout = new QVBoxLayout(m_sceneView3DHost);
+    sceneHostLayout->setContentsMargins(0, 0, 0, 0);
+    sceneHostLayout->setSpacing(0);
+    m_sceneView3DPlaceholder = new QLabel(
+        tr("3D View disabled\n\nEnable \"3D View\" in the toolbar to load the scene."),
+        m_sceneView3DHost);
+    m_sceneView3DPlaceholder->setAlignment(Qt::AlignCenter);
+    sceneHostLayout->addWidget(m_sceneView3DPlaceholder);
+    m_splitter->addWidget(m_sceneView3DHost);
 
     m_splitter->setStretchFactor(0, 0);
     m_splitter->setStretchFactor(1, 1);
@@ -102,6 +111,12 @@ void SystemEditorPage::setupToolBar()
     gridAction->setCheckable(true);
     gridAction->setChecked(true);
     connect(gridAction, &QAction::toggled, m_mapScene, &MapScene::setGridVisible);
+
+    m_toolBar->addSeparator();
+
+    m_toggle3DAction = m_toolBar->addAction(tr("3D View"));
+    m_toggle3DAction->setCheckable(true);
+    connect(m_toggle3DAction, &QAction::toggled, this, &SystemEditorPage::set3DViewEnabled);
 }
 
 void SystemEditorPage::connectSignals()
@@ -109,7 +124,6 @@ void SystemEditorPage::connectSignals()
     connect(m_mapScene, &MapScene::objectSelected, this, &SystemEditorPage::onObjectSelected);
 
     // 3D → 2D selection sync
-    connect(m_sceneView3D, &SceneView3D::objectSelected, this, &SystemEditorPage::onObjectSelected);
 
     connect(m_objectTree, &QTreeWidget::currentItemChanged,
             this, [this](QTreeWidgetItem *current, QTreeWidgetItem *) {
@@ -128,7 +142,10 @@ bool SystemEditorPage::loadFile(const QString &filePath)
 
     m_document = std::move(doc);
     m_mapScene->loadDocument(m_document.get());
-    m_sceneView3D->loadDocument(m_document.get());
+    if (m_is3DViewEnabled) {
+        ensureSceneView3D();
+        m_sceneView3D->loadDocument(m_document.get());
+    }
     refreshObjectList();
     emit titleChanged(m_document->name());
     return true;
@@ -140,7 +157,10 @@ void SystemEditorPage::setDocument(std::unique_ptr<SystemDocument> doc)
         SystemPersistence::clearExtras(m_document.get());
     m_document = std::move(doc);
     m_mapScene->loadDocument(m_document.get());
-    m_sceneView3D->loadDocument(m_document.get());
+    if (m_is3DViewEnabled) {
+        ensureSceneView3D();
+        m_sceneView3D->loadDocument(m_document.get());
+    }
     refreshObjectList();
     emit titleChanged(m_document->name());
 }
@@ -173,6 +193,39 @@ QString SystemEditorPage::filePath() const
     return m_document ? m_document->filePath() : QString();
 }
 
+void SystemEditorPage::ensureSceneView3D()
+{
+    if (m_sceneView3D)
+        return;
+
+    m_sceneView3D = new SceneView3D(m_sceneView3DHost);
+    if (auto *layout = qobject_cast<QVBoxLayout *>(m_sceneView3DHost->layout()))
+        layout->addWidget(m_sceneView3D);
+
+    if (m_sceneView3DPlaceholder)
+        m_sceneView3DPlaceholder->hide();
+
+    connect(m_sceneView3D, &SceneView3D::objectSelected, this, &SystemEditorPage::onObjectSelected);
+}
+
+void SystemEditorPage::set3DViewEnabled(bool enabled)
+{
+    m_is3DViewEnabled = enabled;
+
+    if (!enabled) {
+        if (m_sceneView3D)
+            m_sceneView3D->hide();
+        if (m_sceneView3DPlaceholder)
+            m_sceneView3DPlaceholder->show();
+        return;
+    }
+
+    ensureSceneView3D();
+    m_sceneView3D->show();
+    if (m_document)
+        m_sceneView3D->loadDocument(m_document.get());
+}
+
 void SystemEditorPage::refreshObjectList()
 {
     m_objectTree->clear();
@@ -202,7 +255,8 @@ void SystemEditorPage::onObjectSelected(const QString &nickname)
         return;
 
     // Sync 3D selection
-    m_sceneView3D->selectObject(nickname);
+    if (m_sceneView3D && m_is3DViewEnabled)
+        m_sceneView3D->selectObject(nickname);
 
     for (const auto &obj : m_document->objects()) {
         if (obj->nickname() == nickname) {

@@ -844,8 +844,14 @@ void MainWindow::closeContextBoundTabs()
 
 void MainWindow::openSystemFromUniverse(const QString &nickname, const QString &systemFile)
 {
-    // Resolve relative path from universe file context
-    QString resolvedPath = systemFile;
+    const QString resolvedPath = QDir::cleanPath(systemFile);
+    if (resolvedPath.isEmpty() || !QFileInfo::exists(resolvedPath)) {
+        QMessageBox::warning(
+            this,
+            tr("Error"),
+            tr("Could not resolve system file for '%1':\n%2").arg(nickname, systemFile));
+        return;
+    }
 
     // Check if already open
     for (int i = 0; i < m_centerTabs->count(); ++i) {

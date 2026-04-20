@@ -32,8 +32,5 @@ qrc_*
 Thumbs.db
 .DS_Store
 desktop.ini
-build_log.txt
-build_log2.txt
-build_output.txt
-build_result.txt
+todo.md
 V2-Prompting.txt

@@ -10,6 +10,9 @@ class QToolBar;
 class QSplitter;
 class QTreeWidget;
 class QTreeWidgetItem;
+class QWidget;
+class QLabel;
+class QAction;
 
 namespace flatlas::editors {
 
@@ -42,6 +45,8 @@ private:
     void setupToolBar();
     void setupObjectList();
     void connectSignals();
+    void ensureSceneView3D();
+    void set3DViewEnabled(bool enabled);
     void refreshObjectList();
     void onObjectSelected(const QString &nickname);
     void onAddObject();
@@ -54,9 +59,13 @@ private:
     flatlas::rendering::MapScene *m_mapScene = nullptr;
     flatlas::rendering::SystemMapView *m_mapView = nullptr;
     flatlas::rendering::SceneView3D *m_sceneView3D = nullptr;
+    QWidget *m_sceneView3DHost = nullptr;
+    QLabel *m_sceneView3DPlaceholder = nullptr;
     QToolBar *m_toolBar = nullptr;
     QSplitter *m_splitter = nullptr;
     QTreeWidget *m_objectTree = nullptr;
+    QAction *m_toggle3DAction = nullptr;
+    bool m_is3DViewEnabled = false;
 };
 
 } // namespace flatlas::editors

@@ -708,13 +708,31 @@ void UniverseEditorPage::onFindShortestPath()
 
 QString UniverseEditorPage::resolveSystemPath(const QString &relativePath) const
 {
-    // universe.ini lives in DATA/UNIVERSE; system file paths are relative to DATA
-    QString dataDir = QFileInfo(m_filePath).absolutePath(); // .../DATA/UNIVERSE
-    dataDir = QFileInfo(dataDir).absolutePath();            // .../DATA
-    QString resolved = flatlas::core::PathUtils::ciResolvePath(dataDir, relativePath);
+    const QFileInfo systemFileInfo(relativePath);
+    if (systemFileInfo.isAbsolute())
+        return QDir::cleanPath(relativePath);
+
+    // Most Freelancer installs resolve system INIs relative to DATA/UNIVERSE.
+    const QString universeDir = QFileInfo(m_filePath).absolutePath(); // .../DATA/UNIVERSE
+    QString resolved = flatlas::core::PathUtils::ciResolvePath(universeDir, relativePath);
     if (!resolved.isEmpty())
         return resolved;
-    return QDir(dataDir).filePath(relativePath);
+
+    // Fallback for mods that store system file paths relative to DATA instead.
+    const QString dataDir = QFileInfo(universeDir).absolutePath(); // .../DATA
+    resolved = flatlas::core::PathUtils::ciResolvePath(dataDir, relativePath);
+    if (!resolved.isEmpty())
+        return resolved;
+
+    const QString universeCandidate = QDir(universeDir).filePath(relativePath);
+    if (QFileInfo::exists(universeCandidate))
+        return QDir::cleanPath(universeCandidate);
+
+    const QString dataCandidate = QDir(dataDir).filePath(relativePath);
+    if (QFileInfo::exists(dataCandidate))
+        return QDir::cleanPath(dataCandidate);
+
+    return QDir::cleanPath(universeCandidate);
 }
 
 void UniverseEditorPage::clearConnectionLines()
