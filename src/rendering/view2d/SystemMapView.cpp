@@ -72,6 +72,13 @@ void SystemMapView::setSystemName(const QString &name)
     viewport()->update();
 }
 
+void SystemMapView::setDisplayFilterSettings(const SystemDisplayFilterSettings &settings)
+{
+    m_displayFilterSettings = settings;
+    updateItemDetailForScale();
+    viewport()->update();
+}
+
 void SystemMapView::zoomToFit()
 {
     if (!scene())
@@ -286,7 +293,7 @@ void SystemMapView::updateItemDetailForScale()
     const auto sceneItems = scene()->items();
     for (QGraphicsItem *item : sceneItems) {
         if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item))
-            solarItem->setLabelVisibleForScale(scale);
+            solarItem->applyDisplayFilter(m_displayFilterSettings, scale);
     }
 }
 

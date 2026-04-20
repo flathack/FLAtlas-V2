@@ -1,9 +1,12 @@
 // editors/system/SystemEditorPage.cpp – System-Editor (Phase 5)
 
 #include "SystemEditorPage.h"
+#include "SystemDisplayFilterDialog.h"
 #include "SystemPersistence.h"
 #include "SystemUndoCommands.h"
 
+#include "core/Config.h"
+#include "core/EditingContext.h"
 #include "domain/SystemDocument.h"
 #include "domain/SolarObject.h"
 #include "domain/ZoneItem.h"
@@ -64,6 +67,8 @@ void SystemEditorPage::setupUi()
     m_mapView->setMapScene(m_mapScene);
     m_mapView->setBackgroundPixmap(QPixmap(QStringLiteral(":/images/star-background.png")),
                                    QColor(15, 18, 24));
+    loadDisplayFilterSettings();
+    m_mapView->setDisplayFilterSettings(m_displayFilterSettings);
     m_splitter->addWidget(m_mapView);
 
     // 3D view host (right). The heavy Qt3D view is created lazily for stability.
@@ -97,6 +102,9 @@ void SystemEditorPage::setupToolBar()
     auto *addObjectAction = m_toolBar->addAction(tr("+ Object"));
     connect(addObjectAction, &QAction::triggered, this, &SystemEditorPage::onAddObject);
 
+    auto *displayFiltersAction = m_toolBar->addAction(tr("Display Filters"));
+    connect(displayFiltersAction, &QAction::triggered, this, &SystemEditorPage::openDisplayFilterDialog);
+
     auto *deleteAction = m_toolBar->addAction(tr("Delete"));
     connect(deleteAction, &QAction::triggered, this, &SystemEditorPage::onDeleteSelected);
 
@@ -106,12 +114,18 @@ void SystemEditorPage::setupToolBar()
     m_toolBar->addSeparator();
 
     auto *zoomFitAction = m_toolBar->addAction(tr("Zoom Fit"));
-    connect(zoomFitAction, &QAction::triggered, m_mapView, &SystemMapView::zoomToFit);
+    connect(zoomFitAction, &QAction::triggered, this, [this]() {
+        if (m_mapView)
+            m_mapView->zoomToFit();
+    });
 
     auto *gridAction = m_toolBar->addAction(tr("Grid"));
     gridAction->setCheckable(true);
     gridAction->setChecked(true);
-    connect(gridAction, &QAction::toggled, m_mapScene, &MapScene::setGridVisible);
+    connect(gridAction, &QAction::toggled, this, [this](bool checked) {
+        if (m_mapScene)
+            m_mapScene->setGridVisible(checked);
+    });
 
 }
 
@@ -137,8 +151,10 @@ bool SystemEditorPage::loadFile(const QString &filePath)
         return false;
 
     m_document = std::move(doc);
+    loadDisplayFilterSettings();
     m_mapScene->loadDocument(m_document.get());
     m_mapView->setSystemName(m_document->name());
+    m_mapView->setDisplayFilterSettings(m_displayFilterSettings);
     if (m_is3DViewEnabled) {
         ensureSceneView3D();
         m_sceneView3D->loadDocument(m_document.get());
@@ -154,8 +170,10 @@ void SystemEditorPage::setDocument(std::unique_ptr<SystemDocument> doc)
     if (m_document)
         SystemPersistence::clearExtras(m_document.get());
     m_document = std::move(doc);
+    loadDisplayFilterSettings();
     m_mapScene->loadDocument(m_document.get());
     m_mapView->setSystemName(m_document->name());
+    m_mapView->setDisplayFilterSettings(m_displayFilterSettings);
     if (m_is3DViewEnabled) {
         ensureSceneView3D();
         m_sceneView3D->loadDocument(m_document.get());
@@ -224,6 +242,39 @@ void SystemEditorPage::set3DViewEnabled(bool enabled)
     m_sceneView3D->show();
     if (m_document)
         m_sceneView3D->loadDocument(m_document.get());
+}
+
+void SystemEditorPage::openDisplayFilterDialog()
+{
+    SystemDisplayFilterDialog dialog(m_displayFilterSettings, this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    m_displayFilterSettings = dialog.settings();
+    saveDisplayFilterSettings();
+    if (m_mapView)
+        m_mapView->setDisplayFilterSettings(m_displayFilterSettings);
+}
+
+void SystemEditorPage::loadDisplayFilterSettings()
+{
+    m_displayFilterSettings = flatlas::rendering::SystemDisplayFilterSettings::fromJson(
+        flatlas::core::Config::instance().getJsonObject(displayFilterConfigKey()));
+}
+
+void SystemEditorPage::saveDisplayFilterSettings() const
+{
+    auto &config = flatlas::core::Config::instance();
+    config.setJsonObject(displayFilterConfigKey(), m_displayFilterSettings.toJson());
+    config.save();
+}
+
+QString SystemEditorPage::displayFilterConfigKey() const
+{
+    const QString profileId = flatlas::core::EditingContext::instance().editingProfileId();
+    return profileId.isEmpty()
+        ? QStringLiteral("systemDisplayFilters.default")
+        : QStringLiteral("systemDisplayFilters.%1").arg(profileId);
 }
 
 void SystemEditorPage::refreshObjectList()

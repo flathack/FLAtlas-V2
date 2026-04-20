@@ -2,6 +2,7 @@
 #include <QGraphicsView>
 #include <QColor>
 #include <QPixmap>
+#include "SystemDisplayFilter.h"
 
 namespace flatlas::rendering {
 
@@ -18,6 +19,8 @@ public:
     void setSystemName(const QString &name);
     void scheduleInitialFit();
     void zoomToFit();
+    void setDisplayFilterSettings(const SystemDisplayFilterSettings &settings);
+    SystemDisplayFilterSettings displayFilterSettings() const { return m_displayFilterSettings; }
 
 signals:
     void objectSelected(const QString &nickname);
@@ -42,6 +45,7 @@ private:
     QColor m_backgroundColor = QColor(15, 18, 24);
     int m_backgroundDarkenAlpha = 180;
     QString m_systemName;
+    SystemDisplayFilterSettings m_displayFilterSettings;
     double m_minZoomScale = 0.01;
     bool m_pendingInitialFit = false;
     int m_pendingInitialFitPasses = 0;

@@ -1,5 +1,6 @@
 # flatlas_rendering – 2D, 3D, Flight, Preview
 add_library(flatlas_rendering STATIC
+    view2d/SystemDisplayFilter.h view2d/SystemDisplayFilter.cpp
     view2d/MapScene.h view2d/MapScene.cpp
     view2d/SystemMapView.h view2d/SystemMapView.cpp
     view2d/items/SolarObjectItem.h view2d/items/SolarObjectItem.cpp

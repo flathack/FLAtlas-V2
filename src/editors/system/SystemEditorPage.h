@@ -2,6 +2,7 @@
 // editors/system/SystemEditorPage.h – System-Editor (Phase 5)
 
 #include <QWidget>
+#include "rendering/view2d/SystemDisplayFilter.h"
 #include <memory>
 
 namespace flatlas::domain { class SystemDocument; class SolarObject; class ZoneItem; }
@@ -47,6 +48,10 @@ private:
     void connectSignals();
     void ensureSceneView3D();
     void set3DViewEnabled(bool enabled);
+    void openDisplayFilterDialog();
+    void loadDisplayFilterSettings();
+    void saveDisplayFilterSettings() const;
+    QString displayFilterConfigKey() const;
     void refreshObjectList();
     void onObjectSelected(const QString &nickname);
     void onAddObject();
@@ -66,6 +71,7 @@ private:
     QTreeWidget *m_objectTree = nullptr;
     QAction *m_toggle3DAction = nullptr;
     bool m_is3DViewEnabled = false;
+    flatlas::rendering::SystemDisplayFilterSettings m_displayFilterSettings;
 };
 
 } // namespace flatlas::editors

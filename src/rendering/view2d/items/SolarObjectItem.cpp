@@ -62,17 +62,49 @@ qreal SolarObjectItem::radiusForType(flatlas::domain::SolarObject::Type t)
 void SolarObjectItem::updateFromObject(const flatlas::domain::SolarObject &obj)
 {
     constexpr double kScale = 0.01;
+    m_nickname = obj.nickname();
+    m_archetype = obj.archetype();
+    m_objType = obj.type();
     setPos(obj.position().x() * kScale, obj.position().z() * kScale);
+    if (m_labelItem)
+        m_labelItem->setText(m_nickname);
 }
 
 void SolarObjectItem::setLabelVisibleForScale(qreal scale)
 {
-    if (!m_labelItem)
-        return;
-
     constexpr qreal kLabelScaleThreshold = 2.0;
-    const bool shouldShow = isSelected() || scale >= kLabelScaleThreshold;
-    m_labelItem->setVisible(shouldShow);
+    const bool shouldShow = m_objectVisibleByFilter
+        && m_labelVisibleByFilter
+        && (isSelected() || scale >= kLabelScaleThreshold);
+    if (m_labelItem)
+        m_labelItem->setVisible(shouldShow);
+}
+
+void SolarObjectItem::applyDisplayFilter(const SystemDisplayFilterSettings &settings, qreal scale)
+{
+    SolarObjectDisplayContext context;
+    context.nickname = m_nickname;
+    context.archetype = m_archetype;
+    context.type = m_objType;
+
+    bool objectVisible = settings.objectVisibleForType(m_objType);
+    bool labelVisible = settings.labelVisibleForType(m_objType);
+
+    for (const SystemDisplayFilterRule &rule : settings.rules) {
+        if (!matchesDisplayFilterRule(rule, context))
+            continue;
+
+        const bool show = rule.action == DisplayFilterAction::Show;
+        if (rule.target == DisplayFilterTarget::Object || rule.target == DisplayFilterTarget::Both)
+            objectVisible = show;
+        if (rule.target == DisplayFilterTarget::Label || rule.target == DisplayFilterTarget::Both)
+            labelVisible = show;
+    }
+
+    m_objectVisibleByFilter = objectVisible;
+    m_labelVisibleByFilter = labelVisible;
+    setVisible(m_objectVisibleByFilter);
+    setLabelVisibleForScale(scale);
 }
 
 } // namespace flatlas::rendering
