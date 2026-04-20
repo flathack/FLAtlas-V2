@@ -163,4 +163,26 @@ void Config::setStringList(const QString &key, const QStringList &value)
     m_data[key] = arr;
 }
 
+QJsonArray Config::getJsonArray(const QString &key, const QJsonArray &defaultValue) const
+{
+    auto it = m_data.constFind(key);
+    return (it != m_data.constEnd() && it->isArray()) ? it->toArray() : defaultValue;
+}
+
+void Config::setJsonArray(const QString &key, const QJsonArray &value)
+{
+    m_data[key] = value;
+}
+
+QJsonObject Config::getJsonObject(const QString &key, const QJsonObject &defaultValue) const
+{
+    auto it = m_data.constFind(key);
+    return (it != m_data.constEnd() && it->isObject()) ? it->toObject() : defaultValue;
+}
+
+void Config::setJsonObject(const QString &key, const QJsonObject &value)
+{
+    m_data[key] = value;
+}
+
 } // namespace flatlas::core

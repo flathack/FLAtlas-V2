@@ -119,3 +119,9 @@ add_executable(test_AppConfig test_AppConfig.cpp ${CMAKE_SOURCE_DIR}/src/app/App
 target_include_directories(test_AppConfig PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_AppConfig PRIVATE Qt6::Test Qt6::Core)
 add_test(NAME test_AppConfig COMMAND test_AppConfig)
+
+# EditingContext test
+add_executable(test_EditingContext test_EditingContext.cpp)
+target_include_directories(test_EditingContext PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_EditingContext PRIVATE Qt6::Test flatlas_core)
+add_test(NAME test_EditingContext COMMAND test_EditingContext)

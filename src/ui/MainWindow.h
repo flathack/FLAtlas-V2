@@ -3,6 +3,10 @@
 #include <QMainWindow>
 
 class QSplitter;
+class QLabel;
+class QProgressBar;
+class QTabBar;
+class QStackedWidget;
 namespace flatlas::ui { class BrowserPanel; }
 namespace flatlas::ui { class CenterTabWidget; }
 namespace flatlas::ui { class PropertiesPanel; }
@@ -55,4 +59,6 @@ private:
     flatlas::ui::CenterTabWidget *m_centerTabs = nullptr;
     flatlas::ui::PropertiesPanel *m_propertiesPanel = nullptr;
     flatlas::tools::HelpBrowser *m_helpBrowser = nullptr;
+    QLabel *m_editingLabel = nullptr;
+    QProgressBar *m_progressBar = nullptr;
 };

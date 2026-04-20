@@ -32,6 +32,12 @@ public:
     QStringList getStringList(const QString &key, const QStringList &defaultValue = {}) const;
     void setStringList(const QString &key, const QStringList &value);
 
+    QJsonArray getJsonArray(const QString &key, const QJsonArray &defaultValue = {}) const;
+    void setJsonArray(const QString &key, const QJsonArray &value);
+
+    QJsonObject getJsonObject(const QString &key, const QJsonObject &defaultValue = {}) const;
+    void setJsonObject(const QString &key, const QJsonObject &value);
+
 private:
     Config() = default;
     bool mergeLegacy();

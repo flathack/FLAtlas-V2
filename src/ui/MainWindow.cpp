@@ -5,6 +5,7 @@
 #include "CenterTabWidget.h"
 #include "SettingsDialog.h"
 #include "core/Config.h"
+#include "core/EditingContext.h"
 #include "core/Theme.h"
 #include "core/I18n.h"
 #include "core/UndoManager.h"
@@ -45,6 +46,15 @@
 #include <QMessageBox>
 #include <QProgressDialog>
 #include <QStandardPaths>
+#include <QLabel>
+#include <QPushButton>
+#include <QProgressBar>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QTabBar>
+#include <QStackedWidget>
+#include <QDesktopServices>
+#include <QUrl>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -57,6 +67,29 @@ MainWindow::MainWindow(QWidget *parent)
     createPanels();
     createStatusBar();
     restoreWindowState();
+
+    // Editing-Kontext wiederherstellen und UI verbinden
+    auto &ctx = flatlas::core::EditingContext::instance();
+    ctx.restore();
+    connect(&ctx, &flatlas::core::EditingContext::contextChanged,
+            this, [this](const QString &profileId) {
+        auto profile = flatlas::core::EditingContext::instance().editingProfile();
+        if (profile.isValid()) {
+            m_editingLabel->setText(tr("Currently Editing: %1").arg(profile.name));
+            setWindowTitle(QStringLiteral("FLAtlas V2 – %1").arg(profile.name));
+            statusBar()->showMessage(tr("Editing context: %1").arg(profile.name), 5000);
+        } else {
+            m_editingLabel->setText(tr("Currently Editing: -"));
+            setWindowTitle(QStringLiteral("FLAtlas V2"));
+        }
+        Q_UNUSED(profileId)
+    });
+    // Apply restored context to UI
+    if (ctx.hasContext()) {
+        auto profile = ctx.editingProfile();
+        m_editingLabel->setText(tr("Currently Editing: %1").arg(profile.name));
+        setWindowTitle(QStringLiteral("FLAtlas V2 – %1").arg(profile.name));
+    }
 
     // Beim ersten Start automatisch den Mod Manager öffnen
     if (!flatlas::core::Config::instance().getBool(QStringLiteral("firstRunDone"), false)) {
@@ -303,30 +336,140 @@ void MainWindow::createMenus()
                "<p>&copy; 2024–2025 flathack</p>")
                 .arg(flatlas::tools::UpdateChecker::currentVersion()));
     });
+
+    // --- Menu bar corner: Currently Editing + Launch FL + Give Feedback ---
+    auto *cornerWidget = new QWidget(this);
+    auto *cornerLayout = new QHBoxLayout(cornerWidget);
+    cornerLayout->setContentsMargins(0, 0, 8, 0);
+    cornerLayout->setSpacing(8);
+
+    m_editingLabel = new QLabel(tr("Currently Editing: -"), this);
+    m_editingLabel->setStyleSheet(
+        QStringLiteral("QLabel { color: #8899aa; background: #0d1117; border: 1px solid #2a3444;"
+                        " border-radius: 3px; padding: 4px 12px; }"));
+    cornerLayout->addWidget(m_editingLabel);
+
+    auto *launchBtn = new QPushButton(tr("Launch FL"), this);
+    launchBtn->setStyleSheet(
+        QStringLiteral("QPushButton { background: #28a745; color: white; border: none;"
+                        " padding: 5px 16px; border-radius: 3px; font-weight: bold; }"
+                        "QPushButton:hover { background: #2fc553; }"));
+    cornerLayout->addWidget(launchBtn);
+    connect(launchBtn, &QPushButton::clicked, this, [this]() {
+        const QString exe = QFileDialog::getOpenFileName(
+            this, tr("Select Freelancer.exe"), {}, tr("Executable (*.exe)"));
+        if (exe.isEmpty()) return;
+        if (flatlas::tools::SpStarter::launch(exe))
+            statusBar()->showMessage(tr("Freelancer launched."), 3000);
+        else
+            statusBar()->showMessage(tr("Failed to launch Freelancer."), 5000);
+    });
+
+    auto *feedbackBtn = new QPushButton(tr("Give Feedback!"), this);
+    feedbackBtn->setStyleSheet(
+        QStringLiteral("QPushButton { background: #2a6fdb; color: white; border: none;"
+                        " padding: 5px 16px; border-radius: 3px; font-weight: bold; }"
+                        "QPushButton:hover { background: #3a80ec; }"));
+    cornerLayout->addWidget(feedbackBtn);
+    connect(feedbackBtn, &QPushButton::clicked, this, []() {
+        QDesktopServices::openUrl(QUrl(QStringLiteral("https://github.com/flathack/FLAtlas-V2/issues")));
+    });
+
+    menuBar()->setCornerWidget(cornerWidget);
 }
 
 void MainWindow::createPanels()
 {
-    // 3-Panel-Layout: Browser | Center Tabs | Properties
+    auto *central = new QWidget(this);
+    auto *mainLayout = new QVBoxLayout(central);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->setSpacing(0);
+
+    // --- Tab bar row: [tabs ...] [FLAtlas Settings / 100% / Activity] ---
+    auto *tabBarRow = new QWidget(this);
+    tabBarRow->setObjectName(QStringLiteral("tabBarRow"));
+    auto *tabBarLayout = new QHBoxLayout(tabBarRow);
+    tabBarLayout->setContentsMargins(0, 0, 0, 0);
+    tabBarLayout->setSpacing(0);
+
+    m_centerTabs = new flatlas::ui::CenterTabWidget(this);
+    m_centerTabs->tabBar()->setStyleSheet(
+        QStringLiteral("QTabBar { background: transparent; }"
+                        "QTabBar::tab { padding: 6px 18px; margin: 0; border: none;"
+                        "  background: #1a2030; color: #8899aa; }"
+                        "QTabBar::tab:selected { background: #232d3f;"
+                        "  color: #e0a030; border-bottom: 2px solid #e67e22; }"
+                        "QTabBar::tab:hover { background: #222a3a; color: #bbccdd; }"
+                        "QTabBar::close-button { image: url(close.png); }"
+                        "QTabBar::close-button:hover { background: #443333; }"));
+    tabBarLayout->addWidget(m_centerTabs->tabBar(), 1);
+
+    // Right panel: FLAtlas Settings + indicators
+    auto *rightPanel = new QWidget(this);
+    rightPanel->setFixedWidth(160);
+    auto *rightLayout = new QVBoxLayout(rightPanel);
+    rightLayout->setContentsMargins(4, 2, 8, 2);
+    rightLayout->setSpacing(2);
+
+    auto *settingsBtn = new QPushButton(tr("FLAtlas Settings"), this);
+    settingsBtn->setStyleSheet(
+        QStringLiteral("QPushButton { background: #1e2a3a; color: #aabbcc; border: 1px solid #2a3a4a;"
+                        " padding: 4px 8px; border-radius: 2px; }"
+                        "QPushButton:hover { background: #253548; color: #ddeeff; }"));
+    connect(settingsBtn, &QPushButton::clicked, this, [this]() {
+        flatlas::ui::SettingsDialog dlg(this);
+        dlg.exec();
+    });
+    rightLayout->addWidget(settingsBtn);
+
+    auto *indicatorRow = new QHBoxLayout();
+    indicatorRow->setSpacing(8);
+    auto *percentLabel = new QLabel(QStringLiteral("100%"), this);
+    percentLabel->setStyleSheet(QStringLiteral("color: #44aa88; font-weight: bold; font-size: 11px;"));
+    percentLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    indicatorRow->addWidget(percentLabel);
+    auto *activityBtn = new QPushButton(tr("Activity"), this);
+    activityBtn->setStyleSheet(
+        QStringLiteral("QPushButton { background: transparent; color: #7788aa; border: none;"
+                        " padding: 2px 6px; font-size: 11px; }"
+                        "QPushButton:hover { color: #aabbdd; }"));
+    indicatorRow->addWidget(activityBtn);
+    rightLayout->addLayout(indicatorRow);
+
+    tabBarLayout->addWidget(rightPanel);
+    mainLayout->addWidget(tabBarRow);
+
+    // --- Orange progress bar ---
+    m_progressBar = new QProgressBar(this);
+    m_progressBar->setRange(0, 100);
+    m_progressBar->setValue(100);
+    m_progressBar->setTextVisible(false);
+    m_progressBar->setFixedHeight(4);
+    m_progressBar->setStyleSheet(
+        QStringLiteral("QProgressBar { background: #151c28; border: none; }"
+                        "QProgressBar::chunk { background: #e67e22; }"));
+    mainLayout->addWidget(m_progressBar);
+
+    // --- Content splitter: Browser | Pages | Properties ---
     m_mainSplitter = new QSplitter(Qt::Horizontal, this);
 
     m_browserPanel = new flatlas::ui::BrowserPanel(this);
-    m_centerTabs = new flatlas::ui::CenterTabWidget(this);
     m_propertiesPanel = new flatlas::ui::PropertiesPanel(this);
 
     m_mainSplitter->addWidget(m_browserPanel);
-    m_mainSplitter->addWidget(m_centerTabs);
+    m_mainSplitter->addWidget(m_centerTabs->contentWidget());
     m_mainSplitter->addWidget(m_propertiesPanel);
 
-    // Proportionen: 240 | stretch | 320
     m_mainSplitter->setStretchFactor(0, 0);
     m_mainSplitter->setStretchFactor(1, 1);
     m_mainSplitter->setStretchFactor(2, 0);
-    m_mainSplitter->setSizes({240, 1040, 320});
+    m_mainSplitter->setSizes({220, 1100, 0});
+    m_propertiesPanel->setVisible(false);
 
-    setCentralWidget(m_mainSplitter);
+    mainLayout->addWidget(m_mainSplitter, 1);
+    setCentralWidget(central);
 
-    // Welcome-Page als ersten Tab
+    // Welcome page as first tab
     auto *welcomePage = new flatlas::ui::WelcomePage(this);
     m_centerTabs->addTab(welcomePage, tr("Welcome"));
 }

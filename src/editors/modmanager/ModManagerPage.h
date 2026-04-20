@@ -1,5 +1,5 @@
 #pragma once
-// editors/modmanager/ModManagerPage.h – Mod-Manager UI (Phase 13)
+// editors/modmanager/ModManagerPage.h – Mod-Manager UI (Phase 13 + Editing Context)
 
 #include <QWidget>
 #include <QVector>
@@ -10,6 +10,7 @@ class QListWidget;
 class QToolBar;
 class QLabel;
 class QTableWidget;
+class QPushButton;
 
 namespace flatlas::editors {
 
@@ -33,11 +34,16 @@ signals:
 private:
     void setupUi();
     void setupToolBar();
-    void refreshModList();
+    void refreshProfileTable();
     void refreshConflicts();
+    void onAddDirectClicked();
+    void onRemoveClicked();
+    void onEditContextClicked();
+    void onClearContextClicked();
     void onActivateClicked();
     void onDeactivateClicked();
     void onScanClicked();
+    void onLaunchFlClicked();
 
     QString m_modsDir;
     QVector<ModInfo> m_mods;
@@ -46,9 +52,11 @@ private:
     ModWorkflow m_workflow;
 
     QToolBar *m_toolBar = nullptr;
-    QListWidget *m_modList = nullptr;
+    QTableWidget *m_profileTable = nullptr;
     QTableWidget *m_conflictTable = nullptr;
     QLabel *m_statusLabel = nullptr;
+    QPushButton *m_editCtxBtn = nullptr;
+    QPushButton *m_clearCtxBtn = nullptr;
 };
 
 } // namespace flatlas::editors
