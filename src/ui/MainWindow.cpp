@@ -365,14 +365,14 @@ void MainWindow::createMenus()
             statusBar()->showMessage(tr("Failed to launch Freelancer."), 5000);
     });
 
-    auto *feedbackBtn = new QPushButton(tr("Give Feedback!"), this);
+    auto *feedbackBtn = new QPushButton(tr("Discord"), this);
     feedbackBtn->setStyleSheet(
-        QStringLiteral("QPushButton { background: #2a6fdb; color: white; border: none;"
+        QStringLiteral("QPushButton { background: #5865F2; color: white; border: none;"
                         " padding: 5px 16px; border-radius: 3px; font-weight: bold; }"
-                        "QPushButton:hover { background: #3a80ec; }"));
+                        "QPushButton:hover { background: #6975F3; }"));
     cornerLayout->addWidget(feedbackBtn);
     connect(feedbackBtn, &QPushButton::clicked, this, []() {
-        QDesktopServices::openUrl(QUrl(QStringLiteral("https://github.com/flathack/FLAtlas-V2/issues")));
+        QDesktopServices::openUrl(QUrl(QStringLiteral("https://discord.gg/fY9qweRWGn")));
     });
 
     menuBar()->setCornerWidget(cornerWidget);

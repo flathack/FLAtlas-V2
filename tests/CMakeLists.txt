@@ -6,6 +6,7 @@ function(flatlas_add_test name source)
     add_executable(${name} ${source})
     target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/src)
     target_link_libraries(${name} PRIVATE Qt6::Test ${ARGN})
+    target_link_options(${name} PRIVATE -Wl,--allow-multiple-definition)
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
 
