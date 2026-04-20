@@ -134,21 +134,34 @@ void SystemMapView::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::MiddleButton) {
         m_panning = true;
-        setDragMode(QGraphicsView::ScrollHandDrag);
-        // Send a synthetic left-button press so ScrollHandDrag activates
-        QMouseEvent fake(event->type(), event->position(), event->globalPosition(),
-                         Qt::LeftButton, Qt::LeftButton, event->modifiers());
-        QGraphicsView::mousePressEvent(&fake);
+        m_lastPanPosition = event->pos();
+        setCursor(Qt::ClosedHandCursor);
+        event->accept();
         return;
     }
     QGraphicsView::mousePressEvent(event);
 }
 
-void SystemMapView::mouseReleaseEvent(QMouseEvent *event)
+void SystemMapView::mouseMoveEvent(QMouseEvent *event)
 {
     if (m_panning) {
+        const QPoint delta = event->pos() - m_lastPanPosition;
+        m_lastPanPosition = event->pos();
+        horizontalScrollBar()->setValue(horizontalScrollBar()->value() - delta.x());
+        verticalScrollBar()->setValue(verticalScrollBar()->value() - delta.y());
+        event->accept();
+        return;
+    }
+    QGraphicsView::mouseMoveEvent(event);
+}
+
+void SystemMapView::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (m_panning && event->button() == Qt::MiddleButton) {
         m_panning = false;
-        setDragMode(QGraphicsView::RubberBandDrag);
+        unsetCursor();
+        event->accept();
+        return;
     }
     QGraphicsView::mouseReleaseEvent(event);
 }

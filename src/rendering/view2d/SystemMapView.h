@@ -2,6 +2,7 @@
 #include <QGraphicsView>
 #include <QColor>
 #include <QPixmap>
+#include <QPoint>
 #include "SystemDisplayFilter.h"
 
 namespace flatlas::rendering {
@@ -28,6 +29,7 @@ signals:
 protected:
     void wheelEvent(QWheelEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
     void drawBackground(QPainter *painter, const QRectF &rect) override;
@@ -41,6 +43,7 @@ private:
 
     MapScene *m_mapScene = nullptr;
     bool m_panning = false;
+    QPoint m_lastPanPosition;
     QPixmap m_backgroundPixmap;
     QColor m_backgroundColor = QColor(15, 18, 24);
     int m_backgroundDarkenAlpha = 180;
