@@ -1,5 +1,6 @@
 #pragma once
 #include <QGraphicsEllipseItem>
+#include <QQuaternion>
 #include <QString>
 #include "domain/ZoneItem.h"
 
@@ -19,9 +20,14 @@ public:
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = nullptr) override;
 
 private:
+    static QQuaternion rotationQuaternionFromFl(float rx, float ry, float rz);
+    static bool usesLegacyCylinderYaw(const QString &nickname);
+    static qreal boxScreenRotation(const flatlas::domain::ZoneItem &zone, qreal sx, qreal sz);
+
     QString m_nickname;
     flatlas::domain::ZoneItem::Shape m_shape;
     bool m_drawAsRect = false;
+    bool m_drawCylinderAsEllipse = false;
 };
 
 } // namespace flatlas::rendering

@@ -1,7 +1,12 @@
 #include "ZoneItem2D.h"
-#include <QPen>
+
 #include <QBrush>
 #include <QPainter>
+#include <QPen>
+#include <QQuaternion>
+#include <QVector3D>
+
+#include <cmath>
 
 namespace flatlas::rendering {
 
@@ -42,45 +47,123 @@ ZoneItem2D::ZoneItem2D(const QString &nickname,
     setToolTip(nickname);
 }
 
+QQuaternion ZoneItem2D::rotationQuaternionFromFl(float rx, float ry, float rz)
+{
+    constexpr float tolerance = 0.25f;
+    float rxValue = rx;
+    float ryValue = ry;
+    float rzValue = rz;
+
+    if (std::abs(std::abs(rxValue) - 180.0f) <= tolerance
+        && std::abs(std::abs(rzValue) - 180.0f) <= tolerance) {
+        rxValue = 0.0f;
+        ryValue += 180.0f;
+        rzValue = 0.0f;
+        if (ryValue > 180.0f)
+            ryValue -= 360.0f;
+        else if (ryValue < -180.0f)
+            ryValue += 360.0f;
+    }
+
+    return QQuaternion::fromEulerAngles(rxValue, ryValue, rzValue);
+}
+
+bool ZoneItem2D::usesLegacyCylinderYaw(const QString &nickname)
+{
+    const QString lowered = nickname.trimmed().toLower();
+    return lowered.contains(QStringLiteral("path"))
+        || lowered.contains(QStringLiteral("patrol"))
+        || lowered.contains(QStringLiteral("exclusion"));
+}
+
+qreal ZoneItem2D::boxScreenRotation(const flatlas::domain::ZoneItem &zone, qreal sx, qreal sz)
+{
+    const QVector3D rotation = zone.rotation();
+    const QQuaternion quat = rotationQuaternionFromFl(rotation.x(), rotation.y(), rotation.z());
+
+    if (std::abs(sx) >= std::abs(sz)) {
+        const QVector3D axis = quat.rotatedVector(QVector3D(1.0f, 0.0f, 0.0f));
+        return std::atan2(axis.z(), axis.x()) * (180.0 / M_PI);
+    }
+
+    const QVector3D axis = quat.rotatedVector(QVector3D(0.0f, 0.0f, 1.0f));
+    return -std::atan2(axis.x(), axis.z()) * (180.0 / M_PI);
+}
+
 void ZoneItem2D::updateFromZone(const flatlas::domain::ZoneItem &zone)
 {
-    constexpr double kScale = 0.01;
+    constexpr qreal kScale = 0.01;
+
+    m_shape = zone.shape();
+    m_nickname = zone.nickname();
 
     setPos(zone.position().x() * kScale, zone.position().z() * kScale);
     setRotation(0.0);
     m_drawAsRect = false;
+    m_drawCylinderAsEllipse = false;
 
     const qreal sx = zone.size().x() * kScale;
     const qreal sy = zone.size().y() * kScale;
     const qreal sz = zone.size().z() * kScale;
-    qreal w = sx * 2.0;
-    qreal h = sz * 2.0;
+    qreal halfWidth = sx;
+    qreal halfHeight = sz;
 
     switch (zone.shape()) {
     case flatlas::domain::ZoneItem::Sphere:
-        w = sx * 2.0;
-        h = sx * 2.0;
+        halfWidth = sx;
+        halfHeight = sx;
         break;
+
     case flatlas::domain::ZoneItem::Ellipsoid:
     case flatlas::domain::ZoneItem::Ring:
-        w = sx * 2.0;
-        h = sz * 2.0;
+        halfWidth = sx;
+        halfHeight = sz;
         break;
+
     case flatlas::domain::ZoneItem::Box:
-        w = sx;
-        h = sz;
+        halfWidth = sx * 0.5;
+        halfHeight = sz * 0.5;
         m_drawAsRect = true;
-        setRotation(-zone.rotation().y());
+        setRotation(boxScreenRotation(zone, sx, sz));
         break;
-    case flatlas::domain::ZoneItem::Cylinder:
-        w = sx * 2.0;
-        h = qMax(w, sy);
-        m_drawAsRect = true;
-        setRotation(-zone.rotation().y());
+
+    case flatlas::domain::ZoneItem::Cylinder: {
+        const qreal radius = sx;
+        const qreal length = sy;
+        const QVector3D rotation = zone.rotation();
+
+        if (usesLegacyCylinderYaw(m_nickname)) {
+            halfWidth = radius;
+            halfHeight = length * 0.5;
+            qreal yaw = rotation.y();
+            constexpr qreal tolerance = 0.25;
+            if (std::abs(std::abs(rotation.x()) - 90.0) <= tolerance
+                && std::abs(std::abs(rotation.z()) - 180.0) <= tolerance) {
+                yaw = -yaw;
+            }
+            m_drawAsRect = true;
+            setRotation(-yaw);
+        } else {
+            const QQuaternion quat = rotationQuaternionFromFl(rotation.x(), rotation.y(), rotation.z());
+            const QVector3D axis = quat.rotatedVector(QVector3D(0.0f, 1.0f, 0.0f));
+            const qreal projectedAxisLength = length * std::hypot(axis.x(), axis.z());
+            m_drawCylinderAsEllipse = std::abs(axis.y()) >= 0.85 || projectedAxisLength <= radius * 0.35;
+
+            if (m_drawCylinderAsEllipse) {
+                halfWidth = radius;
+                halfHeight = radius;
+            } else {
+                halfWidth = std::max<qreal>(radius, projectedAxisLength * 0.5);
+                halfHeight = radius;
+                m_drawAsRect = true;
+                setRotation(-(std::atan2(axis.x(), axis.z()) * (180.0 / M_PI)));
+            }
+        }
         break;
     }
+    }
 
-    setRect(-w / 2.0, -h / 2.0, w, h);
+    setRect(-halfWidth, -halfHeight, halfWidth * 2.0, halfHeight * 2.0);
 }
 
 void ZoneItem2D::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
@@ -90,6 +173,12 @@ void ZoneItem2D::paint(QPainter *painter, const QStyleOptionGraphicsItem *option
 
     painter->setPen(pen());
     painter->setBrush(brush());
+
+    if (m_shape == flatlas::domain::ZoneItem::Cylinder && m_drawCylinderAsEllipse) {
+        painter->drawEllipse(rect());
+        return;
+    }
+
     if (m_drawAsRect)
         painter->drawRect(rect());
     else
