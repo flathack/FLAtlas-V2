@@ -1,6 +1,7 @@
 // infrastructure/io/DllResources.cpp – PE-DLL-String-Extraktion (Phase 12)
 
 #include "DllResources.h"
+#include "PeVersionInfo.h"
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -69,9 +70,10 @@ QMap<int, QString> DllResources::loadMultipleDlls(const QStringList &dllPaths)
     return result;
 }
 
-QString DllResources::getExeVersion(const QString &)
+QString DllResources::getExeVersion(const QString &exePath)
 {
-    return {}; // TODO Phase 20
+    PeVersionInfo info(exePath);
+    return info.isValid() ? info.fileVersion() : QString();
 }
 
 } // namespace flatlas::infrastructure

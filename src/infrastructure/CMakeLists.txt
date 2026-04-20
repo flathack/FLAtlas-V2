@@ -8,6 +8,8 @@ add_library(flatlas_infrastructure STATIC
     io/VmeshDecoder.h io/VmeshDecoder.cpp
     io/TextureLoader.h io/TextureLoader.cpp
     io/DllResources.h io/DllResources.cpp
+    io/PeVersionInfo.h io/PeVersionInfo.cpp
+    io/DebugCapture.h io/DebugCapture.cpp
     io/CsvImporter.h io/CsvImporter.cpp
     freelancer/FreelancerPaths.h freelancer/FreelancerPaths.cpp
     freelancer/UniverseScanner.h freelancer/UniverseScanner.cpp
@@ -24,3 +26,7 @@ target_link_libraries(flatlas_infrastructure PUBLIC
     Qt6::Xml
     Qt6::Network
 )
+
+if(WIN32)
+    target_link_libraries(flatlas_infrastructure PUBLIC version)
+endif()

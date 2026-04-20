@@ -76,6 +76,9 @@ flatlas_add_test(test_NewsRumorEditor test_NewsRumorEditor.cpp flatlas_editors Q
 # Phase 19 Jump Connection dialog tests
 flatlas_add_test(test_JumpConnection test_JumpConnection.cpp flatlas_editors Qt6::Widgets)
 
+# Phase 20 EXE/DLL handling tests
+flatlas_add_test(test_ExeHandling test_ExeHandling.cpp flatlas_infrastructure)
+
 # AppConfig is compiled into the FLAtlas executable, not a library.
 # Compile the source directly into the test.
 add_executable(test_AppConfig test_AppConfig.cpp ${CMAKE_SOURCE_DIR}/src/app/AppConfig.cpp)
