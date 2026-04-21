@@ -2249,7 +2249,7 @@ QVector<PreviewMaterialBinding> buildPreviewMaterialBindings(const QVector<VMesh
                                                              const QVector<MaterialReference> &materialReferences)
 {
     QVector<PreviewMaterialBinding> bindings;
-    if (vmeshRefs.isEmpty() || materialReferences.isEmpty())
+    if (vmeshRefs.isEmpty())
         return bindings;
 
     QString singleMaterialValue;

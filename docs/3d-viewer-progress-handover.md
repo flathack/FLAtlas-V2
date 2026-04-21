@@ -98,6 +98,9 @@ Ergebnis:
 - dadurch ist die CMP-Hierarchie näher an der tatsächlich relevanten Part-Struktur und weniger mit technischen Leer-Knoten verrauscht
 - neuer Regressionstest sichert für `station_large_a_lod.cmp` direkten Decode-Pfad, Mesh-Anzahl und Top-Level-Kindsignatur ab
 - derselbe Guard deckt jetzt zusätzlich die materialtragenden Submeshes des Main-/Docking-Bereichs über feste Materialsignaturen ab
+- Preview-Material-Bindings werden jetzt auch dann pro Ref aufgebaut, wenn ein Modell gar keine expliziten Material-/Texture-Referenzen enthält
+- `station_large_a_lod.cmp` hält damit jetzt nicht nur seine `material_*`-Submeshes stabil, sondern auch den erwarteten Binding-Status `no-texture-reference` für diese Meshes
+- der Stationsfall zeigt zugleich: für diesen CMP liegt die nächste echte Paritätslücke nicht in der Ref-Auflösung, sondern darin, ein Modell mit tatsächlich vorhandenen Texture-/Material-Referenzen als nächsten Bindungs-Referenzfall auszuwählen
 
 Zugehörige Dateien:
 - `tests/test_StationSolarModel.cpp`
@@ -173,6 +176,7 @@ Neu abgesichert:
 - `space_dome.cmp` zeigt jetzt explizit, dass alle 5 Refs direkt über `structured-single-block@0` auf den passenden LOD-Blöcken dekodieren
 - `station_large_a_lod.cmp` sichert jetzt zusätzlich einen größeren Stationsfall mit 20 direkten Refs und bereinigter Top-Level-Hierarchie ab
 - `station_large_a_lod.cmp` sichert jetzt auch materialtragende Mesh-Gruppen (`material_*`) im Main-/Dock4-Bereich gegen unbeabsichtigte Material-/Submesh-Regressionsfehler ab
+- auch Modelle ohne explizite Texture-Referenzen behalten jetzt `PreviewMaterialBinding`-Metadaten pro Ref; dadurch bleibt der Binding-Pfad im Debug-/Testzustand sichtbar statt vollständig leer wegzufallen
 
 ## Relevante Dateien für die Fortsetzung
 
@@ -209,7 +213,7 @@ Neu abgesichert:
 - nach `docking_ringx2_lod.cmp` jetzt den nächsten echten Family-/Station-/Dockable-Fall auswählen, der noch nicht vollständig auf direkten Decode-Pfaden läuft
 - nächste echte Abweichung wieder an genau einem Ref isolieren
 - auf Basis des jetzt sauberen `TLR_lod.3db`-Pfads den nächsten komplexeren `.cmp`- oder Dockable-Fall auswählen
-- Material-/Submesh-Gruppierung bei einem Modell mit klaren sichtbaren Materialwechseln als nächsten echten Restfall priorisieren, da die bisher getesteten komplexeren Stationen/Dockables direkt laufen
+- nach dem neuen `no-texture-reference`-Guard gezielt ein Modell mit realen Texture-/Material-Referenzen auswählen; der nächste sinnvolle Restfall ist jetzt nicht mehr ein weiterer ref-seitig sauberer Stationsfall, sondern ein CMP mit tatsächlich belegtem Preview-Binding
 
 ### Mittelfristig
 - Family-/Header-/Stream-Fälle weiter an V1 schließen
@@ -225,13 +229,14 @@ Neu abgesichert:
 Der sinnvollste nächste Schritt ist jetzt:
 
 1. `docking_ringx2_lod.cmp` als Guard behalten, aber nicht mehr als Hauptproblemfall
-2. den nächsten komplexeren Family-/Dockable-/Station-Fall auswählen, der noch nicht vollständig direkt dekodiert oder materialseitig sichtbar abweicht
-3. dort wieder genau einen Ref/Block gegen V1 schließen
+2. als nächsten Bindungs-Referenzfall gezielt ein Modell mit echten Texture-/Material-Referenzen auswählen, nicht noch einen weiteren `no-texture-reference`-Stationsfall
+3. dort wieder genau einen Ref/Block oder genau eine Binding-Entscheidung gegen V1 schließen
 
 Praktisch:
 - vorhandene Snapshot-Tests für `cv_starflier.cmp`, `docking_ringx2_lod.cmp` und `station_large_a_lod.cmp` als Guard behalten
 - die neue Top-Level-CMP-Extraktion als etablierten Pfad betrachten, nicht als Sonderfall
 - die Hierarchiebereinigung für leere Top-Level-`Root`-Knoten als etablierten Normalfall betrachten
+- die jetzt immer vorhandenen `PreviewMaterialBinding`-Einträge auch bei `materialReferences == 0` als etablierten Debug-/Regression-Pfad betrachten
 - den nächsten Problemfall wieder auf genau einen Ref/Block eingrenzen
 - gegen V1 `cmp_loader.py` / `preview_family_decode_hints` / `structured_decode_plans` abgleichen
 
