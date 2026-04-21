@@ -9,6 +9,7 @@
 #include <QFileInfo>
 #include <QObject>
 #include <QRegularExpression>
+#include <QStringDecoder>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -147,6 +148,79 @@ bool ensureWritableDllExists(const QString &freelancerIniPath,
         return false;
     }
     return true;
+}
+
+QString cleanupDecodedHtml(QString text)
+{
+    text.replace(QChar::Null, QChar());
+    if (!text.isEmpty() && text.front() == QChar(0xFEFF))
+        text.remove(0, 1);
+    return text.trimmed();
+}
+
+QString decodeHtmlResourceBlob(const QByteArray &blob)
+{
+    if (blob.isEmpty())
+        return {};
+
+    auto decodeWith = [&](QStringDecoder::Encoding encoding, const QByteArray &bytes) -> QString {
+        QStringDecoder decoder(encoding);
+        if (!decoder.isValid())
+            return {};
+        return cleanupDecodedHtml(decoder.decode(bytes));
+    };
+
+    if (blob.startsWith("\xEF\xBB\xBF"))
+        return decodeWith(QStringDecoder::Utf8, blob.mid(3));
+
+    if (blob.startsWith("\xFF\xFE") || blob.startsWith("\xFE\xFF")) {
+        const QString utf16 = decodeWith(QStringDecoder::Utf16, blob);
+        if (!utf16.isEmpty())
+            return utf16;
+    }
+
+    int evenNulls = 0;
+    int oddNulls = 0;
+    for (int i = 0; i < blob.size(); ++i) {
+        if (blob.at(i) == '\0') {
+            if ((i % 2) == 0)
+                ++evenNulls;
+            else
+                ++oddNulls;
+        }
+    }
+
+    if (evenNulls > 0 || oddNulls > 0) {
+        if (oddNulls > evenNulls) {
+            const QString utf16le = decodeWith(QStringDecoder::Utf16LE, blob);
+            if (!utf16le.isEmpty())
+                return utf16le;
+        } else if (evenNulls > oddNulls) {
+            const QString utf16be = decodeWith(QStringDecoder::Utf16BE, blob);
+            if (!utf16be.isEmpty())
+                return utf16be;
+        }
+    }
+
+    for (QStringDecoder::Encoding encoding : {QStringDecoder::Utf8,
+                                              QStringDecoder::System,
+                                              QStringDecoder::Latin1}) {
+        const QString decoded = decodeWith(encoding, blob);
+        if (!decoded.isEmpty())
+            return decoded;
+    }
+
+    return {};
+}
+
+QByteArray encodeHtmlResourceText(const QString &xmlText)
+{
+    QByteArray data;
+    data.append(char(0xFF));
+    data.append(char(0xFE));
+    data.append(reinterpret_cast<const char *>(xmlText.utf16()),
+                xmlText.size() * static_cast<int>(sizeof(char16_t)));
+    return data;
 }
 
 #ifdef Q_OS_WIN
@@ -399,9 +473,8 @@ QMap<int, QString> ResourceDllWriter::loadHtmlResources(const QString &dllPath)
             if (!raw || size == 0)
                 return TRUE;
 
-            QString text = QString::fromUtf8(static_cast<const char *>(raw), static_cast<int>(size));
-            if (text.isEmpty())
-                text = QString::fromLocal8Bit(static_cast<const char *>(raw), static_cast<int>(size));
+            const QByteArray blob(static_cast<const char *>(raw), static_cast<int>(size));
+            const QString text = decodeHtmlResourceBlob(blob);
             if (!text.trimmed().isEmpty())
                 map->insert(localId, text);
             return TRUE;
@@ -464,7 +537,7 @@ bool ResourceDllWriter::ensureHtmlResource(const QString &freelancerIniPath,
     }
 
 #ifdef Q_OS_WIN
-    const QByteArray data = trimmedXml.toUtf8();
+    const QByteArray data = encodeHtmlResourceText(trimmedXml);
     HANDLE handle = BeginUpdateResourceW(reinterpret_cast<LPCWSTR>(dllPath.utf16()), FALSE);
     if (!handle) {
         if (errorMessage)
