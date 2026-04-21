@@ -12,6 +12,7 @@ namespace flatlas::infrastructure {
 
 QMutex FreelancerMaterialResolver::s_cacheMutex;
 QHash<QString, QHash<QString, QStringList>> FreelancerMaterialResolver::s_materialTextureMapCache;
+QHash<QString, QHash<QString, QImage>> FreelancerMaterialResolver::s_embeddedTextureCache;
 
 namespace {
 
@@ -48,6 +49,70 @@ void walkUtfNode(const std::shared_ptr<UtfNode> &node,
 
     for (const auto &child : node->children)
         walkUtfNode(child, currentPath, materialMap);
+}
+
+QStringList textureKeysForName(QString value)
+{
+    QStringList keys;
+    value = value.trimmed().replace(QLatin1Char('\\'), QLatin1Char('/'));
+    value = QFileInfo(value).fileName();
+    if (value.isEmpty())
+        return keys;
+    const QString lowered = value.toLower();
+    keys.append(lowered);
+    const QString stem = QFileInfo(value).completeBaseName().toLower();
+    if (!stem.isEmpty() && !keys.contains(stem))
+        keys.append(stem);
+    if (!lowered.contains(QLatin1Char('.'))) {
+        const QString dds = lowered + QStringLiteral(".dds");
+        const QString tga = lowered + QStringLiteral(".tga");
+        if (!keys.contains(dds))
+            keys.append(dds);
+        if (!keys.contains(tga))
+            keys.append(tga);
+    }
+    return keys;
+}
+
+QImage decodeEmbeddedTextureBlob(const QByteArray &blob)
+{
+    if (blob.size() >= 4 && blob.left(4) == QByteArrayLiteral("DDS "))
+        return TextureLoader::loadDDSFromData(blob);
+    const QImage tga = TextureLoader::loadTGAFromData(blob);
+    if (!tga.isNull())
+        return tga;
+    return TextureLoader::loadDDSFromData(blob);
+}
+
+void walkUtfNodeForEmbeddedTextures(const std::shared_ptr<UtfNode> &node,
+                                    const QString &path,
+                                    QHash<QString, QPair<int, QByteArray>> *bestEntries)
+{
+    if (!node || !bestEntries)
+        return;
+
+    const QString currentPath = path.isEmpty() ? node->name : path + QLatin1Char('/') + node->name;
+    const QString loweredPath = currentPath.toLower();
+    if (loweredPath.contains(QStringLiteral("texture library/")) && node->children.isEmpty() && !node->data.isEmpty()) {
+        const QStringList parts = currentPath.split(QLatin1Char('/'), Qt::SkipEmptyParts);
+        if (parts.size() >= 3) {
+            const QString textureName = parts.at(parts.size() - 2).trimmed();
+            const QString mipName = parts.last().trimmed().toLower();
+            if (!textureName.isEmpty() && mipName.startsWith(QStringLiteral("mip"))) {
+                bool ok = false;
+                const int mipLevel = mipName.mid(3).toInt(&ok);
+                if (ok) {
+                    const QString key = textureName.toLower();
+                    const auto existing = bestEntries->value(key);
+                    if (!bestEntries->contains(key) || mipLevel < existing.first)
+                        bestEntries->insert(key, qMakePair(mipLevel, node->data));
+                }
+            }
+        }
+    }
+
+    for (const auto &child : node->children)
+        walkUtfNodeForEmbeddedTextures(child, currentPath, bestEntries);
 }
 
 } // namespace
@@ -97,6 +162,41 @@ QHash<QString, QStringList> FreelancerMaterialResolver::extractUtfMaterialTextur
     QMutexLocker locker(&s_cacheMutex);
     s_materialTextureMapCache.insert(cacheKey, materialMap);
     return materialMap;
+}
+
+QHash<QString, QImage> FreelancerMaterialResolver::extractUtfEmbeddedTextures(const QString &utfPath)
+{
+    const QString cacheKey = QFileInfo(utfPath).absoluteFilePath().toLower();
+    {
+        QMutexLocker locker(&s_cacheMutex);
+        const auto it = s_embeddedTextureCache.constFind(cacheKey);
+        if (it != s_embeddedTextureCache.cend())
+            return *it;
+    }
+
+    QHash<QString, QImage> textures;
+    QFile file(utfPath);
+    if (file.open(QIODevice::ReadOnly)) {
+        const QByteArray raw = file.readAll();
+        const auto root = CmpLoader::parseUtf(raw);
+        if (root) {
+            QHash<QString, QPair<int, QByteArray>> bestEntries;
+            for (const auto &child : root->children)
+                walkUtfNodeForEmbeddedTextures(child, QString(), &bestEntries);
+
+            for (auto it = bestEntries.cbegin(); it != bestEntries.cend(); ++it) {
+                const QImage image = decodeEmbeddedTextureBlob(it.value().second);
+                if (image.isNull())
+                    continue;
+                for (const QString &key : textureKeysForName(it.key()))
+                    textures.insert(key, image);
+            }
+        }
+    }
+
+    QMutexLocker locker(&s_cacheMutex);
+    s_embeddedTextureCache.insert(cacheKey, textures);
+    return textures;
 }
 
 QString FreelancerMaterialResolver::resolveTextureValue(const QString &sourcePath, const QString &value)
@@ -198,8 +298,41 @@ QString FreelancerMaterialResolver::resolveTexturePathForMesh(const QString &mod
     return {};
 }
 
+QImage FreelancerMaterialResolver::resolveEmbeddedTextureForMesh(const QString &modelPath, const MeshData &mesh)
+{
+    const QStringList candidates = textureCandidatesForMesh(modelPath, mesh);
+    const auto modelTextures = extractUtfEmbeddedTextures(modelPath);
+    for (const QString &candidate : candidates) {
+        for (const QString &key : textureKeysForName(candidate)) {
+            const auto it = modelTextures.constFind(key);
+            if (it != modelTextures.cend() && !it.value().isNull())
+                return it.value();
+        }
+    }
+
+    if (!mesh.materialValue.isEmpty() && mesh.materialValue.endsWith(QStringLiteral(".mat"), Qt::CaseInsensitive)) {
+        const QString matPath = resolveTextureValue(modelPath, mesh.materialValue);
+        if (!matPath.isEmpty()) {
+            const auto matTextures = extractUtfEmbeddedTextures(matPath);
+            for (const QString &candidate : candidates) {
+                for (const QString &key : textureKeysForName(candidate)) {
+                    const auto it = matTextures.constFind(key);
+                    if (it != matTextures.cend() && !it.value().isNull())
+                        return it.value();
+                }
+            }
+        }
+    }
+
+    return {};
+}
+
 QImage FreelancerMaterialResolver::loadTextureForMesh(const QString &modelPath, const MeshData &mesh)
 {
+    const QImage embedded = resolveEmbeddedTextureForMesh(modelPath, mesh);
+    if (!embedded.isNull())
+        return embedded;
+
     const QString path = resolveTexturePathForMesh(modelPath, mesh);
     if (path.isEmpty())
         return {};

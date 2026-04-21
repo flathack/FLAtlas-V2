@@ -17,12 +17,15 @@ public:
 
 private:
     static QHash<QString, QStringList> extractUtfMaterialTextureMap(const QString &utfPath);
+    static QHash<QString, QImage> extractUtfEmbeddedTextures(const QString &utfPath);
     static QString resolveTextureValue(const QString &sourcePath, const QString &value);
     static QString findDataRoot(const QString &path);
     static QStringList textureCandidatesForMesh(const QString &modelPath, const MeshData &mesh);
+    static QImage resolveEmbeddedTextureForMesh(const QString &modelPath, const MeshData &mesh);
 
     static QMutex s_cacheMutex;
     static QHash<QString, QHash<QString, QStringList>> s_materialTextureMapCache;
+    static QHash<QString, QHash<QString, QImage>> s_embeddedTextureCache;
 };
 
 } // namespace flatlas::infrastructure
