@@ -29,7 +29,7 @@
 #include "tools/UpdateInstaller.h"
 #include "tools/HelpBrowser.h"
 #include "tools/PathFinderDialog.h"
-#include "rendering/preview/ModelPreview.h"
+#include "rendering/preview/ModelViewerPage.h"
 #include "rendering/preview/CharacterPreview.h"
 #include "domain/SystemDocument.h"
 #include "domain/UniverseData.h"
@@ -58,6 +58,8 @@
 #include <QDesktopServices>
 #include <QProcess>
 #include <QUrl>
+
+#include <exception>
 
 namespace {
 
@@ -236,11 +238,7 @@ void MainWindow::createMenus()
 
     // -- Tools --
     toolsMenu->addAction(tr("Trade Route &Analysis..."), this, []() { /* TODO Phase 11 */ });
-    toolsMenu->addAction(tr("&Model Viewer..."), this, [this]() {
-        auto *dlg = new flatlas::rendering::ModelPreview(this);
-        dlg->setAttribute(Qt::WA_DeleteOnClose);
-        dlg->show();
-    });
+    toolsMenu->addAction(tr("&3D Model Viewer"), this, [this]() { openModelViewer(); });
     toolsMenu->addAction(tr("&Character Preview..."), this, [this]() {
         auto *dlg = new flatlas::rendering::CharacterPreview(this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
@@ -1210,4 +1208,30 @@ void MainWindow::openNewsRumorEditor()
     });
 
     statusBar()->showMessage(tr("News/Rumor Editor opened"), 3000);
+}
+
+void MainWindow::openModelViewer()
+{
+    for (int i = 0; i < m_centerTabs->count(); ++i) {
+        if (qobject_cast<flatlas::rendering::ModelViewerPage *>(m_centerTabs->widget(i))) {
+            m_centerTabs->setCurrentIndex(i);
+            return;
+        }
+    }
+
+    try {
+        auto *page = new flatlas::rendering::ModelViewerPage(this);
+        const int idx = m_centerTabs->addTab(page, tr("3D Model Viewer"));
+        m_centerTabs->setCurrentIndex(idx);
+        statusBar()->showMessage(tr("3D Model Viewer opened"), 3000);
+    } catch (const std::exception &ex) {
+        QMessageBox::critical(this,
+                              tr("3D Model Viewer"),
+                              tr("The 3D Model Viewer could not be opened.\n\n%1")
+                                  .arg(QString::fromLocal8Bit(ex.what())));
+    } catch (...) {
+        QMessageBox::critical(this,
+                              tr("3D Model Viewer"),
+                              tr("The 3D Model Viewer could not be opened due to an unexpected initialization error."));
+    }
 }

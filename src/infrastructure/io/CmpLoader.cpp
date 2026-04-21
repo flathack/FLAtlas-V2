@@ -5,8 +5,86 @@
 #include <QFile>
 #include <QDataStream>
 #include <QIODevice>
+#include <QtMath>
+
+#include <algorithm>
 
 namespace flatlas::infrastructure {
+
+namespace {
+
+bool isFiniteVector(const QVector3D &value)
+{
+    return qIsFinite(value.x()) && qIsFinite(value.y()) && qIsFinite(value.z());
+}
+
+bool sanitizeMesh(MeshData &mesh)
+{
+    if (mesh.vertices.isEmpty() || mesh.indices.isEmpty())
+        return false;
+
+    QVector<MeshVertex> sanitizedVertices;
+    sanitizedVertices.reserve(mesh.vertices.size());
+    QVector<int> remap(mesh.vertices.size(), -1);
+
+    for (qsizetype i = 0; i < mesh.vertices.size(); ++i) {
+        const auto &vertex = mesh.vertices.at(i);
+        if (!isFiniteVector(vertex.position))
+            continue;
+
+        MeshVertex clean = vertex;
+        if (!isFiniteVector(clean.normal))
+            clean.normal = QVector3D(0.0f, 1.0f, 0.0f);
+        if (!qIsFinite(clean.u))
+            clean.u = 0.0f;
+        if (!qIsFinite(clean.v))
+            clean.v = 0.0f;
+
+        remap[i] = sanitizedVertices.size();
+        sanitizedVertices.append(clean);
+    }
+
+    if (sanitizedVertices.size() < 3)
+        return false;
+
+    QVector<uint32_t> sanitizedIndices;
+    sanitizedIndices.reserve(mesh.indices.size());
+    for (uint32_t index : std::as_const(mesh.indices)) {
+        if (index >= static_cast<uint32_t>(remap.size()))
+            continue;
+        const int mapped = remap.at(static_cast<qsizetype>(index));
+        if (mapped < 0)
+            continue;
+        sanitizedIndices.append(static_cast<uint32_t>(mapped));
+    }
+
+    const qsizetype triangleCount = sanitizedIndices.size() / 3;
+    if (triangleCount <= 0)
+        return false;
+    sanitizedIndices.resize(triangleCount * 3);
+
+    QVector<uint32_t> compactIndices;
+    compactIndices.reserve(sanitizedIndices.size());
+    for (qsizetype i = 0; i + 2 < sanitizedIndices.size(); i += 3) {
+        const uint32_t a = sanitizedIndices.at(i);
+        const uint32_t b = sanitizedIndices.at(i + 1);
+        const uint32_t c = sanitizedIndices.at(i + 2);
+        if (a == b || b == c || a == c)
+            continue;
+        compactIndices.append(a);
+        compactIndices.append(b);
+        compactIndices.append(c);
+    }
+
+    if (compactIndices.isEmpty())
+        return false;
+
+    mesh.vertices = std::move(sanitizedVertices);
+    mesh.indices = std::move(compactIndices);
+    return true;
+}
+
+} // namespace
 
 // ─── UTF file header constants ────────────────────────────
 static constexpr int UTF_SIGNATURE_SIZE = 4;
@@ -159,6 +237,11 @@ MeshData CmpLoader::buildMeshFromVMesh(const QByteArray &vmeshData,
     if (decoded.positions.isEmpty())
         return mesh;
 
+    if (startVertex < 0 || numVertices <= 0 || startIndex < 0 || numIndices <= 0)
+        return mesh;
+    if (startVertex >= decoded.positions.size() || startIndex >= decoded.indices.size())
+        return mesh;
+
     // Extract the relevant vertex range
     int endVertex = qMin(startVertex + numVertices, decoded.positions.size());
     for (int i = startVertex; i < endVertex; ++i) {
@@ -177,11 +260,16 @@ MeshData CmpLoader::buildMeshFromVMesh(const QByteArray &vmeshData,
     int endIndex = qMin(startIndex + numIndices, decoded.indices.size());
     for (int i = startIndex; i < endIndex; ++i) {
         uint32_t idx = decoded.indices[i];
-        if (idx >= static_cast<uint32_t>(startVertex))
-            mesh.indices.append(idx - startVertex);
-        else
-            mesh.indices.append(idx);
+        if (idx < static_cast<uint32_t>(startVertex))
+            continue;
+        const uint32_t rebased = idx - static_cast<uint32_t>(startVertex);
+        if (rebased >= static_cast<uint32_t>(mesh.vertices.size()))
+            continue;
+        mesh.indices.append(rebased);
     }
+
+    if (!sanitizeMesh(mesh))
+        return {};
 
     return mesh;
 }
@@ -232,7 +320,7 @@ ModelNode CmpLoader::extractPart(const std::shared_ptr<UtfNode> &partRoot,
                     mesh.vertices.append(v);
                 }
                 mesh.indices = decoded.indices;
-                if (!mesh.vertices.isEmpty())
+                if (sanitizeMesh(mesh))
                     node.meshes.append(mesh);
             }
         }

@@ -42,9 +42,9 @@ void OrbitCamera::setElevation(float degrees)
 void OrbitCamera::handleMousePress(QMouseEvent *event)
 {
     m_lastMousePos = event->pos();
-    if (event->button() == Qt::RightButton)
+    if (event->button() == m_rotateButton)
         m_rotating = true;
-    else if (event->button() == Qt::MiddleButton)
+    else if (event->button() == m_panButton)
         m_panning = true;
 }
 
@@ -71,9 +71,9 @@ void OrbitCamera::handleMouseMove(QMouseEvent *event)
 
 void OrbitCamera::handleMouseRelease(QMouseEvent *event)
 {
-    if (event->button() == Qt::RightButton)
+    if (event->button() == m_rotateButton)
         m_rotating = false;
-    else if (event->button() == Qt::MiddleButton)
+    else if (event->button() == m_panButton)
         m_panning = false;
 }
 
@@ -86,11 +86,20 @@ void OrbitCamera::handleWheel(QWheelEvent *event)
 
 void OrbitCamera::resetView()
 {
-    m_target = QVector3D(0, 0, 0);
-    m_distance = 50000.0f;
-    m_azimuth = 45.0f;
-    m_elevation = 30.0f;
+    m_target = m_defaultTarget;
+    m_distance = m_defaultDistance;
+    m_azimuth = m_defaultAzimuth;
+    m_elevation = m_defaultElevation;
     updateCamera();
+}
+
+void OrbitCamera::setResetState(const QVector3D &target, float distance,
+                                float azimuthDegrees, float elevationDegrees)
+{
+    m_defaultTarget = target;
+    m_defaultDistance = qBound(m_minDistance, distance, m_maxDistance);
+    m_defaultAzimuth = azimuthDegrees;
+    m_defaultElevation = qBound(-89.0f, elevationDegrees, 89.0f);
 }
 
 void OrbitCamera::updateCamera()

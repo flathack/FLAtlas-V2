@@ -18,6 +18,7 @@ namespace flatlas::editors { class IdsEditorPage; }
 namespace flatlas::editors { class ModManagerPage; }
 namespace flatlas::editors { class NpcEditorPage; }
 namespace flatlas::tools { class HelpBrowser; }
+namespace flatlas::rendering { class ModelViewerPage; }
 
 /// FLAtlas-Hauptfenster – schlanke Orchestrierung, delegiert an Panels und Editoren.
 class MainWindow : public QMainWindow
@@ -48,6 +49,7 @@ private:
     void openNpcEditor();
     void openInfocardEditor();
     void openNewsRumorEditor();
+    void openModelViewer();
     void saveCurrentSystem();
     void saveCurrentFile();
     void newSystem();

@@ -5,6 +5,7 @@
 
 #include <QObject>
 #include <QVector3D>
+#include <Qt>
 #include <Qt3DCore/QEntity>
 #include <Qt3DCore/QTransform>
 #include <Qt3DRender/QCamera>
@@ -40,6 +41,10 @@ public:
 
     /// Reset to default view.
     void resetView();
+    void setResetState(const QVector3D &target, float distance,
+                       float azimuthDegrees, float elevationDegrees);
+    void setRotateButton(Qt::MouseButton button) { m_rotateButton = button; }
+    void setPanButton(Qt::MouseButton button) { m_panButton = button; }
 
     /// Update camera transform from current parameters.
     void updateCamera();
@@ -53,8 +58,14 @@ private:
     float m_distance = 50000.0f;
     float m_azimuth = 45.0f;
     float m_elevation = 30.0f;
+    QVector3D m_defaultTarget{0, 0, 0};
+    float m_defaultDistance = 50000.0f;
+    float m_defaultAzimuth = 45.0f;
+    float m_defaultElevation = 30.0f;
     float m_minDistance = 100.0f;
     float m_maxDistance = 500000.0f;
+    Qt::MouseButton m_rotateButton = Qt::RightButton;
+    Qt::MouseButton m_panButton = Qt::MiddleButton;
 
     QPoint m_lastMousePos;
     bool m_rotating = false;
