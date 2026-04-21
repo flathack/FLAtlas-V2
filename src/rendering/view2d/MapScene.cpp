@@ -5,6 +5,8 @@
 #include "domain/SystemDocument.h"
 #include "domain/SolarObject.h"
 #include "domain/ZoneItem.h"
+#include <QApplication>
+#include <QPalette>
 #include <QPainter>
 #include <QPen>
 #include <QSet>
@@ -220,7 +222,14 @@ void MapScene::drawBackground(QPainter *painter, const QRectF &rect)
     const double left = std::floor((visibleGrid.left() - gridRect.left()) / gridSpacing) * gridSpacing + gridRect.left();
     const double top  = std::floor((visibleGrid.top() - gridRect.top()) / gridSpacing) * gridSpacing + gridRect.top();
 
-    QPen gridPen(QColor(60, 60, 60), 0);
+    const QPalette pal = qApp->palette();
+    const QColor textColor = pal.color(QPalette::Text);
+    QColor gridColor = textColor;
+    gridColor.setAlpha(pal.color(QPalette::Base).lightness() >= 170 ? 55 : 70);
+    QColor originColor = textColor;
+    originColor.setAlpha(pal.color(QPalette::Base).lightness() >= 170 ? 95 : 110);
+
+    QPen gridPen(gridColor, 0);
     painter->setPen(gridPen);
     painter->setClipRect(visibleGrid);
 
@@ -235,7 +244,7 @@ void MapScene::drawBackground(QPainter *painter, const QRectF &rect)
     painter->setClipping(false);
 
     // Origin cross (brighter)
-    QPen originPen(QColor(100, 100, 100), 0);
+    QPen originPen(originColor, 0);
     painter->setPen(originPen);
     painter->drawLine(QPointF(visibleGrid.left(), 0), QPointF(visibleGrid.right(), 0));
     painter->drawLine(QPointF(0, visibleGrid.top()), QPointF(0, visibleGrid.bottom()));

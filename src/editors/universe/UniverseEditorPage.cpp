@@ -4,6 +4,7 @@
 #include "UniverseSerializer.h"
 #include "core/EditingContext.h"
 #include "core/PathUtils.h"
+#include "core/Theme.h"
 #include "domain/UniverseData.h"
 #include "infrastructure/freelancer/IdsStringTable.h"
 
@@ -40,6 +41,8 @@
 #include <QTabBar>
 #include <QPen>
 #include <QBrush>
+#include <QApplication>
+#include <QPalette>
 
 namespace flatlas::editors {
 
@@ -150,7 +153,7 @@ public:
         // Label
         auto *label = new QGraphicsSimpleTextItem(labelText, this);
         label->setFont(QFont(QStringLiteral("Segoe UI"), 7));
-        label->setBrush(QColor(220, 220, 220));
+        label->setBrush(qApp->palette().color(QPalette::Text));
         label->setPos(NODE_RADIUS + 2, -5);
     }
 
@@ -218,12 +221,15 @@ UniverseEditorPage::UniverseEditorPage(QWidget *parent)
     , m_idsStrings(std::make_unique<flatlas::infrastructure::IdsStringTable>())
 {
     setupUi();
+    applyThemeStyling();
     connect(&flatlas::core::EditingContext::instance(), &flatlas::core::EditingContext::contextChanged,
             this, [this](const QString &) {
                 reloadIdsStrings();
                 refreshSystemList();
                 refreshMap();
             });
+    connect(&flatlas::core::Theme::instance(), &flatlas::core::Theme::themeChanged,
+            this, [this](const QString &) { applyThemeStyling(); });
 }
 
 UniverseEditorPage::~UniverseEditorPage() = default;
@@ -268,7 +274,7 @@ void UniverseEditorPage::setupUi()
     m_mapScene = new QGraphicsScene(this);
     auto *mapView = new UniverseMapView(m_mapScene, this);
     mapView->setBackgroundPixmap(QPixmap(QStringLiteral(":/images/star-background.png")),
-                                 QColor(15, 18, 24));
+                                 palette().color(QPalette::Base));
     mapView->onNodeDoubleClicked = [this](const QString &nickname) {
         onMapItemDoubleClicked(nickname);
     };
@@ -881,6 +887,18 @@ void UniverseEditorPage::applySector(const QString &sectorKey)
     refreshSystemList();
     refreshMap();
     refreshTitle();
+}
+
+void UniverseEditorPage::applyThemeStyling()
+{
+    const bool lightTheme = palette().color(QPalette::Base).lightness() >= 170;
+    if (auto *mapView = dynamic_cast<UniverseMapView *>(m_mapView)) {
+        mapView->setBackgroundPixmap(lightTheme ? QPixmap() : QPixmap(QStringLiteral(":/images/star-background.png")),
+                                     palette().color(QPalette::Base));
+    }
+
+    refreshSystemList();
+    refreshMap();
 }
 
 void UniverseEditorPage::syncSystemPositionFromMap(const QString &nickname)

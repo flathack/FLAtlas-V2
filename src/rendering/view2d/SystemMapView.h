@@ -24,6 +24,7 @@ public:
     void setMapScene(MapScene *scene);
     void setBackgroundPixmap(const QPixmap &pixmap, const QColor &fallbackColor = QColor(15, 18, 24));
     void setSystemName(const QString &name);
+    void applyTheme();
     void scheduleInitialFit();
     void zoomToFit();
     void setDisplayFilterSettings(const SystemDisplayFilterSettings &settings);
@@ -59,6 +60,7 @@ private:
     QPixmap m_backgroundPixmap;
     QColor m_backgroundColor = QColor(15, 18, 24);
     int m_backgroundDarkenAlpha = 180;
+    QColor m_overlayTextColor = QColor(230, 235, 245, 235);
     QString m_systemName;
     SystemDisplayFilterSettings m_displayFilterSettings;
     double m_minZoomScale = 0.01;

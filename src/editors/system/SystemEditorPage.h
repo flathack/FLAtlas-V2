@@ -67,6 +67,7 @@ private:
     void saveDisplayFilterSettings() const;
     QString displayFilterConfigKey() const;
     void setupRightSidebar();
+    void applyThemeStyling();
     void updateSelectionSummary();
     void updateSidebarButtons();
     void refreshObjectJumpList();

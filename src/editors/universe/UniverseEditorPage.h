@@ -71,6 +71,7 @@ private:
     QString sectorDisplayName(const QString &sectorKey) const;
     void rebuildSectorTabs();
     void applySector(const QString &sectorKey);
+    void applyThemeStyling();
     QRectF mapContentRect() const;
     void fitMapInView();
     void setMoveEnabled(bool enabled);

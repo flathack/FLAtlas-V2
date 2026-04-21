@@ -16,6 +16,7 @@
 #include <QRubberBand>
 #include <QScrollBar>
 #include <QTimer>
+#include <QPalette>
 
 namespace flatlas::rendering {
 
@@ -39,6 +40,7 @@ SystemMapView::SystemMapView(QWidget *parent)
     setCacheMode(QGraphicsView::CacheBackground);
     setOptimizationFlag(QGraphicsView::DontSavePainterState, true);
     setOptimizationFlag(QGraphicsView::DontAdjustForAntialiasing, true);
+    applyTheme();
 }
 
 MapScene *SystemMapView::mapScene() const
@@ -68,6 +70,22 @@ void SystemMapView::setBackgroundPixmap(const QPixmap &pixmap, const QColor &fal
     m_backgroundPixmap = pixmap;
     m_backgroundColor = fallbackColor;
     m_backgroundDarkenAlpha = m_backgroundColor.lightness() >= 130 ? 0 : 180;
+    viewport()->update();
+}
+
+void SystemMapView::applyTheme()
+{
+    const QPalette pal = palette();
+    const QColor base = pal.color(QPalette::Base);
+    const QColor text = pal.color(QPalette::Text);
+    m_overlayTextColor = text;
+    if (base.lightness() >= 170) {
+        m_backgroundColor = QColor(236, 241, 247);
+        m_backgroundDarkenAlpha = !m_backgroundPixmap.isNull() ? 110 : 0;
+    } else {
+        m_backgroundColor = QColor(15, 18, 24);
+        m_backgroundDarkenAlpha = !m_backgroundPixmap.isNull() ? 180 : 0;
+    }
     viewport()->update();
 }
 
@@ -268,7 +286,7 @@ void SystemMapView::drawForeground(QPainter *painter, const QRectF &rect)
 
     QFont font(QStringLiteral("Segoe UI"), 11, QFont::Bold);
     painter->setFont(font);
-    painter->setPen(QColor(230, 235, 245, 235));
+    painter->setPen(m_overlayTextColor);
     const QFontMetrics fm(font);
 
     const double cellWidth = sceneRect.width() / 8.0;

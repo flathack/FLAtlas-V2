@@ -4,6 +4,7 @@
 #include "SystemDisplayFilterDialog.h"
 #include "SystemPersistence.h"
 #include "SystemUndoCommands.h"
+#include "core/Theme.h"
 #include "editors/ini/IniCodeEditor.h"
 #include "editors/ini/IniSyntaxHighlighter.h"
 
@@ -107,6 +108,9 @@ SystemEditorPage::SystemEditorPage(QWidget *parent)
     : QWidget(parent)
 {
     setupUi();
+    applyThemeStyling();
+    connect(&flatlas::core::Theme::instance(), &flatlas::core::Theme::themeChanged,
+            this, [this](const QString &) { applyThemeStyling(); });
 }
 
 SystemEditorPage::~SystemEditorPage()
@@ -238,7 +242,7 @@ void SystemEditorPage::setupUi()
     m_mapView = new SystemMapView(this);
     m_mapView->setMapScene(m_mapScene);
     m_mapView->setBackgroundPixmap(QPixmap(QStringLiteral(":/images/star-background.png")),
-                                   QColor(15, 18, 24));
+                                   palette().color(QPalette::Base));
     loadDisplayFilterSettings();
     m_mapView->setDisplayFilterSettings(m_displayFilterSettings);
     m_splitter->addWidget(m_mapView);
@@ -305,6 +309,41 @@ void SystemEditorPage::connectSignals()
             this, &SystemEditorPage::onTreeSelectionChanged);
     connect(m_objectSearchEdit, &QLineEdit::textChanged,
             this, [this]() { applyObjectListSearchFilter(); });
+}
+
+void SystemEditorPage::applyThemeStyling()
+{
+    const QPalette pal = palette();
+    const bool lightTheme = pal.color(QPalette::Base).lightness() >= 170;
+    const QColor dim = pal.color(QPalette::PlaceholderText);
+    const QColor title = pal.color(QPalette::Text);
+    const QColor border = pal.color(QPalette::Mid);
+
+    if (m_objectSearchHintLabel)
+        m_objectSearchHintLabel->setStyleSheet(QStringLiteral("color:%1; padding:0 2px 4px 2px;").arg(dim.name()));
+    if (m_emptyEditorLabel)
+        m_emptyEditorLabel->setStyleSheet(QStringLiteral("color:%1; padding:6px 2px;").arg(dim.name()));
+    if (m_multiSelectionLabel)
+        m_multiSelectionLabel->setStyleSheet(QStringLiteral("font-size:15px; font-weight:600; color:%1;").arg(title.name()));
+    if (m_selectionTitleLabel)
+        m_selectionTitleLabel->setStyleSheet(QStringLiteral("font-size:24px; font-weight:700; color:%1;").arg(title.name()));
+    if (m_selectionSubtitleLabel)
+        m_selectionSubtitleLabel->setStyleSheet(QStringLiteral("color:%1;").arg(dim.name()));
+    if (m_deleteSidebarButton) {
+        const QColor deleteBg = QColor::fromRgb(160, 46, 46);
+        const QColor deleteHover = QColor::fromRgb(184, 58, 58);
+        m_deleteSidebarButton->setStyleSheet(
+            QStringLiteral("QPushButton { text-align:left; padding:5px 10px; background-color:%1; color:white; font-weight:700;"
+                           " border:1px solid %2; border-radius:3px; }"
+                           "QPushButton:hover { background-color:%3; }")
+                .arg(deleteBg.name(), border.name(), deleteHover.name()));
+    }
+    refreshSidebarVisibilityState();
+    if (m_mapView) {
+        m_mapView->setBackgroundPixmap(lightTheme ? QPixmap() : QPixmap(QStringLiteral(":/images/star-background.png")),
+                                       pal.color(QPalette::Base));
+        m_mapView->applyTheme();
+    }
 }
 
 bool SystemEditorPage::loadFile(const QString &filePath)
@@ -985,9 +1024,15 @@ void SystemEditorPage::rebuildMultiSelectionEditorList()
 
 QWidget *SystemEditorPage::buildMultiSelectionRow(const QString &nickname, const QString &kindText)
 {
+    const QPalette pal = palette();
+    const QColor border = pal.color(QPalette::Mid);
+    const QColor bg = pal.color(QPalette::AlternateBase);
+    const QColor dim = pal.color(QPalette::PlaceholderText);
+
     auto *row = new QFrame(m_multiSelectionListHost);
     row->setFrameShape(QFrame::StyledPanel);
-    row->setStyleSheet(QStringLiteral("QFrame { border: 1px solid #2a3444; border-radius: 4px; background:#131a24; }"));
+    row->setStyleSheet(QStringLiteral("QFrame { border: 1px solid %1; border-radius: 4px; background:%2; }")
+                           .arg(border.name(), bg.name()));
     auto *layout = new QHBoxLayout(row);
     layout->setContentsMargins(8, 6, 8, 6);
     layout->setSpacing(8);
@@ -999,7 +1044,7 @@ QWidget *SystemEditorPage::buildMultiSelectionRow(const QString &nickname, const
     auto *title = new QLabel(nickname, textHost);
     title->setStyleSheet(QStringLiteral("font-weight:600;"));
     auto *subtitle = new QLabel(kindText, textHost);
-    subtitle->setStyleSheet(QStringLiteral("color:#9ca3af; font-size:11px;"));
+    subtitle->setStyleSheet(QStringLiteral("color:%1; font-size:11px;").arg(dim.name()));
     textLayout->addWidget(title);
     textLayout->addWidget(subtitle);
     layout->addWidget(textHost, 1);

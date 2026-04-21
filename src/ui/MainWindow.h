@@ -7,6 +7,7 @@ class QLabel;
 class QProgressBar;
 class QTabBar;
 class QStackedWidget;
+class QPushButton;
 namespace flatlas::ui { class CenterTabWidget; }
 namespace flatlas::ui { class PropertiesPanel; }
 namespace flatlas::editors { class SystemEditorPage; }
@@ -36,6 +37,7 @@ private:
     void createStatusBar();
     void restoreWindowState();
     void saveWindowState();
+    void applyThemeStyling();
     void openSystemFile();
     void openIniFile();
     void openUniverseFile();
@@ -65,5 +67,6 @@ private:
     flatlas::ui::PropertiesPanel *m_propertiesPanel = nullptr;
     flatlas::tools::HelpBrowser *m_helpBrowser = nullptr;
     QLabel *m_editingLabel = nullptr;
+    QPushButton *m_settingsButton = nullptr;
     QProgressBar *m_progressBar = nullptr;
 };

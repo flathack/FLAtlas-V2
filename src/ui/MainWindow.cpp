@@ -6,6 +6,7 @@
 #include "core/Config.h"
 #include "core/EditingContext.h"
 #include "core/Theme.h"
+#include "core/Theme.h"
 #include "core/I18n.h"
 #include "core/UndoManager.h"
 #include "editors/system/SystemEditorPage.h"
@@ -107,6 +108,9 @@ MainWindow::MainWindow(QWidget *parent)
     createPanels();
     createStatusBar();
     restoreWindowState();
+    applyThemeStyling();
+    connect(&flatlas::core::Theme::instance(), &flatlas::core::Theme::themeChanged,
+            this, [this](const QString &) { applyThemeStyling(); });
 
     // Editing-Kontext-Änderungen mit der UI verbinden
     connect(&ctx, &flatlas::core::EditingContext::contextChanged,
@@ -357,9 +361,6 @@ void MainWindow::createMenus()
     cornerLayout->setSpacing(8);
 
     m_editingLabel = new QLabel(tr("Currently Editing: -"), this);
-    m_editingLabel->setStyleSheet(
-        QStringLiteral("QLabel { color: #8899aa; background: #0d1117; border: 1px solid #2a3444;"
-                        " border-radius: 3px; padding: 4px 12px; }"));
     cornerLayout->addWidget(m_editingLabel);
 
     auto *launchBtn = new QPushButton(tr("Launch FL"), this);
@@ -398,15 +399,6 @@ void MainWindow::createPanels()
     tabBarLayout->setSpacing(0);
 
     m_centerTabs = new flatlas::ui::CenterTabWidget(this);
-    m_centerTabs->tabBar()->setStyleSheet(
-        QStringLiteral("QTabBar { background: transparent; }"
-                        "QTabBar::tab { padding: 6px 18px; margin: 0; border: none;"
-                        "  background: #1a2030; color: #8899aa; }"
-                        "QTabBar::tab:selected { background: #232d3f;"
-                        "  color: #e0a030; border-bottom: 2px solid #e67e22; }"
-                        "QTabBar::tab:hover { background: #222a3a; color: #bbccdd; }"
-                        "QTabBar::close-button { subcontrol-origin: padding; subcontrol-position: right; }"
-                        "QTabBar::close-button:hover { background: #443333; border-radius: 3px; }"));
     tabBarLayout->addWidget(m_centerTabs->tabBar(), 1);
 
     // Right panel: FLAtlas Settings + indicators
@@ -416,16 +408,12 @@ void MainWindow::createPanels()
     rightLayout->setContentsMargins(4, 2, 8, 2);
     rightLayout->setSpacing(2);
 
-    auto *settingsBtn = new QPushButton(tr("FLAtlas Settings"), this);
-    settingsBtn->setStyleSheet(
-        QStringLiteral("QPushButton { background: #1e2a3a; color: #aabbcc; border: 1px solid #2a3a4a;"
-                        " padding: 4px 8px; border-radius: 2px; }"
-                        "QPushButton:hover { background: #253548; color: #ddeeff; }"));
-    connect(settingsBtn, &QPushButton::clicked, this, [this]() {
+    m_settingsButton = new QPushButton(tr("FLAtlas Settings"), this);
+    connect(m_settingsButton, &QPushButton::clicked, this, [this]() {
         flatlas::ui::SettingsDialog dlg(this);
         dlg.exec();
     });
-    rightLayout->addWidget(settingsBtn);
+    rightLayout->addWidget(m_settingsButton);
 
     auto *indicatorRow = new QHBoxLayout();
     indicatorRow->setSpacing(8);
@@ -513,6 +501,58 @@ void MainWindow::showContextHelp()
         topicId = flatlas::tools::HelpBrowser::topicForContext(shortName);
     }
     m_helpBrowser->showTopic(topicId);
+}
+
+void MainWindow::applyThemeStyling()
+{
+    if (!m_centerTabs)
+        return;
+
+    const QPalette pal = palette();
+    const QColor base = pal.color(QPalette::Base);
+    const QColor alt = pal.color(QPalette::AlternateBase);
+    const QColor tabBg = pal.color(QPalette::Button);
+    const QColor tabHover = pal.color(QPalette::AlternateBase);
+    const QColor tabText = pal.color(QPalette::ButtonText);
+    const QColor selectedBg = pal.color(QPalette::Base);
+    const QColor accent = pal.color(QPalette::Highlight);
+    const QColor selectedText = pal.color(QPalette::Highlight);
+    const QColor border = pal.color(QPalette::Mid);
+    const QColor dimText = pal.color(QPalette::PlaceholderText);
+    const QColor dangerHover = pal.color(QPalette::Base).lightness() >= 170
+        ? QColor(232, 210, 210)
+        : QColor(68, 51, 51);
+
+    m_centerTabs->tabBar()->setStyleSheet(
+        QStringLiteral("QTabBar { background: transparent; }"
+                       "QTabBar::tab { padding: 6px 18px; margin: 0; border: none;"
+                       " background: %1; color: %2; }"
+                       "QTabBar::tab:selected { background: %3; color: %4; border-bottom: 2px solid %5; }"
+                       "QTabBar::tab:hover { background: %6; color: %2; }"
+                       "QTabBar::close-button { subcontrol-origin: padding; subcontrol-position: right; }"
+                       "QTabBar::close-button:hover { background: %7; border-radius: 3px; }")
+            .arg(tabBg.name(),
+                 tabText.name(),
+                 selectedBg.name(),
+                 selectedText.name(),
+                 accent.name(),
+                 tabHover.name(),
+                 dangerHover.name()));
+
+    if (m_editingLabel) {
+        m_editingLabel->setStyleSheet(
+            QStringLiteral("QLabel { color:%1; background:%2; border:1px solid %3;"
+                           " border-radius:3px; padding:4px 12px; }")
+                .arg(dimText.name(), base.name(), border.name()));
+    }
+
+    if (m_settingsButton) {
+        m_settingsButton->setStyleSheet(
+            QStringLiteral("QPushButton { background:%1; color:%2; border:1px solid %3;"
+                           " padding:4px 8px; border-radius:2px; }"
+                           "QPushButton:hover { background:%4; color:%2; }")
+                .arg(tabBg.name(), tabText.name(), border.name(), alt.name()));
+    }
 }
 
 void MainWindow::launchFreelancerFromContext()
