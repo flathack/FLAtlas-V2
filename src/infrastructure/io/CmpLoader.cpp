@@ -2108,6 +2108,14 @@ QString matchedPartNameForRef(const VMeshRefRecord &ref,
     return {};
 }
 
+const NativeModelPart *findPartByName(const QVector<NativeModelPart> &parts, const QString &partName)
+{
+    const auto it = std::find_if(parts.cbegin(), parts.cend(), [&](const NativeModelPart &part) {
+        return part.name.compare(partName, Qt::CaseInsensitive) == 0;
+    });
+    return it == parts.cend() ? nullptr : &(*it);
+}
+
 QStringList nodeReferenceCandidates(const FlatUtfNode &node, const QByteArray &raw)
 {
     QStringList values{node.name};
@@ -2260,6 +2268,14 @@ QVector<PreviewMaterialBinding> buildPreviewMaterialBindings(const QVector<VMesh
         binding.groupCount = ref.groupCount;
         if (!ref.matchedSourceName.isEmpty())
             binding.sourceNames.append(ref.matchedSourceName);
+        if (const auto *part = findPartByName(parts, binding.partName)) {
+            if (!part->sourceName.isEmpty())
+                binding.sourceNames.append(part->sourceName);
+            if (!part->fileName.isEmpty())
+                binding.sourceNames.append(part->fileName);
+        }
+        binding.sourceNames.removeAll(QString());
+        binding.sourceNames.removeDuplicates();
         QString referenceNodePath;
         binding.textureCandidates = matchTextureCandidates(binding.modelName,
                                                            binding.levelName,

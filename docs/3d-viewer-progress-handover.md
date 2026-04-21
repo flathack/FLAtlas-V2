@@ -26,12 +26,14 @@ Referenz:
 - `DATA/SHIPS/CIVILIAN/CV_STARFLIER/cv_starflier.cmp`
 
 Status:
-- umgesetzt
+- umgesetzt / Regression jetzt auf Part- und Materialsignaturen abgesichert
 
 Ergebnis:
 - erstes kleines `.cmp` als Leitmodell etabliert
 - echte Part-Geometrie hängt an mehreren Schiffsteilen
 - Test vorhanden
+- Binding-/Material-Matching bekommt jetzt zusätzlich Part-`file_name`-/`source_name`-Tokens, näher an V1
+- `cv_starflier.cmp` hat jetzt einen festen Snapshot für Part-Hierarchie und materialisierte Mesh-Signaturen
 
 Zugehörige Dateien:
 - `docs/3d-viewer-iteration-01.md`
@@ -261,6 +263,10 @@ Zuletzt gemeinsam erfolgreich verifiziert:
 - `test_FamilySolarModel`
 - `test_DockableSolarModel`
 - `test_TradeLaneModel`
+
+Aktueller Ship-Stand:
+- `cv_starflier.cmp` ist jetzt nicht mehr nur über Mesh-Existenz abgesichert, sondern über feste Part- und Material-Signaturen
+- die Binding-Schicht nutzt dafür V1-näher zusätzliche Part-Metadaten (`file_name` / `source_name`) als Match-Tokens
 
 Zusätzlich wurden in früheren Runden erfolgreich gebaut:
 - `test_FamilySolarModel`

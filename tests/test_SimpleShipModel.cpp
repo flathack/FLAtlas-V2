@@ -11,6 +11,7 @@ using namespace flatlas::infrastructure;
 class TestSimpleShipModel : public QObject {
     Q_OBJECT
 private slots:
+    void cvStarflierMaterialSignatureSnapshot();
     void loadCvStarflierCmp()
     {
         const QString filePath = QStringLiteral(
@@ -90,6 +91,65 @@ private slots:
         QVERIFY(sceneBounds.radius() > 0.0f);
     }
 };
+
+void TestSimpleShipModel::cvStarflierMaterialSignatureSnapshot()
+{
+    const QString filePath = QStringLiteral(
+        "C:/Users/steve/Github/FL-Installationen/TESTMOD1/DATA/SHIPS/CIVILIAN/CV_STARFLIER/cv_starflier.cmp");
+
+    if (!QFileInfo::exists(filePath))
+        QSKIP("Local CV Starflier model not present.");
+
+    const DecodedModel decoded = CmpLoader::loadModel(filePath);
+    QStringList partSnapshot;
+    QStringList materialSnapshot;
+
+    std::function<void(const ModelNode &, int)> walk = [&](const ModelNode &node, int depth) {
+        if (depth > 0)
+            partSnapshot.append(QStringLiteral("%1|%2|%3")
+                                    .arg(node.name)
+                                    .arg(node.meshes.size())
+                                    .arg(node.children.size()));
+        for (const auto &mesh : node.meshes) {
+            if (!mesh.materialName.isEmpty()) {
+                materialSnapshot.append(QStringLiteral("%1|%2|%3")
+                                            .arg(node.name)
+                                            .arg(mesh.vertices.size())
+                                            .arg(mesh.materialName));
+            }
+        }
+        for (const auto &child : node.children)
+            walk(child, depth + 1);
+    };
+
+    walk(decoded.rootNode, 0);
+
+    const QStringList expectedPartSnapshot = {
+        QStringLiteral("Root|0|2"),
+        QStringLiteral("Part_baydoor01_lod1|3|0"),
+        QStringLiteral("Part_baydoor02_lod1|3|0"),
+        QStringLiteral("Part_port_wing_lod1|5|0"),
+        QStringLiteral("Part_star_wing_lod1|5|0"),
+        QStringLiteral("Part_engine_lod1|5|0"),
+        QStringLiteral("Part_glass_lod1|11|0"),
+    };
+    const QStringList expectedMaterialSnapshot = {
+        QStringLiteral("Part_engine_lod1|15|material_148146806"),
+        QStringLiteral("Part_engine_lod1|31|material_148146806"),
+        QStringLiteral("Part_engine_lod1|70|material_148146806"),
+        QStringLiteral("Part_engine_lod1|30|material_254424827"),
+        QStringLiteral("Part_engine_lod1|140|material_148146806"),
+        QStringLiteral("Part_glass_lod1|14|material_267737313"),
+        QStringLiteral("Part_glass_lod1|27|material_267737313"),
+        QStringLiteral("Part_glass_lod1|32|material_267737313"),
+        QStringLiteral("Part_glass_lod1|30|material_254424827"),
+        QStringLiteral("Part_glass_lod1|140|material_148146806"),
+        QStringLiteral("Part_glass_lod1|677|material_147646650"),
+    };
+
+    QCOMPARE(partSnapshot, expectedPartSnapshot);
+    QCOMPARE(materialSnapshot, expectedMaterialSnapshot);
+}
 
 QTEST_GUILESS_MAIN(TestSimpleShipModel)
 #include "test_SimpleShipModel.moc"
