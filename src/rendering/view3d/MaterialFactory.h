@@ -7,6 +7,7 @@
 #include <QString>
 #include <Qt3DExtras/QTextureMaterial>
 #include <Qt3DExtras/QPhongMaterial>
+#include <Qt3DRender/QMaterial>
 #include <Qt3DRender/QTexture>
 #include <Qt3DRender/QTextureImage>
 #include <Qt3DCore/QNode>
@@ -17,8 +18,8 @@ namespace flatlas::rendering {
 class MaterialFactory {
 public:
     /// Create a textured Phong material from a QImage.
-    static Qt3DExtras::QPhongMaterial *createFromImage(const QImage &image,
-                                                        Qt3DCore::QNode *parent);
+    static Qt3DRender::QMaterial *createFromImage(const QImage &image,
+                                                  Qt3DCore::QNode *parent);
 
     /// Create a default material with a solid color.
     static Qt3DExtras::QPhongMaterial *createDefault(const QColor &color,

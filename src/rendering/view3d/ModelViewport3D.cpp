@@ -4,6 +4,7 @@
 
 #include "rendering/preview/ModelCache.h"
 #include "ModelGeometryBuilder.h"
+#include "infrastructure/freelancer/FreelancerMaterialResolver.h"
 
 #include <QEvent>
 #include <QFileInfo>
@@ -23,6 +24,7 @@
 #include <Qt3DExtras/QPhongMaterial>
 #include <Qt3DExtras/Qt3DWindow>
 #include <Qt3DRender/QCamera>
+#include <Qt3DRender/QMaterial>
 #include <Qt3DRender/QGeometryRenderer>
 #include <Qt3DRender/QPointLight>
 #endif
@@ -199,7 +201,12 @@ void ModelViewport3D::addNodeRecursive(const flatlas::infrastructure::ModelNode 
         if (meshNodeEntity) {
             auto *meshEntity = new Qt3DCore::QEntity(meshNodeEntity);
             if (auto *renderer = ModelGeometryBuilder::buildTriangleRenderer(mesh, meshEntity)) {
-                auto *material = MaterialFactory::createDefault(colorForMesh(mesh, meshIndex), meshEntity);
+                Qt3DRender::QMaterial *material = nullptr;
+                const QImage texture = flatlas::infrastructure::FreelancerMaterialResolver::loadTextureForMesh(m_filePath, mesh);
+                if (!texture.isNull())
+                    material = MaterialFactory::createFromImage(texture, meshEntity);
+                if (!material)
+                    material = MaterialFactory::createDefault(colorForMesh(mesh, meshIndex), meshEntity);
                 meshEntity->addComponent(renderer);
                 meshEntity->addComponent(material);
             } else {

@@ -3,6 +3,7 @@
 #ifdef FLATLAS_HAS_QT3D
 
 #include "MaterialFactory.h"
+#include <Qt3DRender/QTextureWrapMode>
 #include <Qt3DRender/QPaintedTextureImage>
 #include <QPainter>
 
@@ -26,36 +27,17 @@ private:
     QImage m_image;
 };
 
-Qt3DExtras::QPhongMaterial *MaterialFactory::createFromImage(const QImage &image,
-                                                              Qt3DCore::QNode *parent)
+Qt3DRender::QMaterial *MaterialFactory::createFromImage(const QImage &image,
+                                                        Qt3DCore::QNode *parent)
 {
     if (image.isNull())
         return createDefault(QColor(180, 180, 180), parent);
 
-    auto *material = new Qt3DExtras::QPhongMaterial(parent);
-
-    // Sample representative color from the image for the Phong material
-    QColor avgColor;
-    int r = 0, g = 0, b = 0;
-    int samples = qMin(100, image.width() * image.height());
-    for (int i = 0; i < samples; ++i) {
-        int x = (i * image.width()) / samples;
-        int y = (i * image.height()) / samples;
-        QRgb pixel = image.pixel(qMin(x, image.width() - 1), qMin(y, image.height() - 1));
-        r += qRed(pixel);
-        g += qGreen(pixel);
-        b += qBlue(pixel);
-    }
-    if (samples > 0)
-        avgColor = QColor(r / samples, g / samples, b / samples);
-    else
-        avgColor = QColor(180, 180, 180);
-
-    material->setDiffuse(avgColor);
-    material->setAmbient(avgColor.darker(200));
-    material->setSpecular(QColor(50, 50, 50));
-    material->setShininess(25.0f);
-
+    auto *material = new Qt3DExtras::QTextureMaterial(parent);
+    auto *texture = createTexture(image, material);
+    texture->wrapMode()->setX(Qt3DRender::QTextureWrapMode::Repeat);
+    texture->wrapMode()->setY(Qt3DRender::QTextureWrapMode::Repeat);
+    material->setTexture(texture);
     return material;
 }
 

@@ -12,6 +12,7 @@ add_library(flatlas_infrastructure STATIC
     io/DebugCapture.h io/DebugCapture.cpp
     io/CsvImporter.h io/CsvImporter.cpp
     freelancer/FreelancerPaths.h freelancer/FreelancerPaths.cpp
+    freelancer/FreelancerMaterialResolver.h freelancer/FreelancerMaterialResolver.cpp
     freelancer/UniverseScanner.h freelancer/UniverseScanner.cpp
     freelancer/IdsStringTable.h freelancer/IdsStringTable.cpp
     freelancer/ModelAssetScanner.h freelancer/ModelAssetScanner.cpp
