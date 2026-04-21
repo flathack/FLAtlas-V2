@@ -25,12 +25,12 @@ class TestModelScreenshotExporter : public QObject {
     Q_OBJECT
 
 private slots:
-    void buildTrianglesUsesBestLodMeshesPerNode();
+    void buildTrianglesUsesFirstMeshFromBestLodPerNode();
     void buildTrianglesAppliesHierarchyTransform();
     void buildTrianglesPrefersCombinedCmpTransformHints();
 };
 
-void TestModelScreenshotExporter::buildTrianglesUsesBestLodMeshesPerNode()
+void TestModelScreenshotExporter::buildTrianglesUsesFirstMeshFromBestLodPerNode()
 {
     DecodedModel model;
     model.rootNode.name = QStringLiteral("Root");
@@ -63,9 +63,9 @@ void TestModelScreenshotExporter::buildTrianglesUsesBestLodMeshesPerNode()
     model.rootNode.children.append(ship);
 
     const auto triangles = ModelScreenshotExporter::buildTriangles(model);
-    QCOMPARE(triangles.size(), 2);
+    QCOMPARE(triangles.size(), 1);
     QCOMPARE(triangles.first().b, QVector3D(2.0f, 0.0f, 0.0f));
-    QCOMPARE(triangles.last().a, QVector3D(2.0f, 2.0f, 0.0f));
+    QCOMPARE(triangles.first().c, QVector3D(0.0f, 2.0f, 0.0f));
 }
 
 void TestModelScreenshotExporter::buildTrianglesAppliesHierarchyTransform()

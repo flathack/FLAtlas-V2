@@ -19,31 +19,24 @@ QJsonArray vectorToJson(const QVector3D &value)
     return QJsonArray{value.x(), value.y(), value.z()};
 }
 
-QVector<const flatlas::infrastructure::MeshData *> selectBestLodMeshes(
+const flatlas::infrastructure::MeshData *selectPreferredLodMesh(
     const flatlas::infrastructure::ModelNode &node)
 {
-    QVector<const flatlas::infrastructure::MeshData *> meshes;
     if (node.meshes.isEmpty())
-        return meshes;
+        return nullptr;
 
     int bestLodIndex = std::numeric_limits<int>::max();
+    const flatlas::infrastructure::MeshData *preferredMesh = nullptr;
     for (const auto &mesh : node.meshes) {
-        if (mesh.lodIndex >= 0)
-            bestLodIndex = qMin(bestLodIndex, mesh.lodIndex);
+        if (mesh.lodIndex < 0)
+            continue;
+        if (mesh.lodIndex < bestLodIndex) {
+            bestLodIndex = mesh.lodIndex;
+            preferredMesh = &mesh;
+        }
     }
 
-    if (bestLodIndex == std::numeric_limits<int>::max()) {
-        meshes.append(&node.meshes.first());
-        return meshes;
-    }
-
-    for (const auto &mesh : node.meshes) {
-        if (mesh.lodIndex == bestLodIndex)
-            meshes.append(&mesh);
-    }
-    if (meshes.isEmpty())
-        meshes.append(&node.meshes.first());
-    return meshes;
+    return preferredMesh ? preferredMesh : &node.meshes.first();
 }
 
 QMatrix4x4 buildTransformMatrix(const QVector3D &translation, const QQuaternion &rotation)
@@ -95,7 +88,7 @@ void appendNodeTriangles(const flatlas::infrastructure::ModelNode &node,
 
     const QMatrix4x4 nodeTransform = resolveNodeTransform(node, parentTransform, transformHints);
 
-    for (const auto *mesh : selectBestLodMeshes(node)) {
+    if (const auto *mesh = selectPreferredLodMesh(node)) {
         const auto &vertices = mesh->vertices;
         const auto &indices = mesh->indices;
         for (int index = 0; index + 2 < indices.size(); index += 3) {
