@@ -9,6 +9,24 @@
 
 namespace flatlas::rendering {
 
+namespace {
+
+QImage makePreviewTextureOpaque(const QImage &image)
+{
+    if (image.isNull() || !image.hasAlphaChannel())
+        return image;
+
+    QImage opaque = image.convertToFormat(QImage::Format_RGBA8888);
+    for (int y = 0; y < opaque.height(); ++y) {
+        auto *row = reinterpret_cast<QRgb *>(opaque.scanLine(y));
+        for (int x = 0; x < opaque.width(); ++x)
+            row[x] = qRgba(qRed(row[x]), qGreen(row[x]), qBlue(row[x]), 255);
+    }
+    return opaque;
+}
+
+} // namespace
+
 /// Custom texture image source that paints a QImage.
 class ImageTextureSource : public Qt3DRender::QPaintedTextureImage {
 public:
@@ -34,7 +52,7 @@ Qt3DRender::QMaterial *MaterialFactory::createFromImage(const QImage &image,
         return createDefault(QColor(180, 180, 180), parent);
 
     auto *material = new Qt3DExtras::QTextureMaterial(parent);
-    auto *texture = createTexture(image, material);
+    auto *texture = createTexture(makePreviewTextureOpaque(image), material);
     texture->wrapMode()->setX(Qt3DRender::QTextureWrapMode::Repeat);
     texture->wrapMode()->setY(Qt3DRender::QTextureWrapMode::Repeat);
     material->setTexture(texture);
