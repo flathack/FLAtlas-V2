@@ -101,6 +101,7 @@ private slots:
         auto found = CmpLoader::findNode(root, QStringLiteral("nonexistent"));
         QVERIFY(!found);
     }
+
 };
 
 QTEST_GUILESS_MAIN(TestCmpLoader)

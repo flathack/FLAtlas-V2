@@ -49,10 +49,13 @@ Diese Referenzmodelle dienen als feste Vergleichsbasis für die V1-Paritätsarbe
   - ref-/source-name-genaue Blockauswahl gegen V1 prüfen
   - Regression für größere zusammengesetzte Solar-Modelle
 ### 5. Materialgruppentest
-- Kandidat: Modell mit klar sichtbaren Submesh-/Materialwechseln
-- Typ: `.cmp` oder `.3db`
+- Iteration-5-Referenz: `DATA/BASES/GENERIC/ocean_blue.cmp`
+- Archetype: `ocean_blue`
+- Typ: `.cmp`
 - Zweck:
-  - spätere MAT-/Material-Gruppen-Parität
+  - erster kleiner Testfall mit expliziten Texture-Library-/Material-Library-Referenzen
+  - Regression für Preview-Binding-Kandidatenlisten ohne doppelte Textureinträge
+  - Vorbereitung des nächsten Schritts: echte Token-/Part-Zuordnung statt bloßem Fallback
 
 ## Vergleichskriterien
 

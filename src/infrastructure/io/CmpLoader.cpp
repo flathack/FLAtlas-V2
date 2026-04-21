@@ -2127,6 +2127,20 @@ QStringList nodeReferenceCandidates(const FlatUtfNode &node, const QByteArray &r
     return values;
 }
 
+QStringList uniqueStringsPreserveOrder(const QStringList &values)
+{
+    QStringList result;
+    QSet<QString> seen;
+    for (const QString &value : values) {
+        const QString key = value.trimmed().toLower();
+        if (key.isEmpty() || seen.contains(key))
+            continue;
+        seen.insert(key);
+        result.append(value);
+    }
+    return result;
+}
+
 QVector<MaterialReference> extractMaterialReferences(const QVector<FlatUtfNode> &nodes,
                                                      const QByteArray &raw)
 {
@@ -2213,6 +2227,7 @@ QStringList matchTextureCandidates(const QString &modelName,
         });
         for (const auto &item : std::as_const(scored))
             candidates.append(item.reference.value);
+        candidates = uniqueStringsPreserveOrder(candidates);
         if (matchHint)
             *matchHint = QStringLiteral("token-match");
         if (referenceNodePath)
@@ -2235,7 +2250,7 @@ QStringList matchTextureCandidates(const QString &modelName,
             *referenceNodePath = textures.first().nodePath;
         for (const auto &item : std::as_const(textures))
             candidates.append(item.value);
-        return candidates;
+        return uniqueStringsPreserveOrder(candidates);
     }
 
     if (matchHint)

@@ -105,11 +105,29 @@ Ergebnis:
 Zugehörige Dateien:
 - `tests/test_StationSolarModel.cpp`
 
+### Iteration 5
+Referenz:
+- `DATA/BASES/GENERIC/ocean_blue.cmp`
+
+Status:
+- umgesetzt / erster expliziter Preview-Texture-Binding-Guard ergänzt
+
+Ergebnis:
+- erster kleiner Referenzfall mit tatsächlich vorhandenen Texture-Referenzen statt nur `material_*`-IDs aufgenommen
+- `ocean_blue.cmp` belegt, dass der Loader Texture-Einträge aus Material-/Texture-Library bis in `PreviewMaterialBinding` durchreicht
+- Texture-Candidate-Listen werden dabei jetzt dedupliziert statt denselben Dateinamen mehrfach aus Material- und Texture-Library zu wiederholen
+- neuer Regressionstest sichert für `ocean_blue.cmp` zwei explizite Preview-Bindings mit stabiler Candidate-Liste und `first-texture-fallback` ab
+- damit ist der nächste Bindungs-Schritt präziser eingegrenzt: nicht mehr "gibt es überhaupt Texture-Referenzen?", sondern "wann reicht V1-nahe Token-/Part-Zuordnung statt Fallback aus?"
+
+Zugehörige Dateien:
+- `tests/test_OceanBluePreviewBinding.cpp`
+
 ## Aktive Referenzmodelle
 Siehe auch:
 - `docs/3d-viewer-reference-models.md`
 
 Aktuell aktiv:
+- `DATA/BASES/GENERIC/ocean_blue.cmp`
 - `DATA/SOLAR/DOCKABLE/TLR_lod.3db`
 - `DATA/SHIPS/CIVILIAN/CV_STARFLIER/cv_starflier.cmp`
 - `DATA/SOLAR/MISC/space_dome.cmp`
@@ -177,6 +195,7 @@ Neu abgesichert:
 - `station_large_a_lod.cmp` sichert jetzt zusätzlich einen größeren Stationsfall mit 20 direkten Refs und bereinigter Top-Level-Hierarchie ab
 - `station_large_a_lod.cmp` sichert jetzt auch materialtragende Mesh-Gruppen (`material_*`) im Main-/Dock4-Bereich gegen unbeabsichtigte Material-/Submesh-Regressionsfehler ab
 - auch Modelle ohne explizite Texture-Referenzen behalten jetzt `PreviewMaterialBinding`-Metadaten pro Ref; dadurch bleibt der Binding-Pfad im Debug-/Testzustand sichtbar statt vollständig leer wegzufallen
+- `ocean_blue.cmp` sichert jetzt den ersten Fall mit expliziten Texture-Referenzen; doppelte Candidate-Einträge aus Material-/Texture-Library werden dabei vor der Weitergabe an Resolver und Tests dedupliziert
 
 ## Relevante Dateien für die Fortsetzung
 
@@ -214,6 +233,7 @@ Neu abgesichert:
 - nächste echte Abweichung wieder an genau einem Ref isolieren
 - auf Basis des jetzt sauberen `TLR_lod.3db`-Pfads den nächsten komplexeren `.cmp`- oder Dockable-Fall auswählen
 - nach dem neuen `no-texture-reference`-Guard gezielt ein Modell mit realen Texture-/Material-Referenzen auswählen; der nächste sinnvolle Restfall ist jetzt nicht mehr ein weiterer ref-seitig sauberer Stationsfall, sondern ein CMP mit tatsächlich belegtem Preview-Binding
+- nach `ocean_blue.cmp` jetzt einen zweiten expliziten Texture-Fall mit echter Token-Zuordnung statt `first-texture-fallback` auswählen, damit die nächste Iteration nicht nur Candidate-Stabilität, sondern die eigentliche Match-Qualität gegen V1 schließt
 
 ### Mittelfristig
 - Family-/Header-/Stream-Fälle weiter an V1 schließen
@@ -229,14 +249,15 @@ Neu abgesichert:
 Der sinnvollste nächste Schritt ist jetzt:
 
 1. `docking_ringx2_lod.cmp` als Guard behalten, aber nicht mehr als Hauptproblemfall
-2. als nächsten Bindungs-Referenzfall gezielt ein Modell mit echten Texture-/Material-Referenzen auswählen, nicht noch einen weiteren `no-texture-reference`-Stationsfall
-3. dort wieder genau einen Ref/Block oder genau eine Binding-Entscheidung gegen V1 schließen
+2. `ocean_blue.cmp` als ersten expliziten Texture-Guard behalten und den nächsten Fall mit besserer Token-/Part-Zuordnung auswählen
+3. dort wieder genau eine Binding-Entscheidung gegen V1 schließen statt einen weiteren allgemeinen Decoder-Scan zu machen
 
 Praktisch:
-- vorhandene Snapshot-Tests für `cv_starflier.cmp`, `docking_ringx2_lod.cmp` und `station_large_a_lod.cmp` als Guard behalten
+- vorhandene Snapshot-Tests für `cv_starflier.cmp`, `docking_ringx2_lod.cmp`, `station_large_a_lod.cmp` und `ocean_blue.cmp` als Guard behalten
 - die neue Top-Level-CMP-Extraktion als etablierten Pfad betrachten, nicht als Sonderfall
 - die Hierarchiebereinigung für leere Top-Level-`Root`-Knoten als etablierten Normalfall betrachten
 - die jetzt immer vorhandenen `PreviewMaterialBinding`-Einträge auch bei `materialReferences == 0` als etablierten Debug-/Regression-Pfad betrachten
+- deduplizierte Texture-Candidate-Listen aus Material-/Texture-Library als neuen Normalfall betrachten; Mehrfachnennungen derselben Datei sind kein sinnvoller Debugwert mehr
 - den nächsten Problemfall wieder auf genau einen Ref/Block eingrenzen
 - gegen V1 `cmp_loader.py` / `preview_family_decode_hints` / `structured_decode_plans` abgleichen
 
