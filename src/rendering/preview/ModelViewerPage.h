@@ -12,6 +12,7 @@ class QTreeWidgetItem;
 class QPushButton;
 class QCheckBox;
 class QVBoxLayout;
+class QTimer;
 
 namespace flatlas::rendering {
 
@@ -31,6 +32,8 @@ private:
     void setCurrentEntry(const flatlas::infrastructure::ModelAssetEntry *entry);
     void loadEntryIntoViewport(const flatlas::infrastructure::ModelAssetEntry *entry);
     void loadArbitraryModel();
+    void scheduleViewportLoad(const QString &modelPath, bool requireCurrentEntryMatch);
+    void executeScheduledViewportLoad();
     void updateButtons();
     void updateDetails();
 
@@ -57,6 +60,10 @@ private:
     QCheckBox *m_wireframeCheck = nullptr;
     QCheckBox *m_boundsCheck = nullptr;
     QCheckBox *m_whiteBgCheck = nullptr;
+    QTimer *m_loadTimer = nullptr;
+    QString m_pendingModelPath;
+    bool m_pendingLoadRequiresCurrentEntryMatch = false;
+    bool m_modelLoadInProgress = false;
 };
 
 } // namespace flatlas::rendering

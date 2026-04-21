@@ -9,6 +9,7 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QTimer>
 
 namespace flatlas::rendering {
 
@@ -43,11 +44,17 @@ void ModelPreview::loadModel(const QString &filePath)
     if (!m_viewport)
         return;
 
-    QString errorMessage;
-    if (m_viewport->loadModelFile(filePath, &errorMessage))
-        m_titleLabel->setText(QFileInfo(filePath).fileName());
-    else
-        m_titleLabel->setText(errorMessage);
+    m_titleLabel->setText(tr("Initializing 3D preview..."));
+    QTimer::singleShot(0, this, [this, filePath]() {
+        if (!m_viewport)
+            return;
+
+        QString errorMessage;
+        if (m_viewport->loadModelFile(filePath, &errorMessage))
+            m_titleLabel->setText(QFileInfo(filePath).fileName());
+        else
+            m_titleLabel->setText(errorMessage);
+    });
 }
 
 QString ModelPreview::filePath() const
@@ -61,4 +68,3 @@ bool ModelPreview::hasModel() const
 }
 
 } // namespace flatlas::rendering
-

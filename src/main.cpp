@@ -6,6 +6,7 @@
 #include "ui/MainWindow.h"
 
 #include <QApplication>
+#include <QByteArray>
 
 int main(int argc, char *argv[])
 {
@@ -14,6 +15,9 @@ int main(int argc, char *argv[])
     // OpenGL als Fallback für Qt3D auf Windows
     QApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
 #endif
+
+    if (qEnvironmentVariableIsEmpty("QT3D_RENDERER"))
+        qputenv("QT3D_RENDERER", QByteArrayLiteral("opengl"));
 
     Application app(argc, argv);
 

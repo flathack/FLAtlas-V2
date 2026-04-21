@@ -30,7 +30,7 @@ struct MeshData {
 struct ModelNode {
     QString name;
     QVector3D origin{0, 0, 0};       // Part origin offset
-    QQuaternion rotation;            // Part rotation from CMP transforms
+    QQuaternion rotation{1.0f, 0.0f, 0.0f, 0.0f}; // Part rotation from CMP transforms
     QVector<MeshData> meshes;
     QVector<ModelNode> children;
 };

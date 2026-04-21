@@ -24,6 +24,7 @@
 #include <QUrl>
 #include <QVariant>
 #include <QVBoxLayout>
+#include <QTimer>
 
 #include <utility>
 
@@ -55,6 +56,10 @@ ModelViewerPage::ModelViewerPage(QWidget *parent)
     m_titleLabel = new QLabel(tr("3D Model Viewer"), this);
     m_titleLabel->setStyleSheet(QStringLiteral("font-size: 28px; font-weight: 700;"));
     layout->addWidget(m_titleLabel);
+
+    m_loadTimer = new QTimer(this);
+    m_loadTimer->setSingleShot(true);
+    connect(m_loadTimer, &QTimer::timeout, this, &ModelViewerPage::executeScheduledViewportLoad);
 
     auto *topRow = new QHBoxLayout();
     m_searchEdit = new QLineEdit(this);
@@ -327,11 +332,8 @@ void ModelViewerPage::loadEntryIntoViewport(const flatlas::infrastructure::Model
         return;
     if (!ensureViewport())
         return;
-    QString error;
-    if (!m_viewport->loadModelFile(entry->modelPath, &error) && !error.isEmpty()) {
-        m_fileLabel->setText(error);
-        QMessageBox::warning(this, tr("3D Model Viewer"), error);
-    }
+    m_fileLabel->setText(tr("Initializing 3D preview..."));
+    scheduleViewportLoad(entry->modelPath, true);
 }
 
 void ModelViewerPage::loadArbitraryModel()
@@ -353,11 +355,58 @@ void ModelViewerPage::loadArbitraryModel()
     updateButtons();
     if (!ensureViewport())
         return;
+    m_fileLabel->setText(tr("Initializing 3D preview..."));
+    scheduleViewportLoad(filePath, false);
+}
+
+void ModelViewerPage::scheduleViewportLoad(const QString &modelPath, bool requireCurrentEntryMatch)
+{
+    m_pendingModelPath = modelPath;
+    m_pendingLoadRequiresCurrentEntryMatch = requireCurrentEntryMatch;
+    if (m_loadTimer)
+        m_loadTimer->start(0);
+}
+
+void ModelViewerPage::executeScheduledViewportLoad()
+{
+    if (m_modelLoadInProgress || !m_viewport)
+        return;
+
+    const QString modelPath = m_pendingModelPath;
+    const bool requireCurrentEntryMatch = m_pendingLoadRequiresCurrentEntryMatch;
+    m_pendingModelPath.clear();
+    m_pendingLoadRequiresCurrentEntryMatch = false;
+
+    if (modelPath.trimmed().isEmpty())
+        return;
+
+    if (requireCurrentEntryMatch) {
+        if (!m_currentEntry)
+            return;
+        if (normalizedModelLookupKey(m_currentEntry->modelPath) != normalizedModelLookupKey(modelPath))
+            return;
+    }
+
+    if (m_viewport->hasModel() &&
+        normalizedModelLookupKey(m_viewport->currentFilePath()) == normalizedModelLookupKey(modelPath)) {
+        updateButtons();
+        return;
+    }
+
+    m_modelLoadInProgress = true;
     QString error;
-    if (m_viewport->loadModelFile(filePath, &error))
-        m_fileLabel->setText(tr("Loaded: %1").arg(filePath));
-    else if (!error.isEmpty())
+    const bool loaded = m_viewport->loadModelFile(modelPath, &error);
+    m_modelLoadInProgress = false;
+
+    if (!m_pendingModelPath.isEmpty()) {
+        if (m_loadTimer)
+            m_loadTimer->start(0);
+    }
+
+    if (!loaded && !error.isEmpty()) {
         m_fileLabel->setText(error);
+        QMessageBox::warning(this, tr("3D Model Viewer"), error);
+    }
 }
 
 void ModelViewerPage::updateButtons()

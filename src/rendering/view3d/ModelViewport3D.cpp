@@ -173,7 +173,7 @@ void ModelViewport3D::addNodeRecursive(const flatlas::infrastructure::ModelNode 
         transform->setRotation(node.rotation);
         meshNodeEntity->addComponent(transform);
     }
-    if (wireParentEntity) {
+    if (wireParentEntity && m_wireframeVisible) {
         wireNodeEntity = new Qt3DCore::QEntity(wireParentEntity);
         auto *transform = new Qt3DCore::QTransform(wireNodeEntity);
         transform->setTranslation(node.origin);
@@ -337,6 +337,11 @@ void ModelViewport3D::setWireframeVisible(bool visible)
     if (m_wireframeVisible == visible)
         return;
     m_wireframeVisible = visible;
+    if (m_hasModel && !m_filePath.isEmpty()) {
+        QString ignored;
+        loadModelFile(m_filePath, &ignored);
+        return;
+    }
     updateVisibilityState();
 }
 
