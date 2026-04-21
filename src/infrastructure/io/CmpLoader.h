@@ -3,6 +3,7 @@
 // Parses Freelancer's UTF (Universal Tree Format) containers.
 
 #include <QByteArray>
+#include <QStringList>
 #include <QQuaternion>
 #include <QString>
 #include <QVector>
@@ -23,7 +24,12 @@ struct MeshVertex {
 struct MeshData {
     QVector<MeshVertex> vertices;
     QVector<uint32_t> indices;
+    int materialId = -1;
     QString materialName;
+    QString textureName;
+    QString materialValue;
+    QStringList textureCandidates;
+    QString matchHint;
 };
 
 /// A node in the model hierarchy (CMP can have multiple parts).
@@ -141,6 +147,40 @@ struct CmpFixRecord {
     bool valid = false;
 };
 
+struct CmpTransformHint {
+    QString partName;
+    QString parentPartName;
+    QVector3D localTranslation;
+    QQuaternion localRotation;
+    QVector3D combinedTranslation;
+    QQuaternion combinedRotation;
+    bool hasLocalTranslation = false;
+    bool hasLocalRotation = false;
+    bool hasCombinedTranslation = false;
+    bool hasCombinedRotation = false;
+};
+
+struct MaterialReference {
+    QString kind;
+    QString value;
+    QString nodeName;
+    QString nodePath;
+};
+
+struct PreviewMaterialBinding {
+    QString modelName;
+    QString levelName;
+    QString partName;
+    int groupStart = 0;
+    int groupCount = 0;
+    QStringList sourceNames;
+    QString textureValue;
+    QStringList textureCandidates;
+    QString materialValue;
+    QString referenceNodePath;
+    QString matchHint;
+};
+
 struct DecodedModel {
     QString sourcePath;
     NativeModelFormat format = NativeModelFormat::Unknown;
@@ -150,6 +190,9 @@ struct DecodedModel {
     QVector<VMeshDataBlock> vmeshDataBlocks;
     QVector<VMeshRefRecord> vmeshRefs;
     QVector<CmpFixRecord> cmpFixRecords;
+    QVector<CmpTransformHint> cmpTransformHints;
+    QVector<MaterialReference> materialReferences;
+    QVector<PreviewMaterialBinding> previewMaterialBindings;
     QStringList warnings;
     ModelNode rootNode;
 
@@ -196,11 +239,12 @@ private:
                                  const QVector<UtfNodeRecord> &nodes,
                                  const QVector<VMeshDataBlock> &vmeshBlocks,
                                  const QVector<VMeshRefRecord> &vmeshRefs,
-                                 const QVector<CmpFixRecord> &cmpFixRecords,
+                                 const QVector<CmpTransformHint> &cmpTransformHints,
+                                 const QVector<PreviewMaterialBinding> &previewMaterialBindings,
                                  QStringList *warnings);
-    static MeshData buildMeshFromVMesh(const QByteArray &vmeshData,
-                                        int startVertex, int numVertices,
-                                        int startIndex, int numIndices);
+    static QVector<MeshData> buildMeshesFromVMesh(const QByteArray &vmeshData,
+                                                  const VMeshRefRecord &ref,
+                                                  const PreviewMaterialBinding *binding);
 };
 
 } // namespace flatlas::infrastructure

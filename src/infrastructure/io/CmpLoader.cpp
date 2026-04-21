@@ -9,6 +9,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QMatrix3x3>
+#include <QRegularExpression>
+#include <QtEndian>
 #include <QtMath>
 
 #include <algorithm>
@@ -37,6 +39,16 @@ struct FlatUtfNode {
 };
 
 bool sanitizeMesh(MeshData &mesh);
+QVector<CmpTransformHint> buildCmpTransformHints(const QVector<CmpFixRecord> &records,
+                                                 const QVector<NativeModelPart> &parts,
+                                                 const QVector<FlatUtfNode> &nodes,
+                                                 const QByteArray &raw);
+QVector<MaterialReference> extractMaterialReferences(const QVector<FlatUtfNode> &nodes,
+                                                     const QByteArray &raw);
+QVector<PreviewMaterialBinding> buildPreviewMaterialBindings(const QVector<VMeshRefRecord> &vmeshRefs,
+                                                             const QVector<NativeModelPart> &parts,
+                                                             const QVector<UtfNodeRecord> &nodes,
+                                                             const QVector<MaterialReference> &materialReferences);
 
 bool isUtfMagic(const QByteArray &magic)
 {
@@ -354,7 +366,17 @@ QQuaternion quaternionFromRows(const QMatrix3x3 &matrix)
     return QQuaternion::fromRotationMatrix(matrix).normalized();
 }
 
+QQuaternion quaternionFromRowsTuple(const QVector3D &row0, const QVector3D &row1, const QVector3D &row2)
+{
+    QMatrix3x3 matrix;
+    matrix(0, 0) = row0.x(); matrix(0, 1) = row0.y(); matrix(0, 2) = row0.z();
+    matrix(1, 0) = row1.x(); matrix(1, 1) = row1.y(); matrix(1, 2) = row1.z();
+    matrix(2, 0) = row2.x(); matrix(2, 1) = row2.y(); matrix(2, 2) = row2.z();
+    return quaternionFromRows(matrix);
+}
+
 constexpr float kMaxPreviewAbsCoord = 1000000.0f;
+constexpr const char *kTextureExtensions[] = {".dds", ".tga", ".txm"};
 
 bool decodeIndices16(const QByteArray &raw, int vertexCountHint, QVector<uint32_t> *indices)
 {
@@ -386,6 +408,38 @@ QString triangleSoupVertexKey(const MeshVertex &vertex)
         .arg(std::round(vertex.position.z() * 100.0f) / 100.0f, 0, 'f', 2)
         .arg(std::round(vertex.u * 100.0f) / 100.0f, 0, 'f', 2)
         .arg(std::round(vertex.v * 100.0f) / 100.0f, 0, 'f', 2);
+}
+
+QString normalizeModelKey(QString value)
+{
+    value = value.toLower().trimmed();
+    value.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    value = QFileInfo(value).fileName();
+    const int dot = value.lastIndexOf(QLatin1Char('.'));
+    if (dot > 0)
+        value = value.left(dot);
+
+    QRegularExpression noisyLod(QStringLiteral("_lod(\\d)\\d+$"));
+    value.replace(noisyLod, QStringLiteral("_lod\\1"));
+    return value;
+}
+
+bool looksLikeMaterialReference(const QString &value, QString *kind)
+{
+    const QString lowered = value.trimmed().toLower();
+    if (lowered.endsWith(QStringLiteral(".mat"))) {
+        if (kind)
+            *kind = QStringLiteral("material");
+        return true;
+    }
+    for (const char *extension : kTextureExtensions) {
+        if (lowered.endsWith(QLatin1String(extension))) {
+            if (kind)
+                *kind = QStringLiteral("texture");
+            return true;
+        }
+    }
+    return false;
 }
 
 bool looksLikeExpandedTriangleSoup(const MeshData &mesh)
@@ -1016,12 +1070,247 @@ QVector<CmpFixRecord> parseCmpFixRecords(const QVector<FlatUtfNode> &nodes, cons
     return records;
 }
 
-const CmpFixRecord *findTransformHint(const QVector<CmpFixRecord> &records, const QString &partName)
+const CmpTransformHint *findCombinedTransformHint(const QVector<CmpTransformHint> &hints, const QString &partName)
 {
-    const auto it = std::find_if(records.cbegin(), records.cend(), [&](const CmpFixRecord &record) {
-        return record.childName.compare(partName, Qt::CaseInsensitive) == 0;
+    const auto it = std::find_if(hints.cbegin(), hints.cend(), [&](const CmpTransformHint &hint) {
+        return hint.partName.compare(partName, Qt::CaseInsensitive) == 0;
     });
-    return it == records.cend() ? nullptr : &(*it);
+    return it == hints.cend() ? nullptr : &(*it);
+}
+
+QQuaternion combineRotations(const QQuaternion &parent, const QQuaternion &local)
+{
+    return (parent * local).normalized();
+}
+
+QVector3D rotateTranslation(const QQuaternion &rotation, const QVector3D &value)
+{
+    return rotation.rotatedVector(value);
+}
+
+QPair<QVector3D, QQuaternion> combinedCmpTransformForPart(
+    const QString &partName,
+    const QHash<QString, QString> &parentByPart,
+    const QHash<QString, QVector3D> &localTranslations,
+    const QHash<QString, QQuaternion> &localRotations,
+    QHash<QString, QVector3D> &combinedTranslations,
+    QHash<QString, QQuaternion> &combinedRotations,
+    QSet<QString> &activeParts)
+{
+    if (combinedTranslations.contains(partName) || combinedRotations.contains(partName)) {
+        return qMakePair(combinedTranslations.value(partName, QVector3D()),
+                         combinedRotations.value(partName, QQuaternion(1.0f, 0.0f, 0.0f, 0.0f)));
+    }
+
+    if (activeParts.contains(partName)) {
+        return qMakePair(localTranslations.value(partName, QVector3D()),
+                         localRotations.value(partName, QQuaternion(1.0f, 0.0f, 0.0f, 0.0f)));
+    }
+
+    activeParts.insert(partName);
+    const QVector3D localTranslation = localTranslations.value(partName, QVector3D());
+    const QQuaternion localRotation = localRotations.value(partName, QQuaternion(1.0f, 0.0f, 0.0f, 0.0f));
+    const QString parentName = parentByPart.value(partName);
+
+    QVector3D parentTranslation;
+    QQuaternion parentRotation(1.0f, 0.0f, 0.0f, 0.0f);
+    if (!parentName.isEmpty()) {
+        const auto parentCombined = combinedCmpTransformForPart(parentName,
+                                                                parentByPart,
+                                                                localTranslations,
+                                                                localRotations,
+                                                                combinedTranslations,
+                                                                combinedRotations,
+                                                                activeParts);
+        parentTranslation = parentCombined.first;
+        parentRotation = parentCombined.second;
+    }
+
+    const QQuaternion combinedRotation = combineRotations(parentRotation, localRotation);
+    const QVector3D combinedTranslation = parentTranslation + rotateTranslation(parentRotation, localTranslation);
+    combinedTranslations.insert(partName, combinedTranslation);
+    combinedRotations.insert(partName, combinedRotation);
+    activeParts.remove(partName);
+    return qMakePair(combinedTranslation, combinedRotation);
+}
+
+struct JointLocalTransformMaps {
+    QHash<QString, QVector3D> translations;
+    QHash<QString, QQuaternion> rotations;
+    QHash<QString, QString> parents;
+};
+
+QString parseCmpJointString(const QByteArray &blob, int *pos)
+{
+    if (!pos || *pos < 0 || *pos + 64 > blob.size())
+        return {};
+    const QByteArray value = blob.mid(*pos, 64).split('\0').value(0);
+    *pos += 64;
+    return QString::fromLatin1(value).trimmed();
+}
+
+QVector3D parseCmpJointVector(const QByteArray &blob, int *pos)
+{
+    if (!pos || *pos < 0 || *pos + 12 > blob.size())
+        return {};
+    QDataStream ds(blob.mid(*pos, 12));
+    ds.setByteOrder(QDataStream::LittleEndian);
+    ds.setFloatingPointPrecision(QDataStream::SinglePrecision);
+    float x = 0.0f, y = 0.0f, z = 0.0f;
+    ds >> x >> y >> z;
+    *pos += 12;
+    return QVector3D(x, y, z);
+}
+
+QQuaternion parseCmpJointRotation(const QByteArray &blob, int *pos)
+{
+    if (!pos || *pos < 0 || *pos + 36 > blob.size())
+        return QQuaternion(1.0f, 0.0f, 0.0f, 0.0f);
+
+    QDataStream ds(blob.mid(*pos, 36));
+    ds.setByteOrder(QDataStream::LittleEndian);
+    ds.setFloatingPointPrecision(QDataStream::SinglePrecision);
+    float values[9]{};
+    for (float &value : values)
+        ds >> value;
+    *pos += 36;
+    return quaternionFromRowsTuple(QVector3D(values[0], values[1], values[2]),
+                                   QVector3D(values[3], values[4], values[5]),
+                                   QVector3D(values[6], values[7], values[8]));
+}
+
+JointLocalTransformMaps extract208ByteJointLocals(const QVector<FlatUtfNode> &nodes,
+                                                  const QVector<NativeModelPart> &parts,
+                                                  const QByteArray &raw,
+                                                  const QString &nodeName)
+{
+    JointLocalTransformMaps result;
+    const auto jointIt = std::find_if(nodes.cbegin(), nodes.cend(), [&](const FlatUtfNode &node) {
+        return node.name.compare(nodeName, Qt::CaseInsensitive) == 0;
+    });
+    if (jointIt == nodes.cend())
+        return result;
+
+    const QByteArray blob = readNodeData(*jointIt, raw);
+    constexpr int kRecordSize = 208;
+    if (blob.isEmpty() || (blob.size() % kRecordSize) != 0)
+        return result;
+
+    QHash<QString, NativeModelPart> partByObjectName;
+    for (const auto &part : parts) {
+        if (!part.objectName.trimmed().isEmpty())
+            partByObjectName.insert(part.objectName.toLower(), part);
+    }
+
+    for (int recordIndex = 0; recordIndex < blob.size() / kRecordSize; ++recordIndex) {
+        int pos = recordIndex * kRecordSize;
+        const QString parentObjectName = parseCmpJointString(blob, &pos);
+        const QString objectName = parseCmpJointString(blob, &pos);
+        const QVector3D offsetA = parseCmpJointVector(blob, &pos);
+        const QVector3D offsetB = parseCmpJointVector(blob, &pos);
+        const QQuaternion rotation = parseCmpJointRotation(blob, &pos);
+
+        const auto partIt = partByObjectName.constFind(objectName.toLower());
+        if (partIt == partByObjectName.cend())
+            continue;
+
+        result.translations.insert(partIt->name.toLower(), offsetA + offsetB);
+        result.rotations.insert(partIt->name.toLower(), rotation);
+        if (!parentObjectName.trimmed().isEmpty()) {
+            const auto parentIt = partByObjectName.constFind(parentObjectName.toLower());
+            result.parents.insert(partIt->name.toLower(),
+                                  parentIt == partByObjectName.cend() ? QString() : parentIt->name);
+        } else {
+            result.parents.insert(partIt->name.toLower(), QString());
+        }
+    }
+
+    return result;
+}
+
+QVector<CmpTransformHint> buildCmpTransformHints(const QVector<CmpFixRecord> &records,
+                                                 const QVector<NativeModelPart> &parts,
+                                                 const QVector<FlatUtfNode> &nodes,
+                                                 const QByteArray &raw)
+{
+    QVector<CmpTransformHint> hints;
+    if (records.isEmpty() && parts.isEmpty())
+        return hints;
+
+    QHash<QString, QString> parentByPart;
+    for (const auto &part : parts)
+        parentByPart.insert(part.name.toLower(), part.parentPartName);
+    for (const auto &record : records) {
+        if (!record.parentName.trimmed().isEmpty())
+            parentByPart.insert(record.childName.toLower(), record.parentName);
+    }
+
+    QHash<QString, QVector3D> localTranslations;
+    QHash<QString, QQuaternion> localRotations;
+    for (const auto &record : records) {
+        localTranslations.insert(record.childName.toLower(), record.translation);
+        localRotations.insert(record.childName.toLower(), record.rotation);
+    }
+
+    const JointLocalTransformMaps revLocals = extract208ByteJointLocals(nodes, parts, raw, QStringLiteral("Rev"));
+    const JointLocalTransformMaps prisLocals = extract208ByteJointLocals(nodes, parts, raw, QStringLiteral("Pris"));
+
+    for (auto it = revLocals.translations.cbegin(); it != revLocals.translations.cend(); ++it)
+        localTranslations.insert(it.key(), it.value());
+    for (auto it = revLocals.rotations.cbegin(); it != revLocals.rotations.cend(); ++it)
+        localRotations.insert(it.key(), it.value());
+    for (auto it = revLocals.parents.cbegin(); it != revLocals.parents.cend(); ++it)
+        parentByPart.insert(it.key(), it.value());
+
+    for (auto it = prisLocals.translations.cbegin(); it != prisLocals.translations.cend(); ++it)
+        localTranslations.insert(it.key(), it.value());
+    for (auto it = prisLocals.rotations.cbegin(); it != prisLocals.rotations.cend(); ++it)
+        localRotations.insert(it.key(), it.value());
+    for (auto it = prisLocals.parents.cbegin(); it != prisLocals.parents.cend(); ++it)
+        parentByPart.insert(it.key(), it.value());
+
+    QSet<QString> partNames;
+    for (const auto &part : parts)
+        partNames.insert(part.name.toLower());
+    for (const auto &record : records)
+        partNames.insert(record.childName.toLower());
+    for (auto it = revLocals.translations.cbegin(); it != revLocals.translations.cend(); ++it)
+        partNames.insert(it.key());
+    for (auto it = prisLocals.translations.cbegin(); it != prisLocals.translations.cend(); ++it)
+        partNames.insert(it.key());
+
+    QHash<QString, QVector3D> combinedTranslations;
+    QHash<QString, QQuaternion> combinedRotations;
+    for (const QString &partKey : std::as_const(partNames)) {
+        QSet<QString> activeParts;
+        combinedCmpTransformForPart(partKey,
+                                    parentByPart,
+                                    localTranslations,
+                                    localRotations,
+                                    combinedTranslations,
+                                    combinedRotations,
+                                    activeParts);
+    }
+
+    hints.reserve(partNames.size());
+    for (const QString &partKey : std::as_const(partNames)) {
+        CmpTransformHint hint;
+        const auto partIt = std::find_if(parts.cbegin(), parts.cend(), [&](const NativeModelPart &part) {
+            return part.name.compare(partKey, Qt::CaseInsensitive) == 0;
+        });
+        hint.partName = partIt != parts.cend() ? partIt->name : partKey;
+        hint.parentPartName = parentByPart.value(partKey);
+        hint.localTranslation = localTranslations.value(partKey, QVector3D());
+        hint.localRotation = localRotations.value(partKey, QQuaternion(1.0f, 0.0f, 0.0f, 0.0f));
+        hint.combinedTranslation = combinedTranslations.value(partKey, QVector3D());
+        hint.combinedRotation = combinedRotations.value(partKey, QQuaternion(1.0f, 0.0f, 0.0f, 0.0f));
+        hint.hasLocalTranslation = localTranslations.contains(partKey);
+        hint.hasLocalRotation = localRotations.contains(partKey);
+        hint.hasCombinedTranslation = combinedTranslations.contains(partKey);
+        hint.hasCombinedRotation = combinedRotations.contains(partKey);
+        hints.append(hint);
+    }
+    return hints;
 }
 
 QString firstPathForName(const QVector<UtfNodeRecord> &nodes, const QString &name)
@@ -1030,6 +1319,260 @@ QString firstPathForName(const QVector<UtfNodeRecord> &nodes, const QString &nam
         return record.name.compare(name, Qt::CaseInsensitive) == 0;
     });
     return it == nodes.cend() ? QString() : it->path;
+}
+
+QString matchedPartNameForRef(const VMeshRefRecord &ref,
+                              const QVector<NativeModelPart> &parts,
+                              const QVector<UtfNodeRecord> &nodes)
+{
+    for (const auto &part : parts) {
+        const QString path = firstPathForName(nodes, part.name);
+        if (!path.isEmpty() && ref.nodePath.startsWith(path + QLatin1Char('/'), Qt::CaseInsensitive))
+            return part.name;
+    }
+    return {};
+}
+
+QStringList nodeReferenceCandidates(const FlatUtfNode &node, const QByteArray &raw)
+{
+    QStringList values{node.name};
+    const QString textValue = readNativeTextNode(node, raw);
+    if (!textValue.isEmpty())
+        values.append(textValue);
+    return values;
+}
+
+QVector<MaterialReference> extractMaterialReferences(const QVector<FlatUtfNode> &nodes,
+                                                     const QByteArray &raw)
+{
+    QVector<MaterialReference> references;
+    QSet<QString> seen;
+    for (const auto &node : nodes) {
+        const QStringList candidates = nodeReferenceCandidates(node, raw);
+        for (const QString &candidate : candidates) {
+            const QString normalized = candidate.trimmed();
+            QString kind;
+            if (!looksLikeMaterialReference(normalized, &kind))
+                continue;
+            const QString key = kind + QLatin1Char('|') + normalized.toLower() + QLatin1Char('|') + node.path.toLower();
+            if (seen.contains(key))
+                continue;
+            seen.insert(key);
+            references.append({kind, normalized, node.name, node.path});
+        }
+    }
+    return references;
+}
+
+QStringList matchTextureCandidates(const QString &modelName,
+                                   const QString &levelName,
+                                   const QString &partName,
+                                   const QStringList &sourceNames,
+                                   int groupStart,
+                                   int groupCount,
+                                   const QVector<MaterialReference> &materialReferences,
+                                   QString *matchHint,
+                                   QString *referenceNodePath)
+{
+    QVector<MaterialReference> textures;
+    QStringList materialValues;
+    for (const auto &reference : materialReferences) {
+        if (reference.kind == QStringLiteral("texture"))
+            textures.append(reference);
+        else if (reference.kind == QStringLiteral("material"))
+            materialValues.append(reference.value);
+    }
+
+    QSet<QString> tokenSet;
+    tokenSet.insert(normalizeModelKey(modelName));
+    tokenSet.insert(normalizeModelKey(levelName));
+    tokenSet.insert(normalizeModelKey(partName));
+    for (const QString &sourceName : sourceNames)
+        tokenSet.insert(normalizeModelKey(sourceName));
+    tokenSet.remove(QString());
+
+    struct ScoredReference {
+        int score = 0;
+        MaterialReference reference;
+    };
+    QVector<ScoredReference> scored;
+    for (const auto &texture : textures) {
+        const QStringList haystackParts{
+            normalizeModelKey(texture.value),
+            normalizeModelKey(texture.nodeName),
+            normalizeModelKey(texture.nodePath),
+            QString::number(groupStart),
+            QString::number(groupCount),
+        };
+        int score = 0;
+        for (const QString &token : tokenSet) {
+            if (token.isEmpty())
+                continue;
+            for (const QString &hay : haystackParts) {
+                if (!hay.isEmpty() && hay.contains(token)) {
+                    ++score;
+                    break;
+                }
+            }
+        }
+        if (score > 0)
+            scored.append({score, texture});
+    }
+
+    QStringList candidates;
+    if (!scored.isEmpty()) {
+        std::sort(scored.begin(), scored.end(), [](const ScoredReference &a, const ScoredReference &b) {
+            if (a.score != b.score)
+                return a.score > b.score;
+            return a.reference.value.toLower() < b.reference.value.toLower();
+        });
+        for (const auto &item : std::as_const(scored))
+            candidates.append(item.reference.value);
+        if (matchHint)
+            *matchHint = QStringLiteral("token-match");
+        if (referenceNodePath)
+            *referenceNodePath = scored.first().reference.nodePath;
+        return candidates;
+    }
+
+    if (textures.size() == 1) {
+        if (matchHint)
+            *matchHint = QStringLiteral("single-texture-fallback");
+        if (referenceNodePath)
+            *referenceNodePath = textures.first().nodePath;
+        return {textures.first().value};
+    }
+
+    if (!textures.isEmpty()) {
+        if (matchHint)
+            *matchHint = QStringLiteral("first-texture-fallback");
+        if (referenceNodePath)
+            *referenceNodePath = textures.first().nodePath;
+        for (const auto &item : std::as_const(textures))
+            candidates.append(item.value);
+        return candidates;
+    }
+
+    if (matchHint)
+        *matchHint = QStringLiteral("no-texture-reference");
+    return {};
+}
+
+QVector<PreviewMaterialBinding> buildPreviewMaterialBindings(const QVector<VMeshRefRecord> &vmeshRefs,
+                                                             const QVector<NativeModelPart> &parts,
+                                                             const QVector<UtfNodeRecord> &nodes,
+                                                             const QVector<MaterialReference> &materialReferences)
+{
+    QVector<PreviewMaterialBinding> bindings;
+    if (vmeshRefs.isEmpty() || materialReferences.isEmpty())
+        return bindings;
+
+    QString singleMaterialValue;
+    int materialCount = 0;
+    for (const auto &reference : materialReferences) {
+        if (reference.kind == QStringLiteral("material")) {
+            singleMaterialValue = reference.value;
+            ++materialCount;
+        }
+    }
+
+    for (const auto &ref : vmeshRefs) {
+        PreviewMaterialBinding binding;
+        binding.modelName = ref.modelName;
+        binding.levelName = ref.levelName;
+        binding.partName = matchedPartNameForRef(ref, parts, nodes);
+        binding.groupStart = ref.groupStart;
+        binding.groupCount = ref.groupCount;
+        if (!ref.matchedSourceName.isEmpty())
+            binding.sourceNames.append(ref.matchedSourceName);
+        QString referenceNodePath;
+        binding.textureCandidates = matchTextureCandidates(binding.modelName,
+                                                           binding.levelName,
+                                                           binding.partName,
+                                                           binding.sourceNames,
+                                                           binding.groupStart,
+                                                           binding.groupCount,
+                                                           materialReferences,
+                                                           &binding.matchHint,
+                                                           &referenceNodePath);
+        if (!binding.textureCandidates.isEmpty())
+            binding.textureValue = binding.textureCandidates.first();
+        binding.referenceNodePath = referenceNodePath;
+        if (materialCount == 1)
+            binding.materialValue = singleMaterialValue;
+        bindings.append(binding);
+    }
+    return bindings;
+}
+
+struct StructuredMeshHeader {
+    int materialId = -1;
+    int startVertex = 0;
+    int endVertex = 0;
+    int numRefIndices = 0;
+    int startIndex = 0;
+};
+
+QVector<StructuredMeshHeader> parseStructuredMeshHeaders(const QByteArray &vmeshData)
+{
+    QVector<StructuredMeshHeader> headers;
+    if (vmeshData.size() < 16)
+        return headers;
+
+    const quint16 meshCount = qFromLittleEndian<quint16>(
+        reinterpret_cast<const uchar *>(vmeshData.constData() + 8));
+    if (meshCount == 0)
+        return headers;
+
+    int pos = 16;
+    int triangleStart = 0;
+    headers.reserve(meshCount);
+    for (int i = 0; i < meshCount; ++i) {
+        if (pos + 12 > vmeshData.size())
+            return {};
+        const quint32 materialId = qFromLittleEndian<quint32>(
+            reinterpret_cast<const uchar *>(vmeshData.constData() + pos));
+        const quint16 startVertex = qFromLittleEndian<quint16>(
+            reinterpret_cast<const uchar *>(vmeshData.constData() + pos + 4));
+        const quint16 endVertex = qFromLittleEndian<quint16>(
+            reinterpret_cast<const uchar *>(vmeshData.constData() + pos + 6));
+        const quint16 numRefIndices = qFromLittleEndian<quint16>(
+            reinterpret_cast<const uchar *>(vmeshData.constData() + pos + 8));
+        if (endVertex < startVertex)
+            return {};
+        headers.append({static_cast<int>(materialId),
+                        static_cast<int>(startVertex),
+                        static_cast<int>(endVertex),
+                        static_cast<int>(numRefIndices),
+                        triangleStart});
+        triangleStart += numRefIndices;
+        pos += 12;
+    }
+    return headers;
+}
+
+const PreviewMaterialBinding *findPreviewMaterialBinding(const QVector<PreviewMaterialBinding> &bindings,
+                                                         const VMeshRefRecord &ref,
+                                                         const QString &partName)
+{
+    const auto it = std::find_if(bindings.cbegin(), bindings.cend(), [&](const PreviewMaterialBinding &binding) {
+        if (binding.groupStart != ref.groupStart || binding.groupCount != ref.groupCount)
+            return false;
+        if (!binding.partName.isEmpty() && !partName.isEmpty()
+            && binding.partName.compare(partName, Qt::CaseInsensitive) != 0) {
+            return false;
+        }
+        if (!binding.modelName.isEmpty() && !ref.modelName.isEmpty()
+            && binding.modelName.compare(ref.modelName, Qt::CaseInsensitive) != 0) {
+            return false;
+        }
+        if (!binding.levelName.isEmpty() && !ref.levelName.isEmpty()
+            && binding.levelName.compare(ref.levelName, Qt::CaseInsensitive) != 0) {
+            return false;
+        }
+        return true;
+    });
+    return it == bindings.cend() ? nullptr : &(*it);
 }
 
 bool isFiniteVector(const QVector3D &value)
@@ -1218,14 +1761,36 @@ std::shared_ptr<UtfNode> CmpLoader::findNode(const std::shared_ptr<UtfNode> &roo
     return current;
 }
 
-MeshData CmpLoader::buildMeshFromVMesh(const QByteArray &vmeshData,
-                                       int startVertex, int numVertices,
-                                       int startIndex, int numIndices)
+QVector<MeshData> CmpLoader::buildMeshesFromVMesh(const QByteArray &vmeshData,
+                                                  const VMeshRefRecord &ref,
+                                                  const PreviewMaterialBinding *binding)
 {
-    MeshData mesh;
-    if (startVertex < 0 || numVertices <= 0 || startIndex < 0 || numIndices <= 0)
-        return mesh;
-    const auto sliceDecoded = [&](const DecodedMesh &decoded) -> MeshData {
+    QVector<MeshData> meshes;
+    if (ref.vertexStart < 0 || ref.vertexCount <= 0 || ref.indexStart < 0 || ref.indexCount <= 0)
+        return meshes;
+
+    const auto applyBinding = [&](MeshData &candidate, int materialId) {
+        candidate.materialId = materialId;
+        if (binding) {
+            candidate.textureName = binding->textureValue;
+            candidate.textureCandidates = binding->textureCandidates;
+            candidate.materialValue = binding->materialValue;
+            candidate.matchHint = binding->matchHint;
+            if (!binding->textureValue.isEmpty())
+                candidate.materialName = binding->textureValue;
+            else if (!binding->materialValue.isEmpty())
+                candidate.materialName = binding->materialValue;
+        }
+        if (candidate.materialName.isEmpty() && materialId >= 0)
+            candidate.materialName = QStringLiteral("material_%1").arg(materialId);
+    };
+
+    const auto sliceDecodedRange = [&](const DecodedMesh &decoded,
+                                       int startVertex,
+                                       int numVertices,
+                                       int startIndex,
+                                       int numIndices,
+                                       int materialId) -> MeshData {
         MeshData candidate;
         if (decoded.positions.isEmpty())
             return candidate;
@@ -1258,21 +1823,54 @@ MeshData CmpLoader::buildMeshFromVMesh(const QByteArray &vmeshData,
 
         if (!sanitizeMesh(candidate))
             return {};
+        applyBinding(candidate, materialId);
         return candidate;
     };
 
-    mesh = sliceDecoded(VmeshDecoder::decode(vmeshData));
-    if (!mesh.vertices.isEmpty())
-        return mesh;
+    const auto appendFromDecoded = [&](const DecodedMesh &decoded) -> bool {
+        const auto headers = parseStructuredMeshHeaders(vmeshData);
+        if (!headers.isEmpty()
+            && ref.groupStart >= 0
+            && ref.groupCount > 0
+            && ref.groupStart + ref.groupCount <= headers.size()) {
+            for (int i = ref.groupStart; i < ref.groupStart + ref.groupCount; ++i) {
+                const auto &header = headers.at(i);
+                MeshData mesh = sliceDecodedRange(decoded,
+                                                  header.startVertex,
+                                                  (header.endVertex - header.startVertex) + 1,
+                                                  header.startIndex,
+                                                  header.numRefIndices,
+                                                  header.materialId);
+                if (!mesh.vertices.isEmpty())
+                    meshes.append(mesh);
+            }
+            if (!meshes.isEmpty())
+                return true;
+        }
+
+        MeshData mesh = sliceDecodedRange(decoded,
+                                          ref.vertexStart,
+                                          ref.vertexCount,
+                                          ref.indexStart,
+                                          ref.indexCount,
+                                          -1);
+        if (!mesh.vertices.isEmpty()) {
+            meshes.append(mesh);
+            return true;
+        }
+        return false;
+    };
+
+    if (appendFromDecoded(VmeshDecoder::decode(vmeshData)))
+        return meshes;
 
     const auto offsets = VmeshDecoder::findStructuredSingleBlockOffsets(vmeshData);
     for (int offset : offsets) {
-        mesh = sliceDecoded(VmeshDecoder::decodeStructuredSingleBlock(vmeshData, offset));
-        if (!mesh.vertices.isEmpty())
-            return mesh;
+        if (appendFromDecoded(VmeshDecoder::decodeStructuredSingleBlock(vmeshData, offset)))
+            return meshes;
     }
 
-    return {};
+    return meshes;
 }
 
 ModelNode CmpLoader::extractPart(const QString &partPath,
@@ -1280,7 +1878,8 @@ ModelNode CmpLoader::extractPart(const QString &partPath,
                                  const QVector<UtfNodeRecord> &nodes,
                                  const QVector<VMeshDataBlock> &vmeshBlocks,
                                  const QVector<VMeshRefRecord> &vmeshRefs,
-                                 const QVector<CmpFixRecord> &cmpFixRecords,
+                                 const QVector<CmpTransformHint> &cmpTransformHints,
+                                 const QVector<PreviewMaterialBinding> &previewMaterialBindings,
                                  QStringList *warnings)
 {
     ModelNode node;
@@ -1291,9 +1890,11 @@ ModelNode CmpLoader::extractPart(const QString &partPath,
         return node;
 
     node.name = it->name;
-    if (const auto *transform = findTransformHint(cmpFixRecords, node.name)) {
-        node.origin = transform->translation;
-        node.rotation = transform->rotation;
+    if (const auto *transform = findCombinedTransformHint(cmpTransformHints, node.name)) {
+        if (transform->hasLocalTranslation)
+            node.origin = transform->localTranslation;
+        if (transform->hasLocalRotation)
+            node.rotation = transform->localRotation;
     }
 
     const QString prefix = partPath + QLatin1Char('/');
@@ -1320,15 +1921,28 @@ ModelNode CmpLoader::extractPart(const QString &partPath,
         const QByteArray blockBytes = raw.mid(resolved->second.dataOffset, resolved->second.usedSize);
         if (blockBytes.isEmpty())
             continue;
-        MeshData mesh = buildMeshFromVMesh(blockBytes, ref.vertexStart, ref.vertexCount, ref.indexStart, ref.indexCount);
-        if (!mesh.vertices.isEmpty()) {
-            node.meshes.append(mesh);
+        const PreviewMaterialBinding *binding = findPreviewMaterialBinding(previewMaterialBindings, ref, node.name);
+        const auto resolvedMeshes = buildMeshesFromVMesh(blockBytes, ref, binding);
+        if (!resolvedMeshes.isEmpty()) {
+            for (const auto &mesh : resolvedMeshes)
+                node.meshes.append(mesh);
             continue;
         }
 
         const auto familyMesh = decodeStructuredFamilyForRef(raw, vmeshBlocks, resolved->second, ref);
         if (familyMesh.has_value() && !familyMesh->vertices.isEmpty()) {
-            node.meshes.append(*familyMesh);
+            MeshData mesh = *familyMesh;
+            if (binding) {
+                mesh.textureName = binding->textureValue;
+                mesh.textureCandidates = binding->textureCandidates;
+                mesh.materialValue = binding->materialValue;
+                mesh.matchHint = binding->matchHint;
+                if (!binding->textureValue.isEmpty())
+                    mesh.materialName = binding->textureValue;
+                else if (!binding->materialValue.isEmpty())
+                    mesh.materialName = binding->materialValue;
+            }
+            node.meshes.append(mesh);
             if (warnings)
                 warnings->append(QStringLiteral("Used structured-family fallback for %1").arg(ref.nodePath));
             continue;
@@ -1401,19 +2015,63 @@ DecodedModel CmpLoader::loadModel(const QString &filePath)
     result.vmeshDataBlocks = parseVMeshDataBlocks(flatNodes, raw);
     result.vmeshRefs = parseVMeshRefs(flatNodes, raw, result.vmeshDataBlocks);
     result.cmpFixRecords = parseCmpFixRecords(flatNodes, raw);
+    result.cmpTransformHints = buildCmpTransformHints(result.cmpFixRecords, result.parts, flatNodes, raw);
+    result.materialReferences = extractMaterialReferences(flatNodes, raw);
+    result.previewMaterialBindings = buildPreviewMaterialBindings(result.vmeshRefs,
+                                                                  result.parts,
+                                                                  result.utfNodes,
+                                                                  result.materialReferences);
 
     ModelNode root;
     root.name = QFileInfo(filePath).fileName();
 
     if (result.format == NativeModelFormat::Cmp && !result.parts.isEmpty()) {
+        QHash<QString, ModelNode> partNodesByName;
+        QHash<QString, QString> parentByPart;
+        for (const auto &part : std::as_const(result.parts))
+            parentByPart.insert(part.name.toLower(), part.parentPartName);
+        for (const auto &hint : std::as_const(result.cmpTransformHints)) {
+            if (!hint.parentPartName.trimmed().isEmpty())
+                parentByPart.insert(hint.partName.toLower(), hint.parentPartName);
+        }
+
         for (const auto &part : std::as_const(result.parts)) {
             const QString partPath = firstPathForName(result.utfNodes, part.name);
             if (partPath.isEmpty())
                 continue;
             ModelNode partNode = extractPart(partPath, raw, result.utfNodes, result.vmeshDataBlocks,
-                                             result.vmeshRefs, result.cmpFixRecords, &result.warnings);
-            if (!partNode.meshes.isEmpty())
-                root.children.append(partNode);
+                                             result.vmeshRefs, result.cmpTransformHints,
+                                             result.previewMaterialBindings, &result.warnings);
+            if (!partNode.meshes.isEmpty() || !partNode.children.isEmpty())
+                partNodesByName.insert(part.name.toLower(), partNode);
+        }
+
+        QSet<QString> attached;
+        std::function<ModelNode(QString)> buildHierarchy = [&](QString partKey) -> ModelNode {
+            attached.insert(partKey);
+            ModelNode node = partNodesByName.take(partKey);
+            for (const QString &candidateKey : parentByPart.keys()) {
+                if (attached.contains(candidateKey))
+                    continue;
+                if (parentByPart.value(candidateKey).compare(node.name, Qt::CaseInsensitive) == 0 &&
+                    partNodesByName.contains(candidateKey)) {
+                    node.children.append(buildHierarchy(candidateKey));
+                }
+            }
+            return node;
+        };
+
+        QStringList orderedPartKeys;
+        orderedPartKeys.reserve(result.parts.size());
+        for (const auto &part : std::as_const(result.parts))
+            orderedPartKeys.append(part.name.toLower());
+        for (const QString &partKey : std::as_const(orderedPartKeys)) {
+            if (!partNodesByName.contains(partKey) || attached.contains(partKey))
+                continue;
+            const QString parentName = parentByPart.value(partKey);
+            if (!parentName.isEmpty() && partNodesByName.contains(parentName.toLower()))
+                continue;
+            root.children.append(buildHierarchy(partKey));
         }
     }
 
@@ -1422,7 +2080,8 @@ DecodedModel CmpLoader::loadModel(const QString &filePath)
         if (partPath.isEmpty())
             partPath = firstPathForName(result.utfNodes, QStringLiteral("Root"));
         ModelNode direct = extractPart(partPath, raw, result.utfNodes, result.vmeshDataBlocks,
-                                       result.vmeshRefs, result.cmpFixRecords, &result.warnings);
+                                       result.vmeshRefs, result.cmpTransformHints,
+                                       result.previewMaterialBindings, &result.warnings);
         if (!direct.meshes.isEmpty() || !direct.children.isEmpty())
             root = direct;
     }

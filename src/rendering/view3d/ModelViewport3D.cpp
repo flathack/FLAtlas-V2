@@ -50,6 +50,18 @@ QColor colorForMeshIndex(int index)
     return palette.at(index % palette.size());
 }
 
+QColor colorForMesh(const flatlas::infrastructure::MeshData &mesh, int fallbackIndex)
+{
+    if (mesh.materialName.isEmpty())
+        return colorForMeshIndex(fallbackIndex);
+
+    const uint hash = qHash(mesh.materialName.toLower());
+    const int hue = static_cast<int>(hash % 360u);
+    const int sat = 90 + static_cast<int>((hash / 360u) % 80u);
+    const int val = 170 + static_cast<int>((hash / (360u * 80u)) % 60u);
+    return QColor::fromHsv(hue, qBound(0, sat, 255), qBound(0, val, 255));
+}
+
 } // namespace
 
 ModelViewport3D::ModelViewport3D(QWidget *parent)
@@ -187,7 +199,7 @@ void ModelViewport3D::addNodeRecursive(const flatlas::infrastructure::ModelNode 
         if (meshNodeEntity) {
             auto *meshEntity = new Qt3DCore::QEntity(meshNodeEntity);
             if (auto *renderer = ModelGeometryBuilder::buildTriangleRenderer(mesh, meshEntity)) {
-                auto *material = MaterialFactory::createDefault(colorForMeshIndex(meshIndex), meshEntity);
+                auto *material = MaterialFactory::createDefault(colorForMesh(mesh, meshIndex), meshEntity);
                 meshEntity->addComponent(renderer);
                 meshEntity->addComponent(material);
             } else {
