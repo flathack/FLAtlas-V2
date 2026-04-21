@@ -17,6 +17,7 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QInputDialog>
+#include <QSignalBlocker>
 
 using namespace flatlas::domain;
 
@@ -81,10 +82,8 @@ void BaseEditorPage::setupUi()
     // Right: Room editor
     m_roomEditor = new RoomEditor(this);
     connect(m_roomEditor, &RoomEditor::roomsChanged, this, [this]() {
-        if (m_data) {
-            m_data->rooms = m_roomEditor->rooms();
-            emit titleChanged(QStringLiteral("%1*").arg(m_data->nickname));
-        }
+        if (m_data && !m_loadingUi)
+            markDirty();
     });
 
     m_splitter->addWidget(propsWidget);
@@ -93,6 +92,27 @@ void BaseEditorPage::setupUi()
     m_splitter->setStretchFactor(1, 1);
 
     mainLayout->addWidget(m_splitter);
+
+    auto wireLineEdit = [this](QLineEdit *edit) {
+        connect(edit, &QLineEdit::textChanged, this, [this]() {
+            if (!m_loadingUi)
+                markDirty();
+        });
+    };
+    wireLineEdit(m_nicknameEdit);
+    wireLineEdit(m_archetypeEdit);
+    wireLineEdit(m_systemEdit);
+    wireLineEdit(m_posEdit);
+    wireLineEdit(m_dockWithEdit);
+
+    connect(m_idsNameSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int) {
+        if (!m_loadingUi)
+            markDirty();
+    });
+    connect(m_idsInfoSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int) {
+        if (!m_loadingUi)
+            markDirty();
+    });
 }
 
 void BaseEditorPage::setupToolBar()
@@ -105,7 +125,7 @@ void BaseEditorPage::setupToolBar()
     m_toolBar->addAction(tr("Apply Changes"), this, [this]() {
         applyToData();
         if (m_data)
-            emit titleChanged(QStringLiteral("%1*").arg(m_data->nickname));
+            markDirty();
     });
 }
 
@@ -120,7 +140,7 @@ bool BaseEditorPage::loadBase(const QString &filePath, const QString &baseNickna
     m_filePath = filePath;
 
     populateFromData();
-    emit titleChanged(m_data->nickname);
+    setDirty(false);
     return true;
 }
 
@@ -128,15 +148,18 @@ void BaseEditorPage::setBase(std::unique_ptr<BaseData> base)
 {
     m_data = std::move(base);
     populateFromData();
-    if (m_data)
-        emit titleChanged(m_data->nickname);
+    setDirty(false);
 }
 
 bool BaseEditorPage::save(const QString &filePath)
 {
     if (!m_data) return false;
     applyToData();
-    return BasePersistence::save(*m_data, filePath);
+    if (!BasePersistence::save(*m_data, filePath))
+        return false;
+    m_filePath = filePath;
+    setDirty(false);
+    return true;
 }
 
 BaseData *BaseEditorPage::data() const
@@ -155,6 +178,8 @@ void BaseEditorPage::populateFromData()
 {
     if (!m_data) return;
 
+    m_loadingUi = true;
+
     m_nicknameEdit->setText(m_data->nickname);
     m_archetypeEdit->setText(m_data->archetype);
     m_systemEdit->setText(m_data->system);
@@ -170,6 +195,7 @@ void BaseEditorPage::populateFromData()
 
     m_roomEditor->setBaseNickname(m_data->nickname);
     m_roomEditor->setRooms(m_data->rooms);
+    m_loadingUi = false;
 }
 
 void BaseEditorPage::applyToData()
@@ -225,7 +251,35 @@ void BaseEditorPage::onNewBase()
 
     m_data = std::make_unique<BaseData>(std::move(base));
     populateFromData();
-    emit titleChanged(m_data->nickname);
+    setDirty(false);
+}
+
+void BaseEditorPage::markDirty()
+{
+    setDirty(true);
+}
+
+void BaseEditorPage::setDirty(bool dirty)
+{
+    if (m_dirty == dirty) {
+        refreshTitle();
+        return;
+    }
+    m_dirty = dirty;
+    refreshTitle();
+}
+
+void BaseEditorPage::refreshTitle()
+{
+    if (!m_data)
+        return;
+
+    QString title = m_data->nickname.trimmed();
+    if (title.isEmpty())
+        title = tr("Base Editor");
+    if (m_dirty)
+        title += QLatin1Char('*');
+    emit titleChanged(title);
 }
 
 } // namespace flatlas::editors

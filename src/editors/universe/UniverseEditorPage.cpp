@@ -1347,7 +1347,29 @@ void UniverseEditorPage::cancelPendingSystemPlacement()
 
 void UniverseEditorPage::onNodeMoved(const QString &nickname)
 {
+    const QString key = nickname.toLower();
+    const QPointF before = [&]() -> QPointF {
+        if (!m_data)
+            return {};
+        if (const auto *sys = m_data->findSystem(nickname))
+            return scenePositionForSystem(*sys);
+        return {};
+    }();
+
     syncSystemPositionFromMap(nickname);
+    const QPointF after = [&]() -> QPointF {
+        if (!m_data)
+            return {};
+        if (const auto *sys = m_data->findSystem(nickname))
+            return scenePositionForSystem(*sys);
+        return {};
+    }();
+
+    if (!qFuzzyCompare(before.x() + 1.0, after.x() + 1.0)
+        || !qFuzzyCompare(before.y() + 1.0, after.y() + 1.0)) {
+        m_movedSystemNicknames.insert(key);
+    }
+
     drawConnections();
     if (!m_highlightedPath.isEmpty())
         highlightPath(m_highlightedPath);
@@ -1356,7 +1378,8 @@ void UniverseEditorPage::onNodeMoved(const QString &nickname)
 void UniverseEditorPage::onNodeMoveFinished(const QString &nickname)
 {
     syncSystemPositionFromMap(nickname);
-    setDirty(true);
+    if (m_movedSystemNicknames.remove(nickname.toLower()) > 0)
+        setDirty(true);
     onNodeSelected(nickname);
 }
 

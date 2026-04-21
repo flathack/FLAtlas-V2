@@ -400,6 +400,8 @@ void MainWindow::createPanels()
 
     m_centerTabs = new flatlas::ui::CenterTabWidget(this);
     tabBarLayout->addWidget(m_centerTabs->tabBar(), 1);
+    connect(m_centerTabs, &flatlas::ui::CenterTabWidget::closeRequested,
+            this, [this](int index) { closeTabWithPrompt(index); });
 
     // Right panel: FLAtlas Settings + indicators
     auto *rightPanel = new QWidget(this);
@@ -589,8 +591,136 @@ void MainWindow::launchFreelancerFromContext()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    for (int i = m_centerTabs ? (m_centerTabs->count() - 1) : -1; i >= 0; --i) {
+        if (!confirmCloseDirtyWidget(m_centerTabs->widget(i), m_centerTabs->tabBar()->tabText(i))) {
+            event->ignore();
+            return;
+        }
+    }
     saveWindowState();
     event->accept();
+}
+
+bool MainWindow::closeTabWithPrompt(int index, bool force)
+{
+    if (!m_centerTabs || index < 0 || index >= m_centerTabs->count())
+        return false;
+
+    QWidget *widget = m_centerTabs->widget(index);
+    if (!confirmCloseDirtyWidget(widget, m_centerTabs->tabBar()->tabText(index)))
+        return false;
+
+    m_centerTabs->removeTab(index, force);
+    return true;
+}
+
+bool MainWindow::confirmCloseDirtyWidget(QWidget *widget, const QString &titleForUser)
+{
+    if (!widget || !isWidgetDirty(widget))
+        return true;
+
+    const QString cleanTitle = titleForUser.trimmed().endsWith(QLatin1Char('*'))
+        ? titleForUser.trimmed().left(titleForUser.trimmed().size() - 1).trimmed()
+        : titleForUser.trimmed();
+
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Warning);
+    box.setWindowTitle(tr("Ungespeicherte Änderungen"));
+    box.setText(tr("Im Tab \"%1\" gibt es ungespeicherte Änderungen.").arg(cleanTitle.isEmpty() ? tr("Unbenannt") : cleanTitle));
+    box.setInformativeText(tr("Möchtest du die Änderungen speichern, bevor geschlossen wird?"));
+    auto *saveButton = box.addButton(tr("Speichern"), QMessageBox::AcceptRole);
+    auto *discardButton = box.addButton(tr("Verwerfen"), QMessageBox::DestructiveRole);
+    auto *cancelButton = box.addButton(tr("Abbrechen"), QMessageBox::RejectRole);
+    box.setDefaultButton(qobject_cast<QPushButton *>(saveButton));
+    box.exec();
+
+    if (box.clickedButton() == cancelButton)
+        return false;
+    if (box.clickedButton() == discardButton)
+        return true;
+    if (box.clickedButton() == saveButton)
+        return saveWidgetWithPrompt(widget) && !isWidgetDirty(widget);
+    return false;
+}
+
+bool MainWindow::saveWidgetWithPrompt(QWidget *widget)
+{
+    if (!widget)
+        return true;
+
+    if (auto *editor = qobject_cast<flatlas::editors::SystemEditorPage *>(widget)) {
+        QString targetPath = editor->filePath();
+        if (targetPath.isEmpty()) {
+            targetPath = QFileDialog::getSaveFileName(
+                this, tr("Save System INI"), QString(),
+                tr("INI Files (*.ini);;All Files (*)"));
+            if (targetPath.isEmpty())
+                return false;
+            return editor->saveAs(targetPath);
+        }
+        return editor->save();
+    }
+
+    if (auto *editor = qobject_cast<flatlas::editors::IniEditorPage *>(widget)) {
+        QString targetPath = editor->filePath();
+        if (targetPath.isEmpty()) {
+            targetPath = QFileDialog::getSaveFileName(
+                this, tr("Save INI File"), QString(),
+                tr("INI Files (*.ini);;All Files (*)"));
+            if (targetPath.isEmpty())
+                return false;
+            return editor->saveAs(targetPath);
+        }
+        return editor->save();
+    }
+
+    if (auto *editor = qobject_cast<flatlas::editors::UniverseEditorPage *>(widget)) {
+        const QString targetPath = editor->filePath();
+        if (!targetPath.isEmpty())
+            return editor->save();
+        return false;
+    }
+
+    if (auto *editor = qobject_cast<flatlas::editors::BaseEditorPage *>(widget)) {
+        QString targetPath = editor->filePath();
+        if (targetPath.isEmpty()) {
+            targetPath = QFileDialog::getSaveFileName(
+                this, tr("Save Base INI"), QString(),
+                tr("INI Files (*.ini);;All Files (*)"));
+            if (targetPath.isEmpty())
+                return false;
+        }
+        return editor->save(targetPath);
+    }
+
+    return true;
+}
+
+bool MainWindow::isWidgetDirty(QWidget *widget) const
+{
+    if (!widget)
+        return false;
+
+    if (auto *editor = qobject_cast<flatlas::editors::SystemEditorPage *>(widget))
+        return editor->isDirty();
+    if (auto *editor = qobject_cast<flatlas::editors::UniverseEditorPage *>(widget))
+        return editor->isDirty();
+    if (auto *editor = qobject_cast<flatlas::editors::IniEditorPage *>(widget))
+        return editor->isDirty();
+    if (auto *editor = qobject_cast<flatlas::editors::BaseEditorPage *>(widget))
+        return editor->isDirty();
+
+    return false;
+}
+
+QString MainWindow::tabTitleForWidget(QWidget *widget) const
+{
+    if (!m_centerTabs || !widget)
+        return {};
+    const int index = m_centerTabs->indexOf(widget);
+    if (index < 0)
+        return {};
+    return m_centerTabs->tabBar()->tabText(index);
 }
 
 void MainWindow::restoreWindowState()

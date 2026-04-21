@@ -2,6 +2,7 @@
 // editors/universe/UniverseEditorPage.h – Universe-Editor (Phase 9)
 
 #include <QWidget>
+#include <QSet>
 #include <memory>
 
 namespace flatlas::domain { class UniverseData; struct SystemInfo; }
@@ -39,6 +40,7 @@ public:
 
     flatlas::domain::UniverseData *data() const;
     QString filePath() const { return m_filePath; }
+    bool isDirty() const { return m_dirty; }
 
 signals:
     void titleChanged(const QString &title);
@@ -116,6 +118,7 @@ private:
     std::unique_ptr<flatlas::infrastructure::IdsStringTable> m_idsStrings;
     bool m_pendingSystemPlacement = false;
     std::unique_ptr<flatlas::editors::NewSystemRequest> m_pendingSystemRequest;
+    QSet<QString> m_movedSystemNicknames;
 };
 
 } // namespace flatlas::editors

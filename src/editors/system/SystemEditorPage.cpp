@@ -353,6 +353,7 @@ bool SystemEditorPage::loadFile(const QString &filePath)
         return false;
 
     m_document = std::move(doc);
+    bindDocumentSignals();
     m_selectedNicknames.clear();
     loadDisplayFilterSettings();
     m_mapScene->loadDocument(m_document.get());
@@ -364,7 +365,7 @@ bool SystemEditorPage::loadFile(const QString &filePath)
     }
     refreshObjectList();
     m_mapView->scheduleInitialFit();
-    emit titleChanged(m_document->name());
+    refreshTitle();
     return true;
 }
 
@@ -373,6 +374,7 @@ void SystemEditorPage::setDocument(std::unique_ptr<SystemDocument> doc)
     if (m_document)
         SystemPersistence::clearExtras(m_document.get());
     m_document = std::move(doc);
+    bindDocumentSignals();
     m_selectedNicknames.clear();
     loadDisplayFilterSettings();
     m_mapScene->loadDocument(m_document.get());
@@ -384,7 +386,7 @@ void SystemEditorPage::setDocument(std::unique_ptr<SystemDocument> doc)
     }
     refreshObjectList();
     m_mapView->scheduleInitialFit();
-    emit titleChanged(m_document->name());
+    refreshTitle();
 }
 
 bool SystemEditorPage::save()
@@ -413,6 +415,35 @@ SystemDocument *SystemEditorPage::document() const
 QString SystemEditorPage::filePath() const
 {
     return m_document ? m_document->filePath() : QString();
+}
+
+bool SystemEditorPage::isDirty() const
+{
+    return m_document && m_document->isDirty();
+}
+
+void SystemEditorPage::bindDocumentSignals()
+{
+    if (!m_document)
+        return;
+
+    connect(m_document.get(), &SystemDocument::dirtyChanged,
+            this, &SystemEditorPage::refreshTitle, Qt::UniqueConnection);
+    connect(m_document.get(), &SystemDocument::nameChanged,
+            this, &SystemEditorPage::refreshTitle, Qt::UniqueConnection);
+}
+
+void SystemEditorPage::refreshTitle()
+{
+    if (!m_document)
+        return;
+
+    QString title = m_document->name().trimmed();
+    if (title.isEmpty())
+        title = tr("System");
+    if (m_document->isDirty())
+        title += QLatin1Char('*');
+    emit titleChanged(title);
 }
 
 void SystemEditorPage::ensureSceneView3D()
@@ -1272,8 +1303,15 @@ void SystemEditorPage::applyIniEditorChanges()
     if (sectionName == QStringLiteral("object")) {
         for (const auto &obj : m_document->objects()) {
             if (obj->nickname() == previousNickname) {
+                IniDocument beforeDoc;
+                beforeDoc.append(SystemPersistence::serializeObjectSection(*obj));
+                const QString beforeText = IniParser::serialize(beforeDoc).trimmed();
                 SystemPersistence::applyObjectSection(*obj, section);
-                m_document->setDirty(true);
+                IniDocument afterDoc;
+                afterDoc.append(SystemPersistence::serializeObjectSection(*obj));
+                const QString afterText = IniParser::serialize(afterDoc).trimmed();
+                if (beforeText != afterText)
+                    m_document->setDirty(true);
                 m_selectedNicknames = {obj->nickname()};
                 refreshObjectList();
                 onCanvasSelectionChanged(m_selectedNicknames);
@@ -1285,8 +1323,15 @@ void SystemEditorPage::applyIniEditorChanges()
     if (sectionName == QStringLiteral("zone")) {
         for (const auto &zone : m_document->zones()) {
             if (zone->nickname() == previousNickname) {
+                IniDocument beforeDoc;
+                beforeDoc.append(SystemPersistence::serializeZoneSection(*zone));
+                const QString beforeText = IniParser::serialize(beforeDoc).trimmed();
                 SystemPersistence::applyZoneSection(*zone, section);
-                m_document->setDirty(true);
+                IniDocument afterDoc;
+                afterDoc.append(SystemPersistence::serializeZoneSection(*zone));
+                const QString afterText = IniParser::serialize(afterDoc).trimmed();
+                if (beforeText != afterText)
+                    m_document->setDirty(true);
                 m_selectedNicknames = {zone->nickname()};
                 refreshObjectList();
                 onCanvasSelectionChanged(m_selectedNicknames);
@@ -1453,15 +1498,20 @@ void SystemEditorPage::onItemsMoved(const QHash<QString, QPointF> &oldPositions,
 
     auto *stack = flatlas::core::UndoManager::instance().stack();
     stack->beginMacro(tr("Move Selection"));
+    bool movedAnything = false;
 
     for (const auto &obj : m_document->objects()) {
         if (!oldPositions.contains(obj->nickname()) || !newPositions.contains(obj->nickname()))
             continue;
         const QPointF oldFl = MapScene::qtToFl(oldPositions.value(obj->nickname()).x(), oldPositions.value(obj->nickname()).y());
         const QPointF newFl = MapScene::qtToFl(newPositions.value(obj->nickname()).x(), newPositions.value(obj->nickname()).y());
+        if (qFuzzyCompare(oldFl.x() + 1.0, newFl.x() + 1.0)
+            && qFuzzyCompare(oldFl.y() + 1.0, newFl.y() + 1.0))
+            continue;
         const QVector3D oldPos(oldFl.x(), obj->position().y(), oldFl.y());
         const QVector3D newPos(newFl.x(), obj->position().y(), newFl.y());
         stack->push(new MoveObjectCommand(obj.get(), oldPos, newPos));
+        movedAnything = true;
     }
 
     for (const auto &zone : m_document->zones()) {
@@ -1469,12 +1519,18 @@ void SystemEditorPage::onItemsMoved(const QHash<QString, QPointF> &oldPositions,
             continue;
         const QPointF oldFl = MapScene::qtToFl(oldPositions.value(zone->nickname()).x(), oldPositions.value(zone->nickname()).y());
         const QPointF newFl = MapScene::qtToFl(newPositions.value(zone->nickname()).x(), newPositions.value(zone->nickname()).y());
+        if (qFuzzyCompare(oldFl.x() + 1.0, newFl.x() + 1.0)
+            && qFuzzyCompare(oldFl.y() + 1.0, newFl.y() + 1.0))
+            continue;
         const QVector3D oldPos(oldFl.x(), zone->position().y(), oldFl.y());
         const QVector3D newPos(newFl.x(), zone->position().y(), newFl.y());
         stack->push(new MoveZoneCommand(zone.get(), oldPos, newPos));
+        movedAnything = true;
     }
 
     stack->endMacro();
+    if (movedAnything)
+        m_document->setDirty(true);
 }
 
 void SystemEditorPage::syncTreeSelectionFromNicknames(const QStringList &nicknames)

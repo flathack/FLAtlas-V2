@@ -57,6 +57,11 @@ private:
     void openUniverseFromContext();
     void handleEditingContextChanged();
     void closeContextBoundTabs();
+    bool closeTabWithPrompt(int index, bool force = false);
+    bool confirmCloseDirtyWidget(QWidget *widget, const QString &titleForUser);
+    bool saveWidgetWithPrompt(QWidget *widget);
+    bool isWidgetDirty(QWidget *widget) const;
+    QString tabTitleForWidget(QWidget *widget) const;
     void showContextHelp();
     void launchFreelancerFromContext();
     flatlas::editors::SystemEditorPage *currentSystemEditor() const;

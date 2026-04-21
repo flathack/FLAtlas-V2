@@ -50,6 +50,7 @@ public:
 
     flatlas::domain::SystemDocument *document() const;
     QString filePath() const;
+    bool isDirty() const;
 
 signals:
     void titleChanged(const QString &title);
@@ -61,6 +62,8 @@ private:
     void setupObjectList();
     void connectSignals();
     void ensureSceneView3D();
+    void bindDocumentSignals();
+    void refreshTitle();
     void set3DViewEnabled(bool enabled);
     void openDisplayFilterDialog();
     void loadDisplayFilterSettings();

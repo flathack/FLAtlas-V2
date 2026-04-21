@@ -31,6 +31,7 @@ public:
 
 signals:
     void currentChanged(int index);
+    void closeRequested(int index);
 
 private:
     bool isPinnedTab(int index) const;

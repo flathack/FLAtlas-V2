@@ -24,7 +24,7 @@ CenterTabWidget::CenterTabWidget(QObject *parent)
     connect(m_tabBar, &QTabBar::tabCloseRequested, this, [this](int index) {
         if (isPinnedTab(index))
             return;
-        removeTab(index);
+        emit closeRequested(index);
     });
 
     connect(m_tabBar, &QTabBar::tabMoved, this, [this](int from, int to) {

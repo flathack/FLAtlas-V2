@@ -34,6 +34,8 @@ public:
 
     flatlas::domain::BaseData *data() const;
     QString baseNickname() const;
+    QString filePath() const { return m_filePath; }
+    bool isDirty() const { return m_dirty; }
 
 signals:
     void titleChanged(const QString &title);
@@ -44,9 +46,14 @@ private:
     void populateFromData();
     void applyToData();
     void onNewBase();
+    void markDirty();
+    void setDirty(bool dirty);
+    void refreshTitle();
 
     std::unique_ptr<flatlas::domain::BaseData> m_data;
     QString m_filePath;
+    bool m_dirty = false;
+    bool m_loadingUi = false;
 
     QToolBar *m_toolBar = nullptr;
     QSplitter *m_splitter = nullptr;
