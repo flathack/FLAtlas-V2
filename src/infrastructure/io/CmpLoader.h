@@ -30,6 +30,7 @@ struct MeshData {
     QString materialValue;
     QStringList textureCandidates;
     QString matchHint;
+    QString debugHint;
 };
 
 /// A node in the model hierarchy (CMP can have multiple parts).
@@ -136,6 +137,8 @@ struct VMeshRefRecord {
     QString levelName;
     QString matchedSourceName;
     QString resolutionHint;
+    QString debugHint;
+    bool usedStructuredFamilyFallback = false;
     ModelBounds bounds;
 };
 
@@ -239,7 +242,7 @@ private:
                                  const QByteArray &raw,
                                  const QVector<UtfNodeRecord> &nodes,
                                  const QVector<VMeshDataBlock> &vmeshBlocks,
-                                 const QVector<VMeshRefRecord> &vmeshRefs,
+                                 QVector<VMeshRefRecord> &vmeshRefs,
                                  const QVector<CmpTransformHint> &cmpTransformHints,
                                  const QVector<PreviewMaterialBinding> &previewMaterialBindings,
                                  QStringList *warnings);

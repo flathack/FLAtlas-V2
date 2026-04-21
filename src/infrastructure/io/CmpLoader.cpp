@@ -2772,7 +2772,7 @@ ModelNode CmpLoader::extractPart(const NativeModelPart &part,
                                  const QByteArray &raw,
                                  const QVector<UtfNodeRecord> &nodes,
                                  const QVector<VMeshDataBlock> &vmeshBlocks,
-                                 const QVector<VMeshRefRecord> &vmeshRefs,
+                                 QVector<VMeshRefRecord> &vmeshRefs,
                                  const QVector<CmpTransformHint> &cmpTransformHints,
                                  const QVector<PreviewMaterialBinding> &previewMaterialBindings,
                                  QStringList *warnings)
@@ -2792,7 +2792,7 @@ ModelNode CmpLoader::extractPart(const NativeModelPart &part,
             node.rotation = transform->localRotation;
     }
     const QString prefix = partPath + QLatin1Char('/');
-    for (const auto &ref : vmeshRefs) {
+    for (auto &ref : vmeshRefs) {
         if (!refBelongsToPart(ref, part, partPath))
             continue;
 
@@ -2832,6 +2832,9 @@ ModelNode CmpLoader::extractPart(const NativeModelPart &part,
                                                              &familyPlanDescription);
         if (familyMesh.has_value() && !familyMesh->vertices.isEmpty()) {
             MeshData mesh = *familyMesh;
+            mesh.debugHint = familyPlanDescription;
+            ref.debugHint = familyPlanDescription;
+            ref.usedStructuredFamilyFallback = true;
             if (binding) {
                 mesh.textureName = binding->textureValue;
                 mesh.textureCandidates = binding->textureCandidates;

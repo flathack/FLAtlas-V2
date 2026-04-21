@@ -24,11 +24,22 @@ private slots:
         qDebug() << "parts" << decoded.parts.size()
                  << "vmeshRefs" << decoded.vmeshRefs.size()
                  << "vmeshBlocks" << decoded.vmeshDataBlocks.size();
+        int familyPlanRefs = 0;
+        for (const auto &ref : decoded.vmeshRefs) {
+            qDebug() << "ref path" << ref.nodePath
+                     << "source" << ref.matchedSourceName
+                     << "resolution" << ref.resolutionHint
+                     << "usedFamily" << ref.usedStructuredFamilyFallback
+                     << "debug" << ref.debugHint;
+            if (ref.usedStructuredFamilyFallback && !ref.debugHint.isEmpty())
+                ++familyPlanRefs;
+        }
         QVERIFY2(decoded.isValid(), "Decoded dockable solar model is invalid");
         QCOMPARE(decoded.format, NativeModelFormat::Cmp);
 
         int meshCount = 0;
         int childMeshNodes = 0;
+        int familyPlanMeshes = 0;
         std::function<void(const ModelNode &, int)> walk = [&](const ModelNode &node, int depth) {
             qDebug() << "node depth" << depth
                      << "name" << node.name
@@ -40,10 +51,13 @@ private slots:
                 ++meshCount;
                 qDebug() << "mesh vertices" << mesh.vertices.size()
                          << "indices" << mesh.indices.size()
-                         << "material" << mesh.materialName;
+                         << "material" << mesh.materialName
+                         << "debug" << mesh.debugHint;
                 QVERIFY(mesh.vertices.size() > 0);
                 QVERIFY(mesh.indices.size() > 0);
                 QVERIFY(mesh.indices.size() % 3 == 0);
+                if (!mesh.debugHint.isEmpty())
+                    ++familyPlanMeshes;
                 const auto bounds = flatlas::rendering::ModelGeometryBuilder::boundsForMesh(mesh);
                 QVERIFY(bounds.valid);
             }
@@ -56,6 +70,8 @@ private slots:
         QVERIFY(meshCount > 0);
         QVERIFY(decoded.rootNode.children.size() > 0);
         QVERIFY(childMeshNodes > 0);
+        QVERIFY(familyPlanMeshes > 0);
+        QVERIFY(familyPlanRefs > 0);
 
         const auto sceneBounds = flatlas::rendering::ModelGeometryBuilder::boundsForNode(decoded.rootNode);
         QVERIFY(sceneBounds.valid);

@@ -29,6 +29,8 @@ Den `structured-family`-Fallback enger an den V1-Approach ziehen, indem Family-B
   - gute Pläne zuerst exklusiv versuchen
   - nur bei echtem Decode-Fehlschlag auf schwächere Pläne zurückfallen
   - aktiver Plan landet jetzt im Warning-Text des Family-Fallbacks
+- aktiver Family-Plan hängt jetzt zusätzlich direkt am resultierenden Mesh (`debugHint`)
+  - damit im Repro-Test und später im Viewer/Debug besser sichtbar
 - neuer Dockable-Solar-Regressionstest für `docking_ringx2_lod.cmp`
 
 ## Erwarteter Effekt
