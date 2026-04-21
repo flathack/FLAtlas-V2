@@ -209,6 +209,23 @@ Zugehörige Dateien:
 - `src/infrastructure/io/CmpLoader.cpp`
 - `tests/test_LibertyBattleshipDeckPreviewBinding.cpp`
 
+### Iteration 11
+Referenz:
+- `DATA/BASES/KUSARI/ku_01_hokkaido_cityscape.cmp`
+
+Status:
+- umgesetzt / großer Cityscape-Geometrie-Guard für den geometry-first Pfad ergänzt
+
+Ergebnis:
+- der bisher noch ungetestete Cityscape-Größenbereich ist jetzt mit einem realen Base-Modell abgesichert, das deutlich größer und partreicher ist als die bisherigen Dockable-/Station-Referenzen
+- `ku_01_hokkaido_cityscape.cmp` dekodiert aktuell ohne Warnings mit `51/51` direkt aufgelösten Refs, ohne `structured-family`-Fallback und mit nur zwei `VMeshData`-Blöcken für den gesamten Partsatz
+- der neue Regressionstest hält damit nicht nur die reine Gültigkeit fest, sondern einen stabilen Hierarchie-Snapshot: `19` Top-Level-Knoten, davon ein großer `Root`-Zweig mit `32` Kindern und insgesamt `67` Meshes
+- für den geometry-first Fahrplan ist das ein wichtiger Zwischenstand: ein großer zusammengesetzter Cityscape-Fall liegt decoder-seitig bereits auf direktem Pfad, bevor MAT-/Texture-Parität weiter verfolgt wird
+- der nächste sinnvolle Form-/Transform-Schritt liegt damit noch klarer bei den Restfällen, die trotz dieser jetzt abgesicherten Größe nicht sauber aussehen, nicht bei bereits stabil direkt dekodierenden Großmodellen
+
+Zugehörige Dateien:
+- `tests/test_HokkaidoCityscapeModel.cpp`
+
 ## Aktive Referenzmodelle
 Siehe auch:
 - `docs/3d-viewer-reference-models.md`
@@ -216,6 +233,7 @@ Siehe auch:
 Aktuell aktiv:
 - `DATA/BASES/BRETONIA/br_barbican_station_deck.cmp`
 - `DATA/BASES/GENERIC/ocean_blue.cmp`
+- `DATA/BASES/KUSARI/ku_01_hokkaido_cityscape.cmp`
 - `DATA/BASES/LIBERTY/li_battleship_deck.cmp`
 - `DATA/SOLAR/DOCKABLE/TLR_lod.3db`
 - `DATA/SHIPS/ORDER/OR_ELITE/or_elite.cmp`
@@ -290,6 +308,7 @@ Neu abgesichert:
 - `br_barbican_station_deck.cmp` sichert jetzt zusätzlich explizit den Zustand `global-texture-library-fallback`; der Fall behält also Partkontext, zeigt aber zugleich, dass die Texture-Referenzen dort nur als globale Library ohne lokale Match-Hinweise vorliegen
 - `or_elite.cmp` sichert jetzt zusätzlich einen komplexeren Schiffsfall mit 25 direkten Refs, 25 part-aware Preview-Bindings und stabilen `no-texture-reference`-Snapshots ab
 - `li_battleship_deck.cmp` sichert jetzt zusätzlich, dass Detailmap-Materialbäume im Fallback nicht mehr am Wrapper-Node hängenbleiben, sondern bevorzugt auf die eigentliche Diffuse-Textur kippen; gleichzeitig verhindern gefilterte `.vms`-Tokens falsche Base-weite Scheintreffer
+- `ku_01_hokkaido_cityscape.cmp` sichert jetzt zusätzlich einen großen Cityscape-Fall mit 51 direkten Refs, 67 Meshes und stabiler Top-Level-Hierarchie ab; damit ist der geometry-first Pfad auch für deutlich größere Base-Modelle abgesichert
 
 ## Relevante Dateien für die Fortsetzung
 
@@ -330,6 +349,7 @@ Neu abgesichert:
 - nach dem jetzt abgesicherten `token-match` in `ocean_blue.cmp` den nächsten expliziten Texture-Fall auswählen, in dem der part-aware Kontext ebenfalls von Fallback auf Match kippen kann
 - nach der Barbican-Klassifikation als `global-texture-library-fallback` gezielt den ersten Fall angehen, in dem Material-/Texture-Kontext nicht nur global gelistet, sondern wieder node- oder materialnah genug für einen echten Matchaufstieg ist
 - nach dem Liberty-Schritt gezielt den ersten Restfall wählen, bei dem weder Diffuse-Priorisierung noch der aktuelle Token-Matcher reichen und deshalb zusätzlicher node-/materialnaher Kontext aus dem Decoder nachgezogen werden muss
+- nach dem Hokkaido-Guard gezielt den ersten Modellfall wählen, der trotz großer zusammengesetzter Hierarchie noch sichtbare Form-/Transform-Abweichungen zeigt, statt einen bereits stabil direkten Cityscape-Fall weiter auszubauen
 
 ### Mittelfristig
 - Family-/Header-/Stream-Fälle weiter an V1 schließen
@@ -347,13 +367,15 @@ Der sinnvollste nächste Schritt ist jetzt:
 1. `docking_ringx2_lod.cmp` als Guard behalten, aber nicht mehr als Hauptproblemfall
 2. `ocean_blue.cmp` als ersten echten `token-match`-Guard behalten und `br_barbican_station_deck.cmp` als expliziten `global-texture-library-fallback`-Gegenfall danebenstehen lassen
 3. `li_battleship_deck.cmp` als Beleg behalten, dass Detailmap-getriebene Fallbacks jetzt auf Diffuse statt auf Wrapper-Knoten landen
-4. als Nächstes genau einen schwierigeren Base-/Interior-Fall wählen, dessen Material-/Texture-Kontext mehr als nur eine globale Library bietet, und diesen von Fallback auf Match ziehen
+4. `ku_01_hokkaido_cityscape.cmp` als großen geometry-first Guard behalten, damit weitere Form-/Transform-Arbeit nicht nur auf kleinen oder mittleren Modellen abgesichert ist
+5. als Nächstes gezielt den ersten Modellfall wählen, der geometrisch noch sichtbar falsch aussieht, obwohl die jetzt abgesicherten direkten Decode-Pfade bereits stehen
 
 Praktisch:
 - vorhandene Snapshot-Tests für `cv_starflier.cmp`, `docking_ringx2_lod.cmp`, `station_large_a_lod.cmp` und `ocean_blue.cmp` als Guard behalten
 - `ocean_blue.cmp` als Beleg behalten, dass der aktuelle Matcher nicht nur Candidate-Listen stabilisiert, sondern auch echte `token-match`-Entscheidungen liefern kann
 - den Barbican-Guard als Beleg behalten, dass Preview-Bindings ihren Partkontext auch bei Base-/Interior-CMPs nicht verlieren und dass rein globale Texture-Libraries derzeit bewusst als eigener Restfall markiert werden
 - den Liberty-Guard als Beleg behalten, dass Detailmap-Materialbäume im Fallback jetzt bevorzugt die Diffuse-Texture liefern und dass `.vms`-Containernamen nicht mehr zu falschen `token-match`-Aufstiegen führen
+- den Hokkaido-Guard als Beleg behalten, dass große Cityscape-CMPs mit vielen Einzelteilen bereits ohne Family-Fallback und ohne Warnings direkt dekodieren; der nächste Engpass liegt dort also eher bei sichtbarer Parität als bei basaler Ref-Auflösung
 - die neue Top-Level-CMP-Extraktion als etablierten Pfad betrachten, nicht als Sonderfall
 - die Hierarchiebereinigung für leere Top-Level-`Root`-Knoten als etablierten Normalfall betrachten
 - die jetzt immer vorhandenen `PreviewMaterialBinding`-Einträge auch bei `materialReferences == 0` als etablierten Debug-/Regression-Pfad betrachten

@@ -86,6 +86,15 @@ Diese Referenzmodelle dienen als feste Vergleichsbasis für die V1-Paritätsarbe
   - Regression dafür, dass Detailmap-Materialbäume im Fallback bevorzugt auf `Dt_name`-Diffuse-Texturen statt auf rohe `detailmap_*`-Wrapper-Knoten zeigen
   - Regression dafür, dass `.vms`-Containernamen nicht als zu grobe Token-Quelle lokale Texture-Matches vortäuschen
 
+### 9. Großer Cityscape-Geometriefall
+- Iteration-11-Referenz: `DATA/BASES/KUSARI/ku_01_hokkaido_cityscape.cmp`
+- Archetype: `ku_01_hokkaido_cityscape`
+- Typ: `.cmp`
+- Zweck:
+  - großer geometry-first Guard für zusammengesetzte Base-/Cityscape-Modelle
+  - Regression für direkte `VMeshRef -> VMeshData`-Auflösung über viele Einzelteile in nur wenigen `VMeshData`-Blöcken
+  - Regression für stabile Top-Level-Hierarchie und nichtleere Mesh-Ausgabe in einem deutlich größeren Modell als die bisherigen Dockable-/Station-Fälle
+
 ## Vergleichskriterien
 
 ### Decoder
