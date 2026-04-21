@@ -1666,6 +1666,9 @@ std::optional<QPair<int, VMeshDataBlock>> resolveVMeshDataBlockForRefWithSources
     const QVector<VMeshDataBlock> &blocks,
     const QVector<NativeModelPart> &parts)
 {
+    if (const auto resolved = resolveVMeshDataBlockForRef(ref.meshDataReference, ref.nodePath, blocks))
+        return resolved;
+
     const QStringList sourceNames = candidateSourceNamesForRef(ref, parts);
     if (!sourceNames.isEmpty()) {
         QVector<int> matches;
@@ -1676,7 +1679,7 @@ std::optional<QPair<int, VMeshDataBlock>> resolveVMeshDataBlockForRefWithSources
         if (matches.size() == 1)
             return qMakePair(matches.first(), blocks.at(matches.first()));
     }
-    return resolveVMeshDataBlockForRef(ref.meshDataReference, ref.nodePath, blocks);
+    return std::nullopt;
 }
 
 QVector<VMeshRefRecord> parseVMeshRefs(const QVector<FlatUtfNode> &nodes,

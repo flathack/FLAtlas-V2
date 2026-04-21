@@ -104,7 +104,7 @@ void TestFamilySolarModel::spaceDomeRefAndMeshSnapshot()
         QStringLiteral("\\/space_dome_lod1021003093018.3db/MultiLevel/Level2/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod2-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod2-112.vms/structured-single-block@0"),
         QStringLiteral("\\/space_dome_lod1021003093018.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod1-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod1-112.vms/structured-single-block@0"),
         QStringLiteral("\\/space_dome_lod1021003093018.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod0-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-single-block@0"),
-        QStringLiteral("\\/dome_lod1021003093018.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod0-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/mesh-variant-fallback"),
+        QStringLiteral("\\/dome_lod1021003093018.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod1-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod1-112.vms/structured-single-block@0"),
         QStringLiteral("\\/dome_lod1021003093018.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod0-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-single-block@0"),
     };
     const QStringList expectedMeshSnapshot = {
@@ -114,7 +114,7 @@ void TestFamilySolarModel::spaceDomeRefAndMeshSnapshot()
         QStringLiteral("238|144|direct:structured-header:data.solar.misc.space_dome.lod1-112.vms/structured-single-block@0"),
         QStringLiteral("84|120|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-single-block@0"),
         QStringLiteral("278|294|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-single-block@0"),
-        QStringLiteral("1105|1800|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/mesh-variant-fallback"),
+        QStringLiteral("300|480|direct:structured-header:data.solar.misc.space_dome.lod1-112.vms/structured-single-block@0"),
         QStringLiteral("340|480|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-single-block@0"),
     };
 

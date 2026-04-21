@@ -49,7 +49,8 @@ Ergebnis:
 - `source_name`-aware Blockauflösung näher an V1
 - zusätzliche Family-/Header-/Stream-Arbeit im Decoder
 - `space_dome.cmp` hat jetzt einen festen Ref-/Mesh-Snapshot für den aktuellen Decoderpfad
-- `mesh-variant`-Fallbacks werden jetzt ebenfalls als `debugHint` sichtbar statt als unmarkierte Meshes
+- fehlerhafte source-name-Priorisierung für Multi-LOD-Refs beseitigt: `space_dome.cmp` Level1 läuft jetzt direkt auf `lod1`
+- der frühere `mesh-variant-fallback` in `space_dome.cmp` ist damit weggefallen
 
 Zugehörige Dateien:
 - `docs/3d-viewer-iteration-02.md`
@@ -145,7 +146,7 @@ Aktuell sichtbar:
 Das ist bewusst eingebaut worden, damit der aktive Decoderpfad pro Ref gegen V1 verglichen werden kann.
 
 Neu abgesichert:
-- `space_dome.cmp` zeigt jetzt explizit, dass 4 Meshes direkt via `structured-single-block@0` kommen und 1 Ref/Mesh noch über `mesh-variant-fallback` läuft
+- `space_dome.cmp` zeigt jetzt explizit, dass alle 5 Refs direkt über `structured-single-block@0` auf den passenden LOD-Blöcken dekodieren
 
 ## Relevante Dateien für die Fortsetzung
 
@@ -182,7 +183,7 @@ Neu abgesichert:
 - prüfen, ob `docking_ringx2_lod.cmp` jetzt vollständig über direkten Header-Decode läuft oder ob ein echter Family-Fallback-Fall als nächster Referenzfall sinnvoller ist
 - nächste echte Abweichung an einem einzelnen Dockable-/Solar-Ref isolieren
 - auf Basis des jetzt sauberen `TLR_lod.3db`-Pfads den nächsten komplexeren `.cmp`- oder Dockable-Fall auswählen
-- für `space_dome.cmp` prüfen, ob der aktuelle `mesh-variant-fallback` V1-konform ist oder durch einen präziseren direkten Decode ersetzt werden sollte
+- nächsten echten Family-/Dockable-Fall suchen, der noch nicht vollständig auf direkten Decode-Pfaden läuft
 
 ### Mittelfristig
 - Family-/Header-/Stream-Fälle weiter an V1 schließen
@@ -253,7 +254,7 @@ Aktueller `.3db`-Stand:
 
 Aktueller Family-Solar-Stand:
 - `space_dome.cmp` hat jetzt einen festen Ref-/Mesh-Snapshot statt nur eines groben Mesh-Existenz-Tests
-- der bisher unmarkierte `mesh-variant`-Fallback ist jetzt als Decoderpfad sichtbar und reproduzierbar abgesichert
+- die frühere Fehlauflösung eines Level1-Refs auf `lod0` ist behoben; `space_dome.cmp` läuft jetzt vollständig direkt auf den passenden LOD-Blöcken
 
 Zuletzt gemeinsam erfolgreich verifiziert:
 - `test_SimpleShipModel`
