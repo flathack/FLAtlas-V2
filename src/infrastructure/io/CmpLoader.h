@@ -248,7 +248,9 @@ private:
                                  QStringList *warnings);
     static QVector<MeshData> buildMeshesFromVMesh(const QByteArray &vmeshData,
                                                   const VMeshRefRecord &ref,
-                                                  const PreviewMaterialBinding *binding);
+                                                  const PreviewMaterialBinding *binding,
+                                                  const QString &directPlanHint,
+                                                  QString *resolvedPlanHint = nullptr);
 };
 
 } // namespace flatlas::infrastructure

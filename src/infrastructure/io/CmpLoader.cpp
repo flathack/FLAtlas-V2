@@ -2709,11 +2709,21 @@ std::shared_ptr<UtfNode> CmpLoader::findNode(const std::shared_ptr<UtfNode> &roo
 
 QVector<MeshData> CmpLoader::buildMeshesFromVMesh(const QByteArray &vmeshData,
                                                   const VMeshRefRecord &ref,
-                                                  const PreviewMaterialBinding *binding)
+                                                  const PreviewMaterialBinding *binding,
+                                                  const QString &directPlanHint,
+                                                  QString *resolvedPlanHint)
 {
     QVector<MeshData> meshes;
-    if (ref.vertexStart < 0 || ref.vertexCount <= 0 || ref.indexStart < 0 || ref.indexCount <= 0)
+    if (ref.vertexStart < 0 || ref.vertexCount <= 0 || ref.indexStart < 0 || ref.indexCount <= 0) {
+        if (resolvedPlanHint)
+            *resolvedPlanHint = directPlanHint + QStringLiteral("/invalid-ref-range");
         return meshes;
+    }
+
+    const auto applyPlanHint = [&](MeshData &candidate, const QString &planHint) {
+        if (!planHint.isEmpty())
+            candidate.debugHint = planHint;
+    };
 
     const auto applyBinding = [&](MeshData &candidate, int materialId) {
         candidate.materialId = materialId;
@@ -2825,19 +2835,38 @@ QVector<MeshData> CmpLoader::buildMeshesFromVMesh(const QByteArray &vmeshData,
 
         if (bestMesh.has_value()) {
             applyBinding(bestMesh.value(), -1);
+            const QString planHint = directPlanHint + QStringLiteral("/exact-fit-windowed");
+            applyPlanHint(bestMesh.value(), planHint);
+            if (resolvedPlanHint)
+                *resolvedPlanHint = planHint;
             meshes.append(bestMesh.value());
             return meshes;
         }
     }
 
-    if (appendFromDecoded(VmeshDecoder::decode(vmeshData)))
+    if (appendFromDecoded(VmeshDecoder::decode(vmeshData))) {
+        const QString planHint = directPlanHint + QStringLiteral("/decoded");
+        for (auto &mesh : meshes)
+            applyPlanHint(mesh, planHint);
+        if (resolvedPlanHint)
+            *resolvedPlanHint = planHint;
         return meshes;
+    }
 
     const auto offsets = VmeshDecoder::findStructuredSingleBlockOffsets(vmeshData);
     for (int offset : offsets) {
-        if (appendFromDecoded(VmeshDecoder::decodeStructuredSingleBlock(vmeshData, offset)))
+        if (appendFromDecoded(VmeshDecoder::decodeStructuredSingleBlock(vmeshData, offset))) {
+            const QString planHint = directPlanHint + QStringLiteral("/structured-single-block@%1").arg(offset);
+            for (auto &mesh : meshes)
+                applyPlanHint(mesh, planHint);
+            if (resolvedPlanHint)
+                *resolvedPlanHint = planHint;
             return meshes;
+        }
     }
+
+    if (resolvedPlanHint && resolvedPlanHint->isEmpty())
+        *resolvedPlanHint = directPlanHint + QStringLiteral("/no-mesh");
 
     return meshes;
 }
@@ -2891,8 +2920,16 @@ ModelNode CmpLoader::extractPart(const NativeModelPart &part,
         if (blockBytes.isEmpty())
             continue;
         const PreviewMaterialBinding *binding = findPreviewMaterialBinding(previewMaterialBindings, ref, node.name);
-        const auto resolvedMeshes = buildMeshesFromVMesh(blockBytes, ref, binding);
+        const QString directPlanHint = QStringLiteral("direct:%1:%2")
+                                           .arg(resolved->second.headerHint.structureKind,
+                                                resolved->second.sourceName);
+        QString resolvedPlanHint;
+        const auto resolvedMeshes = buildMeshesFromVMesh(blockBytes, ref, binding, directPlanHint, &resolvedPlanHint);
+        if (!resolvedPlanHint.isEmpty() && ref.debugHint.isEmpty())
+            ref.debugHint = resolvedPlanHint;
         if (!resolvedMeshes.isEmpty()) {
+            if (!resolvedPlanHint.isEmpty())
+                ref.debugHint = resolvedPlanHint;
             for (const auto &mesh : resolvedMeshes)
                 node.meshes.append(mesh);
             continue;

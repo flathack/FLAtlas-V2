@@ -33,6 +33,7 @@ private slots:
                      << "kind" << block.headerHint.structureKind;
         }
         int resolvedRefs = 0;
+        int directRefs = 0;
         QHash<QString, int> resolvedSources;
         for (const auto &ref : decoded.vmeshRefs) {
             qDebug() << "ref path" << ref.nodePath
@@ -45,11 +46,15 @@ private slots:
                 ++resolvedRefs;
                 resolvedSources[ref.matchedSourceName] += 1;
             }
+            if (!ref.debugHint.isEmpty() && ref.debugHint.startsWith(QStringLiteral("direct:")))
+                ++directRefs;
+            QVERIFY(!ref.usedStructuredFamilyFallback);
         }
         QVERIFY2(decoded.isValid(), "Decoded dockable solar model is invalid");
         QCOMPARE(decoded.format, NativeModelFormat::Cmp);
         QCOMPARE(decoded.warnings.size(), 0);
         QCOMPARE(resolvedRefs, decoded.vmeshRefs.size());
+        QCOMPARE(directRefs, 12);
         QCOMPARE(resolvedSources.value(QStringLiteral("data.solar.dockable.docking_ringx2_lod.lod1-212.vms")), 3);
         QCOMPARE(resolvedSources.value(QStringLiteral("data.solar.dockable.docking_ringx2_lod.lod1-112.vms")), 4);
         QCOMPARE(resolvedSources.value(QStringLiteral("data.solar.dockable.docking_ringx2_lod.lod0-212.vms")), 3);
@@ -109,24 +114,24 @@ void TestDockableSolarModel::dockingRingX2RefResolutionSnapshot()
         snapshot.append(QStringLiteral("%1|%2|%3")
                             .arg(ref.nodePath,
                                  ref.matchedSourceName,
-                                 ref.resolutionHint));
+                                 ref.resolutionHint + QStringLiteral("|") + ref.debugHint));
     }
 
     const QStringList expected = {
-        QStringLiteral("\\/Dock_lod1021031102238.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod1-212.vms|crc-or-fallback"),
-        QStringLiteral("\\/Dock_lod1021031102238.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod0-212.vms|crc-or-fallback"),
-        QStringLiteral("\\/dock_b_lod1021031102238.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod1-212.vms|crc-or-fallback"),
-        QStringLiteral("\\/dock_b_lod1021031102238.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod0-212.vms|crc-or-fallback"),
-        QStringLiteral("\\/dock_a_lod1021031102238.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod1-212.vms|crc-or-fallback"),
-        QStringLiteral("\\/dock_a_lod1021031102238.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod0-212.vms|crc-or-fallback"),
-        QStringLiteral("\\/dock2b_lod1021031102238.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod1-112.vms|crc-or-fallback"),
-        QStringLiteral("\\/dock2b_lod1021031102238.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod0-112.vms|crc-or-fallback"),
-        QStringLiteral("\\/dock2a_lod1021031102238.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod1-112.vms|crc-or-fallback"),
-        QStringLiteral("\\/dock2a_lod1021031102238.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod0-112.vms|crc-or-fallback"),
-        QStringLiteral("\\/dock1b_lod1021031102238.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod1-112.vms|crc-or-fallback"),
-        QStringLiteral("\\/dock1b_lod1021031102238.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod0-112.vms|crc-or-fallback"),
-        QStringLiteral("\\/dock1a_lod1021031102238.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod1-112.vms|crc-or-fallback"),
-        QStringLiteral("\\/dock1a_lod1021031102238.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod0-112.vms|crc-or-fallback"),
+        QStringLiteral("\\/Dock_lod1021031102238.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod1-212.vms|crc-or-fallback|"),
+        QStringLiteral("\\/Dock_lod1021031102238.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod0-212.vms|crc-or-fallback|"),
+        QStringLiteral("\\/dock_b_lod1021031102238.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod1-212.vms|crc-or-fallback|direct:structured-header:data.solar.dockable.docking_ringx2_lod.lod1-212.vms/structured-single-block@0"),
+        QStringLiteral("\\/dock_b_lod1021031102238.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod0-212.vms|crc-or-fallback|direct:structured-header:data.solar.dockable.docking_ringx2_lod.lod0-212.vms/structured-single-block@0"),
+        QStringLiteral("\\/dock_a_lod1021031102238.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod1-212.vms|crc-or-fallback|direct:structured-header:data.solar.dockable.docking_ringx2_lod.lod1-212.vms/structured-single-block@0"),
+        QStringLiteral("\\/dock_a_lod1021031102238.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod0-212.vms|crc-or-fallback|direct:structured-header:data.solar.dockable.docking_ringx2_lod.lod0-212.vms/structured-single-block@0"),
+        QStringLiteral("\\/dock2b_lod1021031102238.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod1-112.vms|crc-or-fallback|direct:structured-header:data.solar.dockable.docking_ringx2_lod.lod1-112.vms/structured-single-block@0"),
+        QStringLiteral("\\/dock2b_lod1021031102238.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod0-112.vms|crc-or-fallback|direct:structured-header:data.solar.dockable.docking_ringx2_lod.lod0-112.vms/structured-single-block@0"),
+        QStringLiteral("\\/dock2a_lod1021031102238.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod1-112.vms|crc-or-fallback|direct:structured-header:data.solar.dockable.docking_ringx2_lod.lod1-112.vms/structured-single-block@0"),
+        QStringLiteral("\\/dock2a_lod1021031102238.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod0-112.vms|crc-or-fallback|direct:structured-header:data.solar.dockable.docking_ringx2_lod.lod0-112.vms/structured-single-block@0"),
+        QStringLiteral("\\/dock1b_lod1021031102238.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod1-112.vms|crc-or-fallback|direct:structured-header:data.solar.dockable.docking_ringx2_lod.lod1-112.vms/structured-single-block@0"),
+        QStringLiteral("\\/dock1b_lod1021031102238.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod0-112.vms|crc-or-fallback|direct:structured-header:data.solar.dockable.docking_ringx2_lod.lod0-112.vms/structured-single-block@0"),
+        QStringLiteral("\\/dock1a_lod1021031102238.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod1-112.vms|crc-or-fallback|direct:structured-header:data.solar.dockable.docking_ringx2_lod.lod1-112.vms/structured-single-block@0"),
+        QStringLiteral("\\/dock1a_lod1021031102238.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.dockable.docking_ringx2_lod.lod0-112.vms|crc-or-fallback|direct:structured-header:data.solar.dockable.docking_ringx2_lod.lod0-112.vms/structured-single-block@0"),
     };
 
     QCOMPARE(snapshot, expected);

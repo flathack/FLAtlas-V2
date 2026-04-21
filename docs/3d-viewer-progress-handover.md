@@ -69,6 +69,8 @@ Ergebnis:
 - V1-näherer Part-Metadaten-Scan (`Root` + Follower-Suche) im CMP-Loader ergänzt
 - `docking_ringx2_lod.cmp` dekodiert wieder mit Mesh-Ausgabe statt unresolved refs
 - Repro-/Snapshot-Test für die konkrete Ref-Auflösung ergänzt
+- direkte Decode-Pfade (`structured-header` / `structured-single-block`) werden jetzt ebenfalls als `debugHint` sichtbar
+- aktueller Dockable-Snapshot zeigt: 12 Part-gebundene Refs dekodieren direkt über `structured-single-block@0`, 2 Root-Refs bleiben ohne aktiven Mesh-Decodepfad
 
 Zugehörige Dateien:
 - `docs/3d-viewer-iteration-03.md`
@@ -194,6 +196,7 @@ Der sinnvollste nächste Schritt ist:
 
 Praktisch:
 - vorhandenen Snapshot-Test für `docking_ringx2_lod.cmp` als Guard behalten
+- Snapshot enthält jetzt neben Quelle und Resolution-Hint auch den aktiven direkten Decode-Pfad
 - nächsten Problemfall wieder auf genau einen Ref/Block eingrenzen
 - gegen V1 `cmp_loader.py` / `preview_family_decode_hints` / `structured_decode_plans` abgleichen
 
