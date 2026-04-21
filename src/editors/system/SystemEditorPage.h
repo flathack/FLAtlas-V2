@@ -19,6 +19,7 @@ class QLabel;
 class QAction;
 class QPushButton;
 class QComboBox;
+class QLineEdit;
 class QGroupBox;
 class QFrame;
 class QScrollArea;
@@ -103,6 +104,7 @@ private:
     bool isNicknameVisibleUnderCurrentFilter(const QString &nickname) const;
     bool isObjectVisibleUnderCurrentFilter(const flatlas::domain::SolarObject &obj) const;
     bool isZoneVisibleUnderCurrentFilter(const flatlas::domain::ZoneItem &zone) const;
+    void applyObjectListSearchFilter();
     void refreshSidebarVisibilityState();
     void applySidebarFilteredStyle(QTreeWidgetItem *item, bool visible);
     void updateEditorModeUi();
@@ -119,6 +121,8 @@ private:
     QToolBar *m_toolBar = nullptr;
     QSplitter *m_splitter = nullptr;
     QSplitter *m_leftSidebarSplitter = nullptr;
+    QLineEdit *m_objectSearchEdit = nullptr;
+    QLabel *m_objectSearchHintLabel = nullptr;
     QTreeWidget *m_objectTree = nullptr;
     QStackedWidget *m_editorStack = nullptr;
     QWidget *m_emptyEditorPage = nullptr;

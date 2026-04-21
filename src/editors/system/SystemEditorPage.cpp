@@ -32,6 +32,7 @@
 #include <QInputDialog>
 #include <QMetaEnum>
 #include <QPixmap>
+#include <QLineEdit>
 #include <QLabel>
 #include <QPushButton>
 #include <QComboBox>
@@ -144,11 +145,27 @@ void SystemEditorPage::setupUi()
     leftSidebarLayout->addWidget(m_leftSidebarSplitter);
 
     // Object tree (left top)
-    m_objectTree = new QTreeWidget(m_leftSidebarSplitter);
+    auto *objectListHost = new QWidget(m_leftSidebarSplitter);
+    auto *objectListLayout = new QVBoxLayout(objectListHost);
+    objectListLayout->setContentsMargins(0, 0, 0, 0);
+    objectListLayout->setSpacing(6);
+
+    m_objectSearchEdit = new QLineEdit(objectListHost);
+    m_objectSearchEdit->setPlaceholderText(tr("Objekte durchsuchen..."));
+    m_objectSearchEdit->setClearButtonEnabled(true);
+    objectListLayout->addWidget(m_objectSearchEdit);
+
+    m_objectSearchHintLabel = new QLabel(tr("Keine Objekte gefunden"), objectListHost);
+    m_objectSearchHintLabel->setVisible(false);
+    m_objectSearchHintLabel->setStyleSheet(QStringLiteral("color:#9ca3af; padding:0 2px 4px 2px;"));
+    objectListLayout->addWidget(m_objectSearchHintLabel);
+
+    m_objectTree = new QTreeWidget(objectListHost);
     m_objectTree->setHeaderLabels({tr("Nickname"), tr("Type")});
     m_objectTree->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_objectTree->setMinimumWidth(200);
-    m_leftSidebarSplitter->addWidget(m_objectTree);
+    objectListLayout->addWidget(m_objectTree, 1);
+    m_leftSidebarSplitter->addWidget(objectListHost);
 
     auto *editorHost = new QWidget(m_leftSidebarSplitter);
     auto *editorLayout = new QVBoxLayout(editorHost);
@@ -286,6 +303,8 @@ void SystemEditorPage::connectSignals()
 
     connect(m_objectTree, &QTreeWidget::itemSelectionChanged,
             this, &SystemEditorPage::onTreeSelectionChanged);
+    connect(m_objectSearchEdit, &QLineEdit::textChanged,
+            this, [this]() { applyObjectListSearchFilter(); });
 }
 
 bool SystemEditorPage::loadFile(const QString &filePath)
@@ -658,6 +677,7 @@ void SystemEditorPage::refreshObjectList()
     m_systemStatsLabel->setText(tr("Objekte: %1\nZonen: %2")
                                     .arg(m_document->objects().size())
                                     .arg(m_document->zones().size()));
+    applyObjectListSearchFilter();
     refreshSidebarVisibilityState();
     syncTreeSelectionFromNicknames(previousSelection);
     if (m_mapScene)
@@ -1071,6 +1091,46 @@ bool SystemEditorPage::isZoneVisibleUnderCurrentFilter(const ZoneItem &zone) con
         visible = (rule.action == DisplayFilterAction::Show);
     }
     return visible;
+}
+
+void SystemEditorPage::applyObjectListSearchFilter()
+{
+    if (!m_objectTree)
+        return;
+
+    const QString needle = m_objectSearchEdit ? m_objectSearchEdit->text().trimmed() : QString();
+    const bool hasSearch = !needle.isEmpty();
+    int totalVisibleChildren = 0;
+    const QColor hitBackground(57, 104, 168, 70);
+
+    for (int i = 0; i < m_objectTree->topLevelItemCount(); ++i) {
+        QTreeWidgetItem *root = m_objectTree->topLevelItem(i);
+        if (!root)
+            continue;
+
+        int visibleChildren = 0;
+        for (int row = 0; row < root->childCount(); ++row) {
+            QTreeWidgetItem *child = root->child(row);
+            if (!child)
+                continue;
+
+            const bool matches = !hasSearch || child->text(0).contains(needle, Qt::CaseInsensitive);
+            child->setHidden(!matches);
+            for (int column = 0; column < child->columnCount(); ++column)
+                child->setBackground(column, matches && hasSearch ? QBrush(hitBackground) : QBrush());
+            if (matches) {
+                ++visibleChildren;
+                ++totalVisibleChildren;
+            }
+        }
+
+        root->setHidden(hasSearch && visibleChildren == 0);
+        if (!root->isHidden())
+            root->setExpanded(true);
+    }
+
+    if (m_objectSearchHintLabel)
+        m_objectSearchHintLabel->setVisible(hasSearch && totalVisibleChildren == 0);
 }
 
 void SystemEditorPage::refreshSidebarVisibilityState()
