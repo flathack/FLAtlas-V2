@@ -170,12 +170,14 @@ void ModelViewport3D::addNodeRecursive(const flatlas::infrastructure::ModelNode 
         meshNodeEntity = new Qt3DCore::QEntity(meshParentEntity);
         auto *transform = new Qt3DCore::QTransform(meshNodeEntity);
         transform->setTranslation(node.origin);
+        transform->setRotation(node.rotation);
         meshNodeEntity->addComponent(transform);
     }
     if (wireParentEntity) {
         wireNodeEntity = new Qt3DCore::QEntity(wireParentEntity);
         auto *transform = new Qt3DCore::QTransform(wireNodeEntity);
         transform->setTranslation(node.origin);
+        transform->setRotation(node.rotation);
         wireNodeEntity->addComponent(transform);
     }
 
@@ -248,9 +250,9 @@ bool ModelViewport3D::loadModelFile(const QString &filePath, QString *errorMessa
     }
 #endif
 
-    flatlas::infrastructure::ModelNode model;
+    flatlas::infrastructure::DecodedModel decoded;
     try {
-        model = flatlas::rendering::ModelCache::instance().load(filePath);
+        decoded = flatlas::rendering::ModelCache::instance().load(filePath);
     } catch (...) {
         const QString message = tr("An unexpected error occurred while loading %1.")
                                     .arg(QFileInfo(filePath).fileName());
@@ -261,7 +263,7 @@ bool ModelViewport3D::loadModelFile(const QString &filePath, QString *errorMessa
         return false;
     }
 
-    if (model.meshes.isEmpty() && model.children.isEmpty()) {
+    if (!decoded.isValid()) {
         const QString message = formatLoadError(filePath);
         setStatusMessage(message);
         if (errorMessage)
@@ -273,7 +275,7 @@ bool ModelViewport3D::loadModelFile(const QString &filePath, QString *errorMessa
     m_filePath = filePath;
     m_hasModel = true;
     try {
-        rebuildScene(model);
+        rebuildScene(decoded.rootNode);
     } catch (...) {
         clearModel();
         const QString message = tr("The model could not be rendered safely: %1.")

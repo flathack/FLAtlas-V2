@@ -26,6 +26,18 @@
 
 namespace flatlas::rendering {
 
+namespace {
+
+int meshCountForNode(const flatlas::infrastructure::ModelNode &node)
+{
+    int count = node.meshes.size();
+    for (const auto &child : node.children)
+        count += meshCountForNode(child);
+    return count;
+}
+
+} // namespace
+
 CharacterPreview::CharacterPreview(QWidget *parent)
     : QDialog(parent)
 {
@@ -182,7 +194,7 @@ void CharacterPreview::rebuildModel()
     auto loadPart = [&](const QString &fileName, const QVector3D &offset) {
         if (fileName.isEmpty()) return;
         QString path = m_characterDir + QStringLiteral("/") + fileName;
-        auto model = ModelCache::instance().load(path);
+        auto decoded = ModelCache::instance().load(path);
 
         auto *entity = new Qt3DCore::QEntity(m_charRoot);
         auto *transform = new Qt3DCore::QTransform(entity);
@@ -190,7 +202,8 @@ void CharacterPreview::rebuildModel()
         entity->addComponent(transform);
 
         // Placeholder sphere per mesh
-        for (int i = 0; i < qMax(1, model.meshes.size()); ++i) {
+        const int meshCount = qMax(1, meshCountForNode(decoded.rootNode));
+        for (int i = 0; i < meshCount; ++i) {
             auto *sphere = new Qt3DExtras::QSphereMesh(entity);
             sphere->setRadius(5.0f);
             auto *mat = new Qt3DExtras::QPhongMaterial(entity);

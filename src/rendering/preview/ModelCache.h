@@ -18,14 +18,14 @@ public:
     /// Check if a model is cached.
     bool contains(const QString &key) const;
 
-    /// Retrieve a cached model. Returns empty ModelNode if not found.
-    flatlas::infrastructure::ModelNode get(const QString &key);
+    /// Retrieve a cached decoded model. Returns empty data if not found.
+    flatlas::infrastructure::DecodedModel get(const QString &key);
 
     /// Insert a model into the cache. Evicts oldest if at capacity.
-    void insert(const QString &key, const flatlas::infrastructure::ModelNode &model);
+    void insert(const QString &key, const flatlas::infrastructure::DecodedModel &model);
 
     /// Load a model (from cache or disk). Automatically caches.
-    flatlas::infrastructure::ModelNode load(const QString &filePath);
+    flatlas::infrastructure::DecodedModel load(const QString &filePath);
 
     void setMaxSize(int maxEntries);
     int maxSize() const { return m_maxSize; }
@@ -38,7 +38,7 @@ private:
 
     mutable QMutex m_mutex;
     int m_maxSize = 128;
-    QHash<QString, flatlas::infrastructure::ModelNode> m_cache;
+    QHash<QString, flatlas::infrastructure::DecodedModel> m_cache;
     QList<QString> m_accessOrder; // Most recently used at back
 };
 

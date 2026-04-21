@@ -10,6 +10,7 @@
 #include <Qt3DRender/QGeometryRenderer>
 
 #include <QByteArray>
+#include <QMatrix4x4>
 #include <QtMath>
 
 #include <algorithm>
@@ -332,14 +333,20 @@ ModelBounds ModelGeometryBuilder::boundsForMesh(const flatlas::infrastructure::M
 ModelBounds ModelGeometryBuilder::boundsForNode(const flatlas::infrastructure::ModelNode &node,
                                                 const QVector3D &parentOffset)
 {
-    const QVector3D nodeOffset = parentOffset + node.origin;
+    QMatrix4x4 transform;
+    transform.translate(parentOffset);
+    transform.translate(node.origin);
+    transform.rotate(node.rotation);
     ModelBounds bounds;
     for (const auto &mesh : node.meshes) {
         for (const auto &vertex : mesh.vertices)
-            bounds.include(nodeOffset + vertex.position);
+            bounds.include(transform.map(vertex.position));
     }
-    for (const auto &child : node.children)
-        bounds.include(boundsForNode(child, nodeOffset));
+    const QVector3D childOffset = transform.map(QVector3D(0.0f, 0.0f, 0.0f));
+    for (const auto &child : node.children) {
+        ModelBounds childBounds = boundsForNode(child, childOffset);
+        bounds.include(childBounds);
+    }
     return bounds;
 }
 

@@ -46,6 +46,16 @@ public:
     /// Decode a VMeshData block (the raw bytes from the UTF node).
     static DecodedMesh decode(const QByteArray &data, int offset = 0);
 
+    /// Decode a structured single-block VMesh layout at the given byte offset.
+    static DecodedMesh decodeStructuredSingleBlock(const QByteArray &data, int offset = 0);
+
+    /// Scan a raw VMeshData block for plausible structured single-block headers.
+    static QVector<int> findStructuredSingleBlockOffsets(
+        const QByteArray &data,
+        int minMeshCount = 1,
+        int minIndexCount = 3,
+        int minVertexCount = 3);
+
     /// Decode a VMeshRef block – returns mesh group definitions referencing a VMeshData.
     static QVector<MeshGroup> decodeRef(const QByteArray &data, int offset = 0);
 
@@ -54,6 +64,8 @@ public:
 
     /// Count number of UV sets for a given FVF.
     static int uvSetCount(uint32_t fvf);
+
+    static bool isSupportedStructuredSingleBlockFvf(uint32_t fvf);
 };
 
 } // namespace flatlas::infrastructure

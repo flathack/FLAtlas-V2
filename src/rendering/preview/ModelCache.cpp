@@ -17,7 +17,7 @@ bool ModelCache::contains(const QString &key) const
     return m_cache.contains(key);
 }
 
-flatlas::infrastructure::ModelNode ModelCache::get(const QString &key)
+flatlas::infrastructure::DecodedModel ModelCache::get(const QString &key)
 {
     QMutexLocker lock(&m_mutex);
     if (!m_cache.contains(key))
@@ -30,7 +30,7 @@ flatlas::infrastructure::ModelNode ModelCache::get(const QString &key)
     return m_cache.value(key);
 }
 
-void ModelCache::insert(const QString &key, const flatlas::infrastructure::ModelNode &model)
+void ModelCache::insert(const QString &key, const flatlas::infrastructure::DecodedModel &model)
 {
     QMutexLocker lock(&m_mutex);
 
@@ -46,7 +46,7 @@ void ModelCache::insert(const QString &key, const flatlas::infrastructure::Model
     m_accessOrder.append(key);
 }
 
-flatlas::infrastructure::ModelNode ModelCache::load(const QString &filePath)
+flatlas::infrastructure::DecodedModel ModelCache::load(const QString &filePath)
 {
     // Check cache first (without holding lock for file I/O)
     {
@@ -59,18 +59,13 @@ flatlas::infrastructure::ModelNode ModelCache::load(const QString &filePath)
     }
 
     // Load from disk
-    flatlas::infrastructure::ModelNode model;
-    QString ext = QFileInfo(filePath).suffix().toLower();
-    if (ext == "cmp")
-        model = flatlas::infrastructure::CmpLoader::loadCmp(filePath);
-    else
-        model = flatlas::infrastructure::CmpLoader::load3db(filePath);
+    const auto decoded = flatlas::infrastructure::CmpLoader::loadModel(filePath);
 
     // Cache the result
-    if (!model.meshes.isEmpty() || !model.children.isEmpty())
-        insert(filePath, model);
+    if (decoded.isValid())
+        insert(filePath, decoded);
 
-    return model;
+    return decoded;
 }
 
 void ModelCache::setMaxSize(int maxEntries)
