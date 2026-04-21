@@ -102,6 +102,18 @@ void OrbitCamera::setResetState(const QVector3D &target, float distance,
     m_defaultElevation = qBound(-89.0f, elevationDegrees, 89.0f);
 }
 
+void OrbitCamera::setDistanceLimits(float minDistance, float maxDistance)
+{
+    if (!qIsFinite(minDistance) || !qIsFinite(maxDistance))
+        return;
+
+    m_minDistance = qMax(0.01f, minDistance);
+    m_maxDistance = qMax(m_minDistance, maxDistance);
+    m_distance = qBound(m_minDistance, m_distance, m_maxDistance);
+    m_defaultDistance = qBound(m_minDistance, m_defaultDistance, m_maxDistance);
+    updateCamera();
+}
+
 void OrbitCamera::updateCamera()
 {
     if (!m_camera)

@@ -31,6 +31,7 @@ private slots:
     void testOrbitCameraMouseRotate();
     void testOrbitCameraMousePan();
     void testOrbitCameraWheelZoom();
+    void testOrbitCameraDistanceLimits();
     void testTriangleRendererBuildsDoubleSidedIndices();
     void testSelectionManagerSelectEmits();
     void testSelectionManagerReselect();
@@ -198,6 +199,23 @@ void TestSceneView3D::testOrbitCameraWheelZoom()
                         QPointingDevice::primaryPointingDevice());
     orbit.handleWheel(&zoomOut);
     QVERIFY(orbit.distance() > zoomedInDistance);
+}
+
+void TestSceneView3D::testOrbitCameraDistanceLimits()
+{
+    Qt3DRender::QCamera camera;
+    flatlas::rendering::OrbitCamera orbit(&camera);
+    orbit.setDistanceLimits(0.5f, 2500.0f);
+
+    orbit.setDistance(0.1f);
+    QCOMPARE(orbit.distance(), 0.5f);
+
+    orbit.setDistance(3000.0f);
+    QCOMPARE(orbit.distance(), 2500.0f);
+
+    orbit.setResetState(QVector3D(0.0f, 0.0f, 0.0f), 0.2f, 45.0f, 30.0f);
+    orbit.resetView();
+    QCOMPARE(orbit.distance(), 0.5f);
 }
 
 void TestSceneView3D::testTriangleRendererBuildsDoubleSidedIndices()

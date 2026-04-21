@@ -43,6 +43,7 @@ public:
     void resetView();
     void setResetState(const QVector3D &target, float distance,
                        float azimuthDegrees, float elevationDegrees);
+    void setDistanceLimits(float minDistance, float maxDistance);
     void setRotateButton(Qt::MouseButton button) { m_rotateButton = button; }
     void setPanButton(Qt::MouseButton button) { m_panButton = button; }
 

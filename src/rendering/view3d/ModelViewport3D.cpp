@@ -250,7 +250,10 @@ void ModelViewport3D::fitCameraToBounds(const ModelBounds &bounds)
     const QVector3D center = bounds.valid ? bounds.center() : QVector3D();
     const float radius = qMax(bounds.radius(), 1.0f);
     const float distance = qMax(radius * 2.8f, 10.0f);
+    const float minDistance = qMax(radius * 0.12f, 0.25f);
+    const float maxDistance = qMax(distance * 200.0f, 500000.0f);
 
+    m_orbitCamera->setDistanceLimits(minDistance, maxDistance);
     m_orbitCamera->setResetState(center, distance, 45.0f, 22.0f);
     m_orbitCamera->resetView();
 }
