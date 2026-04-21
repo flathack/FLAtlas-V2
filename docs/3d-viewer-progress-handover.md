@@ -226,6 +226,25 @@ Ergebnis:
 Zugehörige Dateien:
 - `tests/test_HokkaidoCityscapeModel.cpp`
 
+### Iteration 12
+Referenz:
+- `DATA/SOLAR/DOCKABLE/station_small_b_lod.cmp`
+
+Status:
+- umgesetzt / `smallstation1` jetzt als echter Geometry-Paritäts-Guard abgesichert
+
+Ergebnis:
+- der zuvor visuell unkenntliche `smallstation1`-Fall ist jetzt decoder-seitig hart eingegrenzt und auf V1-nahe Mesh-Größen zurückgeführt
+- Kernänderung im Loader: strukturierte Single-Block-`VMeshData` werden nicht mehr nur über den generischen Decoderpfad gelesen, sondern können ihre Mesh-Header jetzt exakt als Submesh-Fenster auswerten
+- dadurch kippen die zuvor falschen Restfälle von `station_small_b_lod.cmp` auf die erwarteten V1-Größen, insbesondere `Main` mit `525/657`, `944/1110`, `1854/2562`, `3130/4509`, `4734/6348`
+- auch die problematischen `cntrl_twr`- und `ring`-LOD-Stufen landen jetzt auf stabilen Direktpfaden statt auf fehlerhaften Family-Fallbacks; `ring Level2` dekodiert jetzt als `156/162`
+- der CMP-Loader bevorzugt dabei wieder den konkret aufgelösten `matchedSource`-Block; strukturierte Family-Dekodierung bleibt nur noch Reservepfad statt den jetzt funktionierenden Direktpfad zu übersteuern
+- neuer Regressionstest hält sowohl den kompletten Ref-Snapshot als auch die entscheidenden Mesh-Signaturen der `Main`- und `cntrl_twr`-Äste fest
+
+Zugehörige Dateien:
+- `src/infrastructure/io/CmpLoader.cpp`
+- `tests/test_SmallStationModel.cpp`
+
 ## Aktive Referenzmodelle
 Siehe auch:
 - `docs/3d-viewer-reference-models.md`
@@ -235,6 +254,7 @@ Aktuell aktiv:
 - `DATA/BASES/GENERIC/ocean_blue.cmp`
 - `DATA/BASES/KUSARI/ku_01_hokkaido_cityscape.cmp`
 - `DATA/BASES/LIBERTY/li_battleship_deck.cmp`
+- `DATA/SOLAR/DOCKABLE/station_small_b_lod.cmp`
 - `DATA/SOLAR/DOCKABLE/TLR_lod.3db`
 - `DATA/SHIPS/ORDER/OR_ELITE/or_elite.cmp`
 - `DATA/SHIPS/CIVILIAN/CV_STARFLIER/cv_starflier.cmp`

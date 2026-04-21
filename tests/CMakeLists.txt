@@ -71,6 +71,7 @@ flatlas_add_test(test_ModelPreview    test_ModelPreview.cpp    flatlas_rendering
 flatlas_add_test(test_SimpleShipModel test_SimpleShipModel.cpp flatlas_rendering Qt6::Widgets)
 flatlas_add_test(test_FamilySolarModel test_FamilySolarModel.cpp flatlas_rendering Qt6::Widgets)
 flatlas_add_test(test_DockableSolarModel test_DockableSolarModel.cpp flatlas_rendering Qt6::Widgets)
+flatlas_add_test(test_SmallStationModel test_SmallStationModel.cpp flatlas_rendering Qt6::Widgets)
 flatlas_add_test(test_StationSolarModel test_StationSolarModel.cpp flatlas_rendering Qt6::Widgets)
 flatlas_add_test(test_HokkaidoCityscapeModel test_HokkaidoCityscapeModel.cpp flatlas_rendering Qt6::Widgets)
 flatlas_add_test(test_BarbicanStationDeckPreviewBinding test_BarbicanStationDeckPreviewBinding.cpp flatlas_infrastructure)

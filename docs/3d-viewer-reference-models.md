@@ -95,6 +95,15 @@ Diese Referenzmodelle dienen als feste Vergleichsbasis für die V1-Paritätsarbe
   - Regression für direkte `VMeshRef -> VMeshData`-Auflösung über viele Einzelteile in nur wenigen `VMeshData`-Blöcken
   - Regression für stabile Top-Level-Hierarchie und nichtleere Mesh-Ausgabe in einem deutlich größeren Modell als die bisherigen Dockable-/Station-Fälle
 
+### 10. Smallstation-Paritätsfall
+- Iteration-12-Referenz: `DATA/SOLAR/DOCKABLE/station_small_b_lod.cmp`
+- Archetype: `smallstation1`
+- Typ: `.cmp`
+- Zweck:
+  - konkreter V1-/V2-Screenshot-Repro für ein zuvor unkenntlich dekodiertes Stationsmodell
+  - Regression für strukturierte Single-Block-Mesh-Header innerhalb mehrerer LOD-Familien
+  - Guard dafür, dass `Main`, `cntrl_twr` und `ring` auf dieselben zentralen Mesh-Größen wie V1 fallen statt auf zerrissene Fehlfenster
+
 ## Vergleichskriterien
 
 ### Decoder
