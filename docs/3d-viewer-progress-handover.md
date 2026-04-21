@@ -42,12 +42,14 @@ Referenz:
 - `DATA/SOLAR/MISC/space_dome.cmp`
 
 Status:
-- umgesetzt / Basis steht
+- umgesetzt / Regression jetzt deutlich schärfer abgesichert
 
 Ergebnis:
 - zweiter Family-/Solar-Referenzfall etabliert
 - `source_name`-aware Blockauflösung näher an V1
 - zusätzliche Family-/Header-/Stream-Arbeit im Decoder
+- `space_dome.cmp` hat jetzt einen festen Ref-/Mesh-Snapshot für den aktuellen Decoderpfad
+- `mesh-variant`-Fallbacks werden jetzt ebenfalls als `debugHint` sichtbar statt als unmarkierte Meshes
 
 Zugehörige Dateien:
 - `docs/3d-viewer-iteration-02.md`
@@ -142,6 +144,9 @@ Aktuell sichtbar:
 
 Das ist bewusst eingebaut worden, damit der aktive Decoderpfad pro Ref gegen V1 verglichen werden kann.
 
+Neu abgesichert:
+- `space_dome.cmp` zeigt jetzt explizit, dass 4 Meshes direkt via `structured-single-block@0` kommen und 1 Ref/Mesh noch über `mesh-variant-fallback` läuft
+
 ## Relevante Dateien für die Fortsetzung
 
 ### Decoder / Loader
@@ -176,6 +181,8 @@ Das ist bewusst eingebaut worden, damit der aktive Decoderpfad pro Ref gegen V1 
 - aktiven Ref-Plan noch gezielter gegen V1 vergleichen
 - prüfen, ob `docking_ringx2_lod.cmp` jetzt vollständig über direkten Header-Decode läuft oder ob ein echter Family-Fallback-Fall als nächster Referenzfall sinnvoller ist
 - nächste echte Abweichung an einem einzelnen Dockable-/Solar-Ref isolieren
+- auf Basis des jetzt sauberen `TLR_lod.3db`-Pfads den nächsten komplexeren `.cmp`- oder Dockable-Fall auswählen
+- für `space_dome.cmp` prüfen, ob der aktuelle `mesh-variant-fallback` V1-konform ist oder durch einen präziseren direkten Decode ersetzt werden sollte
 
 ### Mittelfristig
 - Family-/Header-/Stream-Fälle weiter an V1 schließen
@@ -237,6 +244,21 @@ Zuletzt erfolgreich gebaut:
 Zuletzt zusätzlich erfolgreich verifiziert:
 - `test_FamilySolarModel`
 - `test_SimpleShipModel`
+- `test_TradeLaneModel`
+
+Aktueller `.3db`-Stand:
+- `TLR_lod.3db` verwendet keinen rohen `direct VMeshData fallback` mehr
+- der Loader extrahiert jetzt den Top-Level-UTF-Pfad aus `VMeshRef`/`VMeshData`, wenn kein CMP-Part vorhanden ist
+- Regression kann dadurch feste Mesh-Signaturen auf dem normalen Decoderpfad prüfen
+
+Aktueller Family-Solar-Stand:
+- `space_dome.cmp` hat jetzt einen festen Ref-/Mesh-Snapshot statt nur eines groben Mesh-Existenz-Tests
+- der bisher unmarkierte `mesh-variant`-Fallback ist jetzt als Decoderpfad sichtbar und reproduzierbar abgesichert
+
+Zuletzt gemeinsam erfolgreich verifiziert:
+- `test_SimpleShipModel`
+- `test_FamilySolarModel`
+- `test_DockableSolarModel`
 - `test_TradeLaneModel`
 
 Zusätzlich wurden in früheren Runden erfolgreich gebaut:

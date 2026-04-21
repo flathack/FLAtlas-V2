@@ -11,6 +11,7 @@ using namespace flatlas::infrastructure;
 class TestFamilySolarModel : public QObject {
     Q_OBJECT
 private slots:
+    void spaceDomeRefAndMeshSnapshot();
     void loadSpaceDomeCmp()
     {
         const QString filePath = QStringLiteral(
@@ -24,6 +25,14 @@ private slots:
         qDebug() << "parts" << decoded.parts.size()
                  << "vmeshRefs" << decoded.vmeshRefs.size()
                  << "vmeshBlocks" << decoded.vmeshDataBlocks.size();
+        for (const auto &ref : decoded.vmeshRefs) {
+            qDebug() << "ref path" << ref.nodePath
+                     << "meshRef" << ref.meshDataReference
+                     << "source" << ref.matchedSourceName
+                     << "resolution" << ref.resolutionHint
+                     << "usedFamily" << ref.usedStructuredFamilyFallback
+                     << "debug" << ref.debugHint;
+        }
         QVERIFY2(decoded.isValid(), "Decoded family solar model is invalid");
         QCOMPARE(decoded.format, NativeModelFormat::Cmp);
 
@@ -40,7 +49,8 @@ private slots:
                 ++meshCount;
                 qDebug() << "mesh vertices" << mesh.vertices.size()
                          << "indices" << mesh.indices.size()
-                         << "material" << mesh.materialName;
+                         << "material" << mesh.materialName
+                         << "debug" << mesh.debugHint;
                 QVERIFY(mesh.vertices.size() > 0);
                 QVERIFY(mesh.indices.size() > 0);
                 QVERIFY(mesh.indices.size() % 3 == 0);
@@ -63,6 +73,54 @@ private slots:
         QVERIFY(sceneBounds.radius() > 0.0f);
     }
 };
+
+void TestFamilySolarModel::spaceDomeRefAndMeshSnapshot()
+{
+    const QString filePath = QStringLiteral(
+        "C:/Users/steve/Github/FL-Installationen/TESTMOD1/DATA/SOLAR/MISC/space_dome.cmp");
+
+    if (!QFileInfo::exists(filePath))
+        QSKIP("Local space_dome model not present.");
+
+    const DecodedModel decoded = CmpLoader::loadModel(filePath);
+    QStringList refSnapshot;
+    for (const auto &ref : decoded.vmeshRefs) {
+        refSnapshot.append(QStringLiteral("%1|%2|%3|%4")
+                               .arg(ref.nodePath,
+                                    ref.matchedSourceName,
+                                    ref.resolutionHint,
+                                    ref.debugHint));
+    }
+
+    QStringList meshSnapshot;
+    for (const auto &mesh : decoded.rootNode.children.value(1).meshes) {
+        meshSnapshot.append(QStringLiteral("%1|%2|%3")
+                                .arg(mesh.vertices.size())
+                                .arg(mesh.indices.size())
+                                .arg(mesh.debugHint));
+    }
+
+    const QStringList expectedRefSnapshot = {
+        QStringLiteral("\\/space_dome_lod1021003093018.3db/MultiLevel/Level2/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod2-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod2-112.vms/structured-single-block@0"),
+        QStringLiteral("\\/space_dome_lod1021003093018.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod1-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod1-112.vms/structured-single-block@0"),
+        QStringLiteral("\\/space_dome_lod1021003093018.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod0-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-single-block@0"),
+        QStringLiteral("\\/dome_lod1021003093018.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod0-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/mesh-variant-fallback"),
+        QStringLiteral("\\/dome_lod1021003093018.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod0-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-single-block@0"),
+    };
+    const QStringList expectedMeshSnapshot = {
+        QStringLiteral("78|102|direct:structured-header:data.solar.misc.space_dome.lod2-112.vms/structured-single-block@0"),
+        QStringLiteral("174|132|direct:structured-header:data.solar.misc.space_dome.lod2-112.vms/structured-single-block@0"),
+        QStringLiteral("78|102|direct:structured-header:data.solar.misc.space_dome.lod1-112.vms/structured-single-block@0"),
+        QStringLiteral("238|144|direct:structured-header:data.solar.misc.space_dome.lod1-112.vms/structured-single-block@0"),
+        QStringLiteral("84|120|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-single-block@0"),
+        QStringLiteral("278|294|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-single-block@0"),
+        QStringLiteral("1105|1800|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/mesh-variant-fallback"),
+        QStringLiteral("340|480|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-single-block@0"),
+    };
+
+    QCOMPARE(refSnapshot, expectedRefSnapshot);
+    QCOMPARE(meshSnapshot, expectedMeshSnapshot);
+}
 
 QTEST_GUILESS_MAIN(TestFamilySolarModel)
 #include "test_FamilySolarModel.moc"

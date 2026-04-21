@@ -2967,7 +2967,11 @@ ModelNode CmpLoader::extractPart(const NativeModelPart &part,
         const auto variants = decodeMeshVariantsFromBlock(blockBytes);
         for (const auto &variant : variants) {
             if (!variant.vertices.isEmpty()) {
-                node.meshes.append(variant);
+                MeshData mesh = variant;
+                const QString variantPlanHint = directPlanHint + QStringLiteral("/mesh-variant-fallback");
+                mesh.debugHint = variantPlanHint;
+                ref.debugHint = variantPlanHint;
+                node.meshes.append(mesh);
                 break;
             }
         }
@@ -3103,6 +3107,16 @@ DecodedModel CmpLoader::loadModel(const QString &filePath)
         QString partPath = firstPathForName(result.utfNodes, QFileInfo(filePath).baseName());
         if (partPath.isEmpty())
             partPath = firstPathForName(result.utfNodes, QStringLiteral("Root"));
+        if (partPath.isEmpty() && !result.vmeshRefs.isEmpty()) {
+            const QString topLevelPath = topLevelUtfPathSegment(result.vmeshRefs.first().nodePath);
+            if (!topLevelPath.isEmpty())
+                partPath = firstPathForName(result.utfNodes, topLevelPath);
+        }
+        if (partPath.isEmpty() && !result.vmeshDataBlocks.isEmpty()) {
+            const QString topLevelPath = topLevelUtfPathSegment(result.vmeshDataBlocks.first().nodePath);
+            if (!topLevelPath.isEmpty())
+                partPath = firstPathForName(result.utfNodes, topLevelPath);
+        }
         NativeModelPart directPart;
         directPart.name = QFileInfo(filePath).baseName();
         ModelNode direct = extractPart(directPart, partPath, raw, result.utfNodes, result.vmeshDataBlocks,
