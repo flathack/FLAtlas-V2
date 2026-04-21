@@ -29,6 +29,15 @@ public:
                                      const QString &text,
                                      int *outGlobalId,
                                      QString *errorMessage = nullptr);
+
+    static QMap<int, QString> loadHtmlResources(const QString &dllPath);
+
+    static bool ensureHtmlResource(const QString &freelancerIniPath,
+                                   const QString &dllName,
+                                   int currentGlobalId,
+                                   const QString &xmlText,
+                                   int *outGlobalId,
+                                   QString *errorMessage = nullptr);
 };
 
 } // namespace flatlas::infrastructure

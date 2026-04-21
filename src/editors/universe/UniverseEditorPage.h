@@ -55,8 +55,9 @@ private:
     void onSystemDoubleClicked(QTreeWidgetItem *item, int column);
     void onMapItemDoubleClicked(const QString &nickname);
     void onAddSystem();
-    void onMapContextMenuRequested(const QPoint &globalPos);
+    void onMapContextMenuRequested(const QPoint &globalPos, const QString &nickname);
     void onMapPlacementRequested(const QPointF &scenePos);
+    void onEditSystem(const QString &nickname);
     void onDeleteSystem();
     void onNodeSelected(const QString &nickname);
     void onNodeMoved(const QString &nickname);
@@ -84,6 +85,7 @@ private:
     QString resolvedSystemName(const flatlas::domain::SystemInfo &sys) const;
     QString mapLabelForSystem(const flatlas::domain::SystemInfo &sys) const;
     QString listLabelForSystem(const flatlas::domain::SystemInfo &sys) const;
+    QString currentSystemInfocardXml(const flatlas::domain::SystemInfo &sys) const;
     bool beginPendingSystemPlacement(const flatlas::editors::NewSystemRequest &request);
     void cancelPendingSystemPlacement();
     void refreshTitle();

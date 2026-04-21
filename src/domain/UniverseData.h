@@ -16,8 +16,11 @@ struct SystemInfo {
     QString displayName;
     QString filePath;
     QVector3D position;
+    int visit = 0;
     int idsName = 0;
     int stridName = 0;
+    int idsInfo = 0;
+    double navMapScale = 1.36;
     QVector<QPair<QString, QString>> rawEntries;
     QHash<QString, QPointF> sectorPositions;
 };

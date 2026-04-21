@@ -9,6 +9,7 @@ add_library(flatlas_editors STATIC
     universe/UniverseSerializer.h universe/UniverseSerializer.cpp
     universe/NewSystemDialog.h universe/NewSystemDialog.cpp
     universe/NewSystemService.h universe/NewSystemService.cpp
+    universe/EditSystemDialog.h universe/EditSystemDialog.cpp
     base/BaseEditorPage.h base/BaseEditorPage.cpp
     base/BasePersistence.h base/BasePersistence.cpp
     base/BaseBuilder.h base/BaseBuilder.cpp

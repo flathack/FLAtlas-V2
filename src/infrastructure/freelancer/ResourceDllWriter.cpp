@@ -369,4 +369,137 @@ bool ResourceDllWriter::ensureStringResource(const QString &freelancerIniPath,
     return true;
 }
 
+QMap<int, QString> ResourceDllWriter::loadHtmlResources(const QString &dllPath)
+{
+    QMap<int, QString> result;
+#ifdef Q_OS_WIN
+    HMODULE handle = LoadLibraryExW(reinterpret_cast<LPCWSTR>(dllPath.utf16()),
+                                    nullptr,
+                                    LOAD_LIBRARY_AS_DATAFILE);
+    if (!handle)
+        return result;
+
+    EnumResourceNamesW(
+        handle,
+        RT_HTML,
+        [](HMODULE module, LPCWSTR, LPWSTR name, LONG_PTR lParam) -> BOOL {
+            auto *map = reinterpret_cast<QMap<int, QString> *>(lParam);
+            if (!IS_INTRESOURCE(name))
+                return TRUE;
+
+            const int localId = static_cast<int>(reinterpret_cast<quintptr>(name));
+            HRSRC res = FindResourceW(module, name, RT_HTML);
+            if (!res)
+                return TRUE;
+            HGLOBAL data = LoadResource(module, res);
+            if (!data)
+                return TRUE;
+            const DWORD size = SizeofResource(module, res);
+            const void *raw = LockResource(data);
+            if (!raw || size == 0)
+                return TRUE;
+
+            QString text = QString::fromUtf8(static_cast<const char *>(raw), static_cast<int>(size));
+            if (text.isEmpty())
+                text = QString::fromLocal8Bit(static_cast<const char *>(raw), static_cast<int>(size));
+            if (!text.trimmed().isEmpty())
+                map->insert(localId, text);
+            return TRUE;
+        },
+        reinterpret_cast<LONG_PTR>(&result));
+
+    FreeLibrary(handle);
+#else
+    Q_UNUSED(dllPath);
+#endif
+    return result;
+}
+
+bool ResourceDllWriter::ensureHtmlResource(const QString &freelancerIniPath,
+                                           const QString &dllName,
+                                           int currentGlobalId,
+                                           const QString &xmlText,
+                                           int *outGlobalId,
+                                           QString *errorMessage)
+{
+    const QString trimmedXml = xmlText.trimmed();
+    if (trimmedXml.isEmpty()) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("Es wurde keine Infocard angegeben.");
+        return false;
+    }
+
+    QString targetDllName = dllName.trimmed();
+    if (targetDllName.isEmpty() || isFlatlasResourceDll(targetDllName)) {
+        if (!ensureFlatlasResourceDll(freelancerIniPath, &targetDllName, errorMessage))
+            return false;
+    } else {
+        if (!ensureResourceDllRegistered(freelancerIniPath, targetDllName, errorMessage))
+            return false;
+        if (!ensureWritableDllExists(freelancerIniPath, targetDllName, errorMessage))
+            return false;
+    }
+
+    const int slot = slotForDll(freelancerIniPath, targetDllName);
+    if (slot <= 0) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("Der DLL-Slot für %1 konnte nicht bestimmt werden.").arg(targetDllName);
+        return false;
+    }
+
+    const QString dllPath = resolveDllPath(freelancerIniPath, targetDllName);
+    const QMap<int, QString> localStrings = DllResources::loadStrings(dllPath, 0, 65535);
+    QMap<int, QString> localHtml = loadHtmlResources(dllPath);
+
+    int localId = 0;
+    const int currentSlot = (currentGlobalId >> 16) & 0xFFFF;
+    const int currentLocal = currentGlobalId & 0xFFFF;
+    if (currentGlobalId > 0 && currentSlot == slot && currentLocal > 0)
+        localId = currentLocal;
+
+    if (localId <= 0) {
+        localId = 1;
+        while (localStrings.contains(localId) || localHtml.contains(localId))
+            ++localId;
+    }
+
+#ifdef Q_OS_WIN
+    const QByteArray data = trimmedXml.toUtf8();
+    HANDLE handle = BeginUpdateResourceW(reinterpret_cast<LPCWSTR>(dllPath.utf16()), FALSE);
+    if (!handle) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("Die Resource-DLL konnte nicht zum Schreiben geöffnet werden:\n%1").arg(dllPath);
+        return false;
+    }
+
+    const WORD langId = MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL);
+    const BOOL ok = UpdateResourceW(handle,
+                                    RT_HTML,
+                                    MAKEINTRESOURCEW(localId),
+                                    langId,
+                                    const_cast<char *>(data.constData()),
+                                    static_cast<DWORD>(data.size()));
+    if (!ok) {
+        EndUpdateResourceW(handle, TRUE);
+        if (errorMessage)
+            *errorMessage = QObject::tr("Der Infocard-Eintrag konnte nicht in %1 geschrieben werden.").arg(dllPath);
+        return false;
+    }
+
+    if (!EndUpdateResourceW(handle, FALSE)) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("Die Änderungen an %1 konnten nicht gespeichert werden.").arg(dllPath);
+        return false;
+    }
+#else
+    if (errorMessage)
+        *errorMessage = QObject::tr("Das Schreiben von Resource-DLLs wird auf dieser Plattform nicht unterstützt.");
+    return false;
+#endif
+
+    if (outGlobalId)
+        *outGlobalId = makeGlobalId(slot, localId);
+    return true;
+}
+
 } // namespace flatlas::infrastructure

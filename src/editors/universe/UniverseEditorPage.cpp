@@ -1,6 +1,7 @@
 // editors/universe/UniverseEditorPage.cpp – Universe-Editor (Phase 9)
 
 #include "UniverseEditorPage.h"
+#include "EditSystemDialog.h"
 #include "NewSystemDialog.h"
 #include "NewSystemService.h"
 #include "UniverseSerializer.h"
@@ -9,6 +10,7 @@
 #include "core/Theme.h"
 #include "domain/UniverseData.h"
 #include "infrastructure/freelancer/IdsStringTable.h"
+#include "infrastructure/freelancer/ResourceDllWriter.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -52,6 +54,62 @@ namespace flatlas::editors {
 
 using namespace flatlas::domain;
 
+namespace {
+
+QString gameDirForUniverseFile(const QString &universeFilePath)
+{
+    const QString ctxGamePath = flatlas::core::EditingContext::instance().primaryGamePath();
+    if (!ctxGamePath.trimmed().isEmpty())
+        return ctxGamePath;
+    return QFileInfo(QFileInfo(universeFilePath).absolutePath()).absolutePath();
+}
+
+QString freelancerIniPathForUniverseFile(const QString &universeFilePath)
+{
+    const QString gameDir = gameDirForUniverseFile(universeFilePath);
+    if (gameDir.trimmed().isEmpty())
+        return {};
+
+    QString exeDir = flatlas::core::PathUtils::ciResolvePath(gameDir, QStringLiteral("EXE"));
+    if (exeDir.isEmpty())
+        exeDir = QDir(gameDir).absoluteFilePath(QStringLiteral("EXE"));
+
+    QString freelancerIni = flatlas::core::PathUtils::ciResolvePath(exeDir, QStringLiteral("freelancer.ini"));
+    if (!freelancerIni.isEmpty())
+        return freelancerIni;
+    return QDir(exeDir).absoluteFilePath(QStringLiteral("freelancer.ini"));
+}
+
+QString resolveResourceDllPath(const QString &freelancerIniPath, const QString &dllName)
+{
+    const QString exeDir = QFileInfo(freelancerIniPath).absolutePath();
+    const QString resolved = flatlas::core::PathUtils::ciResolvePath(exeDir, dllName);
+    if (!resolved.isEmpty())
+        return resolved;
+    return QDir(exeDir).absoluteFilePath(dllName);
+}
+
+QString loadInfocardXmlForGlobalId(const QString &freelancerIniPath, int globalId)
+{
+    if (globalId <= 0 || freelancerIniPath.trimmed().isEmpty())
+        return {};
+
+    const int slot = (globalId >> 16) & 0xFFFF;
+    const int localId = globalId & 0xFFFF;
+    if (slot <= 0 || localId <= 0)
+        return {};
+
+    const QStringList dlls = flatlas::infrastructure::ResourceDllWriter::resourceDllsFromFreelancerIni(freelancerIniPath);
+    if (slot > dlls.size())
+        return {};
+
+    const QString dllPath = resolveResourceDllPath(freelancerIniPath, dlls.at(slot - 1));
+    const auto htmlEntries = flatlas::infrastructure::ResourceDllWriter::loadHtmlResources(dllPath);
+    return htmlEntries.value(localId).trimmed();
+}
+
+} // namespace
+
 // ─── Custom graphics view with zoom ──────────────────────
 
 class UniverseMapView : public QGraphicsView {
@@ -67,7 +125,7 @@ public:
 
     std::function<void(const QString &)> onNodeDoubleClicked;
     std::function<void()> onViewportReady;
-    std::function<void(const QPoint &)> onContextMenuRequested;
+    std::function<void(const QPoint &, const QString &)> onContextMenuRequested;
     std::function<bool(const QPointF &)> onBackgroundClicked;
     void setBackgroundPixmap(const QPixmap &pixmap, const QColor &fallbackColor = QColor(15, 18, 24))
     {
@@ -132,7 +190,13 @@ protected:
     void contextMenuEvent(QContextMenuEvent *event) override
     {
         if (onContextMenuRequested) {
-            onContextMenuRequested(event->globalPos());
+            QString nickname;
+            auto *item = itemAt(event->pos());
+            while (item && item->data(0).toString().isEmpty())
+                item = item->parentItem();
+            if (item)
+                nickname = item->data(0).toString();
+            onContextMenuRequested(event->globalPos(), nickname);
             event->accept();
             return;
         }
@@ -310,8 +374,8 @@ void UniverseEditorPage::setupUi()
     mapView->onNodeDoubleClicked = [this](const QString &nickname) {
         onMapItemDoubleClicked(nickname);
     };
-    mapView->onContextMenuRequested = [this](const QPoint &globalPos) {
-        onMapContextMenuRequested(globalPos);
+    mapView->onContextMenuRequested = [this](const QPoint &globalPos, const QString &nickname) {
+        onMapContextMenuRequested(globalPos, nickname);
     };
     mapView->onBackgroundClicked = [this](const QPointF &scenePos) {
         const bool handled = m_pendingSystemPlacement;
@@ -672,11 +736,16 @@ void UniverseEditorPage::onAddSystem()
                              tr("Klicke jetzt auf die Universe Map, um das neue System zu platzieren."));
 }
 
-void UniverseEditorPage::onMapContextMenuRequested(const QPoint &globalPos)
+void UniverseEditorPage::onMapContextMenuRequested(const QPoint &globalPos, const QString &nickname)
 {
     QMenu menu(this);
-    if (m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0)
+    if (!nickname.trimmed().isEmpty()) {
+        menu.addAction(tr("Edit System"), this, [this, nickname]() {
+            onEditSystem(nickname);
+        });
+    } else if (m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0) {
         menu.addAction(tr("Neues System"), this, &UniverseEditorPage::onAddSystem);
+    }
     if (!menu.isEmpty())
         menu.exec(globalPos);
 }
@@ -745,6 +814,83 @@ void UniverseEditorPage::onDeleteSystem()
     refreshSystemList();
     refreshMap();
     setDirty(true);
+}
+
+void UniverseEditorPage::onEditSystem(const QString &nickname)
+{
+    if (!m_data || m_filePath.trimmed().isEmpty())
+        return;
+
+    auto *sys = m_data->findSystem(nickname);
+    if (!sys)
+        return;
+
+    EditSystemDialog dialog(*sys, resolvedSystemName(*sys), currentSystemInfocardXml(*sys), this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const EditSystemRequest request = dialog.request();
+    if (request.name.trimmed().isEmpty()) {
+        QMessageBox::warning(this, tr("System bearbeiten"),
+                             tr("Bitte einen Systemnamen angeben."));
+        return;
+    }
+
+    const QString freelancerIniPath = freelancerIniPathForUniverseFile(m_filePath);
+    if (freelancerIniPath.trimmed().isEmpty()) {
+        QMessageBox::warning(this, tr("System bearbeiten"),
+                             tr("freelancer.ini konnte für den aktuellen Kontext nicht gefunden werden."));
+        return;
+    }
+
+    const bool preferIdsName = sys->idsName > 0;
+    int updatedNameId = preferIdsName ? sys->idsName : sys->stridName;
+    QString errorMessage;
+    if (!flatlas::infrastructure::ResourceDllWriter::ensureStringResource(
+            freelancerIniPath,
+            QString(),
+            updatedNameId,
+            request.name.trimmed(),
+            &updatedNameId,
+            &errorMessage)) {
+        QMessageBox::warning(this, tr("System bearbeiten"), errorMessage);
+        return;
+    }
+
+    int newIdsInfo = 0;
+    if (!request.infocardXml.trimmed().isEmpty()) {
+        if (!flatlas::infrastructure::ResourceDllWriter::ensureHtmlResource(
+                freelancerIniPath,
+                QString(),
+                sys->idsInfo,
+                request.infocardXml.trimmed(),
+                &newIdsInfo,
+                &errorMessage)) {
+            QMessageBox::warning(this, tr("System bearbeiten"), errorMessage);
+            return;
+        }
+    }
+
+    sys->visit = request.visit;
+    sys->displayName = request.name.trimmed();
+    if (preferIdsName)
+        sys->idsName = updatedNameId;
+    else
+        sys->stridName = updatedNameId;
+    sys->idsInfo = newIdsInfo;
+    sys->navMapScale = request.navMapScale;
+
+    if (!UniverseSerializer::save(*m_data, m_filePath)) {
+        QMessageBox::warning(this, tr("System bearbeiten"),
+                             tr("Universe.ini konnte nicht gespeichert werden:\n%1").arg(m_filePath));
+        return;
+    }
+
+    reloadIdsStrings();
+    refreshSystemList();
+    refreshMap();
+    setDirty(false);
+    onNodeSelected(nickname);
 }
 
 // ─── Path Finder ─────────────────────────────────────────
@@ -1160,6 +1306,12 @@ QString UniverseEditorPage::resolvedSystemName(const SystemInfo &sys) const
         return sys.displayName.trimmed();
 
     return sys.nickname.trimmed();
+}
+
+QString UniverseEditorPage::currentSystemInfocardXml(const SystemInfo &sys) const
+{
+    const QString freelancerIniPath = freelancerIniPathForUniverseFile(m_filePath);
+    return loadInfocardXmlForGlobalId(freelancerIniPath, sys.idsInfo);
 }
 
 QString UniverseEditorPage::mapLabelForSystem(const SystemInfo &sys) const

@@ -126,10 +126,14 @@ static IniSection buildSystemSection(const SystemInfo &sys)
     if (sys.rawEntries.isEmpty()) {
         section.entries.append({QStringLiteral("nickname"), sys.nickname});
         section.entries.append({QStringLiteral("file"), sys.filePath});
+        section.entries.append({QStringLiteral("visit"), QString::number(sys.visit)});
         if (sys.idsName > 0)
             section.entries.append({QStringLiteral("ids_name"), QString::number(sys.idsName)});
         if (sys.stridName > 0)
             section.entries.append({QStringLiteral("strid_name"), QString::number(sys.stridName)});
+        if (sys.idsInfo > 0)
+            section.entries.append({QStringLiteral("ids_info"), QString::number(sys.idsInfo)});
+        section.entries.append({QStringLiteral("NavMapScale"), QString::number(sys.navMapScale, 'f', 6)});
         section.entries.append({QStringLiteral("pos"), posToString(sys.position)});
         return section;
     }
@@ -137,8 +141,11 @@ static IniSection buildSystemSection(const SystemInfo &sys)
     bool wroteNickname = false;
     bool wroteFile = false;
     bool wrotePos = false;
+    bool wroteVisit = false;
     bool wroteIdsName = false;
     bool wroteStridName = false;
+    bool wroteIdsInfo = false;
+    bool wroteNavMapScale = false;
 
     for (const auto &entry : sys.rawEntries) {
         const QString lowered = entry.first.trimmed().toLower();
@@ -148,6 +155,9 @@ static IniSection buildSystemSection(const SystemInfo &sys)
         } else if (lowered == QStringLiteral("file")) {
             section.entries.append({entry.first, sys.filePath});
             wroteFile = true;
+        } else if (lowered == QStringLiteral("visit")) {
+            section.entries.append({entry.first, QString::number(sys.visit)});
+            wroteVisit = true;
         } else if (lowered == QStringLiteral("pos")) {
             section.entries.append({entry.first, posToString(sys.position)});
             wrotePos = true;
@@ -161,6 +171,14 @@ static IniSection buildSystemSection(const SystemInfo &sys)
                 section.entries.append({entry.first, QString::number(sys.stridName)});
                 wroteStridName = true;
             }
+        } else if (lowered == QStringLiteral("ids_info")) {
+            if (sys.idsInfo > 0) {
+                section.entries.append({entry.first, QString::number(sys.idsInfo)});
+                wroteIdsInfo = true;
+            }
+        } else if (lowered == QStringLiteral("navmapscale")) {
+            section.entries.append({entry.first, QString::number(sys.navMapScale, 'f', 6)});
+            wroteNavMapScale = true;
         } else {
             section.entries.append(entry);
         }
@@ -170,10 +188,16 @@ static IniSection buildSystemSection(const SystemInfo &sys)
         section.entries.append({QStringLiteral("nickname"), sys.nickname});
     if (!wroteFile)
         section.entries.append({QStringLiteral("file"), sys.filePath});
+    if (!wroteVisit)
+        section.entries.append({QStringLiteral("visit"), QString::number(sys.visit)});
     if (sys.idsName > 0 && !wroteIdsName)
         section.entries.append({QStringLiteral("ids_name"), QString::number(sys.idsName)});
     if (sys.stridName > 0 && !wroteStridName)
         section.entries.append({QStringLiteral("strid_name"), QString::number(sys.stridName)});
+    if (sys.idsInfo > 0 && !wroteIdsInfo)
+        section.entries.append({QStringLiteral("ids_info"), QString::number(sys.idsInfo)});
+    if (!wroteNavMapScale)
+        section.entries.append({QStringLiteral("NavMapScale"), QString::number(sys.navMapScale, 'f', 6)});
     if (!wrotePos)
         section.entries.append({QStringLiteral("pos"), posToString(sys.position)});
 
@@ -289,8 +313,11 @@ std::unique_ptr<UniverseData> UniverseSerializer::load(const QString &filePath)
             if (reservedSectorNicknames.contains(sys.nickname.trimmed().toLower()))
                 continue;
             sys.filePath = section.value(QStringLiteral("file"));
+            sys.visit = section.value(QStringLiteral("visit"), QStringLiteral("0")).toInt();
             sys.idsName = section.value(QStringLiteral("ids_name"), QStringLiteral("0")).toInt();
             sys.stridName = section.value(QStringLiteral("strid_name"), QStringLiteral("0")).toInt();
+            sys.idsInfo = section.value(QStringLiteral("ids_info"), QStringLiteral("0")).toInt();
+            sys.navMapScale = section.value(QStringLiteral("NavMapScale"), QStringLiteral("1.360000")).toDouble();
             sys.rawEntries = section.entries;
 
             // Parse pos (2D: x, z)
