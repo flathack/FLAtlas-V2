@@ -42,8 +42,8 @@ private slots:
         }
 
         const QStringList expectedBindingSnapshot = {
-            QStringLiteral("ocean_def_layer1021022165834.3db|ocean_a_256.tga|ocean_a_256.tga,ocean_256.tga|first-texture-fallback"),
-            QStringLiteral("ocean_layer2021022165834.3db|ocean_a_256.tga|ocean_a_256.tga,ocean_256.tga|first-texture-fallback"),
+            QStringLiteral("ocean_def_layer1021022165834.3db|ocean_a_256.tga|ocean_a_256.tga,ocean_256.tga|token-match"),
+            QStringLiteral("ocean_layer2021022165834.3db|ocean_a_256.tga|ocean_a_256.tga,ocean_256.tga|token-match"),
         };
 
         QStringList sortedBindingSnapshot = bindingSnapshot;

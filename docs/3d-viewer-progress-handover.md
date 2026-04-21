@@ -156,6 +156,24 @@ Ergebnis:
 Zugehörige Dateien:
 - `tests/test_OrderEliteModel.cpp`
 
+### Iteration 8
+Referenz:
+- `DATA/BASES/GENERIC/ocean_blue.cmp`
+
+Status:
+- umgesetzt / erster expliziter `token-match`-Guard im Preview-Binding-Pfad ergänzt
+
+Ergebnis:
+- der Preview-Binding-Matcher bewertet jetzt nicht mehr nur vollständige normalisierte Modellnamen, sondern zusätzlich stabile Namensfragmente aus Modell-, Part-, Source- und Texture-Bezeichnern
+- bei gleichem Match-Score bleibt die ursprüngliche Texture-Referenzreihenfolge erhalten; dadurch verbessert der neue Matcher die Auswahlqualität, ohne bestehende Prioritäten unnötig umzudrehen
+- `ocean_blue.cmp` kippt damit erstmals von `first-texture-fallback` auf `token-match`, während Candidate-Liste und bevorzugte Texture stabil bleiben
+- `br_barbican_station_deck.cmp` und `or_elite.cmp` bleiben dabei unverändert grün; der Schritt verbreitert also den Matchraum, ohne den part-aware Fallback- und no-texture-Stand zu destabilisieren
+- der verbleibende Binding-Gap ist damit enger: nicht mehr "gibt es überhaupt einen belastbaren `token-match`?", sondern "welcher nächste Base-/Interior-Fall soll nachziehen, obwohl seine Texture-Namen schwächer an den Modell-/Partkontext gekoppelt sind?"
+
+Zugehörige Dateien:
+- `src/infrastructure/io/CmpLoader.cpp`
+- `tests/test_OceanBluePreviewBinding.cpp`
+
 ## Aktive Referenzmodelle
 Siehe auch:
 - `docs/3d-viewer-reference-models.md`
@@ -232,6 +250,7 @@ Neu abgesichert:
 - `station_large_a_lod.cmp` sichert jetzt auch materialtragende Mesh-Gruppen (`material_*`) im Main-/Dock4-Bereich gegen unbeabsichtigte Material-/Submesh-Regressionsfehler ab
 - auch Modelle ohne explizite Texture-Referenzen behalten jetzt `PreviewMaterialBinding`-Metadaten pro Ref; dadurch bleibt der Binding-Pfad im Debug-/Testzustand sichtbar statt vollständig leer wegzufallen
 - `ocean_blue.cmp` sichert jetzt den ersten Fall mit expliziten Texture-Referenzen; doppelte Candidate-Einträge aus Material-/Texture-Library werden dabei vor der Weitergabe an Resolver und Tests dedupliziert
+- `ocean_blue.cmp` sichert jetzt zusätzlich den ersten echten `token-match` im Preview-Binding-Pfad; Namensfragmente aus Modell-, Part- und Texture-Kontext reichen hier jetzt für eine belastbare Auswahl
 - `br_barbican_station_deck.cmp` sichert jetzt einen zweiten expliziten Texture-Fall, in dem Preview-Bindings ihren CMP-Partkontext und erweiterten `sourceNames`-Kontext trotz nicht hilfreicher Ref-Pfade behalten
 - `or_elite.cmp` sichert jetzt zusätzlich einen komplexeren Schiffsfall mit 25 direkten Refs, 25 part-aware Preview-Bindings und stabilen `no-texture-reference`-Snapshots ab
 
@@ -271,8 +290,8 @@ Neu abgesichert:
 - nächste echte Abweichung wieder an genau einem Ref isolieren
 - auf Basis des jetzt sauberen `TLR_lod.3db`-Pfads den nächsten komplexeren `.cmp`- oder Dockable-Fall auswählen
 - nach dem neuen `no-texture-reference`-Guard gezielt ein Modell mit realen Texture-/Material-Referenzen auswählen; der nächste sinnvolle Restfall ist jetzt nicht mehr ein weiterer ref-seitig sauberer Stationsfall, sondern ein CMP mit tatsächlich belegtem Preview-Binding
-- nach `ocean_blue.cmp` jetzt einen zweiten expliziten Texture-Fall mit echter Token-Zuordnung statt `first-texture-fallback` auswählen, damit die nächste Iteration nicht nur Candidate-Stabilität, sondern die eigentliche Match-Qualität gegen V1 schließt
-- nach `br_barbican_station_deck.cmp` und dem neuen `OR_ELITE`-Ship-Guard jetzt gezielt einen expliziten Texture-Fall wählen, in dem der nun stabile Partkontext tatsächlich zu `token-match` führen kann; der verbleibende Gap ist weniger Part-Zuordnung als Texture-Auswahlqualität
+- nach dem jetzt abgesicherten `token-match` in `ocean_blue.cmp` den nächsten expliziten Texture-Fall auswählen, in dem der part-aware Kontext ebenfalls von Fallback auf Match kippen kann
+- nach `br_barbican_station_deck.cmp` und dem `OR_ELITE`-Ship-Guard jetzt gezielt einen Base-/Interior-Fall wählen, in dem der stabile Partkontext allein noch nicht reicht; der verbleibende Gap ist damit primär Texture-Auswahlqualität auf schwierigeren Namen
 
 ### Mittelfristig
 - Family-/Header-/Stream-Fälle weiter an V1 schließen
@@ -288,12 +307,13 @@ Neu abgesichert:
 Der sinnvollste nächste Schritt ist jetzt:
 
 1. `docking_ringx2_lod.cmp` als Guard behalten, aber nicht mehr als Hauptproblemfall
-2. `ocean_blue.cmp` und `br_barbican_station_deck.cmp` als explizite Binding-Guards behalten und den nächsten Fall mit realem `token-match` auswählen
-3. dort wieder genau eine Binding-Entscheidung gegen V1 schließen statt einen weiteren allgemeinen Decoder-Scan zu machen
+2. `ocean_blue.cmp` als ersten echten `token-match`-Guard behalten und `br_barbican_station_deck.cmp` als bewusst noch fallbacksensitiven Gegenfall danebenstehen lassen
+3. als Nächstes genau einen schwierigeren Base-/Interior-Fall von Fallback auf Match ziehen statt wieder einen allgemeinen Decoder-Scan zu machen
 
 Praktisch:
 - vorhandene Snapshot-Tests für `cv_starflier.cmp`, `docking_ringx2_lod.cmp`, `station_large_a_lod.cmp` und `ocean_blue.cmp` als Guard behalten
-- den neuen Barbican-Guard als Beleg behalten, dass Preview-Bindings ihren Partkontext auch bei Base-/Interior-CMPs nicht verlieren
+- `ocean_blue.cmp` als Beleg behalten, dass der aktuelle Matcher nicht nur Candidate-Listen stabilisiert, sondern auch echte `token-match`-Entscheidungen liefern kann
+- den Barbican-Guard als Beleg behalten, dass Preview-Bindings ihren Partkontext auch bei Base-/Interior-CMPs nicht verlieren
 - die neue Top-Level-CMP-Extraktion als etablierten Pfad betrachten, nicht als Sonderfall
 - die Hierarchiebereinigung für leere Top-Level-`Root`-Knoten als etablierten Normalfall betrachten
 - die jetzt immer vorhandenen `PreviewMaterialBinding`-Einträge auch bei `materialReferences == 0` als etablierten Debug-/Regression-Pfad betrachten

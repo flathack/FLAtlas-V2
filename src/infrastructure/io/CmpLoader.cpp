@@ -39,6 +39,8 @@ struct FlatUtfNode {
     QString path;
 };
 
+QStringList uniqueStringsPreserveOrder(const QStringList &values);
+
 bool sanitizeMesh(MeshData &mesh);
 QVector<CmpTransformHint> buildCmpTransformHints(const QVector<CmpFixRecord> &records,
                                                  const QVector<NativeModelPart> &parts,
@@ -457,6 +459,27 @@ QString normalizeModelKey(QString value)
     QRegularExpression noisyLod(QStringLiteral("_lod(\\d)\\d+$"));
     value.replace(noisyLod, QStringLiteral("_lod\\1"));
     return value;
+}
+
+QStringList matchTokensForValue(const QString &value)
+{
+    const QString normalized = normalizeModelKey(value);
+    if (normalized.isEmpty())
+        return {};
+
+    QStringList tokens{normalized};
+    const QStringList fragments = normalized.split(QRegularExpression(QStringLiteral(R"([^a-z0-9]+)")),
+                                                  Qt::SkipEmptyParts);
+    for (const QString &fragment : fragments) {
+        if (fragment.size() >= 3)
+            tokens.append(fragment);
+
+        QString alphaOnly = fragment;
+        alphaOnly.remove(QRegularExpression(QStringLiteral(R"(\d+)")));
+        if (alphaOnly.size() >= 3)
+            tokens.append(alphaOnly);
+    }
+    return uniqueStringsPreserveOrder(tokens);
 }
 
 QString normalizeSourceKey(QString value)
@@ -2202,35 +2225,36 @@ QStringList matchTextureCandidates(const QString &modelName,
                                    QString *referenceNodePath)
 {
     QVector<MaterialReference> textures;
-    QStringList materialValues;
     for (const auto &reference : materialReferences) {
         if (reference.kind == QStringLiteral("texture"))
             textures.append(reference);
-        else if (reference.kind == QStringLiteral("material"))
-            materialValues.append(reference.value);
     }
 
     QSet<QString> tokenSet;
-    tokenSet.insert(normalizeModelKey(modelName));
-    tokenSet.insert(normalizeModelKey(levelName));
-    tokenSet.insert(normalizeModelKey(partName));
-    for (const QString &sourceName : sourceNames)
-        tokenSet.insert(normalizeModelKey(sourceName));
+    for (const QString &token : matchTokensForValue(modelName))
+        tokenSet.insert(token);
+    for (const QString &token : matchTokensForValue(levelName))
+        tokenSet.insert(token);
+    for (const QString &token : matchTokensForValue(partName))
+        tokenSet.insert(token);
+    for (const QString &sourceName : sourceNames) {
+        for (const QString &token : matchTokensForValue(sourceName))
+            tokenSet.insert(token);
+    }
     tokenSet.remove(QString());
 
     struct ScoredReference {
         int score = 0;
+        int order = 0;
         MaterialReference reference;
     };
     QVector<ScoredReference> scored;
-    for (const auto &texture : textures) {
-        const QStringList haystackParts{
-            normalizeModelKey(texture.value),
-            normalizeModelKey(texture.nodeName),
-            normalizeModelKey(texture.nodePath),
-            QString::number(groupStart),
-            QString::number(groupCount),
-        };
+    for (int textureIndex = 0; textureIndex < textures.size(); ++textureIndex) {
+        const auto &texture = textures.at(textureIndex);
+        QStringList haystackParts{QString::number(groupStart), QString::number(groupCount)};
+        haystackParts.append(matchTokensForValue(texture.value));
+        haystackParts.append(matchTokensForValue(texture.nodeName));
+        haystackParts.append(matchTokensForValue(texture.nodePath));
         int score = 0;
         for (const QString &token : tokenSet) {
             if (token.isEmpty())
@@ -2243,7 +2267,7 @@ QStringList matchTextureCandidates(const QString &modelName,
             }
         }
         if (score > 0)
-            scored.append({score, texture});
+            scored.append({score, textureIndex, texture});
     }
 
     QStringList candidates;
@@ -2251,7 +2275,7 @@ QStringList matchTextureCandidates(const QString &modelName,
         std::sort(scored.begin(), scored.end(), [](const ScoredReference &a, const ScoredReference &b) {
             if (a.score != b.score)
                 return a.score > b.score;
-            return a.reference.value.toLower() < b.reference.value.toLower();
+            return a.order < b.order;
         });
         for (const auto &item : std::as_const(scored))
             candidates.append(item.reference.value);

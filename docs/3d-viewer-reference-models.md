@@ -55,7 +55,8 @@ Diese Referenzmodelle dienen als feste Vergleichsbasis für die V1-Paritätsarbe
 - Zweck:
   - erster kleiner Testfall mit expliziten Texture-Library-/Material-Library-Referenzen
   - Regression für Preview-Binding-Kandidatenlisten ohne doppelte Textureinträge
-  - Vorbereitung des nächsten Schritts: echte Token-/Part-Zuordnung statt bloßem Fallback
+  - jetzt zusätzlich erster abgesicherter `token-match`-Fall im Preview-Binding-Pfad
+  - Referenz dafür, dass bessere Namenszuordnung die Texture-Auswahl schärft, ohne die bisherige Referenzreihenfolge umzudrehen
 
 ### 6. Part-Aware Binding-Fall
 - Iteration-6-Referenz: `DATA/BASES/BRETONIA/br_barbican_station_deck.cmp`
