@@ -2098,6 +2098,24 @@ QString firstPathForName(const QVector<UtfNodeRecord> &nodes, const QString &nam
     return it == nodes.cend() ? QString() : it->path;
 }
 
+bool sameModelIdentity(const QString &left, const QString &right)
+{
+    if (left.trimmed().isEmpty() || right.trimmed().isEmpty())
+        return false;
+    if (left.compare(right, Qt::CaseInsensitive) == 0)
+        return true;
+
+    QString leftBase = left;
+    QString rightBase = right;
+    const int leftDot = leftBase.lastIndexOf(QLatin1Char('.'));
+    const int rightDot = rightBase.lastIndexOf(QLatin1Char('.'));
+    if (leftDot > 0)
+        leftBase.truncate(leftDot);
+    if (rightDot > 0)
+        rightBase.truncate(rightDot);
+    return leftBase.compare(rightBase, Qt::CaseInsensitive) == 0;
+}
+
 QString matchedPartNameForRef(const VMeshRefRecord &ref,
                               const QVector<NativeModelPart> &parts,
                               const QVector<UtfNodeRecord> &nodes)
@@ -2107,6 +2125,16 @@ QString matchedPartNameForRef(const VMeshRefRecord &ref,
         if (!path.isEmpty() && ref.nodePath.startsWith(path + QLatin1Char('/'), Qt::CaseInsensitive))
             return part.name;
     }
+
+    const auto fallbackIt = std::find_if(parts.cbegin(), parts.cend(), [&](const NativeModelPart &part) {
+        return sameModelIdentity(part.fileName, ref.modelName)
+               || sameModelIdentity(part.sourceName, ref.modelName)
+               || sameModelIdentity(part.objectName, ref.modelName)
+               || sameModelIdentity(part.name, ref.modelName);
+    });
+    if (fallbackIt != parts.cend())
+        return fallbackIt->name;
+
     return {};
 }
 
@@ -2363,24 +2391,36 @@ const PreviewMaterialBinding *findPreviewMaterialBinding(const QVector<PreviewMa
                                                          const VMeshRefRecord &ref,
                                                          const QString &partName)
 {
-    const auto it = std::find_if(bindings.cbegin(), bindings.cend(), [&](const PreviewMaterialBinding &binding) {
+    const PreviewMaterialBinding *bestBinding = nullptr;
+    int bestScore = -1;
+    for (const auto &binding : bindings) {
         if (binding.groupStart != ref.groupStart || binding.groupCount != ref.groupCount)
-            return false;
-        if (!binding.partName.isEmpty() && !partName.isEmpty()
-            && binding.partName.compare(partName, Qt::CaseInsensitive) != 0) {
-            return false;
-        }
+            continue;
         if (!binding.modelName.isEmpty() && !ref.modelName.isEmpty()
             && binding.modelName.compare(ref.modelName, Qt::CaseInsensitive) != 0) {
-            return false;
+            continue;
         }
         if (!binding.levelName.isEmpty() && !ref.levelName.isEmpty()
             && binding.levelName.compare(ref.levelName, Qt::CaseInsensitive) != 0) {
-            return false;
+            continue;
         }
-        return true;
-    });
-    return it == bindings.cend() ? nullptr : &(*it);
+
+        int score = 0;
+        if (!binding.partName.isEmpty() && !partName.isEmpty()
+            && binding.partName.compare(partName, Qt::CaseInsensitive) == 0) {
+            score += 2;
+        }
+        if (!binding.modelName.isEmpty() && !ref.modelName.isEmpty())
+            score += 1;
+        if (!binding.levelName.isEmpty() && !ref.levelName.isEmpty())
+            score += 1;
+
+        if (!bestBinding || score > bestScore) {
+            bestBinding = &binding;
+            bestScore = score;
+        }
+    }
+    return bestBinding;
 }
 
 bool isFiniteVector(const QVector3D &value)
@@ -2955,7 +2995,7 @@ ModelNode CmpLoader::extractPart(const NativeModelPart &part,
         const QByteArray blockBytes = raw.mid(resolved->second.dataOffset, resolved->second.usedSize);
         if (blockBytes.isEmpty())
             continue;
-        const PreviewMaterialBinding *binding = findPreviewMaterialBinding(previewMaterialBindings, ref, node.name);
+        const PreviewMaterialBinding *binding = findPreviewMaterialBinding(previewMaterialBindings, ref, part.name);
         const QString directPlanHint = QStringLiteral("direct:%1:%2")
                                            .arg(resolved->second.headerHint.structureKind,
                                                 resolved->second.sourceName);

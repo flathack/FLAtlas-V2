@@ -57,6 +57,15 @@ Diese Referenzmodelle dienen als feste Vergleichsbasis für die V1-Paritätsarbe
   - Regression für Preview-Binding-Kandidatenlisten ohne doppelte Textureinträge
   - Vorbereitung des nächsten Schritts: echte Token-/Part-Zuordnung statt bloßem Fallback
 
+### 6. Part-Aware Binding-Fall
+- Iteration-6-Referenz: `DATA/BASES/BRETONIA/br_barbican_station_deck.cmp`
+- Archetype: `br_barbican_station_deck`
+- Typ: `.cmp`
+- Zweck:
+  - zweiter expliziter Texture-Binding-Fall mit größerer Material-Library
+  - Regression für part-aware Preview-Bindings auf Base-/Interior-CMPs
+  - sichert, dass Partkontext über Part-`fileName`/`sourceName`/`objectName` nicht verloren geht, auch wenn der Ref-Pfad allein nicht reicht
+
 ## Vergleichskriterien
 
 ### Decoder

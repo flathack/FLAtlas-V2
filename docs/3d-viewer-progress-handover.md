@@ -122,11 +122,29 @@ Ergebnis:
 Zugehörige Dateien:
 - `tests/test_OceanBluePreviewBinding.cpp`
 
+### Iteration 6
+Referenz:
+- `DATA/BASES/BRETONIA/br_barbican_station_deck.cmp`
+
+Status:
+- umgesetzt / Preview-Bindings jetzt part-aware bis in einen zweiten expliziten Texture-Fall abgesichert
+
+Ergebnis:
+- `matchedPartNameForRef(...)` löst Preview-Binding-Partnamen jetzt nicht mehr nur über den Ref-Pfad auf, sondern fällt zusätzlich auf Part-`fileName`/`sourceName`/`objectName` gegen `modelName` zurück
+- dadurch bleiben Preview-Bindings auch in Base-/Interior-CMPs part-aware, bei denen der Ref-Pfad den Partnamen nicht sauber trägt, der `modelName` aber bereits den korrekten `.3db`-Bezug enthält
+- der Binding-Lookup beim Mesh-Aufbau behandelt den Partnamen jetzt als Priorisierung statt als harten Ausschluss; Modell, LOD und Gruppenbereich bleiben die eigentlichen Identitätsanker
+- neuer Regressionstest sichert für `br_barbican_station_deck.cmp` fünf explizite Preview-Bindings mit nichtleeren Partnamen und erweitertem `sourceNames`-Kontext ab
+- damit ist der nächste Texture-Schritt weiter eingegrenzt: Der Loader verliert den Partkontext auf solchen Base-CMPs nicht mehr, auch wenn die eigentliche Texture-Auswahl dort weiterhin noch auf `first-texture-fallback` landet
+
+Zugehörige Dateien:
+- `tests/test_BarbicanStationDeckPreviewBinding.cpp`
+
 ## Aktive Referenzmodelle
 Siehe auch:
 - `docs/3d-viewer-reference-models.md`
 
 Aktuell aktiv:
+- `DATA/BASES/BRETONIA/br_barbican_station_deck.cmp`
 - `DATA/BASES/GENERIC/ocean_blue.cmp`
 - `DATA/SOLAR/DOCKABLE/TLR_lod.3db`
 - `DATA/SHIPS/CIVILIAN/CV_STARFLIER/cv_starflier.cmp`
@@ -196,6 +214,7 @@ Neu abgesichert:
 - `station_large_a_lod.cmp` sichert jetzt auch materialtragende Mesh-Gruppen (`material_*`) im Main-/Dock4-Bereich gegen unbeabsichtigte Material-/Submesh-Regressionsfehler ab
 - auch Modelle ohne explizite Texture-Referenzen behalten jetzt `PreviewMaterialBinding`-Metadaten pro Ref; dadurch bleibt der Binding-Pfad im Debug-/Testzustand sichtbar statt vollständig leer wegzufallen
 - `ocean_blue.cmp` sichert jetzt den ersten Fall mit expliziten Texture-Referenzen; doppelte Candidate-Einträge aus Material-/Texture-Library werden dabei vor der Weitergabe an Resolver und Tests dedupliziert
+- `br_barbican_station_deck.cmp` sichert jetzt einen zweiten expliziten Texture-Fall, in dem Preview-Bindings ihren CMP-Partkontext und erweiterten `sourceNames`-Kontext trotz nicht hilfreicher Ref-Pfade behalten
 
 ## Relevante Dateien für die Fortsetzung
 
@@ -234,6 +253,7 @@ Neu abgesichert:
 - auf Basis des jetzt sauberen `TLR_lod.3db`-Pfads den nächsten komplexeren `.cmp`- oder Dockable-Fall auswählen
 - nach dem neuen `no-texture-reference`-Guard gezielt ein Modell mit realen Texture-/Material-Referenzen auswählen; der nächste sinnvolle Restfall ist jetzt nicht mehr ein weiterer ref-seitig sauberer Stationsfall, sondern ein CMP mit tatsächlich belegtem Preview-Binding
 - nach `ocean_blue.cmp` jetzt einen zweiten expliziten Texture-Fall mit echter Token-Zuordnung statt `first-texture-fallback` auswählen, damit die nächste Iteration nicht nur Candidate-Stabilität, sondern die eigentliche Match-Qualität gegen V1 schließt
+- nach `br_barbican_station_deck.cmp` jetzt gezielt einen expliziten Texture-Fall wählen, in dem der nun stabile Partkontext tatsächlich zu `token-match` führen kann; der verbleibende Gap ist weniger Part-Zuordnung als Texture-Auswahlqualität
 
 ### Mittelfristig
 - Family-/Header-/Stream-Fälle weiter an V1 schließen
@@ -249,15 +269,17 @@ Neu abgesichert:
 Der sinnvollste nächste Schritt ist jetzt:
 
 1. `docking_ringx2_lod.cmp` als Guard behalten, aber nicht mehr als Hauptproblemfall
-2. `ocean_blue.cmp` als ersten expliziten Texture-Guard behalten und den nächsten Fall mit besserer Token-/Part-Zuordnung auswählen
+2. `ocean_blue.cmp` und `br_barbican_station_deck.cmp` als explizite Binding-Guards behalten und den nächsten Fall mit realem `token-match` auswählen
 3. dort wieder genau eine Binding-Entscheidung gegen V1 schließen statt einen weiteren allgemeinen Decoder-Scan zu machen
 
 Praktisch:
 - vorhandene Snapshot-Tests für `cv_starflier.cmp`, `docking_ringx2_lod.cmp`, `station_large_a_lod.cmp` und `ocean_blue.cmp` als Guard behalten
+- den neuen Barbican-Guard als Beleg behalten, dass Preview-Bindings ihren Partkontext auch bei Base-/Interior-CMPs nicht verlieren
 - die neue Top-Level-CMP-Extraktion als etablierten Pfad betrachten, nicht als Sonderfall
 - die Hierarchiebereinigung für leere Top-Level-`Root`-Knoten als etablierten Normalfall betrachten
 - die jetzt immer vorhandenen `PreviewMaterialBinding`-Einträge auch bei `materialReferences == 0` als etablierten Debug-/Regression-Pfad betrachten
 - deduplizierte Texture-Candidate-Listen aus Material-/Texture-Library als neuen Normalfall betrachten; Mehrfachnennungen derselben Datei sind kein sinnvoller Debugwert mehr
+- part-aware Preview-Bindings über Part-`fileName`-/`sourceName`-/`objectName`-Fallback als neuen Normalfall betrachten, nicht nur über Ref-Pfadpräfixe
 - den nächsten Problemfall wieder auf genau einen Ref/Block eingrenzen
 - gegen V1 `cmp_loader.py` / `preview_family_decode_hints` / `structured_decode_plans` abgleichen
 

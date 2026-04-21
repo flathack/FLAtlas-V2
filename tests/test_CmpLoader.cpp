@@ -102,6 +102,7 @@ private slots:
         QVERIFY(!found);
     }
 
+
 };
 
 QTEST_GUILESS_MAIN(TestCmpLoader)
