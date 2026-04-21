@@ -89,7 +89,7 @@ Referenz:
 - `DATA/SOLAR/DOCKABLE/station_large_a_lod.cmp`
 
 Status:
-- umgesetzt / Regression für komplexeren Stations-Hierarchiepfad ergänzt
+- umgesetzt / Regression für komplexeren Stations- und Materialpfad ergänzt
 
 Ergebnis:
 - zusätzlicher größerer Stations-/Dockable-Fall als Guard aufgenommen
@@ -97,6 +97,7 @@ Ergebnis:
 - der Loader entfernt jetzt leere Top-Level-`Root`-Knoten, wenn sie weder Meshes noch Kinder tragen
 - dadurch ist die CMP-Hierarchie näher an der tatsächlich relevanten Part-Struktur und weniger mit technischen Leer-Knoten verrauscht
 - neuer Regressionstest sichert für `station_large_a_lod.cmp` direkten Decode-Pfad, Mesh-Anzahl und Top-Level-Kindsignatur ab
+- derselbe Guard deckt jetzt zusätzlich die materialtragenden Submeshes des Main-/Docking-Bereichs über feste Materialsignaturen ab
 
 Zugehörige Dateien:
 - `tests/test_StationSolarModel.cpp`
@@ -171,6 +172,7 @@ Das ist bewusst eingebaut worden, damit der aktive Decoderpfad pro Ref gegen V1 
 Neu abgesichert:
 - `space_dome.cmp` zeigt jetzt explizit, dass alle 5 Refs direkt über `structured-single-block@0` auf den passenden LOD-Blöcken dekodieren
 - `station_large_a_lod.cmp` sichert jetzt zusätzlich einen größeren Stationsfall mit 20 direkten Refs und bereinigter Top-Level-Hierarchie ab
+- `station_large_a_lod.cmp` sichert jetzt auch materialtragende Mesh-Gruppen (`material_*`) im Main-/Dock4-Bereich gegen unbeabsichtigte Material-/Submesh-Regressionsfehler ab
 
 ## Relevante Dateien für die Fortsetzung
 
@@ -300,6 +302,7 @@ Aktueller Station-Stand:
 - `station_large_a_lod.cmp` läuft aktuell ohne Warnings und ohne `structured-family`-Fallback durch
 - die zuvor technisch leeren Top-Level-`Root`-Knoten werden nicht mehr als leere Kinder im Modellbaum belassen
 - der neue Stations-Regressionstest sichert deshalb die bereinigte Top-Level-Kindstruktur zusätzlich zur direkten Ref-Dekodierung ab
+- zusätzlich ist jetzt ein fester Snapshot der materialtragenden Submeshes hinterlegt, um den nächsten Material-/Submesh-Block nicht nur visuell, sondern decoderseitig abzusichern
 
 Zusätzlich wurden in früheren Runden erfolgreich gebaut:
 - `test_FamilySolarModel`
