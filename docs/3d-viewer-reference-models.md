@@ -32,13 +32,23 @@ Diese Referenzmodelle dienen als feste Vergleichsbasis für die V1-Paritätsarbe
   - plausible Startausrichtung und Bounds im Viewer
 
 ### 3. Zusammengesetztes Stations- oder Capital-Modell
-- Kandidat: größeres `.cmp` mit mehreren Parts
+- Iteration-2-Referenz: `DATA/SOLAR/MISC/space_dome.cmp`
+- Archetype: `space_dome`
 - Typ: `.cmp`
 - Zweck:
   - Hierarchie-/Parent-Child-Transform-Test
+  - Family-/Header-Stream-Test im Solar-Bereich
   - Bounds-/Kamera-Fit unter komplexeren Transformketten
 
-### 4. Materialgruppentest
+### 4. Härterer Dockable-Solar-Fall
+- Iteration-3-Referenz: `DATA/SOLAR/DOCKABLE/docking_ringx2_lod.cmp`
+- Archetype: `docking_ringx2_lod`
+- Typ: `.cmp`
+- Zweck:
+  - härterer `structured-family`-/Header-Stream-Fall im Dockable-Bereich
+  - ref-/source-name-genaue Blockauswahl gegen V1 prüfen
+  - Regression für größere zusammengesetzte Solar-Modelle
+### 5. Materialgruppentest
 - Kandidat: Modell mit klar sichtbaren Submesh-/Materialwechseln
 - Typ: `.cmp` oder `.3db`
 - Zweck:

@@ -425,6 +425,44 @@ QString normalizeModelKey(QString value)
     return value;
 }
 
+QString normalizeSourceKey(QString value)
+{
+    value = value.trimmed().toLower();
+    value.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    value = QFileInfo(value).fileName();
+    if (value.endsWith(QStringLiteral(".vms")))
+        value.chop(4);
+    return value;
+}
+
+bool sourceNameMatchesBlock(const QStringList &sourceNames, const VMeshDataBlock &block)
+{
+    if (sourceNames.isEmpty())
+        return false;
+
+    QSet<QString> wanted;
+    for (const QString &sourceName : sourceNames) {
+        const QString normalized = normalizeSourceKey(sourceName);
+        if (!normalized.isEmpty()) {
+            wanted.insert(normalized);
+            wanted.insert(vmeshFamilyKeyFromSourceName(normalized));
+        }
+    }
+
+    if (!block.sourceName.trimmed().isEmpty()) {
+        const QString normalizedBlockSource = normalizeSourceKey(block.sourceName);
+        if (wanted.contains(normalizedBlockSource))
+            return true;
+        if (wanted.contains(vmeshFamilyKeyFromSourceName(normalizedBlockSource)))
+            return true;
+    }
+
+    if (!block.familyKey.trimmed().isEmpty() && wanted.contains(block.familyKey.toLower()))
+        return true;
+
+    return false;
+}
+
 QString topLevelUtfPathSegment(const QString &path)
 {
     const QStringList parts = path.split(QRegularExpression(QStringLiteral(R"([/\\]+)")),
@@ -639,6 +677,300 @@ struct FamilyMeshHeader {
     int numRefIndices = 0;
     int startIndex = 0;
 };
+
+int refSourceVertexEnd(const VMeshRefRecord &ref)
+{
+    return ref.vertexCount > 0 ? ref.vertexStart + ref.vertexCount : -1;
+}
+
+int refSourceIndexEnd(const VMeshRefRecord &ref)
+{
+    return ref.indexCount > 0 ? ref.indexStart + ref.indexCount : -1;
+}
+
+int refSourceGroupEnd(const VMeshRefRecord &ref)
+{
+    return ref.groupCount > 0 ? ref.groupStart + ref.groupCount : -1;
+}
+
+int scoreStructuredHeaderBlock(const VMeshDataBlock &block, const VMeshRefRecord &ref)
+{
+    if (block.headerHint.structureKind != QStringLiteral("structured-header"))
+        return std::numeric_limits<int>::max();
+
+    const int sourceGroupEnd = refSourceGroupEnd(ref);
+    const int sourceVertexEnd = refSourceVertexEnd(ref);
+    const int sourceIndexEnd = refSourceIndexEnd(ref);
+
+    int score = 0;
+
+    if (block.headerHint.meshHeaderCountHint > 0 && sourceGroupEnd > 0) {
+        if (block.headerHint.meshHeaderCountHint == sourceGroupEnd) {
+            score -= 5000;
+        } else {
+            score += qAbs(block.headerHint.meshHeaderCountHint - sourceGroupEnd) * 400;
+        }
+    }
+
+    if (block.headerHint.meshHeaderEndVertexHint > 0 && sourceVertexEnd > 0) {
+        if (block.headerHint.meshHeaderEndVertexHint == sourceVertexEnd) {
+            score -= 3000;
+        } else if (block.headerHint.meshHeaderEndVertexHint > sourceVertexEnd) {
+            score += (block.headerHint.meshHeaderEndVertexHint - sourceVertexEnd);
+        } else {
+            score += (sourceVertexEnd - block.headerHint.meshHeaderEndVertexHint) * 800;
+        }
+    }
+
+    if (block.headerHint.meshHeaderIndexEndHint > 0 && sourceIndexEnd > 0) {
+        if (block.headerHint.meshHeaderIndexEndHint == sourceIndexEnd) {
+            score -= 3000;
+        } else if (block.headerHint.meshHeaderIndexEndHint > sourceIndexEnd) {
+            score += (block.headerHint.meshHeaderIndexEndHint - sourceIndexEnd) * 2;
+        } else {
+            score += (sourceIndexEnd - block.headerHint.meshHeaderIndexEndHint) * 1200;
+        }
+    }
+
+    return score;
+}
+
+int scoreStructuredStreamBlock(const VMeshDataBlock &block, const VMeshRefRecord &ref)
+{
+    if (block.headerHint.structureKind != QStringLiteral("vertex-stream"))
+        return std::numeric_limits<int>::max();
+
+    const int sourceVertexEnd = refSourceVertexEnd(ref);
+    int score = 0;
+
+    if (block.strideHint > 0) {
+        const int capacityVertices = block.usedSize / block.strideHint;
+        if (sourceVertexEnd > 0) {
+            if (capacityVertices >= sourceVertexEnd) {
+                score += capacityVertices - sourceVertexEnd;
+            } else {
+                score += (sourceVertexEnd - capacityVertices) * 2000;
+            }
+        }
+    } else {
+        score += 100000;
+    }
+
+    return score;
+}
+
+enum class StructuredHeaderSemantics {
+    None,
+    IndexEndMatches,
+    VertexEndMatches,
+    EndRangesMatch,
+    EndRangesAndGroupMatch,
+};
+
+StructuredHeaderSemantics classifyStructuredHeaderSemantics(const VMeshDataBlock &block,
+                                                            const VMeshRefRecord &ref)
+{
+    if (block.headerHint.structureKind != QStringLiteral("structured-header"))
+        return StructuredHeaderSemantics::None;
+
+    const int sourceGroupEnd = refSourceGroupEnd(ref);
+    const int sourceVertexEnd = refSourceVertexEnd(ref);
+    const int sourceIndexEnd = refSourceIndexEnd(ref);
+
+    const bool groupMatch = block.headerHint.meshHeaderCountHint > 0
+        && sourceGroupEnd > 0
+        && block.headerHint.meshHeaderCountHint == sourceGroupEnd;
+    const bool vertexMatch = block.headerHint.meshHeaderEndVertexHint > 0
+        && sourceVertexEnd > 0
+        && block.headerHint.meshHeaderEndVertexHint == sourceVertexEnd;
+    const bool indexMatch = block.headerHint.meshHeaderIndexEndHint > 0
+        && sourceIndexEnd > 0
+        && block.headerHint.meshHeaderIndexEndHint == sourceIndexEnd;
+
+    if (vertexMatch && indexMatch && groupMatch)
+        return StructuredHeaderSemantics::EndRangesAndGroupMatch;
+    if (vertexMatch && indexMatch)
+        return StructuredHeaderSemantics::EndRangesMatch;
+    if (vertexMatch)
+        return StructuredHeaderSemantics::VertexEndMatches;
+    if (indexMatch)
+        return StructuredHeaderSemantics::IndexEndMatches;
+    return StructuredHeaderSemantics::None;
+}
+
+int structuredHeaderSemanticsPenalty(StructuredHeaderSemantics semantics)
+{
+    switch (semantics) {
+    case StructuredHeaderSemantics::EndRangesAndGroupMatch:
+        return 0;
+    case StructuredHeaderSemantics::EndRangesMatch:
+        return 750;
+    case StructuredHeaderSemantics::VertexEndMatches:
+    case StructuredHeaderSemantics::IndexEndMatches:
+        return 3000;
+    case StructuredHeaderSemantics::None:
+    default:
+        return 12000;
+    }
+}
+
+struct StructuredFamilyPlan {
+    VMeshDataBlock headerBlock;
+    std::optional<VMeshDataBlock> streamBlock;
+    StructuredHeaderSemantics semantics = StructuredHeaderSemantics::None;
+    int headerScore = std::numeric_limits<int>::max();
+    int streamScore = std::numeric_limits<int>::max();
+    int pairingPenalty = std::numeric_limits<int>::max();
+    bool splitPlan = false;
+    bool decodeReady = false;
+};
+
+QString describeStructuredFamilyPlan(const StructuredFamilyPlan &plan)
+{
+    const QString kind = plan.splitPlan
+        ? QStringLiteral("family-split-header-stream")
+        : QStringLiteral("single-block");
+
+    QString semantics = QStringLiteral("none");
+    switch (plan.semantics) {
+    case StructuredHeaderSemantics::EndRangesAndGroupMatch:
+        semantics = QStringLiteral("mesh-header-end-ranges-and-group-match-source");
+        break;
+    case StructuredHeaderSemantics::EndRangesMatch:
+        semantics = QStringLiteral("mesh-header-end-ranges-match-source");
+        break;
+    case StructuredHeaderSemantics::VertexEndMatches:
+        semantics = QStringLiteral("header-end-vertex-matches-source-range");
+        break;
+    case StructuredHeaderSemantics::IndexEndMatches:
+        semantics = QStringLiteral("header-index-end-matches-source-range");
+        break;
+    case StructuredHeaderSemantics::None:
+    default:
+        break;
+    }
+
+    const QString streamName = plan.streamBlock.has_value()
+        ? QFileInfo(plan.streamBlock->sourceName).fileName()
+        : QStringLiteral("-");
+    return QStringLiteral("%1 | header=%2 | stream=%3 | semantics=%4 | decode_ready=%5")
+        .arg(kind,
+             QFileInfo(plan.headerBlock.sourceName).fileName(),
+             streamName,
+             semantics,
+             plan.decodeReady ? QStringLiteral("yes") : QStringLiteral("no"));
+}
+
+bool structuredHeaderSingleBlockDecodeReady(const VMeshDataBlock &block, const VMeshRefRecord &ref)
+{
+    const StructuredHeaderSemantics semantics = classifyStructuredHeaderSemantics(block, ref);
+    if (semantics == StructuredHeaderSemantics::EndRangesAndGroupMatch)
+        return true;
+
+    const int sourceVertexEnd = refSourceVertexEnd(ref);
+    const int sourceIndexEnd = refSourceIndexEnd(ref);
+    return block.headerHint.meshHeaderEndVertexHint > 0
+        && sourceVertexEnd > 0
+        && block.headerHint.meshHeaderIndexEndHint > 0
+        && sourceIndexEnd > 0
+        && sourceVertexEnd <= block.headerHint.meshHeaderEndVertexHint
+        && sourceIndexEnd <= block.headerHint.meshHeaderIndexEndHint;
+}
+
+int structuredStreamPairingPenalty(const VMeshDataBlock &headerBlock,
+                                   const VMeshDataBlock &streamBlock,
+                                   const VMeshRefRecord &ref)
+{
+    Q_UNUSED(ref);
+    if (headerBlock.headerHint.structureKind != QStringLiteral("structured-header"))
+        return 50000;
+    if (streamBlock.headerHint.structureKind != QStringLiteral("vertex-stream"))
+        return 50000;
+    if (headerBlock.headerHint.vertexCountHint <= 0 || streamBlock.strideHint <= 0)
+        return 16000;
+
+    const int streamCapacityVertices = streamBlock.usedSize / streamBlock.strideHint;
+    if (streamCapacityVertices < headerBlock.headerHint.vertexCountHint)
+        return 32000 + (headerBlock.headerHint.vertexCountHint - streamCapacityVertices) * 10;
+
+    return streamCapacityVertices - headerBlock.headerHint.vertexCountHint;
+}
+
+std::optional<StructuredFamilyPlan> chooseBestStructuredFamilySplitPlan(
+    const QVector<VMeshDataBlock> &headerBlocks,
+    const QVector<VMeshDataBlock> &streamBlocks,
+    const VMeshRefRecord &ref)
+{
+    if (headerBlocks.isEmpty() || streamBlocks.isEmpty())
+        return std::nullopt;
+
+    std::optional<StructuredFamilyPlan> best;
+    int bestScore = std::numeric_limits<int>::max();
+
+    for (const auto &headerBlock : headerBlocks) {
+        const StructuredHeaderSemantics semantics = classifyStructuredHeaderSemantics(headerBlock, ref);
+        const int headerPenalty = structuredHeaderSemanticsPenalty(semantics);
+        const int headerScore = scoreStructuredHeaderBlock(headerBlock, ref);
+        for (const auto &streamBlock : streamBlocks) {
+            const int streamScore = scoreStructuredStreamBlock(streamBlock, ref);
+            const int pairingPenalty = structuredStreamPairingPenalty(headerBlock, streamBlock, ref);
+            const bool decodeReady = semantics == StructuredHeaderSemantics::EndRangesAndGroupMatch
+                && pairingPenalty < 32000;
+            const int planScore = headerPenalty
+                + headerScore
+                + streamScore
+                + pairingPenalty
+                + (decodeReady ? 0 : 6000);
+            if (!best.has_value() || planScore < bestScore) {
+                bestScore = planScore;
+                best = StructuredFamilyPlan{
+                    headerBlock,
+                    streamBlock,
+                    semantics,
+                    headerScore,
+                    streamScore,
+                    pairingPenalty,
+                    true,
+                    decodeReady,
+                };
+            }
+        }
+    }
+
+    return best;
+}
+
+std::optional<StructuredFamilyPlan> chooseBestStructuredFamilySinglePlan(
+    const QVector<VMeshDataBlock> &familyBlocks,
+    const VMeshRefRecord &ref)
+{
+    std::optional<StructuredFamilyPlan> best;
+    int bestScore = std::numeric_limits<int>::max();
+
+    for (const auto &block : familyBlocks) {
+        const StructuredHeaderSemantics semantics = classifyStructuredHeaderSemantics(block, ref);
+        const int headerScore = scoreStructuredHeaderBlock(block, ref);
+        const bool decodeReady = structuredHeaderSingleBlockDecodeReady(block, ref);
+        const int planScore = headerScore
+            + structuredHeaderSemanticsPenalty(semantics)
+            + (decodeReady ? 0 : 6000);
+        if (!best.has_value() || planScore < bestScore) {
+            bestScore = planScore;
+            best = StructuredFamilyPlan{
+                block,
+                std::nullopt,
+                semantics,
+                headerScore,
+                std::numeric_limits<int>::max(),
+                std::numeric_limits<int>::max(),
+                false,
+                decodeReady,
+            };
+        }
+    }
+
+    return best;
+}
 
 QVector<FamilyMeshHeader> parseStructuredFamilyMeshHeaders(const QByteArray &headerBytes, int expectedMeshCount)
 {
@@ -925,7 +1257,9 @@ std::optional<QPair<float, MeshData>> decodeStructuredFamilySplitPair(const QByt
 std::optional<MeshData> decodeStructuredFamilyForRef(const QByteArray &raw,
                                                      const QVector<VMeshDataBlock> &vmeshBlocks,
                                                      const VMeshDataBlock &resolvedBlock,
-                                                     const VMeshRefRecord &ref)
+                                                     const VMeshRefRecord &ref,
+                                                     const QStringList &preferredSourceNames,
+                                                     QString *selectedPlanDescription = nullptr)
 {
     QVector<VMeshDataBlock> familyBlocks;
     if (!resolvedBlock.familyKey.isEmpty()) {
@@ -937,6 +1271,16 @@ std::optional<MeshData> decodeStructuredFamilyForRef(const QByteArray &raw,
     if (familyBlocks.isEmpty())
         familyBlocks.append(resolvedBlock);
 
+    if (!preferredSourceNames.isEmpty()) {
+        QVector<VMeshDataBlock> preferredBlocks;
+        for (const auto &block : std::as_const(familyBlocks)) {
+            if (sourceNameMatchesBlock(preferredSourceNames, block))
+                preferredBlocks.append(block);
+        }
+        if (!preferredBlocks.isEmpty())
+            familyBlocks = preferredBlocks;
+    }
+
     QVector<VMeshDataBlock> headerBlocks;
     QVector<VMeshDataBlock> streamBlocks;
     for (const auto &block : std::as_const(familyBlocks)) {
@@ -946,56 +1290,64 @@ std::optional<MeshData> decodeStructuredFamilyForRef(const QByteArray &raw,
             streamBlocks.append(block);
     }
 
+    std::sort(headerBlocks.begin(), headerBlocks.end(), [&](const VMeshDataBlock &a, const VMeshDataBlock &b) {
+        return scoreStructuredHeaderBlock(a, ref) < scoreStructuredHeaderBlock(b, ref);
+    });
+    std::sort(streamBlocks.begin(), streamBlocks.end(), [&](const VMeshDataBlock &a, const VMeshDataBlock &b) {
+        return scoreStructuredStreamBlock(a, ref) < scoreStructuredStreamBlock(b, ref);
+    });
+
     std::optional<QPair<float, MeshData>> best;
     const int maxVertexIndexHint = qMax(ref.vertexStart + ref.vertexCount, ref.vertexCount);
 
-    if (!headerBlocks.isEmpty() && !streamBlocks.isEmpty()) {
-        for (const auto &headerBlock : std::as_const(headerBlocks)) {
-            const QByteArray headerBytes = raw.mid(headerBlock.dataOffset, headerBlock.usedSize);
-            if (headerBytes.isEmpty())
-                continue;
-            int subsetStart = ref.vertexStart;
-            int subsetCount = ref.vertexCount;
-            int expectedIndexCount = ref.indexCount;
-            int expectedIndexOffset = ref.indexStart * 2;
-            const auto meshHeaders = parseStructuredFamilyMeshHeaders(headerBytes, headerBlock.headerHint.meshHeaderCountHint);
-            refineStructuredFamilyWindowFromHeaders(meshHeaders,
-                                                   ref.groupStart,
-                                                   ref.groupCount,
-                                                   ref.vertexStart,
-                                                   &subsetStart,
-                                                   &subsetCount,
-                                                   &expectedIndexCount,
-                                                   &expectedIndexOffset);
-            for (const auto &streamBlock : std::as_const(streamBlocks)) {
-                const QByteArray streamBytes = raw.mid(streamBlock.dataOffset, streamBlock.usedSize);
-                if (streamBytes.isEmpty())
-                    continue;
-                const int preferredStride = streamBlock.strideHint > 0 ? streamBlock.strideHint : resolvedBlock.strideHint;
-                const int streamCapacityVertices = preferredStride > 0 ? streamBlock.usedSize / preferredStride : -1;
-                const auto candidate = decodeStructuredFamilySplitPair(
-                    headerBytes,
-                    streamBytes,
-                    expectedIndexCount,
-                    expectedIndexOffset,
-                    qMax(1, maxVertexIndexHint),
-                    subsetStart,
-                    subsetCount,
-                    ref.bounds,
-                    preferredStride,
-                    streamCapacityVertices);
-                if (!candidate.has_value())
-                    continue;
-                if (!best.has_value() || candidate->first < best->first)
-                    best = candidate;
-            }
-        }
-    }
+    const auto trySplitPlan = [&](const StructuredFamilyPlan &plan) -> std::optional<QPair<float, MeshData>> {
+        if (!plan.streamBlock.has_value())
+            return std::nullopt;
+        const auto &headerBlock = plan.headerBlock;
+        const auto &streamBlock = plan.streamBlock.value();
+        const QByteArray headerBytes = raw.mid(headerBlock.dataOffset, headerBlock.usedSize);
+        const QByteArray streamBytes = raw.mid(streamBlock.dataOffset, streamBlock.usedSize);
+        if (headerBytes.isEmpty() || streamBytes.isEmpty())
+            return std::nullopt;
+        int subsetStart = ref.vertexStart;
+        int subsetCount = ref.vertexCount;
+        int expectedIndexCount = ref.indexCount;
+        int expectedIndexOffset = ref.indexStart * 2;
+        const auto meshHeaders = parseStructuredFamilyMeshHeaders(headerBytes, headerBlock.headerHint.meshHeaderCountHint);
+        refineStructuredFamilyWindowFromHeaders(meshHeaders,
+                                                ref.groupStart,
+                                                ref.groupCount,
+                                                ref.vertexStart,
+                                                &subsetStart,
+                                                &subsetCount,
+                                                &expectedIndexCount,
+                                                &expectedIndexOffset);
+        const int preferredStride = streamBlock.strideHint > 0 ? streamBlock.strideHint : resolvedBlock.strideHint;
+        const int streamCapacityVertices = preferredStride > 0 ? streamBlock.usedSize / preferredStride : -1;
+        const auto candidate = decodeStructuredFamilySplitPair(headerBytes,
+                                                               streamBytes,
+                                                               expectedIndexCount,
+                                                               expectedIndexOffset,
+                                                               qMax(1, maxVertexIndexHint),
+                                                               subsetStart,
+                                                               subsetCount,
+                                                               ref.bounds,
+                                                               preferredStride,
+                                                               streamCapacityVertices);
+        if (!candidate.has_value())
+            return std::nullopt;
+        const float rankedScore = candidate->first
+            + static_cast<float>(structuredHeaderSemanticsPenalty(plan.semantics))
+            + static_cast<float>(plan.pairingPenalty)
+            + (plan.decodeReady ? 0.0f : 6000.0f);
+        return qMakePair(rankedScore, candidate->second);
+    };
 
-    for (const auto &block : std::as_const(familyBlocks)) {
+    const auto trySinglePlan = [&](const StructuredFamilyPlan &plan) -> std::optional<QPair<float, MeshData>> {
+        const auto &block = plan.headerBlock;
         const QByteArray blockBytes = raw.mid(block.dataOffset, block.usedSize);
         if (blockBytes.isEmpty())
-            continue;
+            return std::nullopt;
         int subsetStart = ref.vertexStart;
         int subsetCount = ref.vertexCount;
         int expectedIndexCount = ref.indexCount;
@@ -1020,9 +1372,50 @@ std::optional<MeshData> decodeStructuredFamilyForRef(const QByteArray &raw,
             ref.bounds,
             block.strideHint > 0 ? block.strideHint : resolvedBlock.strideHint);
         if (!candidate.has_value())
-            continue;
-        if (!best.has_value() || candidate->first < best->first)
+            return std::nullopt;
+        const float rankedScore = candidate->first
+            + static_cast<float>(structuredHeaderSemanticsPenalty(plan.semantics))
+            + (plan.decodeReady ? 0.0f : 6000.0f);
+        return qMakePair(rankedScore, candidate->second);
+    };
+
+    const auto splitPlan = chooseBestStructuredFamilySplitPlan(headerBlocks, streamBlocks, ref);
+    const auto singlePlan = chooseBestStructuredFamilySinglePlan(familyBlocks, ref);
+
+    if (splitPlan.has_value() && splitPlan->decodeReady) {
+        const auto candidate = trySplitPlan(splitPlan.value());
+        if (candidate.has_value()) {
+            if (selectedPlanDescription)
+                *selectedPlanDescription = describeStructuredFamilyPlan(splitPlan.value());
+            return candidate->second;
+        }
+    }
+
+    if (singlePlan.has_value() && singlePlan->decodeReady) {
+        const auto candidate = trySinglePlan(singlePlan.value());
+        if (candidate.has_value()) {
+            if (selectedPlanDescription)
+                *selectedPlanDescription = describeStructuredFamilyPlan(singlePlan.value());
+            return candidate->second;
+        }
+    }
+
+    if (splitPlan.has_value()) {
+        const auto candidate = trySplitPlan(splitPlan.value());
+        if (candidate.has_value()) {
             best = candidate;
+            if (selectedPlanDescription)
+                *selectedPlanDescription = describeStructuredFamilyPlan(splitPlan.value());
+        }
+    }
+
+    if (singlePlan.has_value()) {
+        const auto candidate = trySinglePlan(singlePlan.value());
+        if (candidate.has_value() && (!best.has_value() || candidate->first < best->first)) {
+            best = candidate;
+            if (selectedPlanDescription)
+                *selectedPlanDescription = describeStructuredFamilyPlan(singlePlan.value());
+        }
     }
 
     if (!best.has_value())
@@ -1173,9 +1566,48 @@ std::optional<QPair<int, VMeshDataBlock>> resolveVMeshDataBlockForRef(
     return std::nullopt;
 }
 
+QStringList candidateSourceNamesForRef(const VMeshRefRecord &ref,
+                                       const QVector<NativeModelPart> &parts)
+{
+    QStringList names;
+    const QString normalizedModel = normalizeModelKey(ref.modelName);
+    for (const auto &part : parts) {
+        if (!part.sourceName.trimmed().isEmpty()) {
+            if (!part.objectName.trimmed().isEmpty()
+                && normalizeModelKey(part.objectName).compare(normalizedModel, Qt::CaseInsensitive) == 0) {
+                names.append(part.sourceName);
+            } else if (normalizeModelKey(part.name).compare(normalizedModel, Qt::CaseInsensitive) == 0) {
+                names.append(part.sourceName);
+            }
+        }
+    }
+    names.removeAll(QString());
+    names.removeDuplicates();
+    return names;
+}
+
+std::optional<QPair<int, VMeshDataBlock>> resolveVMeshDataBlockForRefWithSources(
+    const VMeshRefRecord &ref,
+    const QVector<VMeshDataBlock> &blocks,
+    const QVector<NativeModelPart> &parts)
+{
+    const QStringList sourceNames = candidateSourceNamesForRef(ref, parts);
+    if (!sourceNames.isEmpty()) {
+        QVector<int> matches;
+        for (int i = 0; i < blocks.size(); ++i) {
+            if (sourceNameMatchesBlock(sourceNames, blocks.at(i)))
+                matches.append(i);
+        }
+        if (matches.size() == 1)
+            return qMakePair(matches.first(), blocks.at(matches.first()));
+    }
+    return resolveVMeshDataBlockForRef(ref.meshDataReference, ref.nodePath, blocks);
+}
+
 QVector<VMeshRefRecord> parseVMeshRefs(const QVector<FlatUtfNode> &nodes,
                                        const QByteArray &raw,
-                                       const QVector<VMeshDataBlock> &blocks)
+                                       const QVector<VMeshDataBlock> &blocks,
+                                       const QVector<NativeModelPart> &parts)
 {
     QVector<VMeshRefRecord> refs;
     constexpr int vmeshRefSize = 60;
@@ -1226,7 +1658,7 @@ QVector<VMeshRefRecord> parseVMeshRefs(const QVector<FlatUtfNode> &nodes,
             }
         }
 
-        const auto resolved = resolveVMeshDataBlockForRef(meshDataReference, node.path, blocks);
+        const auto resolved = resolveVMeshDataBlockForRefWithSources(ref, blocks, parts);
         if (resolved.has_value()) {
             ref.matchedSourceName = resolved->second.sourceName;
             if (resolved->first == static_cast<int>(meshDataReference))
@@ -2360,7 +2792,6 @@ ModelNode CmpLoader::extractPart(const NativeModelPart &part,
             node.rotation = transform->localRotation;
     }
     const QString prefix = partPath + QLatin1Char('/');
-
     for (const auto &ref : vmeshRefs) {
         if (!refBelongsToPart(ref, part, partPath))
             continue;
@@ -2392,7 +2823,13 @@ ModelNode CmpLoader::extractPart(const NativeModelPart &part,
             continue;
         }
 
-        const auto familyMesh = decodeStructuredFamilyForRef(raw, vmeshBlocks, resolved->second, ref);
+        QString familyPlanDescription;
+        const auto familyMesh = decodeStructuredFamilyForRef(raw,
+                                                             vmeshBlocks,
+                                                             resolved->second,
+                                                             ref,
+                                                             candidateSourceNamesForRef(ref, {part}),
+                                                             &familyPlanDescription);
         if (familyMesh.has_value() && !familyMesh->vertices.isEmpty()) {
             MeshData mesh = *familyMesh;
             if (binding) {
@@ -2407,7 +2844,8 @@ ModelNode CmpLoader::extractPart(const NativeModelPart &part,
             }
             node.meshes.append(mesh);
             if (warnings)
-                warnings->append(QStringLiteral("Used structured-family fallback for %1").arg(ref.nodePath));
+                warnings->append(QStringLiteral("Used structured-family fallback for %1 [%2]")
+                                     .arg(ref.nodePath, familyPlanDescription));
             continue;
         }
 
@@ -2476,7 +2914,7 @@ DecodedModel CmpLoader::loadModel(const QString &filePath)
 
     result.parts = buildPartsFromNodes(flatNodes, raw);
     result.vmeshDataBlocks = parseVMeshDataBlocks(flatNodes, raw);
-    result.vmeshRefs = parseVMeshRefs(flatNodes, raw, result.vmeshDataBlocks);
+    result.vmeshRefs = parseVMeshRefs(flatNodes, raw, result.vmeshDataBlocks, result.parts);
     result.cmpFixRecords = parseCmpFixRecords(flatNodes, raw);
     result.cmpTransformHints = buildCmpTransformHints(result.cmpFixRecords, result.parts, flatNodes, raw);
     result.materialReferences = extractMaterialReferences(flatNodes, raw);
