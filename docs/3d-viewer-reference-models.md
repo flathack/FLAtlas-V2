@@ -77,6 +77,15 @@ Diese Referenzmodelle dienen als feste Vergleichsbasis für die V1-Paritätsarbe
   - Regression für direkte `VMeshRef -> VMeshData`-Auflösung über mehrere LOD-Stufen in einem komplexeren Ship-CMP
   - Regression für part-aware Preview-Bindings auch dann, wenn keine expliziten Material-/Texture-Referenzen vorhanden sind
 
+### 8. Liberty-Deck-Detailmap-Fall
+- Iteration-10-Referenz: `DATA/BASES/LIBERTY/li_battleship_deck.cmp`
+- Archetype: `li_battleship_deck`
+- Typ: `.cmp`
+- Zweck:
+  - gemischter Preview-Binding-Fall mit echtem `token-match` und verbleibendem Fallback im selben Modell
+  - Regression dafür, dass Detailmap-Materialbäume im Fallback bevorzugt auf `Dt_name`-Diffuse-Texturen statt auf rohe `detailmap_*`-Wrapper-Knoten zeigen
+  - Regression dafür, dass `.vms`-Containernamen nicht als zu grobe Token-Quelle lokale Texture-Matches vortäuschen
+
 ## Vergleichskriterien
 
 ### Decoder

@@ -191,6 +191,24 @@ Zugehörige Dateien:
 - `src/infrastructure/io/CmpLoader.cpp`
 - `tests/test_BarbicanStationDeckPreviewBinding.cpp`
 
+### Iteration 10
+Referenz:
+- `DATA/BASES/LIBERTY/li_battleship_deck.cmp`
+
+Status:
+- umgesetzt / Diffuse-Priorisierung und engerer Token-Match für Detailmap-Materialfälle ergänzt
+
+Ergebnis:
+- Fallback-Kandidaten werden im Preview-Binding-Pfad jetzt stabil priorisiert: `Dt_name`-Diffuse-Texturen vor generischen Einträgen, danach `Bt_name`, zuletzt rohe `detailmap_*`-Wrapper-Knoten
+- dadurch kippen die Liberty-Deck-Bindings für Tür-, Gear- und Cap-Teile von `detailmap_l_sh_01.tga` auf die eigentliche Diffuse-Textur `l_sh_01.tga`, ohne den übrigen Fallback-Mechanismus umzubauen
+- der Token-Matcher ignoriert dabei jetzt bewusst reine `.vms`-Containernamen, damit gemeinsame Base-Pfade nicht fälschlich als lokaler Texture-Match gewertet werden
+- `li_battleship_deck.cmp` sichert damit einen gemischten Realfall ab: echter `token-match` für `Deck...` und `Root_deck...`, gezielter `first-texture-fallback` mit verbesserter Diffuse-Auswahl für die übrigen Teile
+- der verbleibende Binding-Gap ist damit erneut enger: die nächste sinnvolle Iteration ist jetzt kein weiterer Detailmap-Sortierfehler mehr, sondern ein Fall, in dem node- oder materialnaher Kontext über diese Heuristiken hinausgezogen werden muss
+
+Zugehörige Dateien:
+- `src/infrastructure/io/CmpLoader.cpp`
+- `tests/test_LibertyBattleshipDeckPreviewBinding.cpp`
+
 ## Aktive Referenzmodelle
 Siehe auch:
 - `docs/3d-viewer-reference-models.md`
@@ -198,6 +216,7 @@ Siehe auch:
 Aktuell aktiv:
 - `DATA/BASES/BRETONIA/br_barbican_station_deck.cmp`
 - `DATA/BASES/GENERIC/ocean_blue.cmp`
+- `DATA/BASES/LIBERTY/li_battleship_deck.cmp`
 - `DATA/SOLAR/DOCKABLE/TLR_lod.3db`
 - `DATA/SHIPS/ORDER/OR_ELITE/or_elite.cmp`
 - `DATA/SHIPS/CIVILIAN/CV_STARFLIER/cv_starflier.cmp`
@@ -270,6 +289,7 @@ Neu abgesichert:
 - `ocean_blue.cmp` sichert jetzt zusätzlich den ersten echten `token-match` im Preview-Binding-Pfad; Namensfragmente aus Modell-, Part- und Texture-Kontext reichen hier jetzt für eine belastbare Auswahl
 - `br_barbican_station_deck.cmp` sichert jetzt zusätzlich explizit den Zustand `global-texture-library-fallback`; der Fall behält also Partkontext, zeigt aber zugleich, dass die Texture-Referenzen dort nur als globale Library ohne lokale Match-Hinweise vorliegen
 - `or_elite.cmp` sichert jetzt zusätzlich einen komplexeren Schiffsfall mit 25 direkten Refs, 25 part-aware Preview-Bindings und stabilen `no-texture-reference`-Snapshots ab
+- `li_battleship_deck.cmp` sichert jetzt zusätzlich, dass Detailmap-Materialbäume im Fallback nicht mehr am Wrapper-Node hängenbleiben, sondern bevorzugt auf die eigentliche Diffuse-Textur kippen; gleichzeitig verhindern gefilterte `.vms`-Tokens falsche Base-weite Scheintreffer
 
 ## Relevante Dateien für die Fortsetzung
 
@@ -309,6 +329,7 @@ Neu abgesichert:
 - nach dem neuen `no-texture-reference`-Guard gezielt ein Modell mit realen Texture-/Material-Referenzen auswählen; der nächste sinnvolle Restfall ist jetzt nicht mehr ein weiterer ref-seitig sauberer Stationsfall, sondern ein CMP mit tatsächlich belegtem Preview-Binding
 - nach dem jetzt abgesicherten `token-match` in `ocean_blue.cmp` den nächsten expliziten Texture-Fall auswählen, in dem der part-aware Kontext ebenfalls von Fallback auf Match kippen kann
 - nach der Barbican-Klassifikation als `global-texture-library-fallback` gezielt den ersten Fall angehen, in dem Material-/Texture-Kontext nicht nur global gelistet, sondern wieder node- oder materialnah genug für einen echten Matchaufstieg ist
+- nach dem Liberty-Schritt gezielt den ersten Restfall wählen, bei dem weder Diffuse-Priorisierung noch der aktuelle Token-Matcher reichen und deshalb zusätzlicher node-/materialnaher Kontext aus dem Decoder nachgezogen werden muss
 
 ### Mittelfristig
 - Family-/Header-/Stream-Fälle weiter an V1 schließen
@@ -325,12 +346,14 @@ Der sinnvollste nächste Schritt ist jetzt:
 
 1. `docking_ringx2_lod.cmp` als Guard behalten, aber nicht mehr als Hauptproblemfall
 2. `ocean_blue.cmp` als ersten echten `token-match`-Guard behalten und `br_barbican_station_deck.cmp` als expliziten `global-texture-library-fallback`-Gegenfall danebenstehen lassen
-3. als Nächstes genau einen schwierigeren Base-/Interior-Fall wählen, dessen Material-/Texture-Kontext mehr als nur eine globale Library bietet, und diesen von Fallback auf Match ziehen
+3. `li_battleship_deck.cmp` als Beleg behalten, dass Detailmap-getriebene Fallbacks jetzt auf Diffuse statt auf Wrapper-Knoten landen
+4. als Nächstes genau einen schwierigeren Base-/Interior-Fall wählen, dessen Material-/Texture-Kontext mehr als nur eine globale Library bietet, und diesen von Fallback auf Match ziehen
 
 Praktisch:
 - vorhandene Snapshot-Tests für `cv_starflier.cmp`, `docking_ringx2_lod.cmp`, `station_large_a_lod.cmp` und `ocean_blue.cmp` als Guard behalten
 - `ocean_blue.cmp` als Beleg behalten, dass der aktuelle Matcher nicht nur Candidate-Listen stabilisiert, sondern auch echte `token-match`-Entscheidungen liefern kann
 - den Barbican-Guard als Beleg behalten, dass Preview-Bindings ihren Partkontext auch bei Base-/Interior-CMPs nicht verlieren und dass rein globale Texture-Libraries derzeit bewusst als eigener Restfall markiert werden
+- den Liberty-Guard als Beleg behalten, dass Detailmap-Materialbäume im Fallback jetzt bevorzugt die Diffuse-Texture liefern und dass `.vms`-Containernamen nicht mehr zu falschen `token-match`-Aufstiegen führen
 - die neue Top-Level-CMP-Extraktion als etablierten Pfad betrachten, nicht als Sonderfall
 - die Hierarchiebereinigung für leere Top-Level-`Root`-Knoten als etablierten Normalfall betrachten
 - die jetzt immer vorhandenen `PreviewMaterialBinding`-Einträge auch bei `materialReferences == 0` als etablierten Debug-/Regression-Pfad betrachten

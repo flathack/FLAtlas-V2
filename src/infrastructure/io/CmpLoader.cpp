@@ -2192,6 +2192,19 @@ QStringList uniqueStringsPreserveOrder(const QStringList &values)
     return result;
 }
 
+int textureFallbackPriority(const MaterialReference &reference)
+{
+    const QString nodeName = reference.nodeName.trimmed();
+    const QString nodePath = reference.nodePath.trimmed();
+    if (nodeName.compare(QStringLiteral("Dt_name"), Qt::CaseInsensitive) == 0)
+        return 0;
+    if (nodeName.compare(QStringLiteral("Bt_name"), Qt::CaseInsensitive) == 0)
+        return 2;
+    if (nodePath.contains(QStringLiteral("/detailmap_"), Qt::CaseInsensitive))
+        return 3;
+    return 1;
+}
+
 QVector<MaterialReference> extractMaterialReferences(const QVector<FlatUtfNode> &nodes,
                                                      const QByteArray &raw)
 {
@@ -2238,6 +2251,8 @@ QStringList matchTextureCandidates(const QString &modelName,
     for (const QString &token : matchTokensForValue(partName))
         tokenSet.insert(token);
     for (const QString &sourceName : sourceNames) {
+        if (sourceName.trimmed().endsWith(QStringLiteral(".vms"), Qt::CaseInsensitive))
+            continue;
         for (const QString &token : matchTokensForValue(sourceName))
             tokenSet.insert(token);
     }
@@ -2296,8 +2311,13 @@ QStringList matchTextureCandidates(const QString &modelName,
     }
 
     if (!textures.isEmpty()) {
+        QVector<MaterialReference> orderedTextures = textures;
+        std::stable_sort(orderedTextures.begin(), orderedTextures.end(), [](const MaterialReference &a,
+                                                                           const MaterialReference &b) {
+            return textureFallbackPriority(a) < textureFallbackPriority(b);
+        });
         bool globalLibraryOnly = true;
-        for (const auto &texture : std::as_const(textures)) {
+        for (const auto &texture : std::as_const(orderedTextures)) {
             if (!texture.nodePath.startsWith(QStringLiteral("\\/Material library/"), Qt::CaseInsensitive)) {
                 globalLibraryOnly = false;
                 break;
@@ -2308,8 +2328,8 @@ QStringList matchTextureCandidates(const QString &modelName,
                 ? QStringLiteral("global-texture-library-fallback")
                 : QStringLiteral("first-texture-fallback");
         if (referenceNodePath)
-            *referenceNodePath = textures.first().nodePath;
-        for (const auto &item : std::as_const(textures))
+            *referenceNodePath = orderedTextures.first().nodePath;
+        for (const auto &item : std::as_const(orderedTextures))
             candidates.append(item.value);
         return uniqueStringsPreserveOrder(candidates);
     }
