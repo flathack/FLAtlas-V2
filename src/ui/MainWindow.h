@@ -49,13 +49,16 @@ private:
     void saveCurrentSystem();
     void saveCurrentFile();
     void newSystem();
-    void openSystemFromUniverse(const QString &nickname, const QString &systemFile);
+    void openSystemFromUniverse(const QString &nickname,
+                                const QString &systemFile,
+                                const QString &ingameName);
     void openUniverseFromContext();
     void handleEditingContextChanged();
     void closeContextBoundTabs();
     void showContextHelp();
     void launchFreelancerFromContext();
     flatlas::editors::SystemEditorPage *currentSystemEditor() const;
+    static QString formatSystemTabTitle(const QString &editorTitle, const QString &ingameName);
 
     QSplitter *m_mainSplitter = nullptr;
     flatlas::ui::CenterTabWidget *m_centerTabs = nullptr;

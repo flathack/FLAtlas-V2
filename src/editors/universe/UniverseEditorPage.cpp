@@ -574,7 +574,7 @@ void UniverseEditorPage::onSystemDoubleClicked(QTreeWidgetItem *item, int)
     const SystemInfo *sys = m_data->findSystem(nickname);
     if (sys && !sys->filePath.isEmpty()) {
         QString resolved = resolveSystemPath(sys->filePath);
-        emit openSystemRequested(sys->nickname, resolved);
+        emit openSystemRequested(sys->nickname, resolved, resolvedSystemName(*sys));
     }
 }
 
@@ -584,7 +584,7 @@ void UniverseEditorPage::onMapItemDoubleClicked(const QString &nickname)
     const SystemInfo *sys = m_data->findSystem(nickname);
     if (sys && !sys->filePath.isEmpty()) {
         QString resolved = resolveSystemPath(sys->filePath);
-        emit openSystemRequested(sys->nickname, resolved);
+        emit openSystemRequested(sys->nickname, resolved, resolvedSystemName(*sys));
     }
 }
 

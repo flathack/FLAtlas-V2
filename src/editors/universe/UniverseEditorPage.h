@@ -39,7 +39,9 @@ public:
 
 signals:
     void titleChanged(const QString &title);
-    void openSystemRequested(const QString &systemNickname, const QString &systemFilePath);
+    void openSystemRequested(const QString &systemNickname,
+                             const QString &systemFilePath,
+                             const QString &ingameName);
 
 private:
     void setupUi();

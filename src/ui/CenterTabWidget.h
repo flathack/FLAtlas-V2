@@ -33,6 +33,7 @@ signals:
     void currentChanged(int index);
 
 private:
+    bool isPinnedTab(int index) const;
     QTabBar *m_tabBar;
     QStackedWidget *m_stack;
     int m_pinnedCount = 0;

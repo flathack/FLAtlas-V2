@@ -75,6 +75,22 @@ bool isContextBoundTab(QWidget *widget)
 
 }
 
+QString MainWindow::formatSystemTabTitle(const QString &editorTitle, const QString &ingameName)
+{
+    const QString trimmedTitle = editorTitle.trimmed();
+    const bool dirty = trimmedTitle.endsWith(QLatin1Char('*'));
+    const QString baseTitle = dirty ? trimmedTitle.left(trimmedTitle.size() - 1).trimmed() : trimmedTitle;
+    const QString trimmedIngame = ingameName.trimmed();
+
+    QString result = baseTitle;
+    if (!trimmedIngame.isEmpty() && baseTitle.compare(trimmedIngame, Qt::CaseInsensitive) != 0)
+        result = QStringLiteral("%1 - %2").arg(baseTitle, trimmedIngame);
+
+    if (dirty)
+        result.append(QLatin1Char('*'));
+    return result;
+}
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
@@ -567,14 +583,14 @@ void MainWindow::openSystemFile()
         return;
     }
 
-    int idx = m_centerTabs->addTab(editor, editor->document()->name());
+    int idx = m_centerTabs->addTab(editor, formatSystemTabTitle(editor->document()->name(), QString()));
     m_centerTabs->setCurrentIndex(idx);
 
     connect(editor, &flatlas::editors::SystemEditorPage::titleChanged,
             this, [this, editor](const QString &title) {
         int i = m_centerTabs->indexOf(editor);
         if (i >= 0)
-            m_centerTabs->setTabText(i, title);
+            m_centerTabs->setTabText(i, formatSystemTabTitle(title, QString()));
     });
     connect(editor, &flatlas::editors::SystemEditorPage::selectionStatusChanged,
             this, [this](const QString &message) {
@@ -621,14 +637,14 @@ void MainWindow::newSystem()
     auto *editor = new flatlas::editors::SystemEditorPage(this);
     editor->setDocument(std::move(doc));
 
-    int idx = m_centerTabs->addTab(editor, editor->document()->name());
+    int idx = m_centerTabs->addTab(editor, formatSystemTabTitle(editor->document()->name(), QString()));
     m_centerTabs->setCurrentIndex(idx);
 
     connect(editor, &flatlas::editors::SystemEditorPage::titleChanged,
             this, [this, editor](const QString &title) {
         int i = m_centerTabs->indexOf(editor);
         if (i >= 0)
-            m_centerTabs->setTabText(i, title);
+            m_centerTabs->setTabText(i, formatSystemTabTitle(title, QString()));
     });
     connect(editor, &flatlas::editors::SystemEditorPage::selectionStatusChanged,
             this, [this](const QString &message) {
@@ -850,7 +866,9 @@ void MainWindow::closeContextBoundTabs()
     }
 }
 
-void MainWindow::openSystemFromUniverse(const QString &nickname, const QString &systemFile)
+void MainWindow::openSystemFromUniverse(const QString &nickname,
+                                        const QString &systemFile,
+                                        const QString &ingameName)
 {
     const QString resolvedPath = QDir::cleanPath(systemFile);
     if (resolvedPath.isEmpty() || !QFileInfo::exists(resolvedPath)) {
@@ -880,14 +898,14 @@ void MainWindow::openSystemFromUniverse(const QString &nickname, const QString &
         return;
     }
 
-    int idx = m_centerTabs->addTab(editor, editor->document()->name());
+    int idx = m_centerTabs->addTab(editor, formatSystemTabTitle(editor->document()->name(), ingameName));
     m_centerTabs->setCurrentIndex(idx);
 
     connect(editor, &flatlas::editors::SystemEditorPage::titleChanged,
-            this, [this, editor](const QString &title) {
+            this, [this, editor, ingameName](const QString &title) {
         int i = m_centerTabs->indexOf(editor);
         if (i >= 0)
-            m_centerTabs->setTabText(i, title);
+            m_centerTabs->setTabText(i, formatSystemTabTitle(title, ingameName));
     });
     connect(editor, &flatlas::editors::SystemEditorPage::selectionStatusChanged,
             this, [this](const QString &message) {
