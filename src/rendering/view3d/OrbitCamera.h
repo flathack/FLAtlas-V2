@@ -15,7 +15,7 @@ class QWheelEvent;
 
 namespace flatlas::rendering {
 
-/// Orbit camera controller: rotate (right-click), pan (middle-click), zoom (wheel).
+/// Orbit camera controller: rotate, pan, and zoom from widget mouse/wheel events.
 class OrbitCamera : public QObject {
     Q_OBJECT
 public:

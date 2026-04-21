@@ -87,7 +87,9 @@ void ModelViewport3D::setupUi()
         if (m_container) {
             m_container->setFocusPolicy(Qt::StrongFocus);
             m_container->setMouseTracking(true);
+            m_container->setToolTip(tr("Left drag rotates, right drag moves, mouse wheel zooms."));
             m_container->installEventFilter(this);
+            m_window->installEventFilter(this);
             layout->addWidget(m_container, 1);
             setupScene();
         }
@@ -140,7 +142,7 @@ void ModelViewport3D::setupScene()
 
     m_orbitCamera = new OrbitCamera(m_camera, this);
     m_orbitCamera->setRotateButton(Qt::LeftButton);
-    m_orbitCamera->setPanButton(Qt::MiddleButton);
+    m_orbitCamera->setPanButton(Qt::RightButton);
     m_orbitCamera->setResetState(QVector3D(0.0f, 0.0f, 0.0f), 500.0f, 45.0f, 22.0f);
     m_orbitCamera->resetView();
 
@@ -396,19 +398,23 @@ void ModelViewport3D::setWhiteBackground(bool enabled)
 bool ModelViewport3D::eventFilter(QObject *watched, QEvent *event)
 {
 #ifdef FLATLAS_HAS_QT3D
-    if (watched == m_container && m_orbitCamera) {
+    if ((watched == m_container || watched == m_window) && m_orbitCamera) {
         switch (event->type()) {
         case QEvent::MouseButtonPress:
             m_orbitCamera->handleMousePress(static_cast<QMouseEvent *>(event));
+            event->accept();
             return true;
         case QEvent::MouseMove:
             m_orbitCamera->handleMouseMove(static_cast<QMouseEvent *>(event));
+            event->accept();
             return true;
         case QEvent::MouseButtonRelease:
             m_orbitCamera->handleMouseRelease(static_cast<QMouseEvent *>(event));
+            event->accept();
             return true;
         case QEvent::Wheel:
             m_orbitCamera->handleWheel(static_cast<QWheelEvent *>(event));
+            event->accept();
             return true;
         default:
             break;

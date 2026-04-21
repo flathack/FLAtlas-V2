@@ -7,6 +7,9 @@
 #ifdef FLATLAS_HAS_QT3D
 #include "rendering/view3d/OrbitCamera.h"
 #include "rendering/view3d/SelectionManager.h"
+#include <QMouseEvent>
+#include <QPointingDevice>
+#include <QWheelEvent>
 #include <Qt3DRender/QCamera>
 #endif
 
@@ -23,6 +26,9 @@ private slots:
     void testOrbitCameraElevationClamp();
     void testOrbitCameraReset();
     void testOrbitCameraUpdatesCameraPosition();
+    void testOrbitCameraMouseRotate();
+    void testOrbitCameraMousePan();
+    void testOrbitCameraWheelZoom();
     void testSelectionManagerSelectEmits();
     void testSelectionManagerReselect();
     void testSelectionManagerClear();
@@ -106,6 +112,89 @@ void TestSceneView3D::testOrbitCameraUpdatesCameraPosition()
     QCOMPARE(pos.x(), 0.0f);
     QVERIFY(qAbs(pos.y()) < 1.0f);
     QVERIFY(qAbs(pos.z() - 1000.0f) < 1.0f);
+}
+
+void TestSceneView3D::testOrbitCameraMouseRotate()
+{
+    Qt3DRender::QCamera camera;
+    flatlas::rendering::OrbitCamera orbit(&camera);
+    orbit.setRotateButton(Qt::LeftButton);
+    orbit.setAzimuth(45.0f);
+    orbit.setElevation(30.0f);
+
+    QMouseEvent press(QEvent::MouseButtonPress,
+                      QPointF(10.0, 10.0), QPointF(10.0, 10.0),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier,
+                      QPointingDevice::primaryPointingDevice());
+    orbit.handleMousePress(&press);
+
+    QMouseEvent move(QEvent::MouseMove,
+                     QPointF(30.0, 0.0), QPointF(30.0, 0.0),
+                     Qt::NoButton, Qt::LeftButton, Qt::NoModifier,
+                     QPointingDevice::primaryPointingDevice());
+    orbit.handleMouseMove(&move);
+
+    QMouseEvent release(QEvent::MouseButtonRelease,
+                        QPointF(30.0, 0.0), QPointF(30.0, 0.0),
+                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier,
+                        QPointingDevice::primaryPointingDevice());
+    orbit.handleMouseRelease(&release);
+
+    QVERIFY(orbit.azimuth() > 45.0f);
+    QVERIFY(orbit.elevation() > 30.0f);
+}
+
+void TestSceneView3D::testOrbitCameraMousePan()
+{
+    Qt3DRender::QCamera camera;
+    flatlas::rendering::OrbitCamera orbit(&camera);
+    orbit.setRotateButton(Qt::LeftButton);
+    orbit.setPanButton(Qt::RightButton);
+    orbit.setDistance(1000.0f);
+
+    const QVector3D originalTarget = orbit.target();
+
+    QMouseEvent press(QEvent::MouseButtonPress,
+                      QPointF(10.0, 10.0), QPointF(10.0, 10.0),
+                      Qt::RightButton, Qt::RightButton, Qt::NoModifier,
+                      QPointingDevice::primaryPointingDevice());
+    orbit.handleMousePress(&press);
+
+    QMouseEvent move(QEvent::MouseMove,
+                     QPointF(60.0, 30.0), QPointF(60.0, 30.0),
+                     Qt::NoButton, Qt::RightButton, Qt::NoModifier,
+                     QPointingDevice::primaryPointingDevice());
+    orbit.handleMouseMove(&move);
+
+    QMouseEvent release(QEvent::MouseButtonRelease,
+                        QPointF(60.0, 30.0), QPointF(60.0, 30.0),
+                        Qt::RightButton, Qt::NoButton, Qt::NoModifier,
+                        QPointingDevice::primaryPointingDevice());
+    orbit.handleMouseRelease(&release);
+
+    QVERIFY(orbit.target() != originalTarget);
+}
+
+void TestSceneView3D::testOrbitCameraWheelZoom()
+{
+    Qt3DRender::QCamera camera;
+    flatlas::rendering::OrbitCamera orbit(&camera);
+    orbit.setDistance(1000.0f);
+
+    QWheelEvent zoomIn(QPointF(10.0, 10.0), QPointF(10.0, 10.0),
+                       QPoint(), QPoint(0, 120), Qt::NoButton, Qt::NoModifier,
+                       Qt::NoScrollPhase, false, Qt::MouseEventNotSynthesized,
+                       QPointingDevice::primaryPointingDevice());
+    orbit.handleWheel(&zoomIn);
+    const float zoomedInDistance = orbit.distance();
+    QVERIFY(zoomedInDistance < 1000.0f);
+
+    QWheelEvent zoomOut(QPointF(10.0, 10.0), QPointF(10.0, 10.0),
+                        QPoint(), QPoint(0, -120), Qt::NoButton, Qt::NoModifier,
+                        Qt::NoScrollPhase, false, Qt::MouseEventNotSynthesized,
+                        QPointingDevice::primaryPointingDevice());
+    orbit.handleWheel(&zoomOut);
+    QVERIFY(orbit.distance() > zoomedInDistance);
 }
 
 void TestSceneView3D::testSelectionManagerSelectEmits()
