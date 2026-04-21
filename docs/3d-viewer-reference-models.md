@@ -18,11 +18,18 @@ Diese Referenzmodelle dienen als feste Vergleichsbasis für die V1-Paritätsarbe
   - Basistest für Bounds, Kamera-Fit und Decoder-Konsistenz
 
 ### 2. Einfaches Schiff
-- Kandidat: erstes kleines Fighter-/Freighter-CMP aus `DATA/SHIPS`
+- Iteration-1-Referenz: `DATA/SHIPS/CIVILIAN/CV_STARFLIER/cv_starflier.cmp`
+- Archetype: `cv_starflier`
 - Typ: `.cmp`
 - Zweck:
   - einfache CMP-Part-Struktur
   - Vergleich von Part-Auflösung und Startansicht
+  - erster gezielter V1-/V2-Vergleich für ein kleines Schiff
+- Erwartung nach V1-Beobachtung:
+  - kleiner zentraler Rumpf
+  - klar erkennbare seitliche Hauptteile statt zerrissener Triangle-Suppe
+  - mehrere sichtbare Teilknoten statt eines einzigen rohen Fallback-Meshes
+  - plausible Startausrichtung und Bounds im Viewer
 
 ### 3. Zusammengesetztes Stations- oder Capital-Modell
 - Kandidat: größeres `.cmp` mit mehreren Parts

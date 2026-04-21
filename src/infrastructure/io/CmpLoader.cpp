@@ -14,6 +14,7 @@
 #include <QtMath>
 
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <optional>
 
@@ -424,6 +425,24 @@ QString normalizeModelKey(QString value)
     return value;
 }
 
+QString topLevelUtfPathSegment(const QString &path)
+{
+    const QStringList parts = path.split(QRegularExpression(QStringLiteral(R"([/\\]+)")),
+                                         Qt::SkipEmptyParts);
+    return parts.isEmpty() ? QString() : parts.first();
+}
+
+QString levelSegmentFromUtfPath(const QString &path)
+{
+    const QStringList parts = path.split(QRegularExpression(QStringLiteral(R"([/\\]+)")),
+                                         Qt::SkipEmptyParts);
+    for (const QString &part : parts) {
+        if (part.startsWith(QStringLiteral("Level"), Qt::CaseInsensitive))
+            return part;
+    }
+    return {};
+}
+
 bool looksLikeMaterialReference(const QString &value, QString *kind)
 {
     const QString lowered = value.trimmed().toLower();
@@ -614,6 +633,87 @@ float structuredGeometryScore(const QVector<QVector3D> &positions,
     return score;
 }
 
+struct FamilyMeshHeader {
+    int startVertex = 0;
+    int endVertex = 0;
+    int numRefIndices = 0;
+    int startIndex = 0;
+};
+
+QVector<FamilyMeshHeader> parseStructuredFamilyMeshHeaders(const QByteArray &headerBytes, int expectedMeshCount)
+{
+    QVector<FamilyMeshHeader> headers;
+    if (expectedMeshCount <= 0 || headerBytes.size() < 16 + (expectedMeshCount * 12))
+        return headers;
+
+    const quint16 meshCount = qFromLittleEndian<quint16>(
+        reinterpret_cast<const uchar *>(headerBytes.constData() + 8));
+    if (meshCount != expectedMeshCount)
+        return headers;
+
+    int pos = 16;
+    int triangleStart = 0;
+    headers.reserve(expectedMeshCount);
+    for (int i = 0; i < expectedMeshCount; ++i) {
+        if (pos + 12 > headerBytes.size())
+            return {};
+        pos += 4; // materialId
+        const quint16 startVertex = qFromLittleEndian<quint16>(
+            reinterpret_cast<const uchar *>(headerBytes.constData() + pos));
+        const quint16 endVertex = qFromLittleEndian<quint16>(
+            reinterpret_cast<const uchar *>(headerBytes.constData() + pos + 2));
+        const quint16 numRefIndices = qFromLittleEndian<quint16>(
+            reinterpret_cast<const uchar *>(headerBytes.constData() + pos + 4));
+        if (endVertex < startVertex)
+            return {};
+        headers.append({static_cast<int>(startVertex),
+                        static_cast<int>(endVertex),
+                        static_cast<int>(numRefIndices),
+                        triangleStart});
+        triangleStart += static_cast<int>(numRefIndices);
+        pos += 8;
+    }
+
+    return headers;
+}
+
+void refineStructuredFamilyWindowFromHeaders(const QVector<FamilyMeshHeader> &headers,
+                                             int refGroupStart,
+                                             int refGroupCount,
+                                             int refVertexStart,
+                                             int *subsetStart,
+                                             int *subsetCount,
+                                             int *expectedIndexCount,
+                                             int *expectedIndexOffset)
+{
+    if (!subsetStart || !subsetCount || !expectedIndexCount || !expectedIndexOffset)
+        return;
+    if (headers.isEmpty() || refGroupCount <= 0 || refGroupStart < 0
+        || refGroupStart + refGroupCount > headers.size()) {
+        return;
+    }
+
+    int minStartVertex = std::numeric_limits<int>::max();
+    int maxEndVertex = -1;
+    int totalIndices = 0;
+    int firstIndexOffset = headers.at(refGroupStart).startIndex;
+
+    for (int i = refGroupStart; i < refGroupStart + refGroupCount; ++i) {
+        const auto &header = headers.at(i);
+        minStartVertex = qMin(minStartVertex, header.startVertex);
+        maxEndVertex = qMax(maxEndVertex, header.endVertex);
+        totalIndices += header.numRefIndices;
+    }
+
+    if (minStartVertex < 0 || maxEndVertex < minStartVertex || totalIndices <= 0)
+        return;
+
+    *subsetStart = refVertexStart + minStartVertex;
+    *subsetCount = (maxEndVertex - minStartVertex) + 1;
+    *expectedIndexCount = totalIndices;
+    *expectedIndexOffset = firstIndexOffset * 2;
+}
+
 std::optional<QPair<int, QVector<uint32_t>>> findStructuredFamilyIndices(const QByteArray &headerBytes,
                                                                          int expectedIndexCount,
                                                                          int expectedIndexOffset,
@@ -658,16 +758,18 @@ std::optional<QPair<int, QVector<uint32_t>>> findStructuredFamilyIndices(const Q
 
 std::optional<QPair<float, MeshData>> buildStructuredFamilyMesh(const QVector<uint32_t> &indices,
                                                                 const QByteArray &positionBytes,
+                                                                int subsetStart,
+                                                                int subsetCount,
                                                                 const ModelBounds &expectedBounds,
                                                                 int preferredStride)
 {
-    if (indices.isEmpty() || positionBytes.isEmpty())
+    if (indices.isEmpty() || positionBytes.isEmpty() || subsetStart < 0 || subsetCount <= 0)
         return std::nullopt;
 
     const auto [minIndexIt, maxIndexIt] = std::minmax_element(indices.cbegin(), indices.cend());
-    const int minIndex = static_cast<int>(*minIndexIt);
     const int maxIndex = static_cast<int>(*maxIndexIt);
-    const int vertexCount = maxIndex + 1;
+    const int subsetEnd = subsetStart + subsetCount;
+    const int vertexCount = qMax(maxIndex + 1, subsetEnd);
     if (vertexCount <= 0)
         return std::nullopt;
 
@@ -698,6 +800,12 @@ std::optional<QPair<float, MeshData>> buildStructuredFamilyMesh(const QVector<ui
                 }
                 if (uniqueRounded.size() < minUniquePositions)
                     continue;
+                if (subsetEnd > positions.size())
+                    continue;
+                if (minIndexIt == indices.cend())
+                    continue;
+                if (static_cast<int>(*minIndexIt) < subsetStart || maxIndex >= subsetEnd)
+                    continue;
 
                 int zeroPrefix = 0;
                 for (const QVector3D &position : positions) {
@@ -708,20 +816,20 @@ std::optional<QPair<float, MeshData>> buildStructuredFamilyMesh(const QVector<ui
                 }
 
                 MeshData mesh;
-                mesh.vertices.reserve(maxIndex - minIndex + 1);
-                for (int i = minIndex; i <= maxIndex && i < positions.size(); ++i) {
+                mesh.vertices.reserve(subsetCount);
+                for (int i = subsetStart; i < subsetEnd && i < positions.size(); ++i) {
                     MeshVertex vertex;
                     vertex.position = positions.at(i);
                     mesh.vertices.append(vertex);
                 }
                 for (uint32_t index : indices)
-                    mesh.indices.append(index - static_cast<uint32_t>(minIndex));
+                    mesh.indices.append(index - static_cast<uint32_t>(subsetStart));
 
                 if (!sanitizeMesh(mesh))
                     continue;
 
                 const float score = structuredGeometryScore(
-                    positions.mid(minIndex, maxIndex - minIndex + 1),
+                    positions.mid(subsetStart, subsetCount),
                     expectedBounds,
                     zeroPrefix,
                     preferredStride,
@@ -739,6 +847,8 @@ std::optional<QPair<float, MeshData>> decodeStructuredFamilyVariant(const QByteA
                                                                     int expectedIndexCount,
                                                                     int expectedIndexOffset,
                                                                     int maxVertexIndexHint,
+                                                                    int subsetStart,
+                                                                    int subsetCount,
                                                                     const ModelBounds &expectedBounds,
                                                                     int preferredStride)
 {
@@ -749,7 +859,12 @@ std::optional<QPair<float, MeshData>> decodeStructuredFamilyVariant(const QByteA
         maxVertexIndexHint);
     if (!indices.has_value())
         return std::nullopt;
-    return buildStructuredFamilyMesh(indices->second, headerBytes, expectedBounds, preferredStride);
+    return buildStructuredFamilyMesh(indices->second,
+                                     headerBytes,
+                                     subsetStart,
+                                     subsetCount,
+                                     expectedBounds,
+                                     preferredStride);
 }
 
 std::optional<QPair<float, MeshData>> decodeStructuredFamilySplitPair(const QByteArray &headerBytes,
@@ -757,6 +872,8 @@ std::optional<QPair<float, MeshData>> decodeStructuredFamilySplitPair(const QByt
                                                                       int expectedIndexCount,
                                                                       int expectedIndexOffset,
                                                                       int maxVertexIndexHint,
+                                                                      int subsetStart,
+                                                                      int subsetCount,
                                                                       const ModelBounds &expectedBounds,
                                                                       int preferredStride,
                                                                       int streamCapacityVertices)
@@ -769,15 +886,40 @@ std::optional<QPair<float, MeshData>> decodeStructuredFamilySplitPair(const QByt
     if (!indices.has_value())
         return std::nullopt;
 
+    std::optional<QPair<float, MeshData>> best;
+
+    const auto headerCandidate = buildStructuredFamilyMesh(indices->second,
+                                                           headerBytes,
+                                                           subsetStart,
+                                                           subsetCount,
+                                                           expectedBounds,
+                                                           preferredStride);
+    if (headerCandidate.has_value())
+        best = headerCandidate;
+
+    bool canUseStream = true;
     if (!indices->second.isEmpty()) {
         const auto maxIndexIt = std::max_element(indices->second.cbegin(), indices->second.cend());
         if (maxIndexIt != indices->second.cend() && streamCapacityVertices > 0
             && static_cast<int>(*maxIndexIt) + 1 > streamCapacityVertices) {
-            return std::nullopt;
+            canUseStream = false;
         }
     }
 
-    return buildStructuredFamilyMesh(indices->second, streamBytes, expectedBounds, preferredStride);
+    if (canUseStream) {
+        const auto streamCandidate = buildStructuredFamilyMesh(indices->second,
+                                                               streamBytes,
+                                                               subsetStart,
+                                                               subsetCount,
+                                                               expectedBounds,
+                                                               preferredStride);
+        if (streamCandidate.has_value()
+            && (!best.has_value() || streamCandidate->first < best->first)) {
+            best = streamCandidate;
+        }
+    }
+
+    return best;
 }
 
 std::optional<MeshData> decodeStructuredFamilyForRef(const QByteArray &raw,
@@ -812,6 +954,19 @@ std::optional<MeshData> decodeStructuredFamilyForRef(const QByteArray &raw,
             const QByteArray headerBytes = raw.mid(headerBlock.dataOffset, headerBlock.usedSize);
             if (headerBytes.isEmpty())
                 continue;
+            int subsetStart = ref.vertexStart;
+            int subsetCount = ref.vertexCount;
+            int expectedIndexCount = ref.indexCount;
+            int expectedIndexOffset = ref.indexStart * 2;
+            const auto meshHeaders = parseStructuredFamilyMeshHeaders(headerBytes, headerBlock.headerHint.meshHeaderCountHint);
+            refineStructuredFamilyWindowFromHeaders(meshHeaders,
+                                                   ref.groupStart,
+                                                   ref.groupCount,
+                                                   ref.vertexStart,
+                                                   &subsetStart,
+                                                   &subsetCount,
+                                                   &expectedIndexCount,
+                                                   &expectedIndexOffset);
             for (const auto &streamBlock : std::as_const(streamBlocks)) {
                 const QByteArray streamBytes = raw.mid(streamBlock.dataOffset, streamBlock.usedSize);
                 if (streamBytes.isEmpty())
@@ -821,9 +976,11 @@ std::optional<MeshData> decodeStructuredFamilyForRef(const QByteArray &raw,
                 const auto candidate = decodeStructuredFamilySplitPair(
                     headerBytes,
                     streamBytes,
-                    ref.indexCount,
-                    ref.indexStart * 2,
+                    expectedIndexCount,
+                    expectedIndexOffset,
                     qMax(1, maxVertexIndexHint),
+                    subsetStart,
+                    subsetCount,
                     ref.bounds,
                     preferredStride,
                     streamCapacityVertices);
@@ -839,12 +996,27 @@ std::optional<MeshData> decodeStructuredFamilyForRef(const QByteArray &raw,
         const QByteArray blockBytes = raw.mid(block.dataOffset, block.usedSize);
         if (blockBytes.isEmpty())
             continue;
+        int subsetStart = ref.vertexStart;
+        int subsetCount = ref.vertexCount;
+        int expectedIndexCount = ref.indexCount;
+        int expectedIndexOffset = ref.indexStart * 2;
+        const auto meshHeaders = parseStructuredFamilyMeshHeaders(blockBytes, block.headerHint.meshHeaderCountHint);
+        refineStructuredFamilyWindowFromHeaders(meshHeaders,
+                                               ref.groupStart,
+                                               ref.groupCount,
+                                               ref.vertexStart,
+                                               &subsetStart,
+                                               &subsetCount,
+                                               &expectedIndexCount,
+                                               &expectedIndexOffset);
 
         const auto candidate = decodeStructuredFamilyVariant(
             blockBytes,
-            ref.indexCount,
-            ref.indexStart * 2,
+            expectedIndexCount,
+            expectedIndexOffset,
             qMax(1, maxVertexIndexHint),
+            subsetStart,
+            subsetCount,
             ref.bounds,
             block.strideHint > 0 ? block.strideHint : resolvedBlock.strideHint);
         if (!candidate.has_value())
@@ -942,13 +1114,62 @@ std::optional<QPair<int, VMeshDataBlock>> resolveVMeshDataBlock(
 
     QVector<int> crcMatches;
     for (int i = 0; i < blocks.size(); ++i) {
-        if (!blocks.at(i).sourceName.isEmpty()
-            && freelancerCrc32(blocks.at(i).sourceName) == meshDataReference) {
-            crcMatches.append(i);
+        QSet<QString> crcCandidates;
+        if (!blocks.at(i).sourceName.isEmpty()) {
+            crcCandidates.insert(blocks.at(i).sourceName);
+            crcCandidates.insert(blocks.at(i).sourceName.toLower());
+            crcCandidates.insert(QFileInfo(blocks.at(i).sourceName).fileName());
+            crcCandidates.insert(QFileInfo(blocks.at(i).sourceName).completeBaseName());
+        }
+        if (!blocks.at(i).familyKey.isEmpty()) {
+            crcCandidates.insert(blocks.at(i).familyKey);
+            crcCandidates.insert(blocks.at(i).familyKey.toLower());
+        }
+        for (const QString &candidate : std::as_const(crcCandidates)) {
+            if (!candidate.isEmpty() && freelancerCrc32(candidate) == meshDataReference) {
+                crcMatches.append(i);
+                break;
+            }
         }
     }
     if (crcMatches.size() == 1)
         return qMakePair(crcMatches.first(), blocks.at(crcMatches.first()));
+    return std::nullopt;
+}
+
+std::optional<QPair<int, VMeshDataBlock>> resolveVMeshDataBlockForRef(
+    quint32 meshDataReference,
+    const QString &refNodePath,
+    const QVector<VMeshDataBlock> &blocks)
+{
+    if (const auto resolved = resolveVMeshDataBlock(meshDataReference, blocks))
+        return resolved;
+
+    const QString refTopLevel = topLevelUtfPathSegment(refNodePath);
+    if (refTopLevel.isEmpty())
+        return std::nullopt;
+
+    QVector<int> topLevelMatches;
+    for (int i = 0; i < blocks.size(); ++i) {
+        if (topLevelUtfPathSegment(blocks.at(i).nodePath).compare(refTopLevel, Qt::CaseInsensitive) == 0)
+            topLevelMatches.append(i);
+    }
+    if (topLevelMatches.size() == 1)
+        return qMakePair(topLevelMatches.first(), blocks.at(topLevelMatches.first()));
+
+    const QString levelSegment = levelSegmentFromUtfPath(refNodePath).toLower();
+    if (!levelSegment.isEmpty()) {
+        QString lodToken = levelSegment;
+        lodToken.replace(QStringLiteral("level"), QStringLiteral("lod"));
+        QVector<int> lodMatches;
+        for (int i = 0; i < blocks.size(); ++i) {
+            const QString haystack = (blocks.at(i).sourceName + QLatin1Char('|') + blocks.at(i).familyKey).toLower();
+            if (haystack.contains(lodToken))
+                lodMatches.append(i);
+        }
+        if (lodMatches.size() == 1)
+            return qMakePair(lodMatches.first(), blocks.at(lodMatches.first()));
+    }
     return std::nullopt;
 }
 
@@ -995,9 +1216,9 @@ QVector<VMeshRefRecord> parseVMeshRefs(const QVector<FlatUtfNode> &nodes,
         ref.nodePath = node.path;
         ref.bounds = boundsFromExtrema(maxX, minX, maxY, minY, maxZ, minZ, radius);
 
-        const QStringList pathParts = node.path.split(QLatin1Char('/'), Qt::SkipEmptyParts);
-        if (!pathParts.isEmpty())
-            ref.modelName = pathParts.first();
+        ref.modelName = topLevelUtfPathSegment(node.path);
+        const QStringList pathParts = node.path.split(QRegularExpression(QStringLiteral(R"([/\\]+)")),
+                                                     Qt::SkipEmptyParts);
         for (const QString &segment : pathParts) {
             if (segment.startsWith(QStringLiteral("Level"), Qt::CaseInsensitive)) {
                 ref.levelName = segment;
@@ -1005,12 +1226,18 @@ QVector<VMeshRefRecord> parseVMeshRefs(const QVector<FlatUtfNode> &nodes,
             }
         }
 
-        const auto resolved = resolveVMeshDataBlock(meshDataReference, blocks);
+        const auto resolved = resolveVMeshDataBlockForRef(meshDataReference, node.path, blocks);
         if (resolved.has_value()) {
             ref.matchedSourceName = resolved->second.sourceName;
-            ref.resolutionHint = resolved->first == static_cast<int>(meshDataReference)
-                ? QStringLiteral("direct-index")
-                : QStringLiteral("crc-or-fallback");
+            if (resolved->first == static_cast<int>(meshDataReference))
+                ref.resolutionHint = QStringLiteral("direct-index");
+            else if (!topLevelUtfPathSegment(node.path).isEmpty()
+                     && topLevelUtfPathSegment(node.path).compare(topLevelUtfPathSegment(resolved->second.nodePath),
+                                                                  Qt::CaseInsensitive) == 0) {
+                ref.resolutionHint = QStringLiteral("top-level-path");
+            } else {
+                ref.resolutionHint = QStringLiteral("crc-or-fallback");
+            }
         } else {
             ref.resolutionHint = QStringLiteral("unresolved");
         }
@@ -1076,6 +1303,44 @@ const CmpTransformHint *findCombinedTransformHint(const QVector<CmpTransformHint
         return hint.partName.compare(partName, Qt::CaseInsensitive) == 0;
     });
     return it == hints.cend() ? nullptr : &(*it);
+}
+
+bool shouldKeepEmptyCmpPartNode(const QString &partName,
+                                const QSet<QString> &parentPartNames,
+                                const QVector<CmpTransformHint> &hints)
+{
+    const QString lowered = partName.trimmed().toLower();
+    if (lowered.isEmpty())
+        return false;
+    if (parentPartNames.contains(lowered))
+        return true;
+
+    const auto it = std::find_if(hints.cbegin(), hints.cend(), [&](const CmpTransformHint &hint) {
+        return hint.partName.compare(partName, Qt::CaseInsensitive) == 0
+            && (hint.hasLocalTranslation || hint.hasLocalRotation
+                || hint.hasCombinedTranslation || hint.hasCombinedRotation);
+    });
+    return it != hints.cend();
+}
+
+bool refBelongsToPart(const VMeshRefRecord &ref,
+                      const NativeModelPart &part,
+                      const QString &partPath)
+{
+    const QString prefix = partPath + QLatin1Char('/');
+    if (!partPath.isEmpty() && ref.nodePath.startsWith(prefix, Qt::CaseInsensitive))
+        return true;
+    if (!part.sourceName.trimmed().isEmpty()
+        && ref.matchedSourceName.compare(part.sourceName, Qt::CaseInsensitive) == 0) {
+        return true;
+    }
+    if (!part.objectName.trimmed().isEmpty()) {
+        if (ref.parentName.compare(part.objectName, Qt::CaseInsensitive) == 0)
+            return true;
+        if (ref.nodePath.contains(part.objectName, Qt::CaseInsensitive))
+            return true;
+    }
+    return false;
 }
 
 QQuaternion combineRotations(const QQuaternion &parent, const QQuaternion &local)
@@ -1580,6 +1845,180 @@ bool isFiniteVector(const QVector3D &value)
     return qIsFinite(value.x()) && qIsFinite(value.y()) && qIsFinite(value.z());
 }
 
+ModelBounds calculateMeshBounds(const MeshData &mesh)
+{
+    ModelBounds bounds;
+    for (const auto &vertex : mesh.vertices) {
+        if (!isFiniteVector(vertex.position))
+            continue;
+        if (!bounds.valid) {
+            bounds.minCorner = vertex.position;
+            bounds.maxCorner = vertex.position;
+            bounds.valid = true;
+            continue;
+        }
+        bounds.minCorner.setX(qMin(bounds.minCorner.x(), vertex.position.x()));
+        bounds.minCorner.setY(qMin(bounds.minCorner.y(), vertex.position.y()));
+        bounds.minCorner.setZ(qMin(bounds.minCorner.z(), vertex.position.z()));
+        bounds.maxCorner.setX(qMax(bounds.maxCorner.x(), vertex.position.x()));
+        bounds.maxCorner.setY(qMax(bounds.maxCorner.y(), vertex.position.y()));
+        bounds.maxCorner.setZ(qMax(bounds.maxCorner.z(), vertex.position.z()));
+    }
+    if (bounds.valid)
+        bounds.radius = (bounds.maxCorner - bounds.minCorner).length() * 0.5f;
+    return bounds;
+}
+
+float meshBoundsScore(const MeshData &mesh, const ModelBounds &expectedBounds)
+{
+    if (!expectedBounds.valid)
+        return 0.0f;
+    const ModelBounds actualBounds = calculateMeshBounds(mesh);
+    if (!actualBounds.valid)
+        return std::numeric_limits<float>::infinity();
+
+    const QVector3D minDelta = actualBounds.minCorner - expectedBounds.minCorner;
+    const QVector3D maxDelta = actualBounds.maxCorner - expectedBounds.maxCorner;
+    return minDelta.lengthSquared()
+        + maxDelta.lengthSquared()
+        + qAbs(actualBounds.radius - expectedBounds.radius);
+}
+
+QVector<int> candidateVertexStridesForRef(const VMeshRefRecord &ref)
+{
+    QVector<int> strides;
+    const auto appendStride = [&](int stride) {
+        if (stride >= 12 && !strides.contains(stride))
+            strides.append(stride);
+    };
+
+    appendStride(strideHintFromSourceName(ref.matchedSourceName));
+    for (int stride : {12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 72, 80, 96, 112})
+        appendStride(stride);
+    return strides;
+}
+
+bool decodeRawWindowVertices(const QByteArray &blockBytes,
+                             int offset,
+                             int vertexCount,
+                             int vertexStride,
+                             QVector<MeshVertex> *outVertices)
+{
+    if (!outVertices || offset < 0 || vertexCount <= 0 || vertexStride < 12)
+        return false;
+    const qint64 requiredBytes = static_cast<qint64>(vertexCount) * vertexStride;
+    if (offset + requiredBytes > blockBytes.size())
+        return false;
+
+    outVertices->clear();
+    outVertices->reserve(vertexCount);
+    for (int i = 0; i < vertexCount; ++i) {
+        const int base = offset + (i * vertexStride);
+        const float x = qFromLittleEndian<float>(reinterpret_cast<const uchar *>(blockBytes.constData() + base));
+        const float y = qFromLittleEndian<float>(reinterpret_cast<const uchar *>(blockBytes.constData() + base + 4));
+        const float z = qFromLittleEndian<float>(reinterpret_cast<const uchar *>(blockBytes.constData() + base + 8));
+        if (!qIsFinite(x) || !qIsFinite(y) || !qIsFinite(z))
+            return false;
+        if (qMax(qMax(qAbs(x), qAbs(y)), qAbs(z)) > 2'000'000.0f)
+            return false;
+
+        MeshVertex vertex;
+        vertex.position = QVector3D(x, y, z);
+
+        if (vertexStride >= 24) {
+            const float nx = qFromLittleEndian<float>(reinterpret_cast<const uchar *>(blockBytes.constData() + base + 12));
+            const float ny = qFromLittleEndian<float>(reinterpret_cast<const uchar *>(blockBytes.constData() + base + 16));
+            const float nz = qFromLittleEndian<float>(reinterpret_cast<const uchar *>(blockBytes.constData() + base + 20));
+            if (qIsFinite(nx) && qIsFinite(ny) && qIsFinite(nz))
+                vertex.normal = QVector3D(nx, ny, nz);
+        }
+
+        outVertices->append(vertex);
+    }
+
+    return true;
+}
+
+bool decodeRawWindowIndices(const QByteArray &blockBytes,
+                            int offset,
+                            int indexCount,
+                            int indexSize,
+                            int maxVertexIndexExclusive,
+                            QVector<uint32_t> *outIndices)
+{
+    if (!outIndices || offset < 0 || indexCount <= 0 || maxVertexIndexExclusive <= 0)
+        return false;
+    if (indexSize != 2 && indexSize != 4)
+        return false;
+    const qint64 requiredBytes = static_cast<qint64>(indexCount) * indexSize;
+    if (offset + requiredBytes > blockBytes.size())
+        return false;
+
+    outIndices->clear();
+    outIndices->reserve(indexCount);
+    for (int i = 0; i < indexCount; ++i) {
+        const int base = offset + (i * indexSize);
+        uint32_t index = 0;
+        if (indexSize == 2) {
+            index = qFromLittleEndian<quint16>(reinterpret_cast<const uchar *>(blockBytes.constData() + base));
+        } else {
+            index = qFromLittleEndian<quint32>(reinterpret_cast<const uchar *>(blockBytes.constData() + base));
+        }
+        if (index >= static_cast<uint32_t>(maxVertexIndexExclusive))
+            return false;
+        outIndices->append(index);
+    }
+
+    return true;
+}
+
+std::optional<MeshData> decodeExactFitWindowedMesh(const QByteArray &blockBytes,
+                                                   const VMeshRefRecord &ref,
+                                                   int vertexStride,
+                                                   int indexSize)
+{
+    constexpr int kHeaderSize = 16;
+
+    if (ref.vertexStart < 0 || ref.vertexCount <= 0 || ref.indexStart < 0 || ref.indexCount <= 0)
+        return std::nullopt;
+
+    const int totalVertexCount = ref.vertexStart + ref.vertexCount;
+    if (totalVertexCount <= 0)
+        return std::nullopt;
+
+    QVector<MeshVertex> decodedVertices;
+    if (!decodeRawWindowVertices(blockBytes, kHeaderSize, totalVertexCount, vertexStride, &decodedVertices))
+        return std::nullopt;
+
+    QVector<uint32_t> decodedIndices;
+    const int indexOffset = kHeaderSize + (totalVertexCount * vertexStride) + (ref.indexStart * indexSize);
+    if (!decodeRawWindowIndices(blockBytes,
+                                indexOffset,
+                                ref.indexCount,
+                                indexSize,
+                                totalVertexCount,
+                                &decodedIndices)) {
+        return std::nullopt;
+    }
+
+    MeshData mesh;
+    for (int i = ref.vertexStart; i < ref.vertexStart + ref.vertexCount; ++i)
+        mesh.vertices.append(decodedVertices.at(i));
+
+    for (uint32_t index : std::as_const(decodedIndices)) {
+        if (index < static_cast<uint32_t>(ref.vertexStart))
+            continue;
+        const uint32_t rebased = index - static_cast<uint32_t>(ref.vertexStart);
+        if (rebased >= static_cast<uint32_t>(mesh.vertices.size()))
+            continue;
+        mesh.indices.append(rebased);
+    }
+
+    if (!sanitizeMesh(mesh))
+        return std::nullopt;
+    return mesh;
+}
+
 bool sanitizeMesh(MeshData &mesh)
 {
     if (mesh.vertices.isEmpty() || mesh.indices.isEmpty())
@@ -1861,6 +2300,29 @@ QVector<MeshData> CmpLoader::buildMeshesFromVMesh(const QByteArray &vmeshData,
         return false;
     };
 
+    {
+        std::optional<MeshData> bestMesh;
+        float bestScore = std::numeric_limits<float>::infinity();
+        for (int vertexStride : candidateVertexStridesForRef(ref)) {
+            for (int indexSize : {2, 4}) {
+                auto candidate = decodeExactFitWindowedMesh(vmeshData, ref, vertexStride, indexSize);
+                if (!candidate.has_value())
+                    continue;
+                const float score = meshBoundsScore(candidate.value(), ref.bounds);
+                if (!bestMesh.has_value() || score < bestScore) {
+                    bestScore = score;
+                    bestMesh = std::move(candidate);
+                }
+            }
+        }
+
+        if (bestMesh.has_value()) {
+            applyBinding(bestMesh.value(), -1);
+            meshes.append(bestMesh.value());
+            return meshes;
+        }
+    }
+
     if (appendFromDecoded(VmeshDecoder::decode(vmeshData)))
         return meshes;
 
@@ -1873,7 +2335,8 @@ QVector<MeshData> CmpLoader::buildMeshesFromVMesh(const QByteArray &vmeshData,
     return meshes;
 }
 
-ModelNode CmpLoader::extractPart(const QString &partPath,
+ModelNode CmpLoader::extractPart(const NativeModelPart &part,
+                                 const QString &partPath,
                                  const QByteArray &raw,
                                  const QVector<UtfNodeRecord> &nodes,
                                  const QVector<VMeshDataBlock> &vmeshBlocks,
@@ -1896,10 +2359,10 @@ ModelNode CmpLoader::extractPart(const QString &partPath,
         if (transform->hasLocalRotation)
             node.rotation = transform->localRotation;
     }
-
     const QString prefix = partPath + QLatin1Char('/');
+
     for (const auto &ref : vmeshRefs) {
-        if (!ref.nodePath.startsWith(prefix, Qt::CaseInsensitive))
+        if (!refBelongsToPart(ref, part, partPath))
             continue;
 
         std::optional<QPair<int, VMeshDataBlock>> resolved;
@@ -1911,7 +2374,7 @@ ModelNode CmpLoader::extractPart(const QString &partPath,
                 resolved = qMakePair(static_cast<int>(std::distance(vmeshBlocks.cbegin(), byName)), *byName);
         }
         if (!resolved.has_value())
-            resolved = resolveVMeshDataBlock(ref.meshDataReference, vmeshBlocks);
+            resolved = resolveVMeshDataBlockForRef(ref.meshDataReference, ref.nodePath, vmeshBlocks);
         if (!resolved.has_value()) {
             if (warnings)
                 warnings->append(QStringLiteral("Unresolved VMeshRef in %1").arg(ref.nodePath));
@@ -2034,16 +2497,24 @@ DecodedModel CmpLoader::loadModel(const QString &filePath)
             if (!hint.parentPartName.trimmed().isEmpty())
                 parentByPart.insert(hint.partName.toLower(), hint.parentPartName);
         }
+        QSet<QString> parentPartNames;
+        for (auto it = parentByPart.cbegin(); it != parentByPart.cend(); ++it) {
+            const QString lowered = it.value().trimmed().toLower();
+            if (!lowered.isEmpty())
+                parentPartNames.insert(lowered);
+        }
 
         for (const auto &part : std::as_const(result.parts)) {
             const QString partPath = firstPathForName(result.utfNodes, part.name);
             if (partPath.isEmpty())
                 continue;
-            ModelNode partNode = extractPart(partPath, raw, result.utfNodes, result.vmeshDataBlocks,
+            ModelNode partNode = extractPart(part, partPath, raw, result.utfNodes, result.vmeshDataBlocks,
                                              result.vmeshRefs, result.cmpTransformHints,
                                              result.previewMaterialBindings, &result.warnings);
-            if (!partNode.meshes.isEmpty() || !partNode.children.isEmpty())
+            if (!partNode.meshes.isEmpty()
+                || shouldKeepEmptyCmpPartNode(part.name, parentPartNames, result.cmpTransformHints)) {
                 partNodesByName.insert(part.name.toLower(), partNode);
+            }
         }
 
         QSet<QString> attached;
@@ -2079,7 +2550,9 @@ DecodedModel CmpLoader::loadModel(const QString &filePath)
         QString partPath = firstPathForName(result.utfNodes, QFileInfo(filePath).baseName());
         if (partPath.isEmpty())
             partPath = firstPathForName(result.utfNodes, QStringLiteral("Root"));
-        ModelNode direct = extractPart(partPath, raw, result.utfNodes, result.vmeshDataBlocks,
+        NativeModelPart directPart;
+        directPart.name = QFileInfo(filePath).baseName();
+        ModelNode direct = extractPart(directPart, partPath, raw, result.utfNodes, result.vmeshDataBlocks,
                                        result.vmeshRefs, result.cmpTransformHints,
                                        result.previewMaterialBindings, &result.warnings);
         if (!direct.meshes.isEmpty() || !direct.children.isEmpty())

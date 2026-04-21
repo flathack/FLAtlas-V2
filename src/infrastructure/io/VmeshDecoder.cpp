@@ -6,9 +6,57 @@
 #include <QtEndian>
 #include <QtMath>
 
+#include <limits>
+
 namespace flatlas::infrastructure {
 
 namespace {
+
+bool isValidDecodedMesh(const DecodedMesh &mesh)
+{
+    if (mesh.positions.size() < 3 || mesh.indices.size() < 3)
+        return false;
+    uint32_t maxIndex = 0;
+    bool hasIndex = false;
+    for (uint32_t index : mesh.indices) {
+        maxIndex = qMax(maxIndex, index);
+        hasIndex = true;
+    }
+    return hasIndex && maxIndex < static_cast<uint32_t>(mesh.positions.size());
+}
+
+float decodedMeshScore(const DecodedMesh &mesh)
+{
+    if (!isValidDecodedMesh(mesh))
+        return std::numeric_limits<float>::infinity();
+
+    float score = 0.0f;
+
+    int degenerateTriangles = 0;
+    for (qsizetype i = 0; i + 2 < mesh.indices.size(); i += 3) {
+        const uint32_t a = mesh.indices.at(i);
+        const uint32_t b = mesh.indices.at(i + 1);
+        const uint32_t c = mesh.indices.at(i + 2);
+        if (a == b || b == c || a == c)
+            ++degenerateTriangles;
+    }
+    score += static_cast<float>(degenerateTriangles) * 100.0f;
+
+    int suspiciousSmallVertices = 0;
+    for (const auto &position : mesh.positions) {
+        if (qMax(qMax(qAbs(position.x()), qAbs(position.y())), qAbs(position.z())) > 2'000'000.0f)
+            return std::numeric_limits<float>::infinity();
+        int smallAxes = 0;
+        smallAxes += qAbs(position.x()) <= 2.0f ? 1 : 0;
+        smallAxes += qAbs(position.y()) <= 2.0f ? 1 : 0;
+        smallAxes += qAbs(position.z()) <= 2.0f ? 1 : 0;
+        if (smallAxes >= 2)
+            ++suspiciousSmallVertices;
+    }
+    score += static_cast<float>(suspiciousSmallVertices) * 5.0f;
+
+    return score;
+}
 
 bool decodeVertices(QDataStream &ds, uint32_t fvfRaw, int numVertices, DecodedMesh &result)
 {
@@ -55,6 +103,79 @@ bool decodeVertices(QDataStream &ds, uint32_t fvfRaw, int numVertices, DecodedMe
     return true;
 }
 
+DecodedMesh decodeIndicesThenVertices(const QByteArray &data,
+                                      int offset,
+                                      uint16_t numMeshGroups,
+                                      uint16_t numRefVertices,
+                                      uint16_t fvfRaw,
+                                      uint16_t numVertices)
+{
+    DecodedMesh result;
+    result.fvf = fvfRaw;
+    result.numVertices = numVertices;
+    result.numIndices = numRefVertices;
+
+    QDataStream ds(data);
+    ds.setByteOrder(QDataStream::LittleEndian);
+    ds.setFloatingPointPrecision(QDataStream::SinglePrecision);
+    ds.skipRawData(offset + 16);
+
+    ds.skipRawData(numMeshGroups * 16);
+
+    result.indices.resize(numRefVertices);
+    for (int i = 0; i < numRefVertices; ++i) {
+        uint16_t idx = 0;
+        ds >> idx;
+        result.indices[i] = idx;
+    }
+
+    if (!decodeVertices(ds, fvfRaw, numVertices, result))
+        return {};
+
+    return result;
+}
+
+DecodedMesh decodeVerticesThenIndices(const QByteArray &data,
+                                      int offset,
+                                      uint16_t numMeshGroups,
+                                      uint16_t numRefVertices,
+                                      uint16_t fvfRaw,
+                                      uint16_t numVertices)
+{
+    DecodedMesh result;
+    result.fvf = fvfRaw;
+    result.numVertices = numVertices;
+    result.numIndices = numRefVertices;
+
+    const int vertexStride = VmeshDecoder::vertexStride(fvfRaw);
+    if (vertexStride <= 0)
+        return {};
+
+    QDataStream ds(data);
+    ds.setByteOrder(QDataStream::LittleEndian);
+    ds.setFloatingPointPrecision(QDataStream::SinglePrecision);
+    ds.skipRawData(offset + 16);
+
+    const int headerBytes = numMeshGroups * 16;
+    ds.skipRawData(headerBytes);
+
+    if (!decodeVertices(ds, fvfRaw, numVertices, result))
+        return {};
+
+    result.indices.resize(numRefVertices);
+    for (int i = 0; i < numRefVertices; ++i) {
+        uint16_t idx = 0;
+        ds >> idx;
+        result.indices[i] = idx;
+    }
+
+    const int expectedBytes = 16 + headerBytes + (numVertices * vertexStride) + (numRefVertices * 2);
+    if (data.size() - offset < expectedBytes)
+        return {};
+
+    return result;
+}
+
 } // namespace
 
 int VmeshDecoder::uvSetCount(uint32_t fvf)
@@ -87,10 +208,8 @@ int VmeshDecoder::vertexStride(uint32_t fvf)
 
 DecodedMesh VmeshDecoder::decode(const QByteArray &data, int offset)
 {
-    DecodedMesh result;
-
     if (data.size() - offset < 16)
-        return result;
+        return {};
 
     QDataStream ds(data);
     ds.setByteOrder(QDataStream::LittleEndian);
@@ -111,26 +230,20 @@ DecodedMesh VmeshDecoder::decode(const QByteArray &data, int offset)
     ds >> meshType >> surfaceType;
     ds >> numMeshGroups >> numRefVertices >> fvfRaw >> numVertices;
 
-    result.fvf = fvfRaw;
-    result.numVertices = numVertices;
-    result.numIndices = numRefVertices;
+    const DecodedMesh indicesThenVertices = decodeIndicesThenVertices(
+        data, offset, numMeshGroups, numRefVertices, fvfRaw, numVertices);
+    const DecodedMesh verticesThenIndices = decodeVerticesThenIndices(
+        data, offset, numMeshGroups, numRefVertices, fvfRaw, numVertices);
 
-    // Skip mesh group headers (each 16 bytes: materialId, startVertex, endVertex,
-    // numRefVertices, padding[2])
-    ds.skipRawData(numMeshGroups * 16);
+    const float legacyScore = decodedMeshScore(indicesThenVertices);
+    const float v1Score = decodedMeshScore(verticesThenIndices);
 
-    // Read indices (uint16)
-    result.indices.resize(numRefVertices);
-    for (int i = 0; i < numRefVertices; ++i) {
-        uint16_t idx;
-        ds >> idx;
-        result.indices[i] = idx;
+    if (legacyScore == std::numeric_limits<float>::infinity()
+        && v1Score == std::numeric_limits<float>::infinity()) {
+        return {};
     }
 
-    if (!decodeVertices(ds, fvfRaw, numVertices, result))
-        return {};
-
-    return result;
+    return v1Score < legacyScore ? verticesThenIndices : indicesThenVertices;
 }
 
 DecodedMesh VmeshDecoder::decodeStructuredSingleBlock(const QByteArray &data, int offset)

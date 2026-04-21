@@ -234,7 +234,8 @@ private:
     static void parseUtfNode(const QByteArray &data, int nodeOffset,
                               const QByteArray &stringBlock, int dataBlockOffset,
                               std::shared_ptr<UtfNode> &parent);
-    static ModelNode extractPart(const QString &partPath,
+    static ModelNode extractPart(const NativeModelPart &part,
+                                 const QString &partPath,
                                  const QByteArray &raw,
                                  const QVector<UtfNodeRecord> &nodes,
                                  const QVector<VMeshDataBlock> &vmeshBlocks,
