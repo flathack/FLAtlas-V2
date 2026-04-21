@@ -66,6 +66,15 @@ Diese Referenzmodelle dienen als feste Vergleichsbasis für die V1-Paritätsarbe
   - Regression für part-aware Preview-Bindings auf Base-/Interior-CMPs
   - sichert, dass Partkontext über Part-`fileName`/`sourceName`/`objectName` nicht verloren geht, auch wenn der Ref-Pfad allein nicht reicht
 
+### 7. Komplexerer Ship-No-Texture-Fall
+- Iteration-7-Referenz: `DATA/SHIPS/ORDER/OR_ELITE/or_elite.cmp`
+- Archetype: `or_elite`
+- Typ: `.cmp`
+- Zweck:
+  - zusätzlicher Schiffs-Guard mit deutlich mehr Refs als `cv_starflier.cmp`
+  - Regression für direkte `VMeshRef -> VMeshData`-Auflösung über mehrere LOD-Stufen in einem komplexeren Ship-CMP
+  - Regression für part-aware Preview-Bindings auch dann, wenn keine expliziten Material-/Texture-Referenzen vorhanden sind
+
 ## Vergleichskriterien
 
 ### Decoder

@@ -139,6 +139,23 @@ Ergebnis:
 Zugehörige Dateien:
 - `tests/test_BarbicanStationDeckPreviewBinding.cpp`
 
+### Iteration 7
+Referenz:
+- `DATA/SHIPS/ORDER/OR_ELITE/or_elite.cmp`
+
+Status:
+- umgesetzt / zusätzlicher Schiffs-Guard für direkte Refs und part-aware `no-texture-reference`-Bindings ergänzt
+
+Ergebnis:
+- `or_elite.cmp` ergänzt den bisherigen Satz um einen zweiten Ship-Fall, der strukturell deutlich dichter ist als `cv_starflier.cmp`, aber weiterhin ohne explizite Material-/Texture-Referenzen dekodiert
+- der neue Regressionstest sichert jetzt 9 Parts, 25 Refs, 3 `VMeshData`-Blöcke, 25 direkte Decode-Pfade und 25 Preview-Bindings ohne Warnings ab
+- alle Preview-Bindings bleiben dabei part-aware und tragen stabil `no-texture-reference`, obwohl `materialReferences` leer bleibt
+- zusätzlich ist die aktuelle Top-Level-Struktur samt materialtragender Glas-Submeshes fest als Snapshot abgesichert; damit werden ungewollte Struktur- oder Binding-Regressionsfehler im Ship-Pfad früher sichtbar
+- `OR_ELITE` ist damit kein nächster Texture-Paritätsfall, aber ein belastbarer Guard für den bereits erreichten direkten Decode- und Partkontext-Stand auf komplexeren Schiffen
+
+Zugehörige Dateien:
+- `tests/test_OrderEliteModel.cpp`
+
 ## Aktive Referenzmodelle
 Siehe auch:
 - `docs/3d-viewer-reference-models.md`
@@ -147,6 +164,7 @@ Aktuell aktiv:
 - `DATA/BASES/BRETONIA/br_barbican_station_deck.cmp`
 - `DATA/BASES/GENERIC/ocean_blue.cmp`
 - `DATA/SOLAR/DOCKABLE/TLR_lod.3db`
+- `DATA/SHIPS/ORDER/OR_ELITE/or_elite.cmp`
 - `DATA/SHIPS/CIVILIAN/CV_STARFLIER/cv_starflier.cmp`
 - `DATA/SOLAR/MISC/space_dome.cmp`
 - `DATA/SOLAR/DOCKABLE/docking_ringx2_lod.cmp`
@@ -215,6 +233,7 @@ Neu abgesichert:
 - auch Modelle ohne explizite Texture-Referenzen behalten jetzt `PreviewMaterialBinding`-Metadaten pro Ref; dadurch bleibt der Binding-Pfad im Debug-/Testzustand sichtbar statt vollständig leer wegzufallen
 - `ocean_blue.cmp` sichert jetzt den ersten Fall mit expliziten Texture-Referenzen; doppelte Candidate-Einträge aus Material-/Texture-Library werden dabei vor der Weitergabe an Resolver und Tests dedupliziert
 - `br_barbican_station_deck.cmp` sichert jetzt einen zweiten expliziten Texture-Fall, in dem Preview-Bindings ihren CMP-Partkontext und erweiterten `sourceNames`-Kontext trotz nicht hilfreicher Ref-Pfade behalten
+- `or_elite.cmp` sichert jetzt zusätzlich einen komplexeren Schiffsfall mit 25 direkten Refs, 25 part-aware Preview-Bindings und stabilen `no-texture-reference`-Snapshots ab
 
 ## Relevante Dateien für die Fortsetzung
 
@@ -253,7 +272,7 @@ Neu abgesichert:
 - auf Basis des jetzt sauberen `TLR_lod.3db`-Pfads den nächsten komplexeren `.cmp`- oder Dockable-Fall auswählen
 - nach dem neuen `no-texture-reference`-Guard gezielt ein Modell mit realen Texture-/Material-Referenzen auswählen; der nächste sinnvolle Restfall ist jetzt nicht mehr ein weiterer ref-seitig sauberer Stationsfall, sondern ein CMP mit tatsächlich belegtem Preview-Binding
 - nach `ocean_blue.cmp` jetzt einen zweiten expliziten Texture-Fall mit echter Token-Zuordnung statt `first-texture-fallback` auswählen, damit die nächste Iteration nicht nur Candidate-Stabilität, sondern die eigentliche Match-Qualität gegen V1 schließt
-- nach `br_barbican_station_deck.cmp` jetzt gezielt einen expliziten Texture-Fall wählen, in dem der nun stabile Partkontext tatsächlich zu `token-match` führen kann; der verbleibende Gap ist weniger Part-Zuordnung als Texture-Auswahlqualität
+- nach `br_barbican_station_deck.cmp` und dem neuen `OR_ELITE`-Ship-Guard jetzt gezielt einen expliziten Texture-Fall wählen, in dem der nun stabile Partkontext tatsächlich zu `token-match` führen kann; der verbleibende Gap ist weniger Part-Zuordnung als Texture-Auswahlqualität
 
 ### Mittelfristig
 - Family-/Header-/Stream-Fälle weiter an V1 schließen
