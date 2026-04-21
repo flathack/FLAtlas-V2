@@ -1,6 +1,8 @@
 // editors/universe/UniverseEditorPage.cpp – Universe-Editor (Phase 9)
 
 #include "UniverseEditorPage.h"
+#include "NewSystemDialog.h"
+#include "NewSystemService.h"
 #include "UniverseSerializer.h"
 #include "core/EditingContext.h"
 #include "core/PathUtils.h"
@@ -23,10 +25,12 @@
 #include <QInputDialog>
 #include <QWheelEvent>
 #include <QMouseEvent>
+#include <QContextMenuEvent>
 #include <QAction>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QMenu>
 #include "tools/PathFinderDialog.h"
 #include <cmath>
 #include <algorithm>
@@ -63,6 +67,8 @@ public:
 
     std::function<void(const QString &)> onNodeDoubleClicked;
     std::function<void()> onViewportReady;
+    std::function<void(const QPoint &)> onContextMenuRequested;
+    std::function<bool(const QPointF &)> onBackgroundClicked;
     void setBackgroundPixmap(const QPixmap &pixmap, const QColor &fallbackColor = QColor(15, 18, 24))
     {
         m_backgroundPixmap = pixmap;
@@ -105,6 +111,32 @@ protected:
             }
         }
         QGraphicsView::mouseDoubleClickEvent(event);
+    }
+
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton && onBackgroundClicked) {
+            auto *item = itemAt(event->pos());
+            while (item && item->data(0).toString().isEmpty())
+                item = item->parentItem();
+            if (!item) {
+                if (onBackgroundClicked(mapToScene(event->pos()))) {
+                    event->accept();
+                    return;
+                }
+            }
+        }
+        QGraphicsView::mousePressEvent(event);
+    }
+
+    void contextMenuEvent(QContextMenuEvent *event) override
+    {
+        if (onContextMenuRequested) {
+            onContextMenuRequested(event->globalPos());
+            event->accept();
+            return;
+        }
+        QGraphicsView::contextMenuEvent(event);
     }
 
     void drawBackground(QPainter *painter, const QRectF &rect) override
@@ -278,6 +310,14 @@ void UniverseEditorPage::setupUi()
     mapView->onNodeDoubleClicked = [this](const QString &nickname) {
         onMapItemDoubleClicked(nickname);
     };
+    mapView->onContextMenuRequested = [this](const QPoint &globalPos) {
+        onMapContextMenuRequested(globalPos);
+    };
+    mapView->onBackgroundClicked = [this](const QPointF &scenePos) {
+        const bool handled = m_pendingSystemPlacement;
+        onMapPlacementRequested(scenePos);
+        return handled;
+    };
     mapView->onViewportReady = [this]() {
         if (m_pendingInitialFitPasses > 0)
             QMetaObject::invokeMethod(this, &UniverseEditorPage::fitMapInView, Qt::QueuedConnection);
@@ -292,7 +332,7 @@ void UniverseEditorPage::setupUi()
     m_mapToolBar = new QToolBar(mapPanel);
     m_mapToolBar->setIconSize(QSize(16, 16));
     m_mapToolBar->setMovable(false);
-    m_mapToolBar->addAction(tr("Add System"), this, &UniverseEditorPage::onAddSystem);
+    m_addSystemAction = m_mapToolBar->addAction(tr("Add System"), this, &UniverseEditorPage::onAddSystem);
     m_mapToolBar->addAction(tr("Delete System"), this, &UniverseEditorPage::onDeleteSystem);
     m_mapToolBar->addSeparator();
     m_mapToolBar->addAction(tr("Fit View"), this, &UniverseEditorPage::fitMapInView);
@@ -327,6 +367,7 @@ bool UniverseEditorPage::loadFile(const QString &filePath)
     m_dirty = false;
     m_highlightedPath.clear();
     m_activeSector = QStringLiteral("universe");
+    cancelPendingSystemPlacement();
     reloadIdsStrings();
 
     rebuildSectorTabs();
@@ -598,31 +639,78 @@ void UniverseEditorPage::onMapItemDoubleClicked(const QString &nickname)
 
 void UniverseEditorPage::onAddSystem()
 {
-    if (!m_data) return;
+    if (!m_data || m_filePath.trimmed().isEmpty())
+        return;
 
-    bool ok;
-    QString nickname = QInputDialog::getText(this, tr("New System"),
-                                              tr("System nickname:"),
-                                              QLineEdit::Normal, QString(), &ok);
-    if (!ok || nickname.trimmed().isEmpty()) return;
-    nickname = nickname.trimmed();
-
-    // Check duplicate
-    if (m_data->findSystem(nickname)) {
-        QMessageBox::warning(this, tr("Duplicate"),
-                             tr("A system with nickname '%1' already exists.").arg(nickname));
+    if (m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) != 0) {
+        QMessageBox::information(this, tr("Neues System"),
+                                 tr("Neue Systeme können nur im Sirius-Sektor platziert werden."));
         return;
     }
 
-    SystemInfo info;
-    info.nickname = nickname;
-    info.displayName = nickname;
-    info.position = QVector3D(0, 0, 0);
+    const NewSystemDialogOptions options = NewSystemService::scanOptions(m_filePath, m_data.get());
+    NewSystemDialog dialog(options, this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
 
-    m_data->addSystem(info);
+    const NewSystemRequest request = dialog.request();
+    if (request.systemName.trimmed().isEmpty()) {
+        QMessageBox::warning(this, tr("Neues System"),
+                             tr("Bitte einen Systemnamen angeben."));
+        return;
+    }
+    if (request.systemPrefix.trimmed().isEmpty()) {
+        QMessageBox::warning(this, tr("Neues System"),
+                             tr("Bitte einen System Prefix angeben."));
+        return;
+    }
+
+    if (!beginPendingSystemPlacement(request))
+        return;
+
+    QMessageBox::information(this, tr("System platzieren"),
+                             tr("Klicke jetzt auf die Universe Map, um das neue System zu platzieren."));
+}
+
+void UniverseEditorPage::onMapContextMenuRequested(const QPoint &globalPos)
+{
+    QMenu menu(this);
+    if (m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0)
+        menu.addAction(tr("Neues System"), this, &UniverseEditorPage::onAddSystem);
+    if (!menu.isEmpty())
+        menu.exec(globalPos);
+}
+
+void UniverseEditorPage::onMapPlacementRequested(const QPointF &scenePos)
+{
+    if (!m_pendingSystemPlacement || !m_pendingSystemRequest || !m_data || m_mapScale <= 0.0)
+        return;
+
+    const QPointF universePos(scenePos.x() / m_mapScale, scenePos.y() / m_mapScale);
+    CreatedSystemResult result;
+    QString errorMessage;
+    if (!NewSystemService::createSystem(m_filePath,
+                                        *m_data,
+                                        *m_pendingSystemRequest,
+                                        universePos,
+                                        &result,
+                                        &errorMessage)) {
+        QMessageBox::warning(this, tr("Neues System"), errorMessage);
+        cancelPendingSystemPlacement();
+        return;
+    }
+
+    m_data->addSystem(result.systemInfo);
+    reloadIdsStrings();
     refreshSystemList();
     refreshMap();
-    setDirty(true);
+    setDirty(false);
+    cancelPendingSystemPlacement();
+
+    onNodeSelected(result.systemInfo.nickname);
+    emit openSystemRequested(result.systemInfo.nickname,
+                             result.absoluteSystemFilePath,
+                             result.ingameName);
 }
 
 void UniverseEditorPage::onDeleteSystem()
@@ -877,6 +965,12 @@ void UniverseEditorPage::applySector(const QString &sectorKey)
 {
     m_activeSector = sectorKey.trimmed().isEmpty() ? QStringLiteral("universe") : sectorKey.trimmed();
 
+    if (m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) != 0 && m_pendingSystemPlacement)
+        cancelPendingSystemPlacement();
+
+    if (m_addSystemAction)
+        m_addSystemAction->setEnabled(m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0);
+
     if (m_moveAction) {
         const bool editable = m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0;
         m_moveAction->setEnabled(editable);
@@ -1079,6 +1173,23 @@ QString UniverseEditorPage::listLabelForSystem(const SystemInfo &sys) const
     if (resolved.compare(sys.nickname, Qt::CaseInsensitive) == 0)
         return sys.nickname;
     return QStringLiteral("%1 - %2").arg(sys.nickname, resolved);
+}
+
+bool UniverseEditorPage::beginPendingSystemPlacement(const NewSystemRequest &request)
+{
+    m_pendingSystemPlacement = true;
+    m_pendingSystemRequest = std::make_unique<NewSystemRequest>(request);
+    if (m_mapView)
+        m_mapView->viewport()->setCursor(Qt::CrossCursor);
+    return true;
+}
+
+void UniverseEditorPage::cancelPendingSystemPlacement()
+{
+    m_pendingSystemPlacement = false;
+    m_pendingSystemRequest.reset();
+    if (m_mapView)
+        m_mapView->viewport()->unsetCursor();
 }
 
 void UniverseEditorPage::onNodeMoved(const QString &nickname)

@@ -6,6 +6,7 @@
 
 namespace flatlas::domain { class UniverseData; struct SystemInfo; }
 namespace flatlas::infrastructure { class IdsStringTable; }
+namespace flatlas::editors { struct NewSystemRequest; }
 class QGraphicsScene;
 class QGraphicsView;
 class QGraphicsItem;
@@ -16,6 +17,8 @@ class QTreeWidget;
 class QTreeWidgetItem;
 class QAction;
 class QTabBar;
+class QPoint;
+class QPointF;
 
 namespace flatlas::editors {
 
@@ -52,6 +55,8 @@ private:
     void onSystemDoubleClicked(QTreeWidgetItem *item, int column);
     void onMapItemDoubleClicked(const QString &nickname);
     void onAddSystem();
+    void onMapContextMenuRequested(const QPoint &globalPos);
+    void onMapPlacementRequested(const QPointF &scenePos);
     void onDeleteSystem();
     void onNodeSelected(const QString &nickname);
     void onNodeMoved(const QString &nickname);
@@ -79,6 +84,8 @@ private:
     QString resolvedSystemName(const flatlas::domain::SystemInfo &sys) const;
     QString mapLabelForSystem(const flatlas::domain::SystemInfo &sys) const;
     QString listLabelForSystem(const flatlas::domain::SystemInfo &sys) const;
+    bool beginPendingSystemPlacement(const flatlas::editors::NewSystemRequest &request);
+    void cancelPendingSystemPlacement();
     void refreshTitle();
     void setDirty(bool dirty);
 
@@ -92,6 +99,7 @@ private:
     QSplitter *m_splitter = nullptr;
     QToolBar *m_toolBar = nullptr;
     QToolBar *m_mapToolBar = nullptr;
+    QAction *m_addSystemAction = nullptr;
     QAction *m_moveAction = nullptr;
     QTabBar *m_sectorTabs = nullptr;
     QTreeWidget *m_systemTree = nullptr;
@@ -103,6 +111,8 @@ private:
     QStringList m_highlightedPath;
     QString m_activeSector = QStringLiteral("universe");
     std::unique_ptr<flatlas::infrastructure::IdsStringTable> m_idsStrings;
+    bool m_pendingSystemPlacement = false;
+    std::unique_ptr<flatlas::editors::NewSystemRequest> m_pendingSystemRequest;
 };
 
 } // namespace flatlas::editors

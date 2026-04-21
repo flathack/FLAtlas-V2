@@ -14,6 +14,7 @@ add_library(flatlas_infrastructure STATIC
     freelancer/FreelancerPaths.h freelancer/FreelancerPaths.cpp
     freelancer/UniverseScanner.h freelancer/UniverseScanner.cpp
     freelancer/IdsStringTable.h freelancer/IdsStringTable.cpp
+    freelancer/ResourceDllWriter.h freelancer/ResourceDllWriter.cpp
     updater/AutoUpdater.h updater/AutoUpdater.cpp
     net/DownloadManager.h net/DownloadManager.cpp
 )
