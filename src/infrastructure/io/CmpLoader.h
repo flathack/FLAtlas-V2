@@ -131,6 +131,7 @@ struct VMeshRefRecord {
     int indexCount = 0;
     int groupStart = 0;
     int groupCount = 0;
+    QString partName;
     QString parentName;
     QString nodePath;
     QString modelName;

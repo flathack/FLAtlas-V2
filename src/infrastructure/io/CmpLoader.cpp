@@ -51,6 +51,9 @@ struct StructuredMeshHeader {
 QVector<StructuredMeshHeader> parseStructuredMeshHeaders(const QByteArray &vmeshData);
 
 bool sanitizeMesh(MeshData &mesh);
+QString matchedPartNameForRef(const VMeshRefRecord &ref,
+                              const QVector<NativeModelPart> &parts,
+                              const QVector<FlatUtfNode> &nodes);
 QVector<CmpTransformHint> buildCmpTransformHints(const QVector<CmpFixRecord> &records,
                                                  const QVector<NativeModelPart> &parts,
                                                  const QVector<FlatUtfNode> &nodes,
@@ -1881,6 +1884,8 @@ QVector<VMeshRefRecord> parseVMeshRefs(const QVector<FlatUtfNode> &nodes,
             }
         }
 
+        ref.partName = matchedPartNameForRef(ref, parts, nodes);
+
         const auto resolved = resolveVMeshDataBlockForRefWithSources(ref, blocks, parts);
         if (resolved.has_value()) {
             ref.matchedSourceName = resolved->second.sourceName;
@@ -1984,17 +1989,14 @@ bool refBelongsToPart(const VMeshRefRecord &ref,
                       const NativeModelPart &part,
                       const QString &partPath)
 {
+    if (!ref.partName.trimmed().isEmpty())
+        return ref.partName.compare(part.name, Qt::CaseInsensitive) == 0;
+
     const QString prefix = partPath + QLatin1Char('/');
     if (!partPath.isEmpty() && ref.nodePath.startsWith(prefix, Qt::CaseInsensitive))
         return true;
-    if (!part.sourceName.trimmed().isEmpty()
-        && ref.matchedSourceName.compare(part.sourceName, Qt::CaseInsensitive) == 0) {
-        return true;
-    }
     if (!part.objectName.trimmed().isEmpty()) {
         if (ref.parentName.compare(part.objectName, Qt::CaseInsensitive) == 0)
-            return true;
-        if (ref.nodePath.contains(part.objectName, Qt::CaseInsensitive))
             return true;
     }
     return false;
@@ -2191,14 +2193,51 @@ QVector<CmpTransformHint> buildCmpTransformHints(const QVector<CmpFixRecord> &re
     for (auto it = prisLocals.parents.cbegin(); it != prisLocals.parents.cend(); ++it)
         parentByPart.insert(it.key(), it.value());
 
+    QHash<QString, QString> partNameByAlias;
+    for (const auto &part : parts) {
+        const QString partKey = part.name.trimmed().toLower();
+        if (partKey.isEmpty())
+            continue;
+        partNameByAlias.insert(partKey, partKey);
+        const QString objectKey = part.objectName.trimmed().toLower();
+        if (!objectKey.isEmpty())
+            partNameByAlias.insert(objectKey, partKey);
+    }
+
+    const auto normalizePartKey = [&](const QString &value) {
+        const QString lowered = value.trimmed().toLower();
+        return partNameByAlias.value(lowered, lowered);
+    };
+
+    QHash<QString, QString> normalizedParentByPart;
+    for (auto it = parentByPart.cbegin(); it != parentByPart.cend(); ++it) {
+        const QString key = normalizePartKey(it.key());
+        const QString value = it.value().trimmed().isEmpty() ? QString() : normalizePartKey(it.value());
+        normalizedParentByPart.insert(key, value);
+    }
+    parentByPart = normalizedParentByPart;
+
+    QHash<QString, QVector3D> normalizedLocalTranslations;
+    for (auto it = localTranslations.cbegin(); it != localTranslations.cend(); ++it)
+        normalizedLocalTranslations.insert(normalizePartKey(it.key()), it.value());
+    localTranslations = normalizedLocalTranslations;
+
+    QHash<QString, QQuaternion> normalizedLocalRotations;
+    for (auto it = localRotations.cbegin(); it != localRotations.cend(); ++it)
+        normalizedLocalRotations.insert(normalizePartKey(it.key()), it.value());
+    localRotations = normalizedLocalRotations;
+
     QSet<QString> partNames;
     for (const auto &part : parts)
         partNames.insert(part.name.toLower());
-    for (const auto &record : records)
-        partNames.insert(record.childName.toLower());
-    for (auto it = revLocals.translations.cbegin(); it != revLocals.translations.cend(); ++it)
+    for (auto it = parentByPart.cbegin(); it != parentByPart.cend(); ++it) {
         partNames.insert(it.key());
-    for (auto it = prisLocals.translations.cbegin(); it != prisLocals.translations.cend(); ++it)
+        if (!it.value().trimmed().isEmpty())
+            partNames.insert(it.value());
+    }
+    for (auto it = localTranslations.cbegin(); it != localTranslations.cend(); ++it)
+        partNames.insert(it.key());
+    for (auto it = localRotations.cbegin(); it != localRotations.cend(); ++it)
         partNames.insert(it.key());
 
     QHash<QString, QVector3D> combinedTranslations;
@@ -2243,6 +2282,14 @@ QString firstPathForName(const QVector<UtfNodeRecord> &nodes, const QString &nam
     return it == nodes.cend() ? QString() : it->path;
 }
 
+QString firstPathForName(const QVector<FlatUtfNode> &nodes, const QString &name)
+{
+    const auto it = std::find_if(nodes.cbegin(), nodes.cend(), [&](const FlatUtfNode &record) {
+        return record.name.compare(name, Qt::CaseInsensitive) == 0;
+    });
+    return it == nodes.cend() ? QString() : it->path;
+}
+
 bool sameModelIdentity(const QString &left, const QString &right)
 {
     if (left.trimmed().isEmpty() || right.trimmed().isEmpty())
@@ -2264,6 +2311,28 @@ bool sameModelIdentity(const QString &left, const QString &right)
 QString matchedPartNameForRef(const VMeshRefRecord &ref,
                               const QVector<NativeModelPart> &parts,
                               const QVector<UtfNodeRecord> &nodes)
+{
+    for (const auto &part : parts) {
+        const QString path = firstPathForName(nodes, part.name);
+        if (!path.isEmpty() && ref.nodePath.startsWith(path + QLatin1Char('/'), Qt::CaseInsensitive))
+            return part.name;
+    }
+
+    const auto fallbackIt = std::find_if(parts.cbegin(), parts.cend(), [&](const NativeModelPart &part) {
+        return sameModelIdentity(part.fileName, ref.modelName)
+               || sameModelIdentity(part.sourceName, ref.modelName)
+               || sameModelIdentity(part.objectName, ref.modelName)
+               || sameModelIdentity(part.name, ref.modelName);
+    });
+    if (fallbackIt != parts.cend())
+        return fallbackIt->name;
+
+    return {};
+}
+
+QString matchedPartNameForRef(const VMeshRefRecord &ref,
+                              const QVector<NativeModelPart> &parts,
+                              const QVector<FlatUtfNode> &nodes)
 {
     for (const auto &part : parts) {
         const QString path = firstPathForName(nodes, part.name);
@@ -2984,6 +3053,8 @@ QVector<MeshData> CmpLoader::buildMeshesFromVMesh(const QByteArray &vmeshData,
             candidate.materialName = QStringLiteral("material_%1").arg(materialId);
     };
 
+    const auto structuredHeaders = parseStructuredMeshHeaders(vmeshData);
+
     const auto sliceDecodedRange = [&](const DecodedMesh &decoded,
                                        int startVertex,
                                        int numVertices,
@@ -3027,26 +3098,6 @@ QVector<MeshData> CmpLoader::buildMeshesFromVMesh(const QByteArray &vmeshData,
     };
 
     const auto appendFromDecoded = [&](const DecodedMesh &decoded) -> bool {
-        const auto headers = parseStructuredMeshHeaders(vmeshData);
-        if (!headers.isEmpty()
-            && ref.groupStart >= 0
-            && ref.groupCount > 0
-            && ref.groupStart + ref.groupCount <= headers.size()) {
-            for (int i = ref.groupStart; i < ref.groupStart + ref.groupCount; ++i) {
-                const auto &header = headers.at(i);
-                MeshData mesh = sliceDecodedRange(decoded,
-                                                  header.startVertex,
-                                                  (header.endVertex - header.startVertex) + 1,
-                                                  header.startIndex,
-                                                  header.numRefIndices,
-                                                  header.materialId);
-                if (!mesh.vertices.isEmpty())
-                    meshes.append(mesh);
-            }
-            if (!meshes.isEmpty())
-                return true;
-        }
-
         MeshData mesh = sliceDecodedRange(decoded,
                                           ref.vertexStart,
                                           ref.vertexCount,
@@ -3074,6 +3125,23 @@ QVector<MeshData> CmpLoader::buildMeshesFromVMesh(const QByteArray &vmeshData,
                     bestMesh = std::move(candidate);
                 }
             }
+
+            if (!structuredHeaders.isEmpty()) {
+                const auto exactStructuredMesh = decodeStructuredSingleBlockMeshFromHeaders(
+                    vmeshData,
+                    ref,
+                    structuredHeaders.size());
+                if (exactStructuredMesh.has_value()) {
+                    MeshData mesh = *exactStructuredMesh;
+                    applyBinding(mesh, -1);
+                    const QString planHint = directPlanHint + QStringLiteral("/structured-mesh-headers");
+                    applyPlanHint(mesh, planHint);
+                    if (resolvedPlanHint)
+                        *resolvedPlanHint = planHint;
+                    meshes.append(mesh);
+                    return meshes;
+                }
+            }
         }
 
         if (bestMesh.has_value()) {
@@ -3094,23 +3162,6 @@ QVector<MeshData> CmpLoader::buildMeshesFromVMesh(const QByteArray &vmeshData,
         if (resolvedPlanHint)
             *resolvedPlanHint = planHint;
         return meshes;
-    }
-
-    if (ref.matchedSourceName.contains(QStringLiteral("station_small_b_lod"), Qt::CaseInsensitive)) {
-        const auto exactStructuredMesh = decodeStructuredSingleBlockMeshFromHeaders(
-            vmeshData,
-            ref,
-            parseStructuredMeshHeaders(vmeshData).size());
-        if (exactStructuredMesh.has_value()) {
-            MeshData mesh = *exactStructuredMesh;
-            applyBinding(mesh, -1);
-            const QString planHint = directPlanHint + QStringLiteral("/structured-mesh-headers");
-            applyPlanHint(mesh, planHint);
-            if (resolvedPlanHint)
-                *resolvedPlanHint = planHint;
-            meshes.append(mesh);
-            return meshes;
-        }
     }
 
     const auto offsets = VmeshDecoder::findStructuredSingleBlockOffsets(vmeshData);
@@ -3335,11 +3386,16 @@ DecodedModel CmpLoader::loadModel(const QString &filePath)
             }
         }
 
+        QStringList orderedPartKeys;
+        orderedPartKeys.reserve(result.parts.size());
+        for (const auto &part : std::as_const(result.parts))
+            orderedPartKeys.append(part.name.toLower());
+
         QSet<QString> attached;
         std::function<ModelNode(QString)> buildHierarchy = [&](QString partKey) -> ModelNode {
             attached.insert(partKey);
             ModelNode node = partNodesByName.take(partKey);
-            for (const QString &candidateKey : parentByPart.keys()) {
+            for (const QString &candidateKey : std::as_const(orderedPartKeys)) {
                 if (attached.contains(candidateKey))
                     continue;
                 if (parentByPart.value(candidateKey).compare(node.name, Qt::CaseInsensitive) == 0 &&
@@ -3350,10 +3406,6 @@ DecodedModel CmpLoader::loadModel(const QString &filePath)
             return node;
         };
 
-        QStringList orderedPartKeys;
-        orderedPartKeys.reserve(result.parts.size());
-        for (const auto &part : std::as_const(result.parts))
-            orderedPartKeys.append(part.name.toLower());
         for (const QString &partKey : std::as_const(orderedPartKeys)) {
             if (!partNodesByName.contains(partKey) || attached.contains(partKey))
                 continue;

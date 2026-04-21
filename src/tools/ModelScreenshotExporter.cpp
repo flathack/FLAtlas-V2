@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -36,16 +37,54 @@ const flatlas::infrastructure::MeshData *selectHighestDetailMesh(const flatlas::
     return bestMesh;
 }
 
+QMatrix4x4 buildTransformMatrix(const QVector3D &translation, const QQuaternion &rotation)
+{
+    QMatrix4x4 transform;
+    transform.translate(translation);
+    transform.rotate(rotation);
+    return transform;
+}
+
+QHash<QString, flatlas::infrastructure::CmpTransformHint> buildTransformHintLookup(
+    const QVector<flatlas::infrastructure::CmpTransformHint> &hints)
+{
+    QHash<QString, flatlas::infrastructure::CmpTransformHint> lookup;
+    lookup.reserve(hints.size());
+    for (const auto &hint : hints)
+        lookup.insert(hint.partName.trimmed().toLower(), hint);
+    return lookup;
+}
+
+QMatrix4x4 resolveNodeTransform(
+    const flatlas::infrastructure::ModelNode &node,
+    const QMatrix4x4 &parentTransform,
+    const QHash<QString, flatlas::infrastructure::CmpTransformHint> &transformHints)
+{
+    const auto it = transformHints.constFind(node.name.trimmed().toLower());
+    if (it != transformHints.cend()) {
+        const auto &hint = it.value();
+        if (hint.hasCombinedTranslation || hint.hasCombinedRotation) {
+            return buildTransformMatrix(
+                hint.hasCombinedTranslation ? hint.combinedTranslation : QVector3D(),
+                hint.hasCombinedRotation ? hint.combinedRotation : QQuaternion(1.0f, 0.0f, 0.0f, 0.0f));
+        }
+    }
+
+    QMatrix4x4 nodeTransform = parentTransform;
+    nodeTransform.translate(node.origin);
+    nodeTransform.rotate(node.rotation);
+    return nodeTransform;
+}
+
 void appendNodeTriangles(const flatlas::infrastructure::ModelNode &node,
                          const QMatrix4x4 &parentTransform,
+                         const QHash<QString, flatlas::infrastructure::CmpTransformHint> &transformHints,
                          QVector<ScreenshotTriangle> *triangles)
 {
     if (!triangles)
         return;
 
-    QMatrix4x4 nodeTransform = parentTransform;
-    nodeTransform.translate(node.origin);
-    nodeTransform.rotate(node.rotation);
+    const QMatrix4x4 nodeTransform = resolveNodeTransform(node, parentTransform, transformHints);
 
     if (const auto *mesh = selectHighestDetailMesh(node)) {
         const auto &vertices = mesh->vertices;
@@ -69,7 +108,7 @@ void appendNodeTriangles(const flatlas::infrastructure::ModelNode &node,
     }
 
     for (const auto &child : node.children)
-        appendNodeTriangles(child, nodeTransform, triangles);
+        appendNodeTriangles(child, nodeTransform, transformHints, triangles);
 }
 
 } // namespace
@@ -79,7 +118,8 @@ QVector<ScreenshotTriangle> ModelScreenshotExporter::buildTriangles(
 {
     QVector<ScreenshotTriangle> triangles;
     QMatrix4x4 identity;
-    appendNodeTriangles(model.rootNode, identity, &triangles);
+    const auto transformHints = buildTransformHintLookup(model.cmpTransformHints);
+    appendNodeTriangles(model.rootNode, identity, transformHints, &triangles);
     return triangles;
 }
 

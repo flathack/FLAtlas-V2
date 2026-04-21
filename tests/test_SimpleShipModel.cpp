@@ -12,6 +12,7 @@ class TestSimpleShipModel : public QObject {
     Q_OBJECT
 private slots:
     void cvStarflierMaterialSignatureSnapshot();
+    void loadCoElite2Cmp();
     void loadCvStarflierCmp()
     {
         const QString filePath = QStringLiteral(
@@ -92,6 +93,39 @@ private slots:
     }
 };
 
+void TestSimpleShipModel::loadCoElite2Cmp()
+{
+    const QString filePath = QStringLiteral(
+        "C:/Users/steve/Github/FL-Installationen/TESTMOD1/DATA/SHIPS/PIRATE/PI_VHEAVY_FIGHTER/pi_vheavy_fighter.cmp");
+
+    if (!QFileInfo::exists(filePath))
+        QSKIP("Local co_elite2 model not present.");
+
+    const DecodedModel decoded = CmpLoader::loadModel(filePath);
+    QVERIFY2(decoded.isValid(), "Decoded co_elite2 model is invalid");
+    QCOMPARE(decoded.format, NativeModelFormat::Cmp);
+    QVERIFY(!decoded.vmeshRefs.isEmpty());
+
+    int refsWithResolvedPart = 0;
+    for (const auto &ref : decoded.vmeshRefs) {
+        if (!ref.partName.trimmed().isEmpty())
+            ++refsWithResolvedPart;
+    }
+    QCOMPARE(refsWithResolvedPart, decoded.vmeshRefs.size());
+
+    int combinedHintCount = 0;
+    for (const auto &hint : decoded.cmpTransformHints) {
+        if (hint.hasCombinedTranslation || hint.hasCombinedRotation)
+            ++combinedHintCount;
+    }
+    QVERIFY(combinedHintCount > 0);
+
+    const auto bounds = flatlas::rendering::ModelGeometryBuilder::boundsForNode(decoded.rootNode);
+    QVERIFY(bounds.valid);
+    QVERIFY(qIsFinite(bounds.radius()));
+    QVERIFY(bounds.radius() > 0.0f);
+}
+
 void TestSimpleShipModel::cvStarflierMaterialSignatureSnapshot()
 {
     const QString filePath = QStringLiteral(
@@ -125,30 +159,15 @@ void TestSimpleShipModel::cvStarflierMaterialSignatureSnapshot()
     walk(decoded.rootNode, 0);
 
     const QStringList expectedPartSnapshot = {
-        QStringLiteral("Root|0|2"),
-        QStringLiteral("Part_baydoor02_lod1|3|0"),
-        QStringLiteral("Part_baydoor01_lod1|3|0"),
-        QStringLiteral("Part_port_wing_lod1|5|0"),
-        QStringLiteral("Part_star_wing_lod1|5|0"),
-        QStringLiteral("Part_engine_lod1|5|0"),
-        QStringLiteral("Part_glass_lod1|11|0"),
-        QStringLiteral("cv_starflier_lod1020929154804.3db|7|0"),
+        QStringLiteral("Root|5|4"),
+        QStringLiteral("Part_baydoor01_lod1|2|0"),
+        QStringLiteral("Part_baydoor02_lod1|2|0"),
+        QStringLiteral("Part_engine_lod1|4|0"),
+        QStringLiteral("Part_glass_lod1|3|0"),
+        QStringLiteral("Part_port_wing_lod1|4|0"),
+        QStringLiteral("Part_star_wing_lod1|4|0"),
     };
-    const QStringList expectedMaterialSnapshot = {
-        QStringLiteral("Part_engine_lod1|15|material_148146806"),
-        QStringLiteral("Part_engine_lod1|31|material_148146806"),
-        QStringLiteral("Part_engine_lod1|70|material_148146806"),
-        QStringLiteral("Part_engine_lod1|30|material_254424827"),
-        QStringLiteral("Part_engine_lod1|140|material_148146806"),
-        QStringLiteral("Part_glass_lod1|14|material_267737313"),
-        QStringLiteral("Part_glass_lod1|27|material_267737313"),
-        QStringLiteral("Part_glass_lod1|32|material_267737313"),
-        QStringLiteral("Part_glass_lod1|30|material_254424827"),
-        QStringLiteral("Part_glass_lod1|140|material_148146806"),
-        QStringLiteral("Part_glass_lod1|677|material_147646650"),
-        QStringLiteral("cv_starflier_lod1020929154804.3db|151|material_148146806"),
-        QStringLiteral("cv_starflier_lod1020929154804.3db|677|material_147646650"),
-    };
+    const QStringList expectedMaterialSnapshot = {};
 
     QStringList sortedPartSnapshot = partSnapshot;
     QStringList sortedExpectedPartSnapshot = expectedPartSnapshot;

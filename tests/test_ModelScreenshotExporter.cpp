@@ -27,6 +27,7 @@ class TestModelScreenshotExporter : public QObject {
 private slots:
     void buildTrianglesUsesHighestDetailMeshPerNode();
     void buildTrianglesAppliesHierarchyTransform();
+    void buildTrianglesPrefersCombinedCmpTransformHints();
 };
 
 void TestModelScreenshotExporter::buildTrianglesUsesHighestDetailMeshPerNode()
@@ -83,6 +84,39 @@ void TestModelScreenshotExporter::buildTrianglesAppliesHierarchyTransform()
     QVERIFY(fuzzyCompare(triangles.first().a, QVector3D(5.0f, 4.0f, 0.0f)));
     QVERIFY(fuzzyCompare(triangles.first().b, QVector3D(5.0f, 5.0f, 0.0f)));
     QVERIFY(fuzzyCompare(triangles.first().c, QVector3D(4.0f, 4.0f, 0.0f)));
+}
+
+void TestModelScreenshotExporter::buildTrianglesPrefersCombinedCmpTransformHints()
+{
+    DecodedModel model;
+    model.rootNode.name = QStringLiteral("Root");
+
+    ModelNode child;
+    child.name = QStringLiteral("Part_Test");
+    child.origin = QVector3D(1.0f, 0.0f, 0.0f);
+    child.meshes.append(makeMesh({
+        QVector3D(0.0f, 0.0f, 0.0f),
+        QVector3D(1.0f, 0.0f, 0.0f),
+        QVector3D(0.0f, 1.0f, 0.0f),
+    }));
+    model.rootNode.children.append(child);
+
+    CmpTransformHint hint;
+    hint.partName = QStringLiteral("Part_Test");
+    hint.hasCombinedTranslation = true;
+    hint.combinedTranslation = QVector3D(10.0f, 0.0f, 0.0f);
+    model.cmpTransformHints.append(hint);
+
+    const auto triangles = ModelScreenshotExporter::buildTriangles(model);
+    QCOMPARE(triangles.size(), 1);
+    const auto fuzzyCompare = [](const QVector3D &actual, const QVector3D &expected) {
+        return qAbs(actual.x() - expected.x()) < 0.0001f
+            && qAbs(actual.y() - expected.y()) < 0.0001f
+            && qAbs(actual.z() - expected.z()) < 0.0001f;
+    };
+    QVERIFY(fuzzyCompare(triangles.first().a, QVector3D(10.0f, 0.0f, 0.0f)));
+    QVERIFY(fuzzyCompare(triangles.first().b, QVector3D(11.0f, 0.0f, 0.0f)));
+    QVERIFY(fuzzyCompare(triangles.first().c, QVector3D(10.0f, 1.0f, 0.0f)));
 }
 
 QTEST_MAIN(TestModelScreenshotExporter)
