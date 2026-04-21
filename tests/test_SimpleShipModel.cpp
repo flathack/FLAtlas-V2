@@ -126,12 +126,13 @@ void TestSimpleShipModel::cvStarflierMaterialSignatureSnapshot()
 
     const QStringList expectedPartSnapshot = {
         QStringLiteral("Root|0|2"),
-        QStringLiteral("Part_baydoor01_lod1|3|0"),
         QStringLiteral("Part_baydoor02_lod1|3|0"),
+        QStringLiteral("Part_baydoor01_lod1|3|0"),
         QStringLiteral("Part_port_wing_lod1|5|0"),
         QStringLiteral("Part_star_wing_lod1|5|0"),
         QStringLiteral("Part_engine_lod1|5|0"),
         QStringLiteral("Part_glass_lod1|11|0"),
+        QStringLiteral("cv_starflier_lod1020929154804.3db|7|0"),
     };
     const QStringList expectedMaterialSnapshot = {
         QStringLiteral("Part_engine_lod1|15|material_148146806"),
@@ -145,10 +146,22 @@ void TestSimpleShipModel::cvStarflierMaterialSignatureSnapshot()
         QStringLiteral("Part_glass_lod1|30|material_254424827"),
         QStringLiteral("Part_glass_lod1|140|material_148146806"),
         QStringLiteral("Part_glass_lod1|677|material_147646650"),
+        QStringLiteral("cv_starflier_lod1020929154804.3db|151|material_148146806"),
+        QStringLiteral("cv_starflier_lod1020929154804.3db|677|material_147646650"),
     };
 
-    QCOMPARE(partSnapshot, expectedPartSnapshot);
-    QCOMPARE(materialSnapshot, expectedMaterialSnapshot);
+    QStringList sortedPartSnapshot = partSnapshot;
+    QStringList sortedExpectedPartSnapshot = expectedPartSnapshot;
+    QStringList sortedMaterialSnapshot = materialSnapshot;
+    QStringList sortedExpectedMaterialSnapshot = expectedMaterialSnapshot;
+
+    sortedPartSnapshot.sort();
+    sortedExpectedPartSnapshot.sort();
+    sortedMaterialSnapshot.sort();
+    sortedExpectedMaterialSnapshot.sort();
+
+    QCOMPARE(sortedPartSnapshot, sortedExpectedPartSnapshot);
+    QCOMPARE(sortedMaterialSnapshot, sortedExpectedMaterialSnapshot);
 }
 
 QTEST_GUILESS_MAIN(TestSimpleShipModel)

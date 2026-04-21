@@ -34,6 +34,8 @@ Ergebnis:
 - Test vorhanden
 - Binding-/Material-Matching bekommt jetzt zusätzlich Part-`file_name`-/`source_name`-Tokens, näher an V1
 - `cv_starflier.cmp` hat jetzt einen festen Snapshot für Part-Hierarchie und materialisierte Mesh-Signaturen
+- ungebundene Top-Level-Refs werden jetzt zusätzlich als synthetische CMP-Knoten über denselben Decoderpfad extrahiert; dadurch hängt auch der `cv_starflier_lod...`-Hull nicht mehr ungenutzt am Root
+- der Ship-Signaturtest vergleicht diese Part-/Materialsignaturen jetzt bewusst reihenfolgeunabhängig, damit nur echte Decoder-Änderungen triggern
 
 Zugehörige Dateien:
 - `docs/3d-viewer-iteration-01.md`
@@ -63,7 +65,7 @@ Referenz:
 - `DATA/SOLAR/DOCKABLE/docking_ringx2_lod.cmp`
 
 Status:
-- in Arbeit, aber deutlich weiter stabilisiert
+- in Arbeit, aber erneut deutlich weiter stabilisiert
 
 Ergebnis:
 - härterer Dockable-/Solar-Fall etabliert
@@ -75,7 +77,8 @@ Ergebnis:
 - `docking_ringx2_lod.cmp` dekodiert wieder mit Mesh-Ausgabe statt unresolved refs
 - Repro-/Snapshot-Test für die konkrete Ref-Auflösung ergänzt
 - direkte Decode-Pfade (`structured-header` / `structured-single-block`) werden jetzt ebenfalls als `debugHint` sichtbar
-- aktueller Dockable-Snapshot zeigt: 12 Part-gebundene Refs dekodieren direkt über `structured-single-block@0`, 2 Root-Refs bleiben ohne aktiven Mesh-Decodepfad
+- ungebundene Top-Level-Refs werden jetzt als synthetische CMP-Knoten extrahiert statt ungenutzt liegenzubleiben
+- aktueller Dockable-Snapshot zeigt damit: alle 14 Refs von `docking_ringx2_lod.cmp` dekodieren jetzt direkt über `structured-single-block@0`
 
 Zugehörige Dateien:
 - `docs/3d-viewer-iteration-03.md`
@@ -181,11 +184,10 @@ Neu abgesichert:
 ## Was noch offen ist
 
 ### Kurzfristig
-- aktiven Ref-Plan noch gezielter gegen V1 vergleichen
-- prüfen, ob `docking_ringx2_lod.cmp` jetzt vollständig über direkten Header-Decode läuft oder ob ein echter Family-Fallback-Fall als nächster Referenzfall sinnvoller ist
-- nächste echte Abweichung an einem einzelnen Dockable-/Solar-Ref isolieren
+- aktiven Ref-Plan des nächsten komplexeren `.cmp`-Falls gezielter gegen V1 vergleichen
+- nach `docking_ringx2_lod.cmp` jetzt den nächsten echten Family-/Station-/Dockable-Fall auswählen, der noch nicht vollständig auf direkten Decode-Pfaden läuft
+- nächste echte Abweichung wieder an genau einem Ref isolieren
 - auf Basis des jetzt sauberen `TLR_lod.3db`-Pfads den nächsten komplexeren `.cmp`- oder Dockable-Fall auswählen
-- nächsten echten Family-/Dockable-Fall suchen, der noch nicht vollständig auf direkten Decode-Pfaden läuft
 
 ### Mittelfristig
 - Family-/Header-/Stream-Fälle weiter an V1 schließen
@@ -198,16 +200,16 @@ Neu abgesichert:
 - Viewer-Feinschliff jenseits von Debug-/Kamerathemen
 
 ## Empfohlener nächster Arbeitsschritt
-Der sinnvollste nächste Schritt ist:
+Der sinnvollste nächste Schritt ist jetzt:
 
-1. `docking_ringx2_lod.cmp` als aktiven Problemfall behalten
-2. pro `VMeshRef` den gewählten Plan mit V1 vergleichen
-3. den nächsten Fehlfall nicht global, sondern an genau einem Ref schließen
+1. `docking_ringx2_lod.cmp` als Guard behalten, aber nicht mehr als Hauptproblemfall
+2. den nächsten komplexeren Family-/Dockable-/Station-Fall auswählen, der noch nicht vollständig direkt dekodiert
+3. dort wieder genau einen Ref/Block gegen V1 schließen
 
 Praktisch:
-- vorhandenen Snapshot-Test für `docking_ringx2_lod.cmp` als Guard behalten
-- Snapshot enthält jetzt neben Quelle und Resolution-Hint auch den aktiven direkten Decode-Pfad
-- nächsten Problemfall wieder auf genau einen Ref/Block eingrenzen
+- vorhandene Snapshot-Tests für `cv_starflier.cmp` und `docking_ringx2_lod.cmp` als Guard behalten
+- die neue Top-Level-CMP-Extraktion als etablierten Pfad betrachten, nicht als Sonderfall
+- den nächsten Problemfall wieder auf genau einen Ref/Block eingrenzen
 - gegen V1 `cmp_loader.py` / `preview_family_decode_hints` / `structured_decode_plans` abgleichen
 
 ## Bekannte Build-/Tooling-Fallen
@@ -267,6 +269,11 @@ Zuletzt gemeinsam erfolgreich verifiziert:
 Aktueller Ship-Stand:
 - `cv_starflier.cmp` ist jetzt nicht mehr nur über Mesh-Existenz abgesichert, sondern über feste Part- und Material-Signaturen
 - die Binding-Schicht nutzt dafür V1-näher zusätzliche Part-Metadaten (`file_name` / `source_name`) als Match-Tokens
+- der bislang ungebundene Top-Level-Hull (`cv_starflier_lod...`) wird jetzt ebenfalls als synthetischer CMP-Knoten dekodiert und im Signaturtest mit abgesichert
+
+Aktueller Dockable-Stand:
+- `docking_ringx2_lod.cmp` hat keinen ungenutzten Root-Ref-Pfad mehr; auch die früheren `Dock_lod...`-Refs laufen jetzt direkt über den normalen Decoderpfad
+- der Dockable-Snapshot erwartet damit jetzt 14 direkte Refs statt 12
 
 Zusätzlich wurden in früheren Runden erfolgreich gebaut:
 - `test_FamilySolarModel`

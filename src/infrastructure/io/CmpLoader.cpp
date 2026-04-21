@@ -3120,6 +3120,44 @@ DecodedModel CmpLoader::loadModel(const QString &filePath)
                 continue;
             root.children.append(buildHierarchy(partKey));
         }
+
+        QSet<QString> existingRootChildren;
+        for (const auto &child : std::as_const(root.children))
+            existingRootChildren.insert(child.name.toLower());
+
+        QStringList orphanTopLevelNames;
+        for (const auto &ref : std::as_const(result.vmeshRefs)) {
+            if (!ref.debugHint.isEmpty() || ref.matchedSourceName.isEmpty())
+                continue;
+            const QString topLevelName = topLevelUtfPathSegment(ref.nodePath);
+            if (topLevelName.isEmpty())
+                continue;
+            const QString lowered = topLevelName.toLower();
+            if (existingRootChildren.contains(lowered))
+                continue;
+            orphanTopLevelNames.append(topLevelName);
+            existingRootChildren.insert(lowered);
+        }
+
+        for (const QString &topLevelName : std::as_const(orphanTopLevelNames)) {
+            const QString partPath = firstPathForName(result.utfNodes, topLevelName);
+            if (partPath.isEmpty())
+                continue;
+            NativeModelPart syntheticPart;
+            syntheticPart.name = topLevelName;
+            syntheticPart.objectName = topLevelName;
+            ModelNode syntheticNode = extractPart(syntheticPart,
+                                                  partPath,
+                                                  raw,
+                                                  result.utfNodes,
+                                                  result.vmeshDataBlocks,
+                                                  result.vmeshRefs,
+                                                  result.cmpTransformHints,
+                                                  result.previewMaterialBindings,
+                                                  &result.warnings);
+            if (!syntheticNode.meshes.isEmpty() || !syntheticNode.children.isEmpty())
+                root.children.append(syntheticNode);
+        }
     }
 
     if (root.children.isEmpty()) {
