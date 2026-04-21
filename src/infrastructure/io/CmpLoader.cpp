@@ -341,13 +341,45 @@ VMeshDataHeaderHint buildVMeshDataHeaderHint(const QByteArray &blockBytes,
 
 quint32 freelancerCrc32(const QString &value)
 {
+    static constexpr quint32 kFreelancerCrcTable[] = {
+        0u, 151466134u, 302932268u, 453595578u, 4285383705u, 4134204559u, 3982730549u, 3831797155u,
+        4275800114u, 4158437540u, 3973441822u, 3855800712u, 28724267u, 145849533u, 330837255u, 448732561u,
+        4256632932u, 4105183474u, 4021907784u, 3871228382u, 47895677u, 199091435u, 282375505u, 433292743u,
+        57448534u, 174827712u, 291699066u, 409324012u, 4227947599u, 4110839001u, 3993976163u, 3876064757u,
+        4218298568u, 4066971742u, 3915399652u, 3764875634u, 67364049u, 218420295u, 369985021u, 520795499u,
+        95791354u, 213031020u, 398182870u, 515701056u, 4208487651u, 4091501685u, 3906342351u, 3788586329u,
+        114897068u, 266207290u, 349655424u, 500195606u, 4189385909u, 4038312995u, 3954873753u, 3804079375u,
+        4160927902u, 4043671560u, 3926710706u, 3809208612u, 124746887u, 241716241u, 358686123u, 476458301u,
+        4141629840u, 4292571398u, 3838976188u, 3990163498u, 162629001u, 11973919u, 465560741u, 314102835u,
+        134728098u, 16841012u, 436840590u, 319723544u, 4150922683u, 4268571949u, 3848563863u, 3965934593u,
+        191582708u, 40657250u, 426062040u, 274858062u, 4094072301u, 4244743547u, 3859346625u, 4010787927u,
+        4122008006u, 4239911248u, 3888036074u, 4005136508u, 182263263u, 64630089u, 416513267u, 299125861u,
+        229794136u, 78991822u, 532414580u, 381366498u, 4074743105u, 4225275351u, 3771843693u, 3923178747u,
+        4083804522u, 4201568764u, 3781658694u, 3898652880u, 201600371u, 84090341u, 503991391u, 386759881u,
+        4026888508u, 4177674666u, 3792375824u, 3943440518u, 258520357u, 107972019u, 493278217u, 341959839u,
+        249493774u, 131713432u, 483432482u, 366454964u, 4055055639u, 4172549505u, 3820837947u, 3938086061u,
+        3988292384u, 3837768630u, 4290175500u, 4138848922u, 315967289u, 466778031u, 14362133u, 165418627u,
+        325258002u, 442776452u, 23947838u, 141187752u, 3960393483u, 3842637725u, 4261457447u, 4144471729u,
+        269456196u, 419996626u, 33682024u, 184992510u, 4016199517u, 3865405387u, 4251727473u, 4100654823u,
+        4006878070u, 3889376224u, 4242176602u, 4124920524u, 297394031u, 415166457u, 62373443u, 179343061u,
+        383165416u, 533828478u, 81314500u, 232780370u, 3921373169u, 3770439527u, 4222944989u, 4071765579u,
+        3893177306u, 3775535948u, 4194519798u, 4077156960u, 392228803u, 510123861u, 91131631u, 208256633u,
+        3949048716u, 3798369050u, 4184855200u, 4033405494u, 336361365u, 487278339u, 100800185u, 251995695u,
+        364526526u, 482151208u, 129260178u, 246639108u, 3940024231u, 3822112561u, 4175011467u, 4057902621u,
+        459588272u, 308539942u, 157983644u, 7181066u, 3825796777u, 3977131583u, 4127680389u, 4278212371u,
+        3854518914u, 3971512852u, 4155583406u, 4273347384u, 450006683u, 332774925u, 148697015u, 31186721u,
+        3872641748u, 4023706178u, 4108170232u, 4258956142u, 431888077u, 280569435u, 196114401u, 45565815u,
+        403200742u, 286222960u, 168180682u, 50400092u, 3882196735u, 3999444585u, 4117495763u, 4234989381u,
+        3758809720u, 3909997294u, 4060382036u, 4211323842u, 526853729u, 375396087u, 225003341u, 74348507u,
+        517040714u, 399923932u, 215944038u, 98057200u, 3787238995u, 3904609989u, 4088582015u, 4206231529u,
+        498987548u, 347783818u, 263426864u, 112501670u, 3805296133u, 3956737683u, 4041103145u, 4191774655u,
+        3815143982u, 3932244664u, 4050131714u, 4168035220u, 470531639u, 353144481u, 235265819u, 117632909u,
+    };
+
     quint32 crc = 0xFFFFFFFFu;
-    for (char byte : value.toLower().toLatin1()) {
-        crc ^= static_cast<quint8>(byte);
-        for (int bit = 0; bit < 8; ++bit)
-            crc = (crc & 1u) ? (crc >> 1u) ^ 0xEDB88320u : (crc >> 1u);
-    }
-    return ~crc;
+    for (char byte : value.toLower().toLatin1())
+        crc = ((crc >> 8u) ^ kFreelancerCrcTable[(crc ^ static_cast<quint8>(byte)) & 0xFFu]) & 0xFFFFFFFFu;
+    return (~crc) & 0xFFFFFFFFu;
 }
 
 ModelBounds boundsFromExtrema(float maxX, float minX, float maxY, float minY, float maxZ, float minZ, float radius)
@@ -416,6 +448,8 @@ QString normalizeModelKey(QString value)
     value = value.toLower().trimmed();
     value.replace(QLatin1Char('\\'), QLatin1Char('/'));
     value = QFileInfo(value).fileName();
+    if (value.startsWith(QStringLiteral("part_")))
+        value = value.mid(5);
     const int dot = value.lastIndexOf(QLatin1Char('.'));
     if (dot > 0)
         value = value.left(dot);
@@ -1430,9 +1464,33 @@ QVector<NativeModelPart> buildPartsFromNodes(const QVector<FlatUtfNode> &nodes, 
 
     for (int i = 0; i < nodes.size(); ++i) {
         const auto &node = nodes.at(i);
+        if (node.name != QStringLiteral("Root") || !node.path.endsWith(QStringLiteral("/Cmpnd/Root")))
+            continue;
+
+        NativeModelPart rootPart;
+        rootPart.name = QStringLiteral("Root");
+        const auto followers = childrenByParent.value(node.path);
+        for (int childIndex : followers) {
+            const auto &child = nodes.at(childIndex);
+            if (child.name == QStringLiteral("File name") && rootPart.fileName.isEmpty())
+                rootPart.fileName = readNativeTextNode(child, raw);
+            else if (child.name == QStringLiteral("Object name") && rootPart.objectName.isEmpty())
+                rootPart.objectName = readNativeTextNode(child, raw);
+            else if (child.name == QStringLiteral("Index") && rootPart.cmpIndex < 0)
+                rootPart.cmpIndex = readNativeU32Node(child, raw);
+        }
+        if (!rootPart.objectName.isEmpty() && rootPart.cmpIndex >= 0)
+            parts.append(rootPart);
+        break;
+    }
+
+    for (int i = 0; i < nodes.size(); ++i) {
+        const auto &node = nodes.at(i);
         const bool isCmpPart = node.name.startsWith(QStringLiteral("Part_"))
             || (node.name == QStringLiteral("Root") && node.path.endsWith(QStringLiteral("/Cmpnd/Root")));
         if (!isCmpPart)
+            continue;
+        if (node.name == QStringLiteral("Root"))
             continue;
 
         NativeModelPart part;
@@ -1451,6 +1509,23 @@ QVector<NativeModelPart> buildPartsFromNodes(const QVector<FlatUtfNode> &nodes, 
             else if (child.name == QStringLiteral("Index") && part.cmpIndex < 0)
                 part.cmpIndex = readNativeU32Node(child, raw);
         }
+
+        if (part.sourceName.isEmpty() || part.fileName.isEmpty() || part.objectName.isEmpty() || part.cmpIndex < 0) {
+            for (int followerIndex = i + 1; followerIndex < nodes.size(); ++followerIndex) {
+                const auto &follower = nodes.at(followerIndex);
+                if (follower.name.startsWith(QStringLiteral("Part_")))
+                    break;
+                if (follower.name.endsWith(QStringLiteral(".vms"), Qt::CaseInsensitive) && part.sourceName.isEmpty())
+                    part.sourceName = follower.name;
+                else if (follower.name == QStringLiteral("File name") && part.fileName.isEmpty())
+                    part.fileName = readNativeTextNode(follower, raw);
+                else if (follower.name == QStringLiteral("Object name") && part.objectName.isEmpty())
+                    part.objectName = readNativeTextNode(follower, raw);
+                else if (follower.name == QStringLiteral("Index") && part.cmpIndex < 0)
+                    part.cmpIndex = readNativeU32Node(follower, raw);
+            }
+        }
+
         parts.append(part);
     }
 

@@ -58,13 +58,17 @@ Referenz:
 - `DATA/SOLAR/DOCKABLE/docking_ringx2_lod.cmp`
 
 Status:
-- in Arbeit, aber substanziell umgesetzt
+- in Arbeit, aber deutlich weiter stabilisiert
 
 Ergebnis:
 - härterer Dockable-/Solar-Fall etabliert
 - Family-Planwahl deutlich näher an V1
 - `decode_ready`-Logik eingebaut
 - Planwahl jetzt an Mesh und Ref sichtbar
+- echter V1-Freelancer-CRC für `VMeshRef -> VMeshData`-Auflösung in V2 nachgezogen
+- V1-näherer Part-Metadaten-Scan (`Root` + Follower-Suche) im CMP-Loader ergänzt
+- `docking_ringx2_lod.cmp` dekodiert wieder mit Mesh-Ausgabe statt unresolved refs
+- Repro-/Snapshot-Test für die konkrete Ref-Auflösung ergänzt
 
 Zugehörige Dateien:
 - `docs/3d-viewer-iteration-03.md`
@@ -168,8 +172,8 @@ Das ist bewusst eingebaut worden, damit der aktive Decoderpfad pro Ref gegen V1 
 
 ### Kurzfristig
 - aktiven Ref-Plan noch gezielter gegen V1 vergleichen
-- für `docking_ringx2_lod.cmp` die nächste echte Abweichung am Decoderpfad isolieren
-- optional: Snapshot-/Debug-Test ergänzen, der aktive Ref-Pläne explizit protokolliert
+- prüfen, ob `docking_ringx2_lod.cmp` jetzt vollständig über direkten Header-Decode läuft oder ob ein echter Family-Fallback-Fall als nächster Referenzfall sinnvoller ist
+- nächste echte Abweichung an einem einzelnen Dockable-/Solar-Ref isolieren
 
 ### Mittelfristig
 - Family-/Header-/Stream-Fälle weiter an V1 schließen
@@ -189,8 +193,8 @@ Der sinnvollste nächste Schritt ist:
 3. den nächsten Fehlfall nicht global, sondern an genau einem Ref schließen
 
 Praktisch:
-- neuen Debug-/Snapshot-Test für `docking_ringx2_lod.cmp` ergänzen
-- dort für refs mit `usedStructuredFamilyFallback == true` die `debugHint`s erfassen
+- vorhandenen Snapshot-Test für `docking_ringx2_lod.cmp` als Guard behalten
+- nächsten Problemfall wieder auf genau einen Ref/Block eingrenzen
 - gegen V1 `cmp_loader.py` / `preview_family_decode_hints` / `structured_decode_plans` abgleichen
 
 ## Bekannte Build-/Tooling-Fallen
@@ -226,6 +230,11 @@ Nicht ideal, aber aktuell der stabilste Weg.
 Zuletzt erfolgreich gebaut:
 - `FLAtlas.exe`
 - `test_DockableSolarModel`
+
+Zuletzt zusätzlich erfolgreich verifiziert:
+- `test_FamilySolarModel`
+- `test_SimpleShipModel`
+- `test_TradeLaneModel`
 
 Zusätzlich wurden in früheren Runden erfolgreich gebaut:
 - `test_FamilySolarModel`
