@@ -37,9 +37,12 @@
 #include <QComboBox>
 #include <QGroupBox>
 #include <QSet>
+#include <QBrush>
 #include <QFrame>
 #include <QFileInfo>
 #include <QDesktopServices>
+#include <QFont>
+#include <QPalette>
 #include <QSignalBlocker>
 #include <QUrl>
 
@@ -391,6 +394,7 @@ void SystemEditorPage::openDisplayFilterDialog()
     if (m_mapView)
         m_mapView->setDisplayFilterSettings(m_displayFilterSettings);
     pruneSelectionByCurrentFilter();
+    refreshSidebarVisibilityState();
     syncTreeSelectionFromNicknames(m_selectedNicknames);
     syncSceneSelectionFromNicknames(m_selectedNicknames);
     updateSelectionSummary();
@@ -654,6 +658,7 @@ void SystemEditorPage::refreshObjectList()
     m_systemStatsLabel->setText(tr("Objekte: %1\nZonen: %2")
                                     .arg(m_document->objects().size())
                                     .arg(m_document->zones().size()));
+    refreshSidebarVisibilityState();
     syncTreeSelectionFromNicknames(previousSelection);
     if (m_mapScene)
         syncSceneSelectionFromNicknames(previousSelection);
@@ -1066,6 +1071,68 @@ bool SystemEditorPage::isZoneVisibleUnderCurrentFilter(const ZoneItem &zone) con
         visible = (rule.action == DisplayFilterAction::Show);
     }
     return visible;
+}
+
+void SystemEditorPage::refreshSidebarVisibilityState()
+{
+    if (!m_objectTree || !m_document)
+        return;
+
+    const QList<QTreeWidgetItem *> matches = m_objectTree->findItems(QStringLiteral("*"),
+                                                                     Qt::MatchWildcard | Qt::MatchRecursive,
+                                                                     0);
+    for (QTreeWidgetItem *item : matches) {
+        if (!item->parent())
+            continue;
+
+        const QString nickname = item->text(0);
+        bool visible = true;
+        bool found = false;
+
+        for (const auto &obj : m_document->objects()) {
+            if (obj->nickname() == nickname) {
+                visible = isObjectVisibleUnderCurrentFilter(*obj);
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            for (const auto &zone : m_document->zones()) {
+                if (zone->nickname() == nickname) {
+                    visible = isZoneVisibleUnderCurrentFilter(*zone);
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        applySidebarFilteredStyle(item, visible);
+    }
+}
+
+void SystemEditorPage::applySidebarFilteredStyle(QTreeWidgetItem *item, bool visible)
+{
+    if (!item)
+        return;
+
+    const QPalette palette = this->palette();
+    const QColor normalText = palette.color(QPalette::Active, QPalette::Text);
+    const QColor mutedText = QColor(120, 128, 140);
+
+    for (int column = 0; column < item->columnCount(); ++column) {
+        item->setForeground(column, visible ? QBrush(normalText) : QBrush(mutedText));
+        QFont font = item->font(column);
+        font.setItalic(!visible);
+        item->setFont(column, font);
+    }
+
+    item->setData(0, Qt::UserRole + 1, !visible);
+    const QString tooltip = visible
+        ? QString()
+        : tr("Durch den Sichtbarkeitsfilter aktuell ausgeblendet");
+    item->setToolTip(0, tooltip);
+    item->setToolTip(1, tooltip);
 }
 
 void SystemEditorPage::applyIniEditorChanges()

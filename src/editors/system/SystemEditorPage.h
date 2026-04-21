@@ -103,6 +103,8 @@ private:
     bool isNicknameVisibleUnderCurrentFilter(const QString &nickname) const;
     bool isObjectVisibleUnderCurrentFilter(const flatlas::domain::SolarObject &obj) const;
     bool isZoneVisibleUnderCurrentFilter(const flatlas::domain::ZoneItem &zone) const;
+    void refreshSidebarVisibilityState();
+    void applySidebarFilteredStyle(QTreeWidgetItem *item, bool visible);
     void updateEditorModeUi();
     void rebuildMultiSelectionEditorList();
     QWidget *buildMultiSelectionRow(const QString &nickname, const QString &kindText);
