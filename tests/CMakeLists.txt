@@ -128,6 +128,8 @@ target_include_directories(test_ShortestPath PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_ShortestPath PRIVATE Qt6::Test Qt6::Core Qt6::Gui)
 add_test(NAME test_ShortestPath COMMAND test_ShortestPath)
 
+flatlas_add_test(test_ModelScreenshotExporter test_ModelScreenshotExporter.cpp flatlas_tools Qt6::Gui)
+
 # AppConfig is compiled into the FLAtlas executable, not a library.
 # Compile the source directly into the test.
 add_executable(test_AppConfig test_AppConfig.cpp ${CMAKE_SOURCE_DIR}/src/app/AppConfig.cpp)

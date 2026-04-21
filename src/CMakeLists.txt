@@ -51,3 +51,19 @@ target_link_libraries(FLAtlas PRIVATE
 target_include_directories(FLAtlas PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+add_executable(flatlas_model_screenshot_exporter
+    tools/model_screenshot_export_main.cpp
+)
+
+target_link_libraries(flatlas_model_screenshot_exporter PRIVATE
+    flatlas_tools
+    flatlas_infrastructure
+    flatlas_core
+    Qt6::Core
+    Qt6::Gui
+)
+
+target_include_directories(flatlas_model_screenshot_exporter PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)

@@ -8,7 +8,8 @@ add_library(flatlas_tools STATIC
     UpdateInstaller.h UpdateInstaller.cpp
     ShortestPathGenerator.h ShortestPathGenerator.cpp
     PathFinderDialog.h PathFinderDialog.cpp
+    ModelScreenshotExporter.h ModelScreenshotExporter.cpp
 )
 
 target_include_directories(flatlas_tools PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
-target_link_libraries(flatlas_tools PUBLIC flatlas_core Qt6::Core Qt6::Widgets Qt6::Network)
+target_link_libraries(flatlas_tools PUBLIC flatlas_core flatlas_infrastructure Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network)
