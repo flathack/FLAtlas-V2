@@ -1824,6 +1824,8 @@ bool shouldKeepEmptyCmpPartNode(const QString &partName,
         return false;
     if (parentPartNames.contains(lowered))
         return true;
+    if (lowered == QStringLiteral("root"))
+        return false;
 
     const auto it = std::find_if(hints.cbegin(), hints.cend(), [&](const CmpTransformHint &hint) {
         return hint.partName.compare(partName, Qt::CaseInsensitive) == 0
@@ -3158,6 +3160,15 @@ DecodedModel CmpLoader::loadModel(const QString &filePath)
             if (!syntheticNode.meshes.isEmpty() || !syntheticNode.children.isEmpty())
                 root.children.append(syntheticNode);
         }
+
+        root.children.erase(std::remove_if(root.children.begin(),
+                                           root.children.end(),
+                                           [](const ModelNode &child) {
+                                               return child.name.compare(QStringLiteral("Root"), Qt::CaseInsensitive) == 0
+                                                   && child.meshes.isEmpty()
+                                                   && child.children.isEmpty();
+                                           }),
+                            root.children.end());
     }
 
     if (root.children.isEmpty()) {

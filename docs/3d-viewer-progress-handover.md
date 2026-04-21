@@ -84,6 +84,23 @@ Zugehörige Dateien:
 - `docs/3d-viewer-iteration-03.md`
 - `tests/test_DockableSolarModel.cpp`
 
+### Iteration 4
+Referenz:
+- `DATA/SOLAR/DOCKABLE/station_large_a_lod.cmp`
+
+Status:
+- umgesetzt / Regression für komplexeren Stations-Hierarchiepfad ergänzt
+
+Ergebnis:
+- zusätzlicher größerer Stations-/Dockable-Fall als Guard aufgenommen
+- `station_large_a_lod.cmp` bestätigt aktuell 20/20 direkte Refs ohne `structured-family`-Fallback
+- der Loader entfernt jetzt leere Top-Level-`Root`-Knoten, wenn sie weder Meshes noch Kinder tragen
+- dadurch ist die CMP-Hierarchie näher an der tatsächlich relevanten Part-Struktur und weniger mit technischen Leer-Knoten verrauscht
+- neuer Regressionstest sichert für `station_large_a_lod.cmp` direkten Decode-Pfad, Mesh-Anzahl und Top-Level-Kindsignatur ab
+
+Zugehörige Dateien:
+- `tests/test_StationSolarModel.cpp`
+
 ## Aktive Referenzmodelle
 Siehe auch:
 - `docs/3d-viewer-reference-models.md`
@@ -93,6 +110,7 @@ Aktuell aktiv:
 - `DATA/SHIPS/CIVILIAN/CV_STARFLIER/cv_starflier.cmp`
 - `DATA/SOLAR/MISC/space_dome.cmp`
 - `DATA/SOLAR/DOCKABLE/docking_ringx2_lod.cmp`
+- `DATA/SOLAR/DOCKABLE/station_large_a_lod.cmp`
 
 ## Wichtige Decoder-Arbeit, die bereits im Code steckt
 
@@ -152,6 +170,7 @@ Das ist bewusst eingebaut worden, damit der aktive Decoderpfad pro Ref gegen V1 
 
 Neu abgesichert:
 - `space_dome.cmp` zeigt jetzt explizit, dass alle 5 Refs direkt über `structured-single-block@0` auf den passenden LOD-Blöcken dekodieren
+- `station_large_a_lod.cmp` sichert jetzt zusätzlich einen größeren Stationsfall mit 20 direkten Refs und bereinigter Top-Level-Hierarchie ab
 
 ## Relevante Dateien für die Fortsetzung
 
@@ -188,6 +207,7 @@ Neu abgesichert:
 - nach `docking_ringx2_lod.cmp` jetzt den nächsten echten Family-/Station-/Dockable-Fall auswählen, der noch nicht vollständig auf direkten Decode-Pfaden läuft
 - nächste echte Abweichung wieder an genau einem Ref isolieren
 - auf Basis des jetzt sauberen `TLR_lod.3db`-Pfads den nächsten komplexeren `.cmp`- oder Dockable-Fall auswählen
+- Material-/Submesh-Gruppierung bei einem Modell mit klaren sichtbaren Materialwechseln als nächsten echten Restfall priorisieren, da die bisher getesteten komplexeren Stationen/Dockables direkt laufen
 
 ### Mittelfristig
 - Family-/Header-/Stream-Fälle weiter an V1 schließen
@@ -203,12 +223,13 @@ Neu abgesichert:
 Der sinnvollste nächste Schritt ist jetzt:
 
 1. `docking_ringx2_lod.cmp` als Guard behalten, aber nicht mehr als Hauptproblemfall
-2. den nächsten komplexeren Family-/Dockable-/Station-Fall auswählen, der noch nicht vollständig direkt dekodiert
+2. den nächsten komplexeren Family-/Dockable-/Station-Fall auswählen, der noch nicht vollständig direkt dekodiert oder materialseitig sichtbar abweicht
 3. dort wieder genau einen Ref/Block gegen V1 schließen
 
 Praktisch:
-- vorhandene Snapshot-Tests für `cv_starflier.cmp` und `docking_ringx2_lod.cmp` als Guard behalten
+- vorhandene Snapshot-Tests für `cv_starflier.cmp`, `docking_ringx2_lod.cmp` und `station_large_a_lod.cmp` als Guard behalten
 - die neue Top-Level-CMP-Extraktion als etablierten Pfad betrachten, nicht als Sonderfall
+- die Hierarchiebereinigung für leere Top-Level-`Root`-Knoten als etablierten Normalfall betrachten
 - den nächsten Problemfall wieder auf genau einen Ref/Block eingrenzen
 - gegen V1 `cmp_loader.py` / `preview_family_decode_hints` / `structured_decode_plans` abgleichen
 
@@ -274,6 +295,11 @@ Aktueller Ship-Stand:
 Aktueller Dockable-Stand:
 - `docking_ringx2_lod.cmp` hat keinen ungenutzten Root-Ref-Pfad mehr; auch die früheren `Dock_lod...`-Refs laufen jetzt direkt über den normalen Decoderpfad
 - der Dockable-Snapshot erwartet damit jetzt 14 direkte Refs statt 12
+
+Aktueller Station-Stand:
+- `station_large_a_lod.cmp` läuft aktuell ohne Warnings und ohne `structured-family`-Fallback durch
+- die zuvor technisch leeren Top-Level-`Root`-Knoten werden nicht mehr als leere Kinder im Modellbaum belassen
+- der neue Stations-Regressionstest sichert deshalb die bereinigte Top-Level-Kindstruktur zusätzlich zur direkten Ref-Dekodierung ab
 
 Zusätzlich wurden in früheren Runden erfolgreich gebaut:
 - `test_FamilySolarModel`

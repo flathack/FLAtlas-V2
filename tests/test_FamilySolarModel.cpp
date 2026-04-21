@@ -93,7 +93,13 @@ void TestFamilySolarModel::spaceDomeRefAndMeshSnapshot()
     }
 
     QStringList meshSnapshot;
-    for (const auto &mesh : decoded.rootNode.children.value(1).meshes) {
+    const auto childWithMeshes = std::find_if(decoded.rootNode.children.cbegin(),
+                                              decoded.rootNode.children.cend(),
+                                              [](const ModelNode &node) {
+                                                  return !node.meshes.isEmpty();
+                                              });
+    QVERIFY(childWithMeshes != decoded.rootNode.children.cend());
+    for (const auto &mesh : childWithMeshes->meshes) {
         meshSnapshot.append(QStringLiteral("%1|%2|%3")
                                 .arg(mesh.vertices.size())
                                 .arg(mesh.indices.size())
