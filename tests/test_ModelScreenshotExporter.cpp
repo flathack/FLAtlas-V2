@@ -25,36 +25,47 @@ class TestModelScreenshotExporter : public QObject {
     Q_OBJECT
 
 private slots:
-    void buildTrianglesUsesHighestDetailMeshPerNode();
+    void buildTrianglesUsesBestLodMeshesPerNode();
     void buildTrianglesAppliesHierarchyTransform();
     void buildTrianglesPrefersCombinedCmpTransformHints();
 };
 
-void TestModelScreenshotExporter::buildTrianglesUsesHighestDetailMeshPerNode()
+void TestModelScreenshotExporter::buildTrianglesUsesBestLodMeshesPerNode()
 {
     DecodedModel model;
     model.rootNode.name = QStringLiteral("Root");
 
     ModelNode ship;
     ship.name = QStringLiteral("Ship");
-    ship.meshes.append(makeMesh({
+    MeshData lod2 = makeMesh({
         QVector3D(0.0f, 0.0f, 0.0f),
         QVector3D(1.0f, 0.0f, 0.0f),
         QVector3D(0.0f, 1.0f, 0.0f),
-    }));
-    ship.meshes.append(makeMesh({
+    });
+    lod2.lodIndex = 2;
+    ship.meshes.append(lod2);
+
+    MeshData lod0a = makeMesh({
         QVector3D(0.0f, 0.0f, 0.0f),
         QVector3D(2.0f, 0.0f, 0.0f),
         QVector3D(0.0f, 2.0f, 0.0f),
+    });
+    lod0a.lodIndex = 0;
+    ship.meshes.append(lod0a);
+
+    MeshData lod0b = makeMesh({
         QVector3D(2.0f, 2.0f, 0.0f),
         QVector3D(1.0f, 3.0f, 0.0f),
         QVector3D(3.0f, 1.0f, 0.0f),
-    }));
+    });
+    lod0b.lodIndex = 0;
+    ship.meshes.append(lod0b);
     model.rootNode.children.append(ship);
 
     const auto triangles = ModelScreenshotExporter::buildTriangles(model);
     QCOMPARE(triangles.size(), 2);
     QCOMPARE(triangles.first().b, QVector3D(2.0f, 0.0f, 0.0f));
+    QCOMPARE(triangles.last().a, QVector3D(2.0f, 2.0f, 0.0f));
 }
 
 void TestModelScreenshotExporter::buildTrianglesAppliesHierarchyTransform()

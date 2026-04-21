@@ -6,11 +6,13 @@
 
 #ifdef FLATLAS_HAS_QT3D
 #include "rendering/view3d/OrbitCamera.h"
+#include "rendering/view3d/ModelGeometryBuilder.h"
 #include "rendering/view3d/SelectionManager.h"
 #include <QMouseEvent>
 #include <QPointingDevice>
 #include <QWheelEvent>
 #include <Qt3DRender/QCamera>
+#include <Qt3DRender/QGeometryRenderer>
 #endif
 
 using namespace flatlas::domain;
@@ -29,6 +31,7 @@ private slots:
     void testOrbitCameraMouseRotate();
     void testOrbitCameraMousePan();
     void testOrbitCameraWheelZoom();
+    void testTriangleRendererBuildsDoubleSidedIndices();
     void testSelectionManagerSelectEmits();
     void testSelectionManagerReselect();
     void testSelectionManagerClear();
@@ -195,6 +198,20 @@ void TestSceneView3D::testOrbitCameraWheelZoom()
                         QPointingDevice::primaryPointingDevice());
     orbit.handleWheel(&zoomOut);
     QVERIFY(orbit.distance() > zoomedInDistance);
+}
+
+void TestSceneView3D::testTriangleRendererBuildsDoubleSidedIndices()
+{
+    flatlas::infrastructure::MeshData mesh;
+    mesh.vertices.append({QVector3D(0.0f, 0.0f, 0.0f), QVector3D(0.0f, 0.0f, 1.0f), 0.0f, 0.0f});
+    mesh.vertices.append({QVector3D(1.0f, 0.0f, 0.0f), QVector3D(0.0f, 0.0f, 1.0f), 1.0f, 0.0f});
+    mesh.vertices.append({QVector3D(0.0f, 1.0f, 0.0f), QVector3D(0.0f, 0.0f, 1.0f), 0.0f, 1.0f});
+    mesh.indices = {0u, 1u, 2u};
+
+    auto *renderer = flatlas::rendering::ModelGeometryBuilder::buildTriangleRenderer(mesh, nullptr);
+    QVERIFY(renderer);
+    QCOMPARE(renderer->vertexCount(), 6);
+    delete renderer;
 }
 
 void TestSceneView3D::testSelectionManagerSelectEmits()

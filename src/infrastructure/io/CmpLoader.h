@@ -31,6 +31,8 @@ struct MeshData {
     QStringList textureCandidates;
     QString matchHint;
     QString debugHint;
+    QString levelName;
+    int lodIndex = -1;
 };
 
 /// A node in the model hierarchy (CMP can have multiple parts).

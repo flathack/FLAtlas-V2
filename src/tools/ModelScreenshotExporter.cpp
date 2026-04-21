@@ -9,6 +9,8 @@
 #include <QMatrix4x4>
 #include <QSaveFile>
 
+#include <limits>
+
 namespace flatlas::tools {
 namespace {
 
@@ -17,24 +19,31 @@ QJsonArray vectorToJson(const QVector3D &value)
     return QJsonArray{value.x(), value.y(), value.z()};
 }
 
-const flatlas::infrastructure::MeshData *selectHighestDetailMesh(const flatlas::infrastructure::ModelNode &node)
+QVector<const flatlas::infrastructure::MeshData *> selectBestLodMeshes(
+    const flatlas::infrastructure::ModelNode &node)
 {
+    QVector<const flatlas::infrastructure::MeshData *> meshes;
     if (node.meshes.isEmpty())
-        return nullptr;
+        return meshes;
 
-    const flatlas::infrastructure::MeshData *bestMesh = &node.meshes.first();
+    int bestLodIndex = std::numeric_limits<int>::max();
     for (const auto &mesh : node.meshes) {
-        if (mesh.indices.size() > bestMesh->indices.size()) {
-            bestMesh = &mesh;
-            continue;
-        }
-        if (mesh.indices.size() == bestMesh->indices.size()
-            && mesh.vertices.size() > bestMesh->vertices.size()) {
-            bestMesh = &mesh;
-        }
+        if (mesh.lodIndex >= 0)
+            bestLodIndex = qMin(bestLodIndex, mesh.lodIndex);
     }
 
-    return bestMesh;
+    if (bestLodIndex == std::numeric_limits<int>::max()) {
+        meshes.append(&node.meshes.first());
+        return meshes;
+    }
+
+    for (const auto &mesh : node.meshes) {
+        if (mesh.lodIndex == bestLodIndex)
+            meshes.append(&mesh);
+    }
+    if (meshes.isEmpty())
+        meshes.append(&node.meshes.first());
+    return meshes;
 }
 
 QMatrix4x4 buildTransformMatrix(const QVector3D &translation, const QQuaternion &rotation)
@@ -86,7 +95,7 @@ void appendNodeTriangles(const flatlas::infrastructure::ModelNode &node,
 
     const QMatrix4x4 nodeTransform = resolveNodeTransform(node, parentTransform, transformHints);
 
-    if (const auto *mesh = selectHighestDetailMesh(node)) {
+    for (const auto *mesh : selectBestLodMeshes(node)) {
         const auto &vertices = mesh->vertices;
         const auto &indices = mesh->indices;
         for (int index = 0; index + 2 < indices.size(); index += 3) {

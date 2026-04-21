@@ -2002,6 +2002,24 @@ bool refBelongsToPart(const VMeshRefRecord &ref,
     return false;
 }
 
+int lodIndexFromLevelName(const QString &levelName)
+{
+    if (!levelName.startsWith(QStringLiteral("Level"), Qt::CaseInsensitive))
+        return -1;
+
+    bool ok = false;
+    const int value = levelName.mid(5).toInt(&ok);
+    return ok ? value : -1;
+}
+
+void annotateMeshWithRefMetadata(MeshData *mesh, const VMeshRefRecord &ref)
+{
+    if (!mesh)
+        return;
+    mesh->levelName = ref.levelName;
+    mesh->lodIndex = lodIndexFromLevelName(ref.levelName);
+}
+
 QQuaternion combineRotations(const QQuaternion &parent, const QQuaternion &local)
 {
     return (parent * local).normalized();
@@ -2308,9 +2326,10 @@ bool sameModelIdentity(const QString &left, const QString &right)
     return leftBase.compare(rightBase, Qt::CaseInsensitive) == 0;
 }
 
-QString matchedPartNameForRef(const VMeshRefRecord &ref,
-                              const QVector<NativeModelPart> &parts,
-                              const QVector<UtfNodeRecord> &nodes)
+template <typename NodeRecord>
+QString matchedPartNameForRefImpl(const VMeshRefRecord &ref,
+                                  const QVector<NativeModelPart> &parts,
+                                  const QVector<NodeRecord> &nodes)
 {
     for (const auto &part : parts) {
         const QString path = firstPathForName(nodes, part.name);
@@ -2318,38 +2337,51 @@ QString matchedPartNameForRef(const VMeshRefRecord &ref,
             return part.name;
     }
 
-    const auto fallbackIt = std::find_if(parts.cbegin(), parts.cend(), [&](const NativeModelPart &part) {
-        return sameModelIdentity(part.fileName, ref.modelName)
-               || sameModelIdentity(part.sourceName, ref.modelName)
-               || sameModelIdentity(part.objectName, ref.modelName)
-               || sameModelIdentity(part.name, ref.modelName);
-    });
-    if (fallbackIt != parts.cend())
-        return fallbackIt->name;
+    QStringList exactCandidates;
+    if (!ref.parentName.trimmed().isEmpty()) {
+        for (const auto &part : parts) {
+            if (part.objectName.compare(ref.parentName, Qt::CaseInsensitive) == 0
+                || part.name.compare(ref.parentName, Qt::CaseInsensitive) == 0) {
+                exactCandidates.append(part.name);
+            }
+        }
+        exactCandidates.removeDuplicates();
+        if (exactCandidates.size() == 1)
+            return exactCandidates.first();
+    }
+
+    const QString modelKey = ref.modelName.trimmed();
+    if (modelKey.isEmpty())
+        return {};
+
+    QStringList modelCandidates;
+    for (const auto &part : parts) {
+        if (sameModelIdentity(part.fileName, modelKey)
+            || sameModelIdentity(part.sourceName, modelKey)
+            || sameModelIdentity(part.objectName, modelKey)
+            || sameModelIdentity(part.name, modelKey)) {
+            modelCandidates.append(part.name);
+        }
+    }
+    modelCandidates.removeDuplicates();
+    if (modelCandidates.size() == 1)
+        return modelCandidates.first();
 
     return {};
 }
 
 QString matchedPartNameForRef(const VMeshRefRecord &ref,
                               const QVector<NativeModelPart> &parts,
+                              const QVector<UtfNodeRecord> &nodes)
+{
+    return matchedPartNameForRefImpl(ref, parts, nodes);
+}
+
+QString matchedPartNameForRef(const VMeshRefRecord &ref,
+                              const QVector<NativeModelPart> &parts,
                               const QVector<FlatUtfNode> &nodes)
 {
-    for (const auto &part : parts) {
-        const QString path = firstPathForName(nodes, part.name);
-        if (!path.isEmpty() && ref.nodePath.startsWith(path + QLatin1Char('/'), Qt::CaseInsensitive))
-            return part.name;
-    }
-
-    const auto fallbackIt = std::find_if(parts.cbegin(), parts.cend(), [&](const NativeModelPart &part) {
-        return sameModelIdentity(part.fileName, ref.modelName)
-               || sameModelIdentity(part.sourceName, ref.modelName)
-               || sameModelIdentity(part.objectName, ref.modelName)
-               || sameModelIdentity(part.name, ref.modelName);
-    });
-    if (fallbackIt != parts.cend())
-        return fallbackIt->name;
-
-    return {};
+    return matchedPartNameForRefImpl(ref, parts, nodes);
 }
 
 const NativeModelPart *findPartByName(const QVector<NativeModelPart> &parts, const QString &partName)
@@ -3242,8 +3274,10 @@ ModelNode CmpLoader::extractPart(const NativeModelPart &part,
         if (!resolvedMeshes.isEmpty()) {
             if (!resolvedPlanHint.isEmpty())
                 ref.debugHint = resolvedPlanHint;
-            for (const auto &mesh : resolvedMeshes)
+            for (auto mesh : resolvedMeshes) {
+                annotateMeshWithRefMetadata(&mesh, ref);
                 node.meshes.append(mesh);
+            }
             continue;
         }
 
@@ -3269,6 +3303,7 @@ ModelNode CmpLoader::extractPart(const NativeModelPart &part,
                 else if (!binding->materialValue.isEmpty())
                     mesh.materialName = binding->materialValue;
             }
+            annotateMeshWithRefMetadata(&mesh, ref);
             node.meshes.append(mesh);
             if (warnings)
                 warnings->append(QStringLiteral("Used structured-family fallback for %1 [%2]")
@@ -3283,6 +3318,7 @@ ModelNode CmpLoader::extractPart(const NativeModelPart &part,
                 const QString variantPlanHint = directPlanHint + QStringLiteral("/mesh-variant-fallback");
                 mesh.debugHint = variantPlanHint;
                 ref.debugHint = variantPlanHint;
+                annotateMeshWithRefMetadata(&mesh, ref);
                 node.meshes.append(mesh);
                 break;
             }

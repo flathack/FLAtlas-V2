@@ -183,20 +183,34 @@ Qt3DRender::QGeometryRenderer *ModelGeometryBuilder::buildTriangleRenderer(
         appendPod(vertexBlob, record);
     }
 
+    QVector<uint32_t> doubleSidedIndices;
+    doubleSidedIndices.reserve(mesh.indices.size() * 2);
+    for (qsizetype i = 0; i + 2 < mesh.indices.size(); i += 3) {
+        const uint32_t a = mesh.indices.at(i);
+        const uint32_t b = mesh.indices.at(i + 1);
+        const uint32_t c = mesh.indices.at(i + 2);
+        doubleSidedIndices.append(a);
+        doubleSidedIndices.append(b);
+        doubleSidedIndices.append(c);
+        doubleSidedIndices.append(c);
+        doubleSidedIndices.append(b);
+        doubleSidedIndices.append(a);
+    }
+
     QByteArray indexBlob;
     Qt3DCore::QAttribute::VertexBaseType indexType = Qt3DCore::QAttribute::UnsignedInt;
-    const bool canUseShort = std::all_of(mesh.indices.cbegin(), mesh.indices.cend(),
+    const bool canUseShort = std::all_of(doubleSidedIndices.cbegin(), doubleSidedIndices.cend(),
         [](uint32_t index) { return index <= 0xFFFFu; });
     if (canUseShort) {
         indexType = Qt3DCore::QAttribute::UnsignedShort;
-        indexBlob.reserve(mesh.indices.size() * static_cast<int>(sizeof(uint16_t)));
-        for (uint32_t index : mesh.indices) {
+        indexBlob.reserve(doubleSidedIndices.size() * static_cast<int>(sizeof(uint16_t)));
+        for (uint32_t index : doubleSidedIndices) {
             const uint16_t packed = static_cast<uint16_t>(index);
             appendPod(indexBlob, packed);
         }
     } else {
-        indexBlob.reserve(mesh.indices.size() * static_cast<int>(sizeof(uint32_t)));
-        for (uint32_t index : mesh.indices)
+        indexBlob.reserve(doubleSidedIndices.size() * static_cast<int>(sizeof(uint32_t)));
+        for (uint32_t index : doubleSidedIndices)
             appendPod(indexBlob, index);
     }
 
@@ -207,7 +221,7 @@ Qt3DRender::QGeometryRenderer *ModelGeometryBuilder::buildTriangleRenderer(
                                     true,
                                     indexBlob,
                                     indexType,
-                                    mesh.indices.size(),
+                                    doubleSidedIndices.size(),
                                     Qt3DRender::QGeometryRenderer::Triangles,
                                     owner);
 }
