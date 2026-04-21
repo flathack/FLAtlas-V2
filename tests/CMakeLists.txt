@@ -43,6 +43,7 @@ flatlas_add_test(test_ModelCache      test_ModelCache.cpp       flatlas_renderin
 # Phase 9 Universe editor tests
 flatlas_add_test(test_UniverseSerializer   test_UniverseSerializer.cpp   flatlas_editors)
 flatlas_add_test(test_UniverseEditorPage   test_UniverseEditorPage.cpp   flatlas_editors Qt6::Widgets)
+flatlas_add_test(test_DeleteSystemService  test_DeleteSystemService.cpp  flatlas_editors)
 
 # Phase 10 Base editor tests
 flatlas_add_test(test_BaseEditor   test_BaseEditor.cpp   flatlas_editors Qt6::Widgets)

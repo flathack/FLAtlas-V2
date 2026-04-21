@@ -1,6 +1,7 @@
 // editors/universe/UniverseEditorPage.cpp – Universe-Editor (Phase 9)
 
 #include "UniverseEditorPage.h"
+#include "DeleteSystemDialog.h"
 #include "EditSystemDialog.h"
 #include "NewSystemDialog.h"
 #include "NewSystemService.h"
@@ -397,7 +398,7 @@ void UniverseEditorPage::setupUi()
     m_mapToolBar->setIconSize(QSize(16, 16));
     m_mapToolBar->setMovable(false);
     m_addSystemAction = m_mapToolBar->addAction(tr("Add System"), this, &UniverseEditorPage::onAddSystem);
-    m_mapToolBar->addAction(tr("Delete System"), this, &UniverseEditorPage::onDeleteSystem);
+    m_mapToolBar->addAction(tr("Delete System"), this, [this]() { onDeleteSystem(); });
     m_mapToolBar->addSeparator();
     m_mapToolBar->addAction(tr("Fit View"), this, &UniverseEditorPage::fitMapInView);
     m_mapToolBar->addAction(tr("Shortest Path..."), this, &UniverseEditorPage::onFindShortestPath);
@@ -743,6 +744,9 @@ void UniverseEditorPage::onMapContextMenuRequested(const QPoint &globalPos, cons
         menu.addAction(tr("Edit System"), this, [this, nickname]() {
             onEditSystem(nickname);
         });
+        menu.addAction(tr("Delete System"), this, [this, nickname]() {
+            onDeleteSystem(nickname);
+        });
     } else if (m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0) {
         menu.addAction(tr("Neues System"), this, &UniverseEditorPage::onAddSystem);
     }
@@ -784,36 +788,33 @@ void UniverseEditorPage::onMapPlacementRequested(const QPointF &scenePos)
 
 void UniverseEditorPage::onDeleteSystem()
 {
-    if (!m_data) return;
+    if (!m_data)
+        return;
 
     auto *item = m_systemTree->currentItem();
-    if (!item) return;
+    if (!item)
+        return;
 
-    QString nickname = item->data(0, Qt::UserRole).toString();
-    auto ret = QMessageBox::question(this, tr("Delete System"),
-                                      tr("Delete system '%1'?").arg(nickname));
-    if (ret != QMessageBox::Yes) return;
+    onDeleteSystem(item->data(0, Qt::UserRole).toString());
+}
 
-    // Remove from data
-    m_data->systems.erase(
-        std::remove_if(m_data->systems.begin(), m_data->systems.end(),
-                        [&](const SystemInfo &s) {
-                            return s.nickname.compare(nickname, Qt::CaseInsensitive) == 0;
-                        }),
-        m_data->systems.end());
+void UniverseEditorPage::onDeleteSystem(const QString &nickname)
+{
+    if (!m_data || m_filePath.trimmed().isEmpty() || nickname.trimmed().isEmpty())
+        return;
 
-    // Remove connections involving this system
-    m_data->connections.erase(
-        std::remove_if(m_data->connections.begin(), m_data->connections.end(),
-                        [&](const JumpConnection &c) {
-                            return c.fromSystem.compare(nickname, Qt::CaseInsensitive) == 0 ||
-                                   c.toSystem.compare(nickname, Qt::CaseInsensitive) == 0;
-                        }),
-        m_data->connections.end());
+    const SystemInfo *sys = m_data->findSystem(nickname);
+    const QString displayName = sys ? resolvedSystemName(*sys) : nickname;
 
-    refreshSystemList();
-    refreshMap();
-    setDirty(true);
+    DeleteSystemDialog dialog(m_filePath, m_data.get(), nickname, displayName, this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    if (!loadFile(m_filePath)) {
+        QMessageBox::warning(this, tr("Delete System"),
+                             tr("Das Universe konnte nach dem Löschen nicht neu geladen werden:\n%1").arg(m_filePath));
+        return;
+    }
 }
 
 void UniverseEditorPage::onEditSystem(const QString &nickname)

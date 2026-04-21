@@ -59,6 +59,7 @@ private:
     void onMapPlacementRequested(const QPointF &scenePos);
     void onEditSystem(const QString &nickname);
     void onDeleteSystem();
+    void onDeleteSystem(const QString &nickname);
     void onNodeSelected(const QString &nickname);
     void onNodeMoved(const QString &nickname);
     void onNodeMoveFinished(const QString &nickname);

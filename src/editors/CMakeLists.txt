@@ -10,6 +10,8 @@ add_library(flatlas_editors STATIC
     universe/NewSystemDialog.h universe/NewSystemDialog.cpp
     universe/NewSystemService.h universe/NewSystemService.cpp
     universe/EditSystemDialog.h universe/EditSystemDialog.cpp
+    universe/DeleteSystemDialog.h universe/DeleteSystemDialog.cpp
+    universe/DeleteSystemService.h universe/DeleteSystemService.cpp
     base/BaseEditorPage.h base/BaseEditorPage.cpp
     base/BasePersistence.h base/BasePersistence.cpp
     base/BaseBuilder.h base/BaseBuilder.cpp
