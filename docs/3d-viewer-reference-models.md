@@ -66,6 +66,7 @@ Diese Referenzmodelle dienen als feste Vergleichsbasis für die V1-Paritätsarbe
   - zweiter expliziter Texture-Binding-Fall mit größerer Material-Library
   - Regression für part-aware Preview-Bindings auf Base-/Interior-CMPs
   - sichert, dass Partkontext über Part-`fileName`/`sourceName`/`objectName` nicht verloren geht, auch wenn der Ref-Pfad allein nicht reicht
+  - jetzt zusätzlich Referenz für den Restfall `global-texture-library-fallback`, bei dem die Texture-Verweise nur global aus der Material-Library stammen und deshalb noch keinen echten Matchaufstieg erlauben
 
 ### 7. Komplexerer Ship-No-Texture-Fall
 - Iteration-7-Referenz: `DATA/SHIPS/ORDER/OR_ELITE/or_elite.cmp`

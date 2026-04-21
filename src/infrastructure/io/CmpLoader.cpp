@@ -2296,8 +2296,17 @@ QStringList matchTextureCandidates(const QString &modelName,
     }
 
     if (!textures.isEmpty()) {
+        bool globalLibraryOnly = true;
+        for (const auto &texture : std::as_const(textures)) {
+            if (!texture.nodePath.startsWith(QStringLiteral("\\/Material library/"), Qt::CaseInsensitive)) {
+                globalLibraryOnly = false;
+                break;
+            }
+        }
         if (matchHint)
-            *matchHint = QStringLiteral("first-texture-fallback");
+            *matchHint = globalLibraryOnly
+                ? QStringLiteral("global-texture-library-fallback")
+                : QStringLiteral("first-texture-fallback");
         if (referenceNodePath)
             *referenceNodePath = textures.first().nodePath;
         for (const auto &item : std::as_const(textures))
