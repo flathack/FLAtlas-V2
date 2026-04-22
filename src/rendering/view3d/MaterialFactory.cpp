@@ -51,11 +51,19 @@ Qt3DRender::QMaterial *MaterialFactory::createFromImage(const QImage &image,
     if (image.isNull())
         return createDefault(QColor(180, 180, 180), parent);
 
-    auto *material = new Qt3DExtras::QTextureMaterial(parent);
+    // Use QDiffuseSpecularMaterial (not QTextureMaterial): QTextureMaterial is an
+    // UNLIT material that just samples the texel color, so normals/lighting are
+    // ignored and every surface looks uniformly flat/smooth. QDiffuseSpecularMaterial
+    // uses the texture as the diffuse input of a Phong-style lighting model so that
+    // hard edges and face orientation become visible again.
+    auto *material = new Qt3DExtras::QDiffuseSpecularMaterial(parent);
     auto *texture = createTexture(makePreviewTextureOpaque(image), material);
     texture->wrapMode()->setX(Qt3DRender::QTextureWrapMode::Repeat);
     texture->wrapMode()->setY(Qt3DRender::QTextureWrapMode::Repeat);
-    material->setTexture(texture);
+    material->setDiffuse(QVariant::fromValue(texture));
+    material->setAmbient(QColor(40, 40, 40));
+    material->setSpecular(QColor(30, 30, 30));
+    material->setShininess(20.0f);
     return material;
 }
 

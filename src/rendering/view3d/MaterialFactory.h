@@ -7,6 +7,7 @@
 #include <QString>
 #include <Qt3DExtras/QTextureMaterial>
 #include <Qt3DExtras/QPhongMaterial>
+#include <Qt3DExtras/QDiffuseSpecularMaterial>
 #include <Qt3DRender/QMaterial>
 #include <Qt3DRender/QTexture>
 #include <Qt3DRender/QTextureImage>
