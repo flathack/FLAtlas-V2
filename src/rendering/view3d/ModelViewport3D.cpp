@@ -153,7 +153,7 @@ void ModelViewport3D::setupScene()
     m_orbitCamera->resetView();
 
     auto *renderer = m_window->defaultFrameGraph();
-    renderer->setClearColor(Qt::black);
+    renderer->setClearColor(QColor(40, 40, 40));
     renderer->setFrustumCullingEnabled(true);
 
     m_lightEntity = new Qt3DCore::QEntity(m_rootEntity);
@@ -244,7 +244,7 @@ void ModelViewport3D::addNodeRecursive(const flatlas::infrastructure::ModelNode 
         if (wireNodeEntity) {
             auto *wireEntity = new Qt3DCore::QEntity(wireNodeEntity);
             if (auto *renderer = ModelGeometryBuilder::buildWireframeRenderer(mesh, wireEntity)) {
-                const QColor wireColor = m_whiteBackground ? QColor(30, 30, 30) : QColor(235, 235, 235);
+                const QColor wireColor = m_whiteBackground ? QColor(30, 30, 30) : QColor(20, 20, 20);
                 auto *material = MaterialFactory::createDefault(wireColor, wireEntity);
                 wireEntity->addComponent(renderer);
                 wireEntity->addComponent(material);
@@ -419,7 +419,7 @@ void ModelViewport3D::setWhiteBackground(bool enabled)
     m_whiteBackground = enabled;
 #ifdef FLATLAS_HAS_QT3D
     if (m_window && m_window->defaultFrameGraph())
-        m_window->defaultFrameGraph()->setClearColor(enabled ? QColor(Qt::white) : QColor(Qt::black));
+        m_window->defaultFrameGraph()->setClearColor(enabled ? QColor(230, 230, 230) : QColor(40, 40, 40));
     // Material colours are baked at scene build time, so rebuild when a model is loaded.
     if (m_hasModel && !m_filePath.isEmpty()) {
         const auto cached = flatlas::rendering::ModelCache::instance().load(m_filePath);
