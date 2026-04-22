@@ -195,6 +195,10 @@ QByteArray readNodeData(const FlatUtfNode &node, const QByteArray &raw)
     return raw.mid(node.dataOffset, qMin(node.usedSize, raw.size() - node.dataOffset));
 }
 
+// Forward declaration; full definition lives alongside the texture-extension
+// table further down in this file.
+QString sanitizeFreelancerNameReference(const QString &value);
+
 QString readNativeTextNode(const FlatUtfNode &node, const QByteArray &raw)
 {
     const QByteArray chunk = readNodeData(node, raw);
@@ -204,7 +208,10 @@ QString readNativeTextNode(const FlatUtfNode &node, const QByteArray &raw)
     const QString text = QString::fromLatin1(head).trimmed();
     if (text.isEmpty())
         return {};
-    return text;
+    // Some CMP files store "filename.tga<timestamp>" without a separating NUL
+    // (e.g. Freelancer's li_manhattan_bar.cmp). Strip the trailing authoring
+    // timestamp so the extracted name is a real, resolvable texture path.
+    return sanitizeFreelancerNameReference(text);
 }
 
 int readNativeU32Node(const FlatUtfNode &node, const QByteArray &raw)
@@ -424,6 +431,34 @@ QQuaternion quaternionFromRowsTuple(const QVector3D &row0, const QVector3D &row1
 
 constexpr float kMaxPreviewAbsCoord = 1000000.0f;
 constexpr const char *kTextureExtensions[] = {".dds", ".tga", ".txm"};
+constexpr const char *kFreelancerNameExtensions[] = {".dds", ".tga", ".txm", ".mat", ".3db", ".cmp", ".bmp"};
+
+// Freelancer UTF files sometimes store multiple names concatenated with no
+// separator, e.g. "lib_bar_n_tabl.tga021206170321lib_bar_n_light1@2.tga"
+// (original filename + authoring timestamp + optional second texture).
+// Return the substring up to and including the first recognised extension so
+// that downstream code sees a clean file name.
+QString sanitizeFreelancerNameReference(const QString &value)
+{
+    const QString trimmed = value.trimmed();
+    if (trimmed.isEmpty())
+        return trimmed;
+
+    const QString lowered = trimmed.toLower();
+    int bestEnd = -1;
+    for (const char *extension : kFreelancerNameExtensions) {
+        const QLatin1String ext(extension);
+        const int idx = lowered.indexOf(ext);
+        if (idx < 0)
+            continue;
+        const int endPos = idx + ext.size();
+        if (bestEnd < 0 || endPos < bestEnd)
+            bestEnd = endPos;
+    }
+    if (bestEnd < 0)
+        return trimmed;
+    return trimmed.left(bestEnd);
+}
 
 bool decodeIndices16(const QByteArray &raw, int vertexCountHint, QVector<uint32_t> *indices)
 {
@@ -2404,9 +2439,15 @@ const NativeModelPart *findPartByName(const QVector<NativeModelPart> &parts, con
 
 QStringList nodeReferenceCandidates(const FlatUtfNode &node, const QByteArray &raw)
 {
-    QStringList values{node.name};
+    QStringList values;
+    // The UTF names table may hold composite names such as
+    // "foo.tga021206170321bar.tga"; sanitize the node name before emitting it
+    // as a candidate so we don't propagate garbage into the texture resolver.
+    const QString sanitizedName = sanitizeFreelancerNameReference(node.name);
+    if (!sanitizedName.isEmpty())
+        values.append(sanitizedName);
     const QString textValue = readNativeTextNode(node, raw);
-    if (!textValue.isEmpty())
+    if (!textValue.isEmpty() && !values.contains(textValue, Qt::CaseInsensitive))
         values.append(textValue);
     return values;
 }

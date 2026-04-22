@@ -26,6 +26,11 @@ private:
     static QMutex s_cacheMutex;
     static QHash<QString, QHash<QString, QStringList>> s_materialTextureMapCache;
     static QHash<QString, QHash<QString, QImage>> s_embeddedTextureCache;
+    // Cache expensive recursive dataRoot scans per (dataRoot, baseName).
+    // Without this, opening li_manhattan_bar.cmp re-scans the whole DATA tree
+    // for every unresolved texture candidate, blocking the UI for tens of seconds.
+    static QHash<QString, QHash<QString, QString>> s_dataRootFileScanCache;
+    static QHash<QString, bool> s_dataRootScannedFlag;
 };
 
 } // namespace flatlas::infrastructure

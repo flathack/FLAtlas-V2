@@ -13,6 +13,8 @@ namespace flatlas::infrastructure {
 QMutex FreelancerMaterialResolver::s_cacheMutex;
 QHash<QString, QHash<QString, QStringList>> FreelancerMaterialResolver::s_materialTextureMapCache;
 QHash<QString, QHash<QString, QImage>> FreelancerMaterialResolver::s_embeddedTextureCache;
+QHash<QString, QHash<QString, QString>> FreelancerMaterialResolver::s_dataRootFileScanCache;
+QHash<QString, bool> FreelancerMaterialResolver::s_dataRootScannedFlag;
 
 namespace {
 
@@ -236,11 +238,34 @@ QString FreelancerMaterialResolver::resolveTextureValue(const QString &sourcePat
             return QFileInfo(candidate).absoluteFilePath();
     }
 
-    QDirIterator it(dataRoot, QDir::Files, QDirIterator::Subdirectories);
-    while (it.hasNext()) {
-        const QString path = it.next();
-        if (QFileInfo(path).fileName().compare(baseName, Qt::CaseInsensitive) == 0)
-            return path;
+    // Final fallback: locate a file by its bare name anywhere under dataRoot.
+    // Doing this naively with QDirIterator rescans the entire DATA tree for
+    // every unresolved candidate. Models such as li_manhattan_bar.cmp feed us
+    // many bogus names (authoring timestamps / concatenated strings) which
+    // made the app freeze for tens of seconds. We therefore scan each
+    // dataRoot at most once and keep a basename->fullpath map in memory.
+    const QString normalizedRoot = QDir(dataRoot).absolutePath();
+    const QString baseKey = baseName.toLower();
+    if (baseKey.isEmpty())
+        return {};
+    {
+        QMutexLocker lock(&s_cacheMutex);
+        const bool scanned = s_dataRootScannedFlag.value(normalizedRoot, false);
+        if (!scanned) {
+            auto &map = s_dataRootFileScanCache[normalizedRoot];
+            QDirIterator it(normalizedRoot, QDir::Files, QDirIterator::Subdirectories);
+            while (it.hasNext()) {
+                const QString path = it.next();
+                const QString fileKey = QFileInfo(path).fileName().toLower();
+                if (!fileKey.isEmpty() && !map.contains(fileKey))
+                    map.insert(fileKey, path);
+            }
+            s_dataRootScannedFlag.insert(normalizedRoot, true);
+        }
+        const auto &map = s_dataRootFileScanCache.value(normalizedRoot);
+        const auto hit = map.constFind(baseKey);
+        if (hit != map.cend())
+            return hit.value();
     }
 
     return {};
