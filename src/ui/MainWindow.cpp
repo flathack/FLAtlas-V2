@@ -10,27 +10,20 @@
 #include "core/I18n.h"
 #include "core/UndoManager.h"
 #include "editors/system/SystemEditorPage.h"
-#include "editors/system/SystemCreationWizard.h"
 #include "editors/ini/IniEditorPage.h"
 #include "editors/universe/UniverseEditorPage.h"
-#include "editors/base/BaseEditorPage.h"
 #include "editors/base/BaseBuilder.h"
 #include "editors/trade/TradeRoutePage.h"
 #include "editors/ids/IdsEditorPage.h"
 #include "editors/modmanager/ModManagerPage.h"
 #include "editors/npc/NpcEditorPage.h"
-#include "editors/infocard/InfocardEditor.h"
 #include "editors/news/NewsRumorEditor.h"
-#include "editors/jump/JumpConnectionDialog.h"
-#include "tools/ScriptPatcher.h"
-#include "tools/SpStarter.h"
 #include "tools/UpdateChecker.h"
 #include "tools/UpdateDownloader.h"
 #include "tools/UpdateInstaller.h"
 #include "tools/HelpBrowser.h"
 #include "tools/PathFinderDialog.h"
 #include "rendering/preview/ModelViewerPage.h"
-#include "rendering/preview/CharacterPreview.h"
 #include "domain/SystemDocument.h"
 #include "domain/UniverseData.h"
 #include "infrastructure/freelancer/UniverseScanner.h"
@@ -68,11 +61,9 @@ bool isContextBoundTab(QWidget *widget)
     return qobject_cast<flatlas::editors::UniverseEditorPage *>(widget)
         || qobject_cast<flatlas::editors::SystemEditorPage *>(widget)
         || qobject_cast<flatlas::editors::IniEditorPage *>(widget)
-        || qobject_cast<flatlas::editors::BaseEditorPage *>(widget)
         || qobject_cast<flatlas::editors::TradeRoutePage *>(widget)
         || qobject_cast<flatlas::editors::IdsEditorPage *>(widget)
         || qobject_cast<flatlas::editors::NpcEditorPage *>(widget)
-        || qobject_cast<flatlas::editors::InfocardEditor *>(widget)
         || qobject_cast<flatlas::editors::NewsRumorEditor *>(widget);
 }
 
@@ -222,33 +213,16 @@ void MainWindow::createMenus()
     auto *toolsMenu = menuBar()->addMenu(tr("&Tools"));
 
     // -- Editors --
-    toolsMenu->addAction(tr("&New System..."), this, [this]() { newSystem(); });
-    toolsMenu->addAction(tr("Open &System..."), this, [this]() { openSystemFile(); });
-    toolsMenu->addAction(tr("Open &Universe..."), this, [this]() { openUniverseFile(); });
     toolsMenu->addAction(tr("Open &File Editor..."), this, [this]() { openIniFile(); });
-    toolsMenu->addSeparator();
-    toolsMenu->addAction(tr("&Base Editor"), this, [this]() { openBaseEditor(); });
     toolsMenu->addAction(tr("&Trade Routes"), this, [this]() { openTradeRoutes(); });
     toolsMenu->addAction(tr("&IDS Editor"), this, [this]() { openIdsEditor(); });
     toolsMenu->addAction(tr("&Mod Manager"), this, [this]() { openModManager(); });
     toolsMenu->addAction(tr("&NPC Editor"), this, [this]() { openNpcEditor(); });
-    toolsMenu->addAction(tr("Info&card Editor"), this, [this]() { openInfocardEditor(); });
     toolsMenu->addAction(tr("Ne&ws/Rumor Editor"), this, [this]() { openNewsRumorEditor(); });
     toolsMenu->addSeparator();
 
     // -- Tools --
-    toolsMenu->addAction(tr("Trade Route &Analysis..."), this, []() { /* TODO Phase 11 */ });
     toolsMenu->addAction(tr("&3D Model Viewer"), this, [this]() { openModelViewer(); });
-    toolsMenu->addAction(tr("&Character Preview..."), this, [this]() {
-        auto *dlg = new flatlas::rendering::CharacterPreview(this);
-        dlg->setAttribute(Qt::WA_DeleteOnClose);
-        dlg->show();
-    });
-    toolsMenu->addAction(tr("&Jump Connection..."), this, [this]() {
-        auto *dlg = new flatlas::editors::JumpConnectionDialog(this);
-        dlg->setAttribute(Qt::WA_DeleteOnClose);
-        dlg->show();
-    });
     toolsMenu->addAction(tr("&Shortest Path..."), this, [this]() {
         // Versuche UniverseData vom aktiven UniverseEditorPage zu holen
         const flatlas::domain::UniverseData *udata = nullptr;
@@ -268,27 +242,6 @@ void MainWindow::createMenus()
         auto *dlg = new flatlas::tools::PathFinderDialog(udata, this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->show();
-    });
-    toolsMenu->addSeparator();
-    toolsMenu->addAction(tr("Apply &OpenSP Patch..."), this, [this]() {
-        const QString exe = QFileDialog::getOpenFileName(
-            this, tr("Select Freelancer.exe"), {}, tr("Executable (*.exe)"));
-        if (exe.isEmpty()) return;
-        auto r = flatlas::tools::ScriptPatcher::applyOpenSpPatch(exe);
-        if (r.success)
-            statusBar()->showMessage(tr("OpenSP patch applied. Backup: %1").arg(r.backupPath), 5000);
-        else
-            statusBar()->showMessage(tr("Patch failed: %1").arg(r.errorMessage), 5000);
-    });
-    toolsMenu->addAction(tr("Apply &Resolution Patch..."), this, [this]() {
-        const QString exe = QFileDialog::getOpenFileName(
-            this, tr("Select Freelancer.exe"), {}, tr("Executable (*.exe)"));
-        if (exe.isEmpty()) return;
-        auto r = flatlas::tools::ScriptPatcher::applyResolutionPatch(exe, 1920, 1080);
-        if (r.success)
-            statusBar()->showMessage(tr("Resolution patch applied. Backup: %1").arg(r.backupPath), 5000);
-        else
-            statusBar()->showMessage(tr("Patch failed: %1").arg(r.errorMessage), 5000);
     });
     toolsMenu->addAction(tr("&Launch Freelancer..."), this, &MainWindow::launchFreelancerFromContext);
 
@@ -679,18 +632,6 @@ bool MainWindow::saveWidgetWithPrompt(QWidget *widget)
         return false;
     }
 
-    if (auto *editor = qobject_cast<flatlas::editors::BaseEditorPage *>(widget)) {
-        QString targetPath = editor->filePath();
-        if (targetPath.isEmpty()) {
-            targetPath = QFileDialog::getSaveFileName(
-                this, tr("Save Base INI"), QString(),
-                tr("INI Files (*.ini);;All Files (*)"));
-            if (targetPath.isEmpty())
-                return false;
-        }
-        return editor->save(targetPath);
-    }
-
     return true;
 }
 
@@ -704,8 +645,6 @@ bool MainWindow::isWidgetDirty(QWidget *widget) const
     if (auto *editor = qobject_cast<flatlas::editors::UniverseEditorPage *>(widget))
         return editor->isDirty();
     if (auto *editor = qobject_cast<flatlas::editors::IniEditorPage *>(widget))
-        return editor->isDirty();
-    if (auto *editor = qobject_cast<flatlas::editors::BaseEditorPage *>(widget))
         return editor->isDirty();
 
     return false;
@@ -735,39 +674,6 @@ void MainWindow::saveWindowState()
     settings.setValue(QStringLiteral("mainwindow/state"), saveState());
 }
 
-void MainWindow::openSystemFile()
-{
-    const QString filePath = QFileDialog::getOpenFileName(
-        this, tr("Open System INI"), QString(),
-        tr("INI Files (*.ini);;All Files (*)"));
-    if (filePath.isEmpty())
-        return;
-
-    auto *editor = new flatlas::editors::SystemEditorPage(this);
-    if (!editor->loadFile(filePath)) {
-        QMessageBox::warning(this, tr("Error"),
-                             tr("Could not load system file:\n%1").arg(filePath));
-        delete editor;
-        return;
-    }
-
-    int idx = m_centerTabs->addTab(editor, formatSystemTabTitle(editor->document()->name(), QString()));
-    m_centerTabs->setCurrentIndex(idx);
-
-    connect(editor, &flatlas::editors::SystemEditorPage::titleChanged,
-            this, [this, editor](const QString &title) {
-        int i = m_centerTabs->indexOf(editor);
-        if (i >= 0)
-            m_centerTabs->setTabText(i, formatSystemTabTitle(title, QString()));
-    });
-    connect(editor, &flatlas::editors::SystemEditorPage::selectionStatusChanged,
-            this, [this](const QString &message) {
-        statusBar()->showMessage(message);
-    });
-
-    statusBar()->showMessage(tr("Loaded: %1").arg(filePath), 3000);
-}
-
 void MainWindow::saveCurrentSystem()
 {
     auto *editor = currentSystemEditor();
@@ -790,36 +696,6 @@ void MainWindow::saveCurrentSystem()
         else
             QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
     }
-}
-
-void MainWindow::newSystem()
-{
-    flatlas::editors::SystemCreationWizard wizard(this);
-    if (wizard.exec() != QDialog::Accepted)
-        return;
-
-    auto doc = wizard.createDocument();
-    if (!doc)
-        return;
-
-    auto *editor = new flatlas::editors::SystemEditorPage(this);
-    editor->setDocument(std::move(doc));
-
-    int idx = m_centerTabs->addTab(editor, formatSystemTabTitle(editor->document()->name(), QString()));
-    m_centerTabs->setCurrentIndex(idx);
-
-    connect(editor, &flatlas::editors::SystemEditorPage::titleChanged,
-            this, [this, editor](const QString &title) {
-        int i = m_centerTabs->indexOf(editor);
-        if (i >= 0)
-            m_centerTabs->setTabText(i, formatSystemTabTitle(title, QString()));
-    });
-    connect(editor, &flatlas::editors::SystemEditorPage::selectionStatusChanged,
-            this, [this](const QString &message) {
-        statusBar()->showMessage(message);
-    });
-
-    statusBar()->showMessage(tr("New system created"), 3000);
 }
 
 flatlas::editors::SystemEditorPage *MainWindow::currentSystemEditor() const
@@ -915,53 +791,6 @@ void MainWindow::saveCurrentFile()
             QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
     }
 
-    // Try base editor
-    auto *baseEditor = qobject_cast<flatlas::editors::BaseEditorPage *>(
-        m_centerTabs->currentWidget());
-    if (baseEditor) {
-        const QString filePath = QFileDialog::getSaveFileName(
-            this, tr("Save Base INI"), QString(),
-            tr("INI Files (*.ini);;All Files (*)"));
-        if (!filePath.isEmpty()) {
-            if (baseEditor->save(filePath))
-                statusBar()->showMessage(tr("Saved: %1").arg(filePath), 3000);
-            else
-                QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
-        }
-    }
-}
-
-void MainWindow::openUniverseFile()
-{
-    const QString filePath = QFileDialog::getOpenFileName(
-        this, tr("Open Universe.ini"), QString(),
-        tr("INI Files (*.ini);;All Files (*)"));
-    if (filePath.isEmpty())
-        return;
-
-    auto *editor = new flatlas::editors::UniverseEditorPage(this);
-    if (!editor->loadFile(filePath)) {
-        QMessageBox::warning(this, tr("Error"),
-                             tr("Could not load Universe file:\n%1").arg(filePath));
-        delete editor;
-        return;
-    }
-
-    int idx = m_centerTabs->addTab(editor,
-        QStringLiteral("Universe (%1)").arg(editor->data()->systemCount()));
-    m_centerTabs->setCurrentIndex(idx);
-
-    connect(editor, &flatlas::editors::UniverseEditorPage::titleChanged,
-            this, [this, editor](const QString &title) {
-        int i = m_centerTabs->indexOf(editor);
-        if (i >= 0)
-            m_centerTabs->setTabText(i, title);
-    });
-
-    connect(editor, &flatlas::editors::UniverseEditorPage::openSystemRequested,
-            this, &MainWindow::openSystemFromUniverse);
-
-    statusBar()->showMessage(tr("Loaded Universe: %1").arg(filePath), 3000);
 }
 
 void MainWindow::openUniverseFromContext()
@@ -1100,23 +929,6 @@ void MainWindow::openSystemFromUniverse(const QString &nickname,
     statusBar()->showMessage(tr("Opened system: %1").arg(nickname), 3000);
 }
 
-void MainWindow::openBaseEditor()
-{
-    auto *editor = new flatlas::editors::BaseEditorPage(this);
-
-    int idx = m_centerTabs->addTab(editor, tr("Base Editor (new)"));
-    m_centerTabs->setCurrentIndex(idx);
-
-    connect(editor, &flatlas::editors::BaseEditorPage::titleChanged,
-            this, [this, editor](const QString &title) {
-        int i = m_centerTabs->indexOf(editor);
-        if (i >= 0)
-            m_centerTabs->setTabText(i, title);
-    });
-
-    statusBar()->showMessage(tr("Base Editor opened"), 3000);
-}
-
 void MainWindow::openTradeRoutes()
 {
     auto *page = new flatlas::editors::TradeRoutePage(this);
@@ -1195,23 +1007,6 @@ void MainWindow::openNpcEditor()
     });
 
     statusBar()->showMessage(tr("NPC Editor opened"), 3000);
-}
-
-void MainWindow::openInfocardEditor()
-{
-    auto *editor = new flatlas::editors::InfocardEditor(this);
-
-    int idx = m_centerTabs->addTab(editor, tr("Infocard Editor"));
-    m_centerTabs->setCurrentIndex(idx);
-
-    connect(editor, &flatlas::editors::InfocardEditor::titleChanged,
-            this, [this, editor](const QString &title) {
-        int i = m_centerTabs->indexOf(editor);
-        if (i >= 0)
-            m_centerTabs->setTabText(i, title);
-    });
-
-    statusBar()->showMessage(tr("Infocard Editor opened"), 3000);
 }
 
 void MainWindow::openNewsRumorEditor()

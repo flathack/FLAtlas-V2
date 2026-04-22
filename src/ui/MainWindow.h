@@ -12,7 +12,6 @@ namespace flatlas::ui { class CenterTabWidget; }
 namespace flatlas::ui { class PropertiesPanel; }
 namespace flatlas::editors { class SystemEditorPage; }
 namespace flatlas::editors { class UniverseEditorPage; }
-namespace flatlas::editors { class BaseEditorPage; }
 namespace flatlas::editors { class TradeRoutePage; }
 namespace flatlas::editors { class IdsEditorPage; }
 namespace flatlas::editors { class ModManagerPage; }
@@ -39,21 +38,16 @@ private:
     void restoreWindowState();
     void saveWindowState();
     void applyThemeStyling();
-    void openSystemFile();
     void openIniFile();
     void openIniFile(const QString &filePath, const QString &searchText = QString(), int lineNumber = 0);
-    void openUniverseFile();
-    void openBaseEditor();
     void openTradeRoutes();
     void openIdsEditor();
     void openModManager();
     void openNpcEditor();
-    void openInfocardEditor();
     void openNewsRumorEditor();
     void openModelViewer();
     void saveCurrentSystem();
     void saveCurrentFile();
-    void newSystem();
     void openSystemFromUniverse(const QString &nickname,
                                 const QString &systemFile,
                                 const QString &ingameName);
