@@ -14,6 +14,8 @@
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
+#include <limits>
+
 #ifdef FLATLAS_HAS_QT3D
 #include "OrbitCamera.h"
 #include "MaterialFactory.h"
@@ -197,8 +199,24 @@ void ModelViewport3D::addNodeRecursive(const flatlas::infrastructure::ModelNode 
         wireNodeEntity->addComponent(transform);
     }
 
+    // Determine the best (lowest) LOD index available for this node, then only
+    // render meshes at that level.  Rendering all LOD meshes simultaneously
+    // causes the classic "stacked silhouette" artefact.
+    int bestLodIdx = std::numeric_limits<int>::max();
+    for (const auto &m : node.meshes) {
+        if (m.lodIndex >= 0 && m.lodIndex < bestLodIdx)
+            bestLodIdx = m.lodIndex;
+    }
+    // If no mesh has a non-negative lodIndex, render all meshes (fallback for
+    // simple .3db files that have no LOD metadata).
+    const bool lodFilterActive = bestLodIdx < std::numeric_limits<int>::max();
+
     for (int meshIndex = 0; meshIndex < node.meshes.size(); ++meshIndex) {
         const auto &mesh = node.meshes.at(meshIndex);
+
+        // Skip meshes that belong to a worse LOD level.
+        if (lodFilterActive && mesh.lodIndex >= 0 && mesh.lodIndex != bestLodIdx)
+            continue;
 
         if (meshNodeEntity) {
             auto *meshEntity = new Qt3DCore::QEntity(meshNodeEntity);

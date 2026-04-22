@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <limits>
 
 namespace flatlas::rendering {
 
@@ -351,8 +352,20 @@ ModelBounds ModelGeometryBuilder::boundsForNode(const flatlas::infrastructure::M
     transform.translate(parentOffset);
     transform.translate(node.origin);
     transform.rotate(node.rotation);
+
+    // Mirror the LOD filter used in ModelViewport3D::addNodeRecursive so that
+    // the camera is fitted to the same geometry that is actually rendered.
+    int bestLodIdx = std::numeric_limits<int>::max();
+    for (const auto &mesh : node.meshes) {
+        if (mesh.lodIndex >= 0 && mesh.lodIndex < bestLodIdx)
+            bestLodIdx = mesh.lodIndex;
+    }
+    const bool lodFilterActive = bestLodIdx < std::numeric_limits<int>::max();
+
     ModelBounds bounds;
     for (const auto &mesh : node.meshes) {
+        if (lodFilterActive && mesh.lodIndex >= 0 && mesh.lodIndex != bestLodIdx)
+            continue;
         for (const auto &vertex : mesh.vertices)
             bounds.include(transform.map(vertex.position));
     }
