@@ -41,28 +41,32 @@ QString formatLoadError(const QString &filePath)
         .arg(QFileInfo(filePath).fileName());
 }
 
-QColor colorForMeshIndex(int index)
+// Base palette for parts without material names. Used when no texture is found.
+// Each nodeIndex selects a distinct hue; brightness adapts to the background.
+QColor colorForNodeIndex(int nodeIndex, bool brightBackground)
 {
-    static const QList<QColor> palette{
-        QColor(212, 188, 128),
-        QColor(178, 196, 210),
-        QColor(153, 188, 166),
-        QColor(204, 164, 164),
-        QColor(166, 166, 202),
-        QColor(224, 214, 156),
-    };
-    return palette.at(index % palette.size());
+    // 12 evenly-spaced hues so adjacent parts stay distinguishable
+    static const int hues[] = {210, 30, 120, 0, 270, 60, 190, 340, 90, 240, 155, 315};
+    const int hue = hues[nodeIndex % 12];
+    const int sat = 130 + (nodeIndex % 3) * 20;   // 130 / 150 / 170
+    // Dark background → bright colours; light background → darker, more saturated
+    const int val = brightBackground ? 130 + (nodeIndex % 4) * 15   // 130…175
+                                     : 195 + (nodeIndex % 4) * 15;  // 195…240
+    return QColor::fromHsv(hue, sat, val);
 }
 
-QColor colorForMesh(const flatlas::infrastructure::MeshData &mesh, int fallbackIndex)
+QColor colorForMesh(const flatlas::infrastructure::MeshData &mesh, int nodeIndex, bool brightBackground)
 {
     if (mesh.materialName.isEmpty())
-        return colorForMeshIndex(fallbackIndex);
+        return colorForNodeIndex(nodeIndex, brightBackground);
 
     const uint hash = qHash(mesh.materialName.toLower());
     const int hue = static_cast<int>(hash % 360u);
-    const int sat = 90 + static_cast<int>((hash / 360u) % 80u);
-    const int val = 170 + static_cast<int>((hash / (360u * 80u)) % 60u);
+    // On a bright background reduce value so faces don't wash out
+    const int sat = brightBackground ? 120 + static_cast<int>((hash / 360u) % 100u)
+                                     :  90 + static_cast<int>((hash / 360u) %  80u);
+    const int val = brightBackground ? 120 + static_cast<int>((hash / (360u * 100u)) % 80u)
+                                     : 170 + static_cast<int>((hash / (360u *  80u)) % 60u);
     return QColor::fromHsv(hue, qBound(0, sat, 255), qBound(0, val, 255));
 }
 
@@ -179,7 +183,9 @@ void ModelViewport3D::clearSceneEntities()
 
 void ModelViewport3D::addNodeRecursive(const flatlas::infrastructure::ModelNode &node,
                                        Qt3DCore::QEntity *meshParentEntity,
-                                       Qt3DCore::QEntity *wireParentEntity)
+                                       Qt3DCore::QEntity *wireParentEntity,
+                                       int nodeIndex,
+                                       int depth)
 {
     Qt3DCore::QEntity *meshNodeEntity = nullptr;
     Qt3DCore::QEntity *wireNodeEntity = nullptr;
@@ -226,7 +232,8 @@ void ModelViewport3D::addNodeRecursive(const flatlas::infrastructure::ModelNode 
                 if (!texture.isNull())
                     material = MaterialFactory::createFromImage(texture, meshEntity);
                 if (!material)
-                    material = MaterialFactory::createDefault(colorForMesh(mesh, meshIndex), meshEntity);
+                    material = MaterialFactory::createDefault(
+                        colorForMesh(mesh, nodeIndex, m_whiteBackground), meshEntity);
                 meshEntity->addComponent(renderer);
                 meshEntity->addComponent(material);
             } else {
@@ -237,7 +244,8 @@ void ModelViewport3D::addNodeRecursive(const flatlas::infrastructure::ModelNode 
         if (wireNodeEntity) {
             auto *wireEntity = new Qt3DCore::QEntity(wireNodeEntity);
             if (auto *renderer = ModelGeometryBuilder::buildWireframeRenderer(mesh, wireEntity)) {
-                auto *material = MaterialFactory::createDefault(QColor(235, 235, 235), wireEntity);
+                const QColor wireColor = m_whiteBackground ? QColor(30, 30, 30) : QColor(235, 235, 235);
+                auto *material = MaterialFactory::createDefault(wireColor, wireEntity);
                 wireEntity->addComponent(renderer);
                 wireEntity->addComponent(material);
             } else {
@@ -246,8 +254,14 @@ void ModelViewport3D::addNodeRecursive(const flatlas::infrastructure::ModelNode 
         }
     }
 
-    for (const auto &child : node.children)
-        addNodeRecursive(child, meshNodeEntity, wireNodeEntity);
+    int childIndex = 0;
+    for (const auto &child : node.children) {
+        // Each child gets a unique index derived from the parent's index and its
+        // own position so siblings have different colours across the whole tree.
+        const int childNodeIndex = nodeIndex * 7 + depth * 3 + childIndex + 1;
+        addNodeRecursive(child, meshNodeEntity, wireNodeEntity, childNodeIndex, depth + 1);
+        ++childIndex;
+    }
 }
 
 void ModelViewport3D::updateVisibilityState()
@@ -406,9 +420,15 @@ void ModelViewport3D::setWhiteBackground(bool enabled)
 #ifdef FLATLAS_HAS_QT3D
     if (m_window && m_window->defaultFrameGraph())
         m_window->defaultFrameGraph()->setClearColor(enabled ? QColor(Qt::white) : QColor(Qt::black));
+    // Material colours are baked at scene build time, so rebuild when a model is loaded.
+    if (m_hasModel && !m_filePath.isEmpty()) {
+        const auto cached = flatlas::rendering::ModelCache::instance().load(m_filePath);
+        if (cached.isValid())
+            rebuildScene(cached.rootNode);
+    }
 #endif
     if (!m_hasModel)
-        setStatusMessage(m_whiteBackground ? tr("No model loaded.") : tr("No model loaded."));
+        setStatusMessage(tr("No model loaded."));
 }
 
 bool ModelViewport3D::eventFilter(QObject *watched, QEvent *event)

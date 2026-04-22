@@ -60,7 +60,9 @@ private:
     void clearSceneEntities();
     void addNodeRecursive(const flatlas::infrastructure::ModelNode &node,
                           Qt3DCore::QEntity *meshParentEntity,
-                          Qt3DCore::QEntity *wireParentEntity);
+                          Qt3DCore::QEntity *wireParentEntity,
+                          int nodeIndex = 0,
+                          int depth = 0);
     void updateVisibilityState();
     void fitCameraToBounds(const ModelBounds &bounds);
 

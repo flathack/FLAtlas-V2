@@ -16,7 +16,6 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
-#include <QMessageBox>
 #include <QPushButton>
 #include <QSplitter>
 #include <QTreeWidget>
@@ -225,7 +224,6 @@ bool ModelViewerPage::ensureViewport()
     if (!m_viewport) {
         if (m_viewportPlaceholder)
             m_viewportPlaceholder->setText(tr("The 3D preview could not be initialized."));
-        QMessageBox::warning(this, tr("3D Model Viewer"), tr("The 3D preview could not be initialized."));
         return false;
     }
 
@@ -403,10 +401,8 @@ void ModelViewerPage::executeScheduledViewportLoad()
             m_loadTimer->start(0);
     }
 
-    if (!loaded && !error.isEmpty()) {
+    if (!loaded && !error.isEmpty())
         m_fileLabel->setText(error);
-        QMessageBox::warning(this, tr("3D Model Viewer"), error);
-    }
 }
 
 void ModelViewerPage::updateButtons()
