@@ -41,6 +41,7 @@ private:
     void applyThemeStyling();
     void openSystemFile();
     void openIniFile();
+    void openIniFile(const QString &filePath, const QString &searchText = QString());
     void openUniverseFile();
     void openBaseEditor();
     void openTradeRoutes();

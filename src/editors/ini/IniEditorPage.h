@@ -25,6 +25,7 @@ public:
     QString filePath() const;
     QString fileName() const;
     bool isDirty() const;
+    void focusSearch(const QString &text);
 
 signals:
     void titleChanged(const QString &title);

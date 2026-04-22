@@ -836,6 +836,14 @@ void MainWindow::openIniFile()
     if (filePath.isEmpty())
         return;
 
+    openIniFile(filePath, QString());
+}
+
+void MainWindow::openIniFile(const QString &filePath, const QString &searchText)
+{
+    if (filePath.isEmpty())
+        return;
+
     auto *editor = new flatlas::editors::IniEditorPage(this);
     if (!editor->openFile(filePath)) {
         QMessageBox::warning(this, tr("Error"),
@@ -853,6 +861,9 @@ void MainWindow::openIniFile()
         if (i >= 0)
             m_centerTabs->setTabText(i, title);
     });
+
+    if (!searchText.trimmed().isEmpty())
+        editor->focusSearch(searchText);
 
     statusBar()->showMessage(tr("Opened: %1").arg(filePath), 3000);
 }
@@ -1148,6 +1159,10 @@ void MainWindow::openIdsEditor()
         int i = m_centerTabs->indexOf(editor);
         if (i >= 0)
             m_centerTabs->setTabText(i, title);
+    });
+    connect(editor, &flatlas::editors::IdsEditorPage::openIniRequested,
+            this, [this](const QString &filePath, const QString &searchText) {
+        openIniFile(filePath, searchText);
     });
 
     statusBar()->showMessage(tr("IDS Editor opened"), 3000);

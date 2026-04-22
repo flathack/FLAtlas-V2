@@ -159,6 +159,15 @@ bool IniEditorPage::isDirty() const
     return m_dirty;
 }
 
+void IniEditorPage::focusSearch(const QString &text)
+{
+    m_searchBar->setVisible(true);
+    m_searchEdit->setText(text);
+    m_searchEdit->setFocus();
+    m_searchEdit->selectAll();
+    findNext();
+}
+
 void IniEditorPage::onTextChanged()
 {
     if (!m_dirty) {

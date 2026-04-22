@@ -54,6 +54,7 @@ flatlas_add_test(test_TradeScoring    test_TradeScoring.cpp    flatlas_editors f
 
 # Phase 12 IDS/String tests
 flatlas_add_test(test_IdsStringTable  test_IdsStringTable.cpp  flatlas_infrastructure)
+flatlas_add_test(test_IdsDataService  test_IdsDataService.cpp  flatlas_infrastructure)
 flatlas_add_test(test_CsvImporter     test_CsvImporter.cpp     flatlas_infrastructure)
 flatlas_add_test(test_IdsEditorPage   test_IdsEditorPage.cpp   flatlas_editors Qt6::Widgets)
 
