@@ -12,8 +12,29 @@ using namespace flatlas::editors;
 class TestIniEditorPage : public QObject {
     Q_OBJECT
 private slots:
+    void opensWorkspaceWithoutFile();
     void loadsWorkspacePanelsFromIniFile();
 };
+
+void TestIniEditorPage::opensWorkspaceWithoutFile()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    IniEditorPage page;
+    page.openWorkspace(dir.path());
+
+    QCOMPARE(page.filePath(), QString());
+    QCOMPARE(page.fileName(), QStringLiteral("Untitled"));
+
+    auto *sectionList = page.findChild<QListWidget *>(QStringLiteral("iniSectionList"));
+    QVERIFY(sectionList != nullptr);
+    QCOMPARE(sectionList->count(), 0);
+
+    auto *historyList = page.findChild<QListWidget *>(QStringLiteral("iniHistoryList"));
+    QVERIFY(historyList != nullptr);
+    QVERIFY(historyList->count() >= 1);
+}
 
 void TestIniEditorPage::loadsWorkspacePanelsFromIniFile()
 {

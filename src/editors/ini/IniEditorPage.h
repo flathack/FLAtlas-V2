@@ -36,6 +36,7 @@ class IniEditorPage : public QWidget {
 public:
     explicit IniEditorPage(QWidget *parent = nullptr);
 
+    void openWorkspace(const QString &rootPath = QString());
     bool openFile(const QString &filePath);
     bool save();
     bool saveAs(const QString &filePath);

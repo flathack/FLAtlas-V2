@@ -479,6 +479,31 @@ void IniEditorPage::setupShortcuts()
     addAction(saveAction);
 }
 
+void IniEditorPage::openWorkspace(const QString &rootPath)
+{
+    m_filePath.clear();
+    m_wasBini = false;
+    m_pendingRecoveryText.clear();
+    m_collapsedSectionLines.clear();
+    m_snapshots.clear();
+    m_nextSnapshotId = 1;
+
+    m_loading = true;
+    m_editor->clear();
+    m_loading = false;
+
+    m_savedText.clear();
+    m_dirty = false;
+    setTreeRootPath(rootPath);
+    runAnalysis();
+    syncMinimapText();
+    refreshRecentFiles();
+    updateBreadcrumbs();
+    updateRecoveryUi();
+    captureSnapshot(tr("Workspace opened"));
+    updateTitle();
+}
+
 bool IniEditorPage::openFile(const QString &filePath)
 {
     bool wasBini = false;
