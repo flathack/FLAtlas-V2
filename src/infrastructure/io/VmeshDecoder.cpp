@@ -180,12 +180,10 @@ DecodedMesh decodeVerticesThenIndices(const QByteArray &data,
 
 int VmeshDecoder::uvSetCount(uint32_t fvf)
 {
-    // The tex-coord count is encoded in the upper nibble
-    if (fvf & FVF_TEX8) return 8;
-    if (fvf & FVF_TEX4) return 4;
-    if (fvf & FVF_TEX2) return 2;
-    if (fvf & FVF_TEX1) return 1;
-    return 0;
+    // The texture-coordinate count is a *numeric* value stored in bits 8–11 of the
+    // D3D Flexible Vertex Format, NOT a set of independent flag bits.
+    // 0x100 → 1 set, 0x200 → 2 sets, 0x300 → 3 sets, 0x400 → 4 sets, …
+    return static_cast<int>((fvf & 0x0F00u) >> 8);
 }
 
 bool VmeshDecoder::isSupportedStructuredSingleBlockFvf(uint32_t fvf)

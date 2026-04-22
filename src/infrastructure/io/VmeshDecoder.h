@@ -14,10 +14,13 @@ enum FVF : uint32_t {
     FVF_XYZ      = 0x002,   // Position (3 floats)
     FVF_NORMAL   = 0x010,   // Normal (3 floats)
     FVF_DIFFUSE  = 0x040,   // Diffuse color (1 uint32)
-    FVF_TEX1     = 0x100,   // 1 UV set (2 floats)
-    FVF_TEX2     = 0x200,   // 2 UV sets (4 floats)
-    FVF_TEX4     = 0x400,   // 4 UV sets (8 floats)
-    FVF_TEX8     = 0x800,   // 8 UV sets (16 floats)
+    // The texture-coordinate count is a numeric value in bits 8–11 (D3DFVF layout).
+    // These named constants equal the raw field value for common counts.
+    // Use uvSetCount() = (fvf & 0x0F00) >> 8 to read the actual count.
+    FVF_TEX1     = 0x100,   // tex-count field = 1  (1 UV set)
+    FVF_TEX2     = 0x200,   // tex-count field = 2  (2 UV sets)
+    FVF_TEX4     = 0x400,   // tex-count field = 4  (4 UV sets; 0x300 = 3 sets)
+    FVF_TEX8     = 0x800,   // tex-count field = 8  (8 UV sets)
 };
 
 /// Decoded mesh result from VMESH data.
