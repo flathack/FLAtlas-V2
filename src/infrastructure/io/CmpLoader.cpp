@@ -2227,10 +2227,20 @@ QVector<CmpTransformHint> buildCmpTransformHints(const QVector<CmpFixRecord> &re
         return partNameByAlias.value(lowered, lowered);
     };
 
+    // Normalize all parent keys/values to their canonical part names.
+    // Multiple source entries (Fix records use object-name keys, Rev/Pris records use
+    // part-name keys) may collapse to the same normalized key.  When that happens,
+    // prefer a non-empty parent over an empty one so that Rev/Pris "parent" fields
+    // (which store joint-axis names rather than actual parent part names and therefore
+    // resolve to empty strings) do not overwrite the correct parent established by a
+    // Fix record.
     QHash<QString, QString> normalizedParentByPart;
     for (auto it = parentByPart.cbegin(); it != parentByPart.cend(); ++it) {
         const QString key = normalizePartKey(it.key());
         const QString value = it.value().trimmed().isEmpty() ? QString() : normalizePartKey(it.value());
+        const auto existing = normalizedParentByPart.constFind(key);
+        if (existing != normalizedParentByPart.cend() && !existing.value().isEmpty() && value.isEmpty())
+            continue; // Don't replace a valid parent with an empty one
         normalizedParentByPart.insert(key, value);
     }
     parentByPart = normalizedParentByPart;
