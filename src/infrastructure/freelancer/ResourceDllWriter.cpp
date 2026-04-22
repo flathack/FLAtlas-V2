@@ -388,6 +388,7 @@ bool ResourceDllWriter::ensureStringResource(const QString &freelancerIniPath,
 
     const QString dllPath = resolveDllPath(freelancerIniPath, targetDllName);
     QMap<int, QString> localStrings = DllResources::loadStrings(dllPath, 0, 65535);
+    const QMap<int, QString> localHtml = loadHtmlResources(dllPath);
 
     int localId = 0;
     const int currentSlot = (currentGlobalId >> 16) & 0xFFFF;
@@ -397,7 +398,7 @@ bool ResourceDllWriter::ensureStringResource(const QString &freelancerIniPath,
 
     if (localId <= 0) {
         localId = 1;
-        while (localStrings.contains(localId))
+        while (localStrings.contains(localId) || localHtml.contains(localId))
             ++localId;
     }
 

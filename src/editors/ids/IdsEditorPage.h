@@ -68,6 +68,10 @@ private:
     void validateInfocardEditor();
     void prettyPrintInfocardEditor();
     QString currentEditorTargetDll() const;
+    int currentEditorTargetId() const;
+    void refreshTargetDllSelection();
+    void refreshCreatePreviewId();
+    void selectEntryByGlobalId(int globalId);
     const flatlas::infrastructure::IdsEntryRecord *selectedEntry() const;
     flatlas::infrastructure::IdsUsageType selectedMissingUsageType() const;
     int selectedMissingRow() const;
@@ -81,6 +85,8 @@ private:
     bool m_createMode = false;
     flatlas::infrastructure::IdsUsageType m_createUsageType = flatlas::infrastructure::IdsUsageType::IdsName;
     int m_selectedEntryId = 0;
+    int m_pendingSelectionId = 0;
+    bool m_ignoreSelectionRefresh = false;
 
     QFutureWatcher<flatlas::infrastructure::IdsDataset> *m_loadWatcher = nullptr;
     QToolBar *m_toolBar = nullptr;

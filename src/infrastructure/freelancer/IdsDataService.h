@@ -87,6 +87,9 @@ class IdsDataService {
 public:
     static IdsDataset loadFromGameRoot(const QString &gameRoot);
     static IdsDataset loadFromDllPath(const QString &dllPath);
+    static QString defaultCreationDllName(const IdsDataset &dataset);
+    static int nextAvailableGlobalId(const IdsDataset &dataset,
+                                     const QString &dllName = QString());
 
     static bool writeStringEntry(const IdsDataset &dataset,
                                  const QString &dllName,

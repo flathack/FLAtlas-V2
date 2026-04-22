@@ -98,6 +98,15 @@ public:
         return &m_entries.at(row);
     }
 
+    int rowForGlobalId(int globalId) const
+    {
+        for (int row = 0; row < m_entries.size(); ++row) {
+            if (m_entries.at(row).globalId == globalId)
+                return row;
+        }
+        return -1;
+    }
+
     int rowCount(const QModelIndex &parent = QModelIndex()) const override
     {
         return parent.isValid() ? 0 : m_entries.size();
@@ -515,10 +524,17 @@ void IdsEditorPage::applyDataset(IdsDataset dataset)
 
     populateAuxiliaryModels();
     refreshIssueSummary();
+    refreshTargetDllSelection();
     refreshStatusLabel();
 
     connect(m_tableView->selectionModel(), &QItemSelectionModel::selectionChanged,
             this, &IdsEditorPage::refreshEntrySelection, Qt::UniqueConnection);
+
+    if (m_pendingSelectionId > 0) {
+        selectEntryByGlobalId(m_pendingSelectionId);
+        m_pendingSelectionId = 0;
+    }
+
     emit titleChanged(QStringLiteral("IDS Editor (%1)").arg(m_dataset.entries.size()));
 }
 
@@ -555,6 +571,9 @@ void IdsEditorPage::populateAuxiliaryModels()
 
 void IdsEditorPage::refreshEntrySelection()
 {
+    if (m_ignoreSelectionRefresh)
+        return;
+
     const IdsEntryRecord *entry = selectedEntry();
     if (!entry) {
         if (!m_createMode)
@@ -642,6 +661,7 @@ void IdsEditorPage::populateEditorFromEntry(const IdsEntryRecord &entry)
     const int targetIndex = m_targetDllCombo->findText(entry.dllName);
     if (targetIndex >= 0)
         m_targetDllCombo->setCurrentIndex(targetIndex);
+    m_targetDllCombo->setEnabled(false);
 
     if (entry.hasHtmlValue) {
         m_editorStack->setCurrentIndex(1);
@@ -659,12 +679,18 @@ void IdsEditorPage::beginCreateMode(IdsUsageType usageType)
     m_createMode = true;
     m_createUsageType = usageType;
     m_selectedEntryId = 0;
+    m_ignoreSelectionRefresh = true;
+    if (m_tableView->selectionModel())
+        m_tableView->selectionModel()->clearSelection();
+    m_tableView->setCurrentIndex(QModelIndex());
     m_tableView->clearSelection();
+    m_ignoreSelectionRefresh = false;
 
     m_editorModeLabel->setText(tr("Creating new %1 entry").arg(IdsDataService::usageTypeLabel(usageType)));
-    m_entryMetaLabel->setText(tr("New entries are created through the current DLL workflow."));
-    m_idEdit->clear();
-    m_dllEdit->clear();
+    m_entryMetaLabel->setText(tr("New entries are created in the FLAtlas resource DLL."));
+    refreshTargetDllSelection();
+    refreshCreatePreviewId();
+    m_targetDllCombo->setEnabled(false);
 
     if (usageType == IdsUsageType::IdsInfo) {
         m_editorStack->setCurrentIndex(1);
@@ -690,6 +716,71 @@ void IdsEditorPage::reloadCurrentContext()
 QString IdsEditorPage::currentEditorTargetDll() const
 {
     return m_targetDllCombo->currentText().trimmed();
+}
+
+int IdsEditorPage::currentEditorTargetId() const
+{
+    bool ok = false;
+    const int value = m_idEdit->text().trimmed().toInt(&ok);
+    return ok ? value : 0;
+}
+
+void IdsEditorPage::refreshTargetDllSelection()
+{
+    const QString targetDll = m_createMode
+        ? IdsDataService::defaultCreationDllName(m_dataset)
+        : (selectedEntry() ? selectedEntry()->dllName : IdsDataService::defaultCreationDllName(m_dataset));
+
+    if (targetDll.isEmpty())
+        return;
+
+    int index = m_targetDllCombo->findText(targetDll);
+    if (index < 0) {
+        m_targetDllCombo->addItem(targetDll);
+        index = m_targetDllCombo->findText(targetDll);
+    }
+    if (index >= 0)
+        m_targetDllCombo->setCurrentIndex(index);
+}
+
+void IdsEditorPage::refreshCreatePreviewId()
+{
+    if (!m_createMode)
+        return;
+
+    const QString targetDll = IdsDataService::defaultCreationDllName(m_dataset);
+    const int nextId = IdsDataService::nextAvailableGlobalId(m_dataset, targetDll);
+    if (nextId > 0)
+        m_idEdit->setText(QString::number(nextId));
+    else
+        m_idEdit->clear();
+    m_dllEdit->setText(targetDll);
+}
+
+void IdsEditorPage::selectEntryByGlobalId(int globalId)
+{
+    if (globalId <= 0)
+        return;
+
+    auto *entryModel = static_cast<IdsEntryTableModel *>(m_proxy->sourceModel());
+    const int sourceRow = entryModel->rowForGlobalId(globalId);
+    if (sourceRow < 0)
+        return;
+
+    const QModelIndex sourceIndex = entryModel->index(sourceRow, 0);
+    QModelIndex proxyIndex = m_proxy->mapFromSource(sourceIndex);
+    if (!proxyIndex.isValid()) {
+        m_filterEdit->clear();
+        m_typeFilterCombo->setCurrentText(QStringLiteral("all"));
+        m_dllFilterCombo->setCurrentText(QStringLiteral("all"));
+        proxyIndex = m_proxy->mapFromSource(sourceIndex);
+    }
+    if (!proxyIndex.isValid())
+        return;
+
+    m_tableView->setCurrentIndex(proxyIndex);
+    m_tableView->scrollTo(proxyIndex, QAbstractItemView::PositionAtCenter);
+    refreshEntrySelection();
 }
 
 const IdsEntryRecord *IdsEditorPage::selectedEntry() const
@@ -732,6 +823,12 @@ void IdsEditorPage::saveCurrentEntry(bool createNew)
 
     const IdsEntryRecord *entry = selectedEntry();
     const bool htmlMode = createNew ? (m_createUsageType == IdsUsageType::IdsInfo) : (entry && entry->hasHtmlValue);
+    const QString targetDllName = createNew
+        ? IdsDataService::defaultCreationDllName(m_dataset)
+        : (entry ? entry->dllName : currentEditorTargetDll());
+    const int targetGlobalId = createNew
+        ? currentEditorTargetId()
+        : (entry ? entry->globalId : 0);
 
     int newGlobalId = 0;
     QString errorMessage;
@@ -743,8 +840,8 @@ void IdsEditorPage::saveCurrentEntry(bool createNew)
             return;
         }
         if (!IdsDataService::writeInfocardEntry(m_dataset,
-                                                currentEditorTargetDll(),
-                                                createNew || !entry ? 0 : entry->globalId,
+                                                targetDllName,
+                                                targetGlobalId,
                                                 xmlText,
                                                 &newGlobalId,
                                                 &errorMessage)) {
@@ -758,8 +855,8 @@ void IdsEditorPage::saveCurrentEntry(bool createNew)
             return;
         }
         if (!IdsDataService::writeStringEntry(m_dataset,
-                                              currentEditorTargetDll(),
-                                              createNew || !entry ? 0 : entry->globalId,
+                                              targetDllName,
+                                              targetGlobalId,
                                               text,
                                               &newGlobalId,
                                               &errorMessage)) {
@@ -768,6 +865,7 @@ void IdsEditorPage::saveCurrentEntry(bool createNew)
         }
     }
 
+    m_pendingSelectionId = newGlobalId;
     refreshStatusLabel(tr("Saved IDS entry %1").arg(newGlobalId));
     reloadCurrentContext();
 }
@@ -818,6 +916,7 @@ void IdsEditorPage::createAndAssignToMissing()
     }
 
     const IdsUsageType usageType = selectedMissingUsageType();
+    const QString targetDllName = IdsDataService::defaultCreationDllName(m_dataset);
     int newGlobalId = 0;
     QString errorMessage;
     if (usageType == IdsUsageType::IdsInfo) {
@@ -828,7 +927,7 @@ void IdsEditorPage::createAndAssignToMissing()
             return;
         }
         if (!IdsDataService::writeInfocardEntry(m_dataset,
-                                                currentEditorTargetDll(),
+                                                targetDllName,
                                                 0,
                                                 xmlText,
                                                 &newGlobalId,
@@ -843,7 +942,7 @@ void IdsEditorPage::createAndAssignToMissing()
             return;
         }
         if (!IdsDataService::writeStringEntry(m_dataset,
-                                              currentEditorTargetDll(),
+                                              targetDllName,
                                               0,
                                               text,
                                               &newGlobalId,
@@ -861,6 +960,7 @@ void IdsEditorPage::createAndAssignToMissing()
         return;
     }
 
+    m_pendingSelectionId = newGlobalId;
     refreshStatusLabel(tr("Created %1 and assigned it to %2").arg(newGlobalId).arg(fieldName));
     reloadCurrentContext();
 }

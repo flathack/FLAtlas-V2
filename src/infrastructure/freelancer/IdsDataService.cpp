@@ -89,13 +89,6 @@ bool isEditableFile(const QString &filePath)
     return QFileInfo(info.absolutePath()).isWritable();
 }
 
-QString entryDisplayText(const IdsEntryRecord &entry)
-{
-    if (entry.hasHtmlValue)
-        return entry.plainText;
-    return entry.stringValue;
-}
-
 QString normalizedUsageList(const QStringList &usageTypes)
 {
     QStringList copy = usageTypes;
@@ -148,13 +141,14 @@ struct SectionScanState {
     int sectionStartLine = 0;
     QString nickname;
     QString archetype;
+    QString baseNickname;
+    QString gotoTarget;
     int idsName = 0;
     int idsInfo = 0;
     int stridName = 0;
     bool hasIdsName = false;
     bool hasIdsInfo = false;
     bool hasStridName = false;
-    bool objectLike = false;
 };
 
 bool parseIntValue(const QString &value, int *out)
@@ -168,32 +162,50 @@ bool parseIntValue(const QString &value, int *out)
     return true;
 }
 
-bool isObjectLikeSection(const SectionScanState &state)
-{
-    if (!state.nickname.trimmed().isEmpty() || !state.archetype.trimmed().isEmpty())
-        return true;
+struct ExpectedIdsFields {
+    bool idsName = false;
+    bool idsInfo = false;
+};
 
+bool hasAssignedName(const SectionScanState &state)
+{
+    return (state.hasIdsName && state.idsName > 0)
+        || (state.hasStridName && state.stridName > 0);
+}
+
+ExpectedIdsFields expectedIdsFieldsForSection(const SectionScanState &state)
+{
     const QString section = state.sectionName.trimmed().toLower();
-    static const QSet<QString> knownSections = {
-        QStringLiteral("object"),
-        QStringLiteral("zone"),
-        QStringLiteral("systeminfo"),
-        QStringLiteral("base"),
-        QStringLiteral("room"),
-        QStringLiteral("mbase"),
-        QStringLiteral("gf_npc"),
-        QStringLiteral("newsitem"),
-    };
-    return knownSections.contains(section);
+    if (section == QStringLiteral("system"))
+        return {true, true};
+    if (section == QStringLiteral("base"))
+        return {true, true};
+    if (section == QStringLiteral("mbase"))
+        return {true, true};
+    if (section == QStringLiteral("room"))
+        return {true, false};
+
+    if (section == QStringLiteral("object")) {
+        const bool isNamedWorldObject = !state.baseNickname.trimmed().isEmpty()
+            || !state.gotoTarget.trimmed().isEmpty();
+        if (isNamedWorldObject)
+            return {true, true};
+    }
+
+    return {};
 }
 
 void maybeAppendMissing(const SectionScanState &state,
                         QVector<IdsMissingAssignmentRecord> *missingAssignments)
 {
-    if (!missingAssignments || !isObjectLikeSection(state))
+    if (!missingAssignments)
         return;
 
-    if (!state.hasIdsName || state.idsName <= 0) {
+    const ExpectedIdsFields expected = expectedIdsFieldsForSection(state);
+    if (!expected.idsName && !expected.idsInfo)
+        return;
+
+    if (expected.idsName && !hasAssignedName(state)) {
         IdsMissingAssignmentRecord record;
         record.usageType = IdsUsageType::IdsName;
         record.filePath = state.filePath;
@@ -208,7 +220,7 @@ void maybeAppendMissing(const SectionScanState &state,
         missingAssignments->append(record);
     }
 
-    if (!state.hasIdsInfo || state.idsInfo <= 0) {
+    if (expected.idsInfo && (!state.hasIdsInfo || state.idsInfo <= 0)) {
         IdsMissingAssignmentRecord record;
         record.usageType = IdsUsageType::IdsInfo;
         record.filePath = state.filePath;
@@ -314,6 +326,10 @@ void scanIniFile(const QString &filePath,
             state.nickname = value;
         else if (lowered == QStringLiteral("archetype"))
             state.archetype = value;
+        else if (lowered == QStringLiteral("base"))
+            state.baseNickname = value;
+        else if (lowered == QStringLiteral("goto"))
+            state.gotoTarget = value;
 
         int globalId = 0;
         if (lowered == QStringLiteral("ids_name")) {
@@ -446,7 +462,75 @@ QString resolveDllPath(const QString &exeDir, const QString &dllName)
     return QDir(exeDir).absoluteFilePath(dllName);
 }
 
+int predictedSlotForDll(const IdsDataset &dataset, const QString &dllName)
+{
+    const QString normalizedTarget = normalizeDllName(dllName);
+    if (normalizedTarget.isEmpty())
+        return 0;
+
+    if (!dataset.freelancerIniPath.isEmpty()) {
+        const int slot = ResourceDllWriter::slotForDll(dataset.freelancerIniPath, dllName);
+        if (slot > 0)
+            return slot;
+    }
+
+    for (int index = 0; index < dataset.resourceDlls.size(); ++index) {
+        if (normalizeDllName(dataset.resourceDlls.at(index)) == normalizedTarget)
+            return index + 1;
+    }
+
+    for (const auto &entry : dataset.entries) {
+        if (normalizeDllName(entry.dllName) == normalizedTarget && entry.dllSlot > 0)
+            return entry.dllSlot;
+    }
+
+    return dataset.resourceDlls.size() + 1;
+}
+
 } // namespace
+
+QString IdsDataService::defaultCreationDllName(const IdsDataset &dataset)
+{
+    if (!dataset.freelancerIniPath.isEmpty())
+        return ResourceDllWriter::targetFlatlasResourceDll(dataset.freelancerIniPath);
+
+    for (const QString &dllName : dataset.resourceDlls) {
+        if (ResourceDllWriter::isFlatlasResourceDll(dllName))
+            return dllName;
+    }
+
+    for (const auto &entry : dataset.entries) {
+        if (ResourceDllWriter::isFlatlasResourceDll(entry.dllName))
+            return entry.dllName;
+    }
+
+    if (!dataset.resourceDlls.isEmpty())
+        return dataset.resourceDlls.first();
+    if (!dataset.entries.isEmpty())
+        return dataset.entries.first().dllName;
+    return ResourceDllWriter::preferredFlatlasDllName();
+}
+
+int IdsDataService::nextAvailableGlobalId(const IdsDataset &dataset, const QString &dllName)
+{
+    const QString targetDll = dllName.trimmed().isEmpty() ? defaultCreationDllName(dataset) : dllName.trimmed();
+    const int slot = predictedSlotForDll(dataset, targetDll);
+    if (slot <= 0)
+        return 0;
+
+    QSet<int> usedLocalIds;
+    const QString normalizedTarget = normalizeDllName(targetDll);
+    for (const auto &entry : dataset.entries) {
+        if (normalizeDllName(entry.dllName) == normalizedTarget && entry.localId > 0)
+            usedLocalIds.insert(entry.localId);
+    }
+
+    int localId = 1;
+    while (usedLocalIds.contains(localId))
+        ++localId;
+
+    return ResourceDllWriter::makeGlobalId(slot, localId);
+}
 
 IdsDataset IdsDataService::loadFromGameRoot(const QString &gameRoot)
 {
@@ -686,12 +770,13 @@ QString IdsDataService::prettyInfocardXml(const QString &xmlText, QString *error
 
     QDomDocument doc;
     const QString sanitized = sanitizeInfocardXmlLike(xmlText);
-    QString domError;
-    int errorLine = 0;
-    int errorColumn = 0;
-    if (!doc.setContent(sanitized, &domError, &errorLine, &errorColumn)) {
+    const auto parseResult = doc.setContent(sanitized);
+    if (!parseResult) {
         if (errorMessage)
-            *errorMessage = QStringLiteral("%1 (line %2, column %3)").arg(domError).arg(errorLine).arg(errorColumn);
+            *errorMessage = QStringLiteral("%1 (line %2, column %3)")
+                                .arg(parseResult.errorMessage)
+                                .arg(parseResult.errorLine)
+                                .arg(parseResult.errorColumn);
         return {};
     }
 
