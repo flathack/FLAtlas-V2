@@ -1,6 +1,7 @@
 # flatlas_infrastructure – Parser, IO, Freelancer-Pfade, Updater
 add_library(flatlas_infrastructure STATIC
     parser/IniParser.h parser/IniParser.cpp
+    parser/IniAnalysisService.h parser/IniAnalysisService.cpp
     parser/BiniDecoder.h parser/BiniDecoder.cpp
     parser/BiniConverter.h parser/BiniConverter.cpp
     parser/XmlInfocard.h parser/XmlInfocard.cpp

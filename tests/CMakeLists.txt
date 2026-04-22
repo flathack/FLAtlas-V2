@@ -11,6 +11,7 @@ function(flatlas_add_test name source)
 endfunction()
 
 flatlas_add_test(test_IniParser      test_IniParser.cpp      flatlas_infrastructure)
+flatlas_add_test(test_IniAnalysisService test_IniAnalysisService.cpp flatlas_infrastructure)
 flatlas_add_test(test_BiniDecoder    test_BiniDecoder.cpp    flatlas_infrastructure)
 flatlas_add_test(test_BiniConverter  test_BiniConverter.cpp  flatlas_infrastructure)
 flatlas_add_test(test_PathUtils      test_PathUtils.cpp      flatlas_core)
@@ -30,6 +31,7 @@ flatlas_add_test(test_SystemPersistence test_SystemPersistence.cpp flatlas_edito
 
 # Phase 6 INI editor tests
 flatlas_add_test(test_IniSyntaxHighlighter test_IniSyntaxHighlighter.cpp flatlas_editors Qt6::Widgets)
+flatlas_add_test(test_IniEditorPage test_IniEditorPage.cpp flatlas_editors Qt6::Widgets)
 
 # Phase 7 3D view tests
 flatlas_add_test(test_SceneView3D test_SceneView3D.cpp flatlas_rendering Qt6::Widgets)

@@ -225,7 +225,7 @@ void MainWindow::createMenus()
     toolsMenu->addAction(tr("&New System..."), this, [this]() { newSystem(); });
     toolsMenu->addAction(tr("Open &System..."), this, [this]() { openSystemFile(); });
     toolsMenu->addAction(tr("Open &Universe..."), this, [this]() { openUniverseFile(); });
-    toolsMenu->addAction(tr("Open &INI..."), this, [this]() { openIniFile(); });
+    toolsMenu->addAction(tr("Open &File Editor..."), this, [this]() { openIniFile(); });
     toolsMenu->addSeparator();
     toolsMenu->addAction(tr("&Base Editor"), this, [this]() { openBaseEditor(); });
     toolsMenu->addAction(tr("&Trade Routes"), this, [this]() { openTradeRoutes(); });
@@ -831,15 +831,15 @@ flatlas::editors::SystemEditorPage *MainWindow::currentSystemEditor() const
 void MainWindow::openIniFile()
 {
     const QString filePath = QFileDialog::getOpenFileName(
-        this, tr("Open INI File"), QString(),
-        tr("INI Files (*.ini);;All Files (*)"));
+        this, tr("Open File Editor File"), QString(),
+        tr("INI-like Files (*.ini *.cfg *.txt *.bini);;All Files (*)"));
     if (filePath.isEmpty())
         return;
 
     openIniFile(filePath, QString());
 }
 
-void MainWindow::openIniFile(const QString &filePath, const QString &searchText)
+void MainWindow::openIniFile(const QString &filePath, const QString &searchText, int lineNumber)
 {
     if (filePath.isEmpty())
         return;
@@ -861,9 +861,15 @@ void MainWindow::openIniFile(const QString &filePath, const QString &searchText)
         if (i >= 0)
             m_centerTabs->setTabText(i, title);
     });
+    connect(editor, &flatlas::editors::IniEditorPage::openFileRequested,
+            this, [this](const QString &requestedPath, const QString &requestedSearchText, int requestedLineNumber) {
+        openIniFile(requestedPath, requestedSearchText, requestedLineNumber);
+    });
 
     if (!searchText.trimmed().isEmpty())
         editor->focusSearch(searchText);
+    if (lineNumber > 0)
+        editor->goToLine(lineNumber);
 
     statusBar()->showMessage(tr("Opened: %1").arg(filePath), 3000);
 }
@@ -877,7 +883,7 @@ void MainWindow::saveCurrentFile()
         return;
     }
 
-    // Try INI editor
+    // Try file editor
     auto *iniEditor = qobject_cast<flatlas::editors::IniEditorPage *>(
         m_centerTabs->currentWidget());
     if (iniEditor) {
@@ -1162,7 +1168,7 @@ void MainWindow::openIdsEditor()
     });
     connect(editor, &flatlas::editors::IdsEditorPage::openIniRequested,
             this, [this](const QString &filePath, const QString &searchText) {
-        openIniFile(filePath, searchText);
+        openIniFile(filePath, searchText, 0);
     });
 
     statusBar()->showMessage(tr("IDS Editor opened"), 3000);

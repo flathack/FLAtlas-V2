@@ -113,7 +113,7 @@ void HelpBrowser::loadBuiltinTopics()
            "<ul>"
            "<li>System Editor – Edit star systems, objects, zones</li>"
            "<li>Universe Editor – Manage the game universe</li>"
-           "<li>INI Editor – Syntax-highlighted INI file editing</li>"
+           "<li>File Editor – Workspace for Freelancer INI-like files</li>"
            "<li>Trade Route Analyzer – Find profitable trade routes</li>"
            "<li>3D Model Viewer – Preview ship and station models</li>"
            "<li>Mod Manager – Manage game modifications</li>"
@@ -151,14 +151,14 @@ void HelpBrowser::loadBuiltinTopics()
 
     registerTopic({
         QStringLiteral("ini-editor"),
-        tr("INI Editor"),
-        tr("<h1>INI Editor</h1>"
-           "<p>A syntax-highlighted editor for Freelancer INI configuration files.</p>"
+          tr("File Editor"),
+          tr("<h1>File Editor</h1>"
+              "<p>A workspace editor for Freelancer INI-like configuration files.</p>"
            "<h2>Features</h2>"
            "<ul>"
-           "<li>Syntax highlighting for sections, keys, values</li>"
-           "<li>Auto-completion for known keys</li>"
-           "<li>Error detection for invalid entries</li>"
+              "<li>Syntax highlighting for sections, keys, values</li>"
+              "<li>Section navigation, diagnostics, and global search</li>"
+              "<li>Autosave, recovery, and snapshot history</li>"
            "</ul>")
     });
 
