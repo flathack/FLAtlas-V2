@@ -53,6 +53,7 @@ flatlas_add_test(test_BaseEditor   test_BaseEditor.cpp   flatlas_editors Qt6::Wi
 # Phase 11 Trade route tests
 flatlas_add_test(test_MarketScanner   test_MarketScanner.cpp   flatlas_editors)
 flatlas_add_test(test_TradeScoring    test_TradeScoring.cpp    flatlas_editors flatlas_domain)
+flatlas_add_test(test_TradeRouteDataService test_TradeRouteDataService.cpp flatlas_editors)
 
 # Phase 12 IDS/String tests
 flatlas_add_test(test_IdsStringTable  test_IdsStringTable.cpp  flatlas_infrastructure)

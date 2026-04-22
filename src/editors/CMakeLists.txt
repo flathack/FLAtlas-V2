@@ -24,6 +24,7 @@ add_library(flatlas_editors STATIC
     infocard/InfocardEditor.h infocard/InfocardEditor.cpp
     trade/TradeRoutePage.h trade/TradeRoutePage.cpp
     trade/MarketScanner.h trade/MarketScanner.cpp
+    trade/TradeRouteDataService.h trade/TradeRouteDataService.cpp
     trade/TradeScoring.h trade/TradeScoring.cpp
     news/NewsRumorEditor.h news/NewsRumorEditor.cpp
     ids/IdsEditorPage.h ids/IdsEditorPage.cpp

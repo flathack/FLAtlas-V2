@@ -14,6 +14,7 @@ private slots:
     void testProfitCalculation();
     void testJumpsBetween();
     void testFindTopRoutes();
+    void testAdvancedRouteMetrics();
 };
 
 void TestTradeScoring::testProfitCalculation()
@@ -73,6 +74,38 @@ void TestTradeScoring::testFindTopRoutes()
     // Second should be silver (70 profit)
     QCOMPARE(routes[1].commodity, QStringLiteral("silver"));
     QCOMPARE(routes[1].profit, 70);
+}
+
+void TestTradeScoring::testAdvancedRouteMetrics()
+{
+    TradeRouteWorkspaceData workspace;
+    workspace.universe = std::make_shared<UniverseData>();
+    workspace.universe->addSystem({"sys_a", "System A", "", QVector3D(0.0f, 0.0f, 0.0f), 0, 0});
+    workspace.universe->addSystem({"sys_b", "System B", "", QVector3D(1000.0f, 0.0f, 0.0f), 0, 0});
+    workspace.universe->connections.append({"sys_a", "gate_a", "sys_b", "gate_b", "gate"});
+
+    workspace.commodities.append({"commodity_gold", "Gold", 100, 5, 0, 0, {}});
+    workspace.bases.append({"base_a", "Base A", "sys_a", "System A", QVector3D(0.0f, 0.0f, 0.0f)});
+    workspace.bases.append({"base_b", "Base B", "sys_b", "System B", QVector3D(500.0f, 0.0f, 0.0f)});
+    workspace.jumps.append({"gate_a", "sys_a", "sys_b", "gate", QVector3D(100.0f, 0.0f, 0.0f)});
+    workspace.jumps.append({"gate_b", "sys_b", "sys_a", "gate", QVector3D(200.0f, 0.0f, 0.0f)});
+    workspace.prices.append({"base_a", "Base A", "sys_a", "commodity_gold", 100, 1.0, true, false, {}});
+    workspace.prices.append({"base_b", "Base B", "sys_b", "commodity_gold", 240, 2.4, false, false, {}});
+
+    TradeScoring scoring;
+    scoring.setWorkspaceData(&workspace);
+
+    TradeRouteFilter filter;
+    filter.cargoCapacity = 100;
+    filter.maxResults = 10;
+    const auto routes = scoring.calculateRoutes(filter);
+    QCOMPARE(routes.size(), 1);
+    QCOMPARE(routes.first().commodityDisplayName, QStringLiteral("Gold"));
+    QCOMPARE(routes.first().profit, 140);
+    QVERIFY(routes.first().travelTimeSeconds > 0);
+    QVERIFY(routes.first().totalDistance > 0.0);
+    QVERIFY(routes.first().profitPerMinute > 0.0);
+    QVERIFY(routes.first().score > 0.0);
 }
 
 QTEST_GUILESS_MAIN(TestTradeScoring)
