@@ -191,8 +191,11 @@ ModelViewerPage::ModelViewerPage(QWidget *parent)
     splitter->setStretchFactor(0, 4);
     splitter->setStretchFactor(1, 5);
 
-    rebuildEntries();
+    // Defer the asset scan so the page appears immediately rather than blocking
+    // the UI until all model entries have been enumerated.
+    m_summaryLabel->setText(tr("Loading..."));
     updateButtons();
+    QTimer::singleShot(0, this, &ModelViewerPage::rebuildEntries);
 }
 
 const flatlas::infrastructure::ModelAssetEntry *ModelViewerPage::findEntryByModelPath(const QString &modelPath) const
@@ -367,7 +370,7 @@ void ModelViewerPage::scheduleViewportLoad(const QString &modelPath, bool requir
 
 void ModelViewerPage::executeScheduledViewportLoad()
 {
-    if (m_modelLoadInProgress || !m_viewport)
+    if (!m_viewport)
         return;
 
     const QString modelPath = m_pendingModelPath;
@@ -391,18 +394,15 @@ void ModelViewerPage::executeScheduledViewportLoad()
         return;
     }
 
-    m_modelLoadInProgress = true;
-    QString error;
-    const bool loaded = m_viewport->loadModelFile(modelPath, &error);
-    m_modelLoadInProgress = false;
+    // loadModelFile() starts an async background load and returns immediately.
+    // All outcomes (success and errors) are delivered via the modelLoaded signal.
+    m_viewport->loadModelFile(modelPath);
 
+    // If a new selection was queued while we were setting up the load, restart the timer.
     if (!m_pendingModelPath.isEmpty()) {
         if (m_loadTimer)
             m_loadTimer->start(0);
     }
-
-    if (!loaded && !error.isEmpty())
-        m_fileLabel->setText(error);
 }
 
 void ModelViewerPage::updateButtons()

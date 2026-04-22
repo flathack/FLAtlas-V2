@@ -8,11 +8,14 @@
 
 #include <QEvent>
 #include <QFileInfo>
+#include <QFutureWatcher>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QResizeEvent>
 #include <QVBoxLayout>
 #include <QWheelEvent>
+
+#include <QtConcurrent/QtConcurrent>
 
 #include <limits>
 
@@ -293,6 +296,8 @@ void ModelViewport3D::fitCameraToBounds(const ModelBounds &bounds)
 
 bool ModelViewport3D::loadModelFile(const QString &filePath, QString *errorMessage)
 {
+    // Increment generation so any previous async load can detect it is stale.
+    const int myGeneration = ++m_loadGeneration;
     clearModel();
 
 #ifdef FLATLAS_HAS_QT3D
@@ -306,44 +311,59 @@ bool ModelViewport3D::loadModelFile(const QString &filePath, QString *errorMessa
     }
 #endif
 
-    flatlas::infrastructure::DecodedModel decoded;
-    try {
-        decoded = flatlas::rendering::ModelCache::instance().load(filePath);
-    } catch (...) {
-        const QString message = tr("An unexpected error occurred while loading %1.")
-                                    .arg(QFileInfo(filePath).fileName());
-        setStatusMessage(message);
-        if (errorMessage)
-            *errorMessage = message;
-        emit modelLoaded(filePath, false, message);
-        return false;
-    }
-
-    if (!decoded.isValid()) {
-        const QString message = formatLoadError(filePath);
-        setStatusMessage(message);
-        if (errorMessage)
-            *errorMessage = message;
-        emit modelLoaded(filePath, false, message);
-        return false;
-    }
-
+    // Show loading indicator immediately so the UI never looks frozen.
     m_filePath = filePath;
-    m_hasModel = true;
-    try {
-        rebuildScene(decoded.rootNode);
-    } catch (...) {
-        clearModel();
-        const QString message = tr("The model could not be rendered safely: %1.")
-                                    .arg(QFileInfo(filePath).fileName());
-        setStatusMessage(message);
-        if (errorMessage)
-            *errorMessage = message;
-        emit modelLoaded(filePath, false, message);
-        return false;
-    }
-    setStatusMessage(QString());
-    emit modelLoaded(filePath, true, QString());
+    setStatusMessage(tr("Loading model..."));
+
+    // Run the heavy file I/O and parsing on a background thread.
+    // rebuildScene() is called back on the main thread via the finished signal.
+    auto *watcher = new QFutureWatcher<flatlas::infrastructure::DecodedModel>(this);
+    connect(watcher, &QFutureWatcher<flatlas::infrastructure::DecodedModel>::finished,
+            this, [this, watcher, filePath, myGeneration]() {
+        watcher->deleteLater();
+
+        // Discard if a newer load was started while this one was running.
+        if (myGeneration != m_loadGeneration)
+            return;
+
+        flatlas::infrastructure::DecodedModel decoded;
+        try {
+            decoded = watcher->result();
+        } catch (...) {
+            const QString message = tr("An unexpected error occurred while loading %1.")
+                                        .arg(QFileInfo(filePath).fileName());
+            m_filePath.clear();
+            setStatusMessage(message);
+            emit modelLoaded(filePath, false, message);
+            return;
+        }
+
+        if (!decoded.isValid()) {
+            m_filePath.clear();
+            const QString message = formatLoadError(filePath);
+            setStatusMessage(message);
+            emit modelLoaded(filePath, false, message);
+            return;
+        }
+
+        m_hasModel = true;
+        try {
+            rebuildScene(decoded.rootNode);
+        } catch (...) {
+            clearModel();
+            const QString message = tr("The model could not be rendered safely: %1.")
+                                        .arg(QFileInfo(filePath).fileName());
+            setStatusMessage(message);
+            emit modelLoaded(filePath, false, message);
+            return;
+        }
+        setStatusMessage(QString());
+        emit modelLoaded(filePath, true, QString());
+    });
+
+    watcher->setFuture(QtConcurrent::run([filePath]() {
+        return flatlas::rendering::ModelCache::instance().load(filePath);
+    }));
     return true;
 }
 

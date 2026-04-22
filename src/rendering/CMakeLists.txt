@@ -31,6 +31,7 @@ target_link_libraries(flatlas_rendering PUBLIC
     flatlas_domain
     flatlas_infrastructure
     Qt6::Core
+    Qt6::Concurrent
     Qt6::Widgets
     Qt6::Gui
 )

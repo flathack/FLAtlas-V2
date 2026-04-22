@@ -90,6 +90,7 @@ private:
     bool m_meshVisible = true;
     bool m_boundingBoxVisible = false;
     bool m_whiteBackground = false;
+    int m_loadGeneration = 0; // incremented on each loadModelFile(); stale async results are discarded
 };
 
 } // namespace flatlas::rendering

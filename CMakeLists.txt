@@ -11,6 +11,7 @@ set(CMAKE_AUTOUIC ON)
 # Qt6 finden
 find_package(Qt6 REQUIRED COMPONENTS
     Core
+    Concurrent
     Widgets
     Gui
     Network

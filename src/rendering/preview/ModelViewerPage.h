@@ -63,7 +63,6 @@ private:
     QTimer *m_loadTimer = nullptr;
     QString m_pendingModelPath;
     bool m_pendingLoadRequiresCurrentEntryMatch = false;
-    bool m_modelLoadInProgress = false;
 };
 
 } // namespace flatlas::rendering
