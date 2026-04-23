@@ -43,8 +43,12 @@ public:
 
 signals:
     void objectSelected(const QString &nickname);
+    void itemsMoveStarted(const QHash<QString, QPointF> &startScenePositions);
+    void itemsMoving(const QHash<QString, QPointF> &currentScenePositions,
+                     double verticalOffsetMeters);
     void itemsMoved(const QHash<QString, QPointF> &oldPositions,
-                    const QHash<QString, QPointF> &newPositions);
+                    const QHash<QString, QPointF> &newPositions,
+                    double verticalOffsetMeters);
     void placementClicked(const QPointF &scenePos);
     void placementCanceled();
 
@@ -94,6 +98,8 @@ private:
     int m_pendingInitialFitPasses = 0;
     bool m_trackingSelectionMove = false;
     QHash<QString, QPointF> m_moveStartPositions;
+    double m_moveVerticalOffsetMeters = 0.0;
+    bool m_moveDidEmitStart = false;
     QRubberBand *m_rubberBand = nullptr;
     QPoint m_rubberBandOrigin;
     bool m_rubberBandSelecting = false;

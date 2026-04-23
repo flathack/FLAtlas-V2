@@ -201,6 +201,43 @@ void SystemMapView::zoomToFit()
 
 void SystemMapView::wheelEvent(QWheelEvent *event)
 {
+    // Ctrl + wheel while a tracked selection move is active adjusts the
+    // vertical (Y / height) offset in 10 m steps. The active X/Z drag
+    // continues as normal; only the Y offset is accumulated and forwarded
+    // via the itemsMoving / itemsMoved signals.
+    if (m_trackingSelectionMove && (event->modifiers() & Qt::ControlModifier)) {
+        const int notches = event->angleDelta().y() / 120;
+        if (notches != 0) {
+            constexpr double kStepMeters = 10.0;
+            m_moveVerticalOffsetMeters += static_cast<double>(notches) * kStepMeters;
+
+            if (m_mapScene) {
+                QHash<QString, QPointF> currentScenePositions;
+                const auto sceneItems = m_mapScene->selectedItems();
+                for (QGraphicsItem *item : sceneItems) {
+                    QString nickname;
+                    if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item))
+                        nickname = solarItem->nickname();
+                    else if (auto *zoneItem = dynamic_cast<ZoneItem2D *>(item))
+                        nickname = zoneItem->nickname();
+                    if (nickname.isEmpty() || !m_moveStartPositions.contains(nickname))
+                        continue;
+                    currentScenePositions.insert(nickname, item->scenePos());
+                }
+                if (!currentScenePositions.isEmpty()) {
+                    if (!m_moveDidEmitStart) {
+                        m_moveDidEmitStart = true;
+                        emit itemsMoveStarted(m_moveStartPositions);
+                    }
+                    emit itemsMoving(currentScenePositions, m_moveVerticalOffsetMeters);
+                }
+            }
+            viewport()->update();
+        }
+        event->accept();
+        return;
+    }
+
     constexpr double factor = 1.15;
     const double currentScale = transform().m11();
 
@@ -266,6 +303,17 @@ void SystemMapView::mousePressEvent(QMouseEvent *event)
     }
     beginTrackedSelectionMove(event);
     QGraphicsView::mousePressEvent(event);
+    // A left click on a currently unselected item only becomes "selected"
+    // during the base class mousePressEvent above. Our first
+    // beginTrackedSelectionMove therefore saw no selection and skipped
+    // tracking. Retry so the ghost overlay and distance hint appear from
+    // the very first drag pixel instead of only on the second click.
+    if (!m_trackingSelectionMove
+        && event->button() == Qt::LeftButton
+        && m_mapScene
+        && m_mapScene->isMoveEnabled()) {
+        beginTrackedSelectionMove(event);
+    }
 }
 
 void SystemMapView::mouseMoveEvent(QMouseEvent *event)
@@ -293,6 +341,32 @@ void SystemMapView::mouseMoveEvent(QMouseEvent *event)
     }
     updateHoveredClusterForMouse(event->pos());
     QGraphicsView::mouseMoveEvent(event);
+
+    if (m_trackingSelectionMove && m_mapScene) {
+        // Emit the live "moving" signal once per mouse move. The consumer
+        // uses this to live-update the object editor and we redraw the
+        // ghost overlay drawn in drawForeground().
+        QHash<QString, QPointF> currentScenePositions;
+        const auto sceneItems = m_mapScene->selectedItems();
+        for (QGraphicsItem *item : sceneItems) {
+            QString nickname;
+            if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item))
+                nickname = solarItem->nickname();
+            else if (auto *zoneItem = dynamic_cast<ZoneItem2D *>(item))
+                nickname = zoneItem->nickname();
+            if (nickname.isEmpty() || !m_moveStartPositions.contains(nickname))
+                continue;
+            currentScenePositions.insert(nickname, item->scenePos());
+        }
+        if (!currentScenePositions.isEmpty()) {
+            if (!m_moveDidEmitStart) {
+                m_moveDidEmitStart = true;
+                emit itemsMoveStarted(m_moveStartPositions);
+            }
+            emit itemsMoving(currentScenePositions, m_moveVerticalOffsetMeters);
+            viewport()->update();
+        }
+    }
 }
 
 void SystemMapView::mouseReleaseEvent(QMouseEvent *event)
@@ -527,6 +601,125 @@ void SystemMapView::drawForeground(QPainter *painter, const QRectF &rect)
         for (const QString &name : shownLines) {
             painter->drawText(popupRect.left() + padding, y, name);
             y += lineHeight + spacing;
+        }
+    }
+
+    if (m_trackingSelectionMove && m_mapScene && !m_moveStartPositions.isEmpty()) {
+        // Live "Move Object" overlay: ghost of the original position, a
+        // connector line from old -> current scenePos per item, and a
+        // distance label at the drag anchor.
+        constexpr double kSceneScale = 0.01; // 1 FL meter = 0.01 scene units
+
+        QHash<QString, QPointF> currentScenePositions;
+        const auto sceneItems = m_mapScene->selectedItems();
+        for (QGraphicsItem *item : sceneItems) {
+            QString nickname;
+            if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item))
+                nickname = solarItem->nickname();
+            else if (auto *zoneItem = dynamic_cast<ZoneItem2D *>(item))
+                nickname = zoneItem->nickname();
+            if (nickname.isEmpty() || !m_moveStartPositions.contains(nickname))
+                continue;
+            currentScenePositions.insert(nickname, item->scenePos());
+        }
+
+        const QColor ghostColor(255, 200, 0, 220);
+        const QColor ghostFill(255, 200, 0, 60);
+        QPen ghostPen(ghostColor);
+        ghostPen.setWidth(2);
+
+        QPen linePen(ghostColor);
+        linePen.setWidth(2);
+        linePen.setStyle(Qt::DashLine);
+
+        QPointF anchorNew;
+        double anchorDistanceMeters = 0.0;
+        bool hasAnchor = false;
+
+        for (auto it = m_moveStartPositions.constBegin(); it != m_moveStartPositions.constEnd(); ++it) {
+            if (!currentScenePositions.contains(it.key()))
+                continue;
+            const QPointF oldScene = it.value();
+            const QPointF newScene = currentScenePositions.value(it.key());
+            const QPointF oldView = mapFromScene(oldScene);
+            const QPointF newView = mapFromScene(newScene);
+
+            painter->setPen(ghostPen);
+            painter->setBrush(ghostFill);
+            constexpr int kGhostRadius = 10;
+            painter->drawEllipse(oldView, kGhostRadius, kGhostRadius);
+            painter->setBrush(Qt::NoBrush);
+            painter->drawLine(QPointF(oldView.x() - kGhostRadius - 3, oldView.y()),
+                              QPointF(oldView.x() + kGhostRadius + 3, oldView.y()));
+            painter->drawLine(QPointF(oldView.x(), oldView.y() - kGhostRadius - 3),
+                              QPointF(oldView.x(), oldView.y() + kGhostRadius + 3));
+
+            painter->setPen(linePen);
+            painter->drawLine(oldView, newView);
+
+            const double distanceMeters = QLineF(oldScene, newScene).length() / kSceneScale;
+            if (!hasAnchor || distanceMeters > anchorDistanceMeters) {
+                anchorNew = newView;
+                anchorDistanceMeters = distanceMeters;
+                hasAnchor = true;
+            }
+        }
+
+        if (hasAnchor) {
+            const bool hasYOffset = std::abs(m_moveVerticalOffsetMeters) > 1e-6;
+            QStringList lines;
+            const QString distText = anchorDistanceMeters >= 1000.0
+                ? QStringLiteral("%1 km").arg(anchorDistanceMeters / 1000.0, 0, 'f', 2)
+                : QStringLiteral("%1 m").arg(anchorDistanceMeters, 0, 'f', 0);
+            lines << tr("Distance: %1").arg(distText);
+            if (hasYOffset) {
+                const double absY = std::abs(m_moveVerticalOffsetMeters);
+                const QString yText = absY >= 1000.0
+                    ? QStringLiteral("%1 km").arg(absY / 1000.0, 0, 'f', 2)
+                    : QStringLiteral("%1 m").arg(absY, 0, 'f', 0);
+                lines << tr("Δy: %1%2")
+                                .arg(m_moveVerticalOffsetMeters >= 0 ? QStringLiteral("+") : QStringLiteral("-"))
+                                .arg(yText);
+            }
+            lines << tr("Ctrl+Wheel: ±10 m Y");
+
+            QFont labelFont(QStringLiteral("Segoe UI"), 10, QFont::Bold);
+            painter->setFont(labelFont);
+            const QFontMetrics lm(labelFont);
+            int textWidth = 0;
+            for (const QString &l : lines)
+                textWidth = std::max(textWidth, lm.horizontalAdvance(l));
+            const int pad = 8;
+            const int lineH = lm.height();
+            const int boxW = textWidth + pad * 2;
+            const int boxH = lineH * lines.size() + pad * 2;
+
+            QPoint pos(int(anchorNew.x()) + 16, int(anchorNew.y()) - boxH - 12);
+            const QRect vp = viewport()->rect();
+            if (pos.x() + boxW > vp.right() - 4)
+                pos.setX(vp.right() - boxW - 4);
+            if (pos.x() < vp.left() + 4)
+                pos.setX(vp.left() + 4);
+            if (pos.y() < vp.top() + 4)
+                pos.setY(int(anchorNew.y()) + 16);
+
+            const QRect boxRect(pos, QSize(boxW, boxH));
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(QColor(20, 22, 30, 215));
+            painter->drawRoundedRect(boxRect, 6, 6);
+            QPen borderPen(ghostColor);
+            borderPen.setWidth(1);
+            painter->setPen(borderPen);
+            painter->setBrush(Qt::NoBrush);
+            painter->drawRoundedRect(boxRect, 6, 6);
+
+            painter->setPen(QColor(235, 240, 250, 240));
+            int textY = boxRect.top() + pad + lm.ascent();
+            for (const QString &l : lines) {
+                painter->drawText(boxRect.left() + pad, textY, l);
+                textY += lineH;
+            }
+            painter->setFont(font);
         }
     }
 
@@ -888,6 +1081,8 @@ void SystemMapView::beginTrackedSelectionMove(QMouseEvent *event)
 {
     m_trackingSelectionMove = false;
     m_moveStartPositions.clear();
+    m_moveVerticalOffsetMeters = 0.0;
+    m_moveDidEmitStart = false;
 
     if (!m_mapScene || !m_mapScene->isMoveEnabled() || event->button() != Qt::LeftButton)
         return;
@@ -915,13 +1110,18 @@ void SystemMapView::finishTrackedSelectionMove()
 {
     if (!m_trackingSelectionMove || !m_mapScene) {
         m_moveStartPositions.clear();
+        m_moveVerticalOffsetMeters = 0.0;
+        m_moveDidEmitStart = false;
         m_trackingSelectionMove = false;
+        viewport()->update();
         return;
     }
 
     QHash<QString, QPointF> movedFrom;
     QHash<QString, QPointF> movedTo;
     const auto sceneItems = m_mapScene->selectedItems();
+    const double yOffset = m_moveVerticalOffsetMeters;
+    const bool hasYOffset = std::abs(yOffset) > 1e-6;
     for (QGraphicsItem *item : sceneItems) {
         QString nickname;
         if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item))
@@ -934,18 +1134,23 @@ void SystemMapView::finishTrackedSelectionMove()
 
         const QPointF oldPos = m_moveStartPositions.value(nickname);
         const QPointF newPos = item->scenePos();
-        if (QLineF(oldPos, newPos).length() <= 0.0001)
+        const bool xzChanged = QLineF(oldPos, newPos).length() > 0.0001;
+        if (!xzChanged && !hasYOffset)
             continue;
 
         movedFrom.insert(nickname, oldPos);
         movedTo.insert(nickname, newPos);
     }
 
+    const double emittedOffset = m_moveVerticalOffsetMeters;
     m_moveStartPositions.clear();
+    m_moveVerticalOffsetMeters = 0.0;
+    m_moveDidEmitStart = false;
     m_trackingSelectionMove = false;
+    viewport()->update();
 
     if (!movedFrom.isEmpty())
-        emit itemsMoved(movedFrom, movedTo);
+        emit itemsMoved(movedFrom, movedTo, emittedOffset);
 }
 
 void SystemMapView::updateRubberBandSelection(const QRect &viewportRect, Qt::KeyboardModifiers modifiers)

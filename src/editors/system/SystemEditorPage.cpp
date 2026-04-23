@@ -441,6 +441,8 @@ void SystemEditorPage::connectSignals()
     connect(m_openSystemIniButton, &QPushButton::clicked, this, &SystemEditorPage::openSystemIniExternally);
     connect(m_preview3DButton, &QPushButton::clicked, this, &SystemEditorPage::open3DPreviewForSelection);
     connect(m_mapView, &SystemMapView::itemsMoved, this, &SystemEditorPage::onItemsMoved);
+    connect(m_mapView, &SystemMapView::itemsMoveStarted, this, &SystemEditorPage::onItemsMoveStarted);
+    connect(m_mapView, &SystemMapView::itemsMoving, this, &SystemEditorPage::onItemsMoving);
 
     // 3D → 2D selection sync
 
@@ -1337,8 +1339,24 @@ QString SystemEditorPage::serializeSelectionToIni() const
     if (SolarObject *rootObject = findObjectByNickname(nickname)) {
         IniDocument doc;
         for (const QString &groupNickname : objectGroupNicknames(rootObject->nickname())) {
-            if (SolarObject *obj = findObjectByNickname(groupNickname))
-                doc.append(SystemPersistence::serializeObjectSection(*obj));
+            if (SolarObject *obj = findObjectByNickname(groupNickname)) {
+                // Live-move: temporarily swap in the dragged position so the
+                // ini output reflects the position the user is seeing right
+                // now. Signals are blocked so this does not cascade into the
+                // scene or other listeners.
+                if (m_liveMoveActive && m_liveMoveCurrentWorld.contains(obj->nickname())) {
+                    const QVector3D savedPos = obj->position();
+                    const QVector3D livePos = m_liveMoveCurrentWorld.value(obj->nickname());
+                    {
+                        QSignalBlocker blocker(obj);
+                        obj->setPosition(livePos);
+                        doc.append(SystemPersistence::serializeObjectSection(*obj));
+                        obj->setPosition(savedPos);
+                    }
+                } else {
+                    doc.append(SystemPersistence::serializeObjectSection(*obj));
+                }
+            }
         }
         return IniParser::serialize(doc).trimmed();
     }
@@ -1346,7 +1364,18 @@ QString SystemEditorPage::serializeSelectionToIni() const
     for (const auto &zone : m_document->zones()) {
         if (zone->nickname() == nickname) {
             IniDocument doc;
-            doc.append(SystemPersistence::serializeZoneSection(*zone));
+            if (m_liveMoveActive && m_liveMoveCurrentWorld.contains(zone->nickname())) {
+                const QVector3D savedPos = zone->position();
+                const QVector3D livePos = m_liveMoveCurrentWorld.value(zone->nickname());
+                {
+                    QSignalBlocker blocker(zone.get());
+                    zone->setPosition(livePos);
+                    doc.append(SystemPersistence::serializeZoneSection(*zone));
+                    zone->setPosition(savedPos);
+                }
+            } else {
+                doc.append(SystemPersistence::serializeZoneSection(*zone));
+            }
             return IniParser::serialize(doc).trimmed();
         }
     }
@@ -1913,10 +1942,17 @@ void SystemEditorPage::jumpToSelectedFromSidebar()
 }
 
 void SystemEditorPage::onItemsMoved(const QHash<QString, QPointF> &oldPositions,
-                                    const QHash<QString, QPointF> &newPositions)
+                                    const QHash<QString, QPointF> &newPositions,
+                                    double verticalOffsetMeters)
 {
-    if (!m_document || oldPositions.isEmpty() || newPositions.isEmpty())
+    if (!m_document || oldPositions.isEmpty() || newPositions.isEmpty()) {
+        // Move ended without a valid payload — clear live-move state.
+        m_liveMoveActive = false;
+        m_liveMoveStartWorld.clear();
+        m_liveMoveCurrentWorld.clear();
+        updateIniEditorForSelection();
         return;
+    }
 
     auto *stack = flatlas::core::UndoManager::instance().stack();
     stack->beginMacro(tr("Move Selection"));
@@ -1927,11 +1963,15 @@ void SystemEditorPage::onItemsMoved(const QHash<QString, QPointF> &oldPositions,
             continue;
         const QPointF oldFl = MapScene::qtToFl(oldPositions.value(obj->nickname()).x(), oldPositions.value(obj->nickname()).y());
         const QPointF newFl = MapScene::qtToFl(newPositions.value(obj->nickname()).x(), newPositions.value(obj->nickname()).y());
-        if (qFuzzyCompare(oldFl.x() + 1.0, newFl.x() + 1.0)
-            && qFuzzyCompare(oldFl.y() + 1.0, newFl.y() + 1.0))
+        const double startY = m_liveMoveStartWorld.contains(obj->nickname())
+                                  ? m_liveMoveStartWorld.value(obj->nickname()).y()
+                                  : obj->position().y();
+        const QVector3D oldPos(oldFl.x(), startY, oldFl.y());
+        const QVector3D newPos(newFl.x(), startY + verticalOffsetMeters, newFl.y());
+        if (qFuzzyCompare(oldPos.x() + 1.0, newPos.x() + 1.0)
+            && qFuzzyCompare(oldPos.y() + 1.0, newPos.y() + 1.0)
+            && qFuzzyCompare(oldPos.z() + 1.0, newPos.z() + 1.0))
             continue;
-        const QVector3D oldPos(oldFl.x(), obj->position().y(), oldFl.y());
-        const QVector3D newPos(newFl.x(), obj->position().y(), newFl.y());
         stack->push(new MoveObjectCommand(obj.get(), oldPos, newPos));
         movedAnything = true;
     }
@@ -1941,18 +1981,74 @@ void SystemEditorPage::onItemsMoved(const QHash<QString, QPointF> &oldPositions,
             continue;
         const QPointF oldFl = MapScene::qtToFl(oldPositions.value(zone->nickname()).x(), oldPositions.value(zone->nickname()).y());
         const QPointF newFl = MapScene::qtToFl(newPositions.value(zone->nickname()).x(), newPositions.value(zone->nickname()).y());
-        if (qFuzzyCompare(oldFl.x() + 1.0, newFl.x() + 1.0)
-            && qFuzzyCompare(oldFl.y() + 1.0, newFl.y() + 1.0))
+        const double startY = m_liveMoveStartWorld.contains(zone->nickname())
+                                  ? m_liveMoveStartWorld.value(zone->nickname()).y()
+                                  : zone->position().y();
+        const QVector3D oldPos(oldFl.x(), startY, oldFl.y());
+        const QVector3D newPos(newFl.x(), startY + verticalOffsetMeters, newFl.y());
+        if (qFuzzyCompare(oldPos.x() + 1.0, newPos.x() + 1.0)
+            && qFuzzyCompare(oldPos.y() + 1.0, newPos.y() + 1.0)
+            && qFuzzyCompare(oldPos.z() + 1.0, newPos.z() + 1.0))
             continue;
-        const QVector3D oldPos(oldFl.x(), zone->position().y(), oldFl.y());
-        const QVector3D newPos(newFl.x(), zone->position().y(), newFl.y());
         stack->push(new MoveZoneCommand(zone.get(), oldPos, newPos));
         movedAnything = true;
     }
 
     stack->endMacro();
+
+    // Clear the live-move state BEFORE refreshing the ini editor so the
+    // refresh reads the final (committed) positions, not the live overrides.
+    m_liveMoveActive = false;
+    m_liveMoveStartWorld.clear();
+    m_liveMoveCurrentWorld.clear();
+
     if (movedAnything)
         m_document->setDirty(true);
+    updateIniEditorForSelection();
+}
+
+void SystemEditorPage::onItemsMoveStarted(const QHash<QString, QPointF> &startScenePositions)
+{
+    if (!m_document)
+        return;
+    m_liveMoveActive = true;
+    m_liveMoveStartWorld.clear();
+    m_liveMoveCurrentWorld.clear();
+    for (auto it = startScenePositions.constBegin(); it != startScenePositions.constEnd(); ++it) {
+        const QString &nickname = it.key();
+        if (SolarObject *obj = findObjectByNickname(nickname)) {
+            m_liveMoveStartWorld.insert(nickname, obj->position());
+            m_liveMoveCurrentWorld.insert(nickname, obj->position());
+            continue;
+        }
+        for (const auto &zone : m_document->zones()) {
+            if (zone->nickname() == nickname) {
+                m_liveMoveStartWorld.insert(nickname, zone->position());
+                m_liveMoveCurrentWorld.insert(nickname, zone->position());
+                break;
+            }
+        }
+    }
+}
+
+void SystemEditorPage::onItemsMoving(const QHash<QString, QPointF> &currentScenePositions,
+                                     double verticalOffsetMeters)
+{
+    if (!m_document || !m_liveMoveActive)
+        return;
+    for (auto it = currentScenePositions.constBegin(); it != currentScenePositions.constEnd(); ++it) {
+        const QString &nickname = it.key();
+        if (!m_liveMoveStartWorld.contains(nickname))
+            continue;
+        const QPointF fl = MapScene::qtToFl(it.value().x(), it.value().y());
+        const double startY = m_liveMoveStartWorld.value(nickname).y();
+        m_liveMoveCurrentWorld.insert(nickname,
+                                      QVector3D(static_cast<float>(fl.x()),
+                                                static_cast<float>(startY + verticalOffsetMeters),
+                                                static_cast<float>(fl.y())));
+    }
+    // Refresh the ini editor so "pos = ..." reflects the live position.
+    updateIniEditorForSelection();
 }
 
 void SystemEditorPage::syncTreeSelectionFromNicknames(const QStringList &nicknames)

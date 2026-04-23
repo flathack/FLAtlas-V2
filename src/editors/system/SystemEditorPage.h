@@ -5,6 +5,7 @@
 #include <QHash>
 #include <QPointF>
 #include <QStringList>
+#include <QVector3D>
 #include "rendering/view2d/SystemDisplayFilter.h"
 #include <memory>
 
@@ -110,7 +111,11 @@ private:
     void onDeleteSelected();
     void onDuplicateSelected();
     void onItemsMoved(const QHash<QString, QPointF> &oldPositions,
-                      const QHash<QString, QPointF> &newPositions);
+                      const QHash<QString, QPointF> &newPositions,
+                      double verticalOffsetMeters);
+    void onItemsMoveStarted(const QHash<QString, QPointF> &startScenePositions);
+    void onItemsMoving(const QHash<QString, QPointF> &currentScenePositions,
+                       double verticalOffsetMeters);
     void showObjectProperties(flatlas::domain::SolarObject *obj);
     void showZoneProperties(flatlas::domain::ZoneItem *zone);
     void syncTreeSelectionFromNicknames(const QStringList &nicknames);
@@ -192,6 +197,13 @@ private:
     QPushButton *m_saveFileButton = nullptr;
     bool m_isShuttingDown = false;
     bool m_syncingSelection = false;
+
+    // Live "Move Object" state: populated while the user drags a selection
+    // in the 2D map. Drives the live pos= update in the ini editor and is
+    // folded into the final MoveObjectCommand on drop.
+    QHash<QString, QVector3D> m_liveMoveStartWorld;
+    QHash<QString, QVector3D> m_liveMoveCurrentWorld;
+    bool m_liveMoveActive = false;
 };
 
 } // namespace flatlas::editors
