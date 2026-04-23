@@ -34,10 +34,19 @@ public:
     void setDisplayFilterSettings(const SystemDisplayFilterSettings &settings);
     SystemDisplayFilterSettings displayFilterSettings() const { return m_displayFilterSettings; }
 
+    /// Enable/disable a one-shot placement mode. While active the view shows
+    /// a yellow frame + help banner and the next left click is captured to
+    /// emit placementClicked() with the chosen scene position. Escape or a
+    /// right click cancels and emits placementCanceled().
+    void setPlacementMode(bool enabled, const QString &helpText = QString());
+    bool isPlacementModeActive() const { return m_placementMode; }
+
 signals:
     void objectSelected(const QString &nickname);
     void itemsMoved(const QHash<QString, QPointF> &oldPositions,
                     const QHash<QString, QPointF> &newPositions);
+    void placementClicked(const QPointF &scenePos);
+    void placementCanceled();
 
 protected:
     void wheelEvent(QWheelEvent *event) override;
@@ -51,6 +60,7 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
     void scrollContentsBy(int dx, int dy) override;
     void leaveEvent(QEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
 
 private:
     struct LabelCluster {
@@ -93,6 +103,8 @@ private:
     QPoint m_lastMouseViewportPos;
     bool m_hasMouseInViewport = false;
     QTimer *m_clusterHoverHideTimer = nullptr;
+    bool m_placementMode = false;
+    QString m_placementHelpText;
 };
 
 } // namespace flatlas::rendering

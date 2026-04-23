@@ -4,6 +4,7 @@
 #include "SystemDisplayFilterDialog.h"
 #include "SystemPersistence.h"
 #include "SystemUndoCommands.h"
+#include "CreateObjectDialog.h"
 #include "core/Theme.h"
 #include "editors/ini/IniCodeEditor.h"
 #include "editors/ini/IniSyntaxHighlighter.h"
@@ -15,6 +16,7 @@
 #include "domain/SolarObject.h"
 #include "domain/ZoneItem.h"
 #include "infrastructure/parser/IniParser.h"
+#include "infrastructure/freelancer/IdsDataService.h"
 #include "rendering/preview/ModelCache.h"
 #include "rendering/view2d/MapScene.h"
 #include "rendering/view2d/SystemMapView.h"
@@ -1030,21 +1032,140 @@ void SystemEditorPage::onAddObject()
 {
     if (!m_document)
         return;
+    if (!m_mapView || !m_mapScene) {
+        // Without a live map we cannot run the placement mode, so we would
+        // silently fall back to (0,0,0) - better to refuse and surface the
+        // issue.
+        return;
+    }
+    if (m_mapView->isPlacementModeActive()) {
+        // Guard against re-entering placement while one is still running.
+        return;
+    }
 
-    bool ok = false;
-    QString nickname = QInputDialog::getText(this, tr("New Object"),
-                                              tr("Nickname:"), QLineEdit::Normal,
-                                              QStringLiteral("new_object"), &ok);
-    if (!ok || nickname.isEmpty())
+    CreateObjectDialog dialog(m_document.get(), this);
+    if (dialog.exec() != QDialog::Accepted)
         return;
 
-    auto obj = std::make_shared<SolarObject>();
-    obj->setNickname(nickname);
-    obj->setType(SolarObject::Other);
+    const CreateObjectResult result = dialog.result();
+    if (result.nickname.isEmpty() || result.archetype.isEmpty())
+        return;
 
-    auto *cmd = new AddObjectCommand(m_document.get(), obj);
-    flatlas::core::UndoManager::instance().push(cmd);
-    refreshObjectList();
+    // Helper that maps a freshly-chosen scene point to Freelancer world
+    // coordinates and finalizes the object creation. Kept as a single lambda
+    // so both map-click and Escape-cancel paths stay consistent.
+    auto finalizePlacement = [this, result](const QPointF &scenePos) {
+        if (!m_document)
+            return;
+
+        const QPointF worldXZ = flatlas::rendering::MapScene::qtToFl(scenePos.x(), scenePos.y());
+
+        // Map archetype → SolarObject::Type heuristically (same rules as
+        // SystemPersistence::detectObjectType).
+        const QString archetypeLower = result.archetype.toLower();
+        SolarObject::Type type = SolarObject::Other;
+        if (archetypeLower.contains(QLatin1String("jump_gate")))
+            type = SolarObject::JumpGate;
+        else if (archetypeLower.contains(QLatin1String("jump_hole")))
+            type = SolarObject::JumpHole;
+        else if (archetypeLower.contains(QLatin1String("trade")))
+            type = SolarObject::TradeLane;
+        else if (archetypeLower.contains(QLatin1String("sun")))
+            type = SolarObject::Sun;
+        else if (archetypeLower.contains(QLatin1String("planet")))
+            type = SolarObject::Planet;
+        else if (archetypeLower.contains(QLatin1String("satellite")))
+            type = SolarObject::Satellite;
+        else if (archetypeLower.contains(QLatin1String("waypoint")))
+            type = SolarObject::Waypoint;
+        else if (archetypeLower.contains(QLatin1String("weapons_platform")))
+            type = SolarObject::Weapons_Platform;
+        else if (archetypeLower.contains(QLatin1String("depot")))
+            type = SolarObject::Depot;
+        else if (archetypeLower.contains(QLatin1String("dock")))
+            type = SolarObject::DockingRing;
+        else if (archetypeLower.contains(QLatin1String("wreck")))
+            type = SolarObject::Wreck;
+        else if (archetypeLower.contains(QLatin1String("asteroid")))
+            type = SolarObject::Asteroid;
+        else if (archetypeLower.contains(QLatin1String("station")))
+            type = SolarObject::Station;
+
+        // Allocate a new ids_name entry for the ingame name via the existing
+        // IDS infrastructure. Non-fatal: if the dataset cannot be loaded or
+        // the write fails we keep the object but leave ids_name unassigned.
+        int assignedIdsName = 0;
+        const QString ingameName = result.ingameName.trimmed();
+        if (!ingameName.isEmpty()) {
+            const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+            if (!gameRoot.isEmpty()) {
+                const auto dataset = flatlas::infrastructure::IdsDataService::loadFromGameRoot(gameRoot);
+                const QString targetDll =
+                    flatlas::infrastructure::IdsDataService::defaultCreationDllName(dataset);
+                QString idsError;
+                int newGlobalId = 0;
+                if (flatlas::infrastructure::IdsDataService::writeStringEntry(
+                        dataset, targetDll, 0, ingameName, &newGlobalId, &idsError)) {
+                    assignedIdsName = newGlobalId;
+                } else if (!idsError.isEmpty()) {
+                    QMessageBox::warning(this, tr("IDS-Eintrag"),
+                        tr("Ingame-Name konnte nicht als IDS-Eintrag geschrieben werden:\n%1")
+                            .arg(idsError));
+                }
+            }
+        }
+
+        auto obj = std::make_shared<SolarObject>();
+        obj->setNickname(result.nickname);
+        obj->setType(type);
+        obj->setArchetype(result.archetype);
+        obj->setPosition(QVector3D(static_cast<float>(worldXZ.x()),
+                                   0.0f,
+                                   static_cast<float>(worldXZ.y())));
+        if (!result.loadout.isEmpty())
+            obj->setLoadout(result.loadout);
+        if (assignedIdsName > 0)
+            obj->setIdsName(assignedIdsName);
+
+        QVector<QPair<QString, QString>> rawEntries = obj->rawEntries();
+        rawEntries.append({ QStringLiteral("nickname"), result.nickname });
+        rawEntries.append({ QStringLiteral("pos"),
+                            QStringLiteral("%1, 0, %2")
+                                .arg(worldXZ.x(), 0, 'f', 0)
+                                .arg(worldXZ.y(), 0, 'f', 0) });
+        rawEntries.append({ QStringLiteral("rotate"), QStringLiteral("0, 0, 0") });
+        rawEntries.append({ QStringLiteral("Archetype"), result.archetype });
+        if (assignedIdsName > 0)
+            rawEntries.append({ QStringLiteral("ids_name"), QString::number(assignedIdsName) });
+        if (!result.loadout.isEmpty())
+            rawEntries.append({ QStringLiteral("loadout"), result.loadout });
+        if (!result.reputationNickname.isEmpty())
+            rawEntries.append({ QStringLiteral("reputation"), result.reputationNickname });
+        obj->setRawEntries(rawEntries);
+
+        auto *cmd = new AddObjectCommand(m_document.get(), obj);
+        flatlas::core::UndoManager::instance().push(cmd);
+        refreshObjectList();
+    };
+
+    // Enter placement mode. A dedicated QObject parent holds the one-shot
+    // connections so they get torn down deterministically once either signal
+    // fires, and the placementClicked/placementCanceled handlers cannot
+    // double-fire even if Qt coalesces events.
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [this, placementGuard, finalizePlacement](const QPointF &scenePos) {
+        finalizePlacement(scenePos);
+        placementGuard->deleteLater();
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [placementGuard]() {
+        placementGuard->deleteLater();
+    });
+
+    m_mapView->setPlacementMode(true,
+        tr("Klicke auf die Map, um '%1' zu platzieren. [Esc] oder Rechtsklick bricht ab.")
+            .arg(result.nickname));
 }
 
 void SystemEditorPage::onDeleteSelected()

@@ -19,6 +19,7 @@
 #include <QScrollBar>
 #include <QTimer>
 #include <QPalette>
+#include <QKeyEvent>
 
 #include <functional>
 #include <limits>
@@ -220,6 +221,31 @@ void SystemMapView::wheelEvent(QWheelEvent *event)
 
 void SystemMapView::mousePressEvent(QMouseEvent *event)
 {
+    if (m_placementMode) {
+        if (event->button() == Qt::LeftButton) {
+            const QPointF scenePos = mapToScene(event->pos());
+            // Emit first, then clear the mode. This way the callback can
+            // re-enter placement mode (e.g. chained placements) without
+            // fighting the cleanup below.
+            const QString /*unused*/ previousHelp = m_placementHelpText;
+            m_placementMode = false;
+            m_placementHelpText.clear();
+            setCursor(Qt::ArrowCursor);
+            viewport()->update();
+            emit placementClicked(scenePos);
+            event->accept();
+            return;
+        }
+        if (event->button() == Qt::RightButton || event->button() == Qt::MiddleButton) {
+            m_placementMode = false;
+            m_placementHelpText.clear();
+            setCursor(Qt::ArrowCursor);
+            viewport()->update();
+            emit placementCanceled();
+            event->accept();
+            return;
+        }
+    }
     if (event->button() == Qt::MiddleButton) {
         m_panning = true;
         m_lastPanPosition = event->pos();
@@ -502,6 +528,42 @@ void SystemMapView::drawForeground(QPainter *painter, const QRectF &rect)
             painter->drawText(popupRect.left() + padding, y, name);
             y += lineHeight + spacing;
         }
+    }
+
+    if (m_placementMode) {
+        const QRect vp = viewport()->rect();
+        // Yellow frame - thick enough to be unmistakable even on dark
+        // backgrounds. Drawn inset by half the pen width so nothing gets
+        // clipped at the viewport edges.
+        constexpr int kFrameThickness = 4;
+        QPen framePen(QColor(255, 200, 0, 235));
+        framePen.setWidth(kFrameThickness);
+        framePen.setJoinStyle(Qt::MiterJoin);
+        painter->setPen(framePen);
+        painter->setBrush(Qt::NoBrush);
+        const int inset = kFrameThickness / 2;
+        painter->drawRect(vp.adjusted(inset, inset, -inset, -inset));
+
+        const QString helpText = m_placementHelpText.isEmpty()
+            ? tr("Klicke auf die Map, um das Objekt zu platzieren. [Esc] bricht ab.")
+            : m_placementHelpText;
+        QFont bannerFont(QStringLiteral("Segoe UI"), 11, QFont::Bold);
+        painter->setFont(bannerFont);
+        const QFontMetrics bannerMetrics(bannerFont);
+        const int bannerPadding = 10;
+        const int bannerWidth = bannerMetrics.horizontalAdvance(helpText) + bannerPadding * 2;
+        const int bannerHeight = bannerMetrics.height() + bannerPadding;
+        const QRect bannerRect((vp.width() - bannerWidth) / 2,
+                               vp.top() + 12,
+                               bannerWidth,
+                               bannerHeight);
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(QColor(255, 200, 0, 220));
+        painter->drawRoundedRect(bannerRect, 6, 6);
+        painter->setPen(QColor(30, 25, 0));
+        painter->drawText(bannerRect.left() + bannerPadding,
+                          bannerRect.top() + bannerPadding / 2 + bannerMetrics.ascent(),
+                          helpText);
     }
 
     painter->restore();
@@ -791,6 +853,35 @@ void SystemMapView::leaveEvent(QEvent *event)
     if (m_hoveredClusterIndex >= 0 && m_clusterHoverHideTimer)
         m_clusterHoverHideTimer->start();
     QGraphicsView::leaveEvent(event);
+}
+
+void SystemMapView::keyPressEvent(QKeyEvent *event)
+{
+    if (m_placementMode && event->key() == Qt::Key_Escape) {
+        m_placementMode = false;
+        m_placementHelpText.clear();
+        setCursor(Qt::ArrowCursor);
+        viewport()->update();
+        emit placementCanceled();
+        event->accept();
+        return;
+    }
+    QGraphicsView::keyPressEvent(event);
+}
+
+void SystemMapView::setPlacementMode(bool enabled, const QString &helpText)
+{
+    if (m_placementMode == enabled && m_placementHelpText == helpText)
+        return;
+    m_placementMode = enabled;
+    m_placementHelpText = enabled ? helpText : QString();
+    if (enabled) {
+        setFocus(Qt::OtherFocusReason);
+        setCursor(Qt::CrossCursor);
+    } else {
+        setCursor(Qt::ArrowCursor);
+    }
+    viewport()->update();
 }
 
 void SystemMapView::beginTrackedSelectionMove(QMouseEvent *event)
