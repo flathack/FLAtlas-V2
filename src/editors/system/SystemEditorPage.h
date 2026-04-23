@@ -55,8 +55,11 @@ public:
 signals:
     void titleChanged(const QString &title);
     void selectionStatusChanged(const QString &message);
+    void loadingProgressChanged(int percent, const QString &message);
 
 private:
+    void loadDocumentIntoUi();
+    void emitLoadingProgress(int percent, const QString &message);
     void setupUi();
     void setupToolBar();
     void setupObjectList();

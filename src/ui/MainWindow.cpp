@@ -49,6 +49,7 @@
 #include <QTabBar>
 #include <QStackedWidget>
 #include <QDesktopServices>
+#include <QEventLoop>
 #include <QProcess>
 #include <QUrl>
 
@@ -932,7 +933,20 @@ void MainWindow::openSystemFromUniverse(const QString &nickname,
     }
 
     auto *editor = new flatlas::editors::SystemEditorPage(this);
+    const auto updateLoadProgress = [this](int percent, const QString &message) {
+        if (m_progressBar) {
+            m_progressBar->setValue(std::clamp(percent, 0, 100));
+            m_progressBar->update();
+        }
+        if (!message.trimmed().isEmpty())
+            statusBar()->showMessage(message);
+        qApp->processEvents(QEventLoop::ExcludeUserInputEvents);
+    };
+    connect(editor, &flatlas::editors::SystemEditorPage::loadingProgressChanged,
+            this, updateLoadProgress);
+    updateLoadProgress(0, tr("Opening system: %1").arg(nickname));
     if (!editor->loadFile(resolvedPath)) {
+        updateLoadProgress(100, tr("Could not load system file"));
         QMessageBox::warning(this, tr("Error"),
                              tr("Could not load system file:\n%1").arg(resolvedPath));
         delete editor;
@@ -953,6 +967,7 @@ void MainWindow::openSystemFromUniverse(const QString &nickname,
         statusBar()->showMessage(message);
     });
 
+    updateLoadProgress(100, tr("Opened system: %1").arg(nickname));
     statusBar()->showMessage(tr("Opened system: %1").arg(nickname), 3000);
 }
 

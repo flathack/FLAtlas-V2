@@ -6,6 +6,8 @@
 #include "domain/SolarObject.h"
 #include "domain/ZoneItem.h"
 #include <QApplication>
+#include <QCoreApplication>
+#include <QEventLoop>
 #include <QPalette>
 #include <QPainter>
 #include <QPen>
@@ -17,6 +19,7 @@ namespace {
 
 constexpr double kFreelancerNavCellWorld = 30000.0;
 constexpr int kFreelancerNavCellsPerAxis = 8;
+constexpr int kLoadProgressYieldInterval = 12;
 
 double referenceHalfExtentWorld(const flatlas::domain::SystemDocument *doc)
 {
@@ -46,7 +49,8 @@ MapScene::MapScene(QObject *parent)
     setSceneRect(-halfExtentScene, -halfExtentScene, halfExtentScene * 2.0, halfExtentScene * 2.0);
 }
 
-void MapScene::loadDocument(flatlas::domain::SystemDocument *doc)
+void MapScene::loadDocument(flatlas::domain::SystemDocument *doc,
+                            const std::function<void(int current, int total)> &progressCallback)
 {
     clear();
     m_document = doc;
@@ -56,11 +60,29 @@ void MapScene::loadDocument(flatlas::domain::SystemDocument *doc)
     const double halfExtentScene = referenceHalfExtentWorld(doc) * kScale;
     setSceneRect(-halfExtentScene, -halfExtentScene, halfExtentScene * 2.0, halfExtentScene * 2.0);
 
-    for (const auto &obj : doc->objects())
-        addSolarObject(obj);
+    const int totalItems = doc->objects().size() + doc->zones().size();
+    int processedItems = 0;
+    const auto reportProgress = [&]() {
+        if (progressCallback)
+            progressCallback(processedItems, totalItems);
+        if (processedItems > 0 && (processedItems % kLoadProgressYieldInterval) == 0)
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    };
 
-    for (const auto &zone : doc->zones())
+    for (const auto &obj : doc->objects()) {
+        addSolarObject(obj);
+        ++processedItems;
+        reportProgress();
+    }
+
+    for (const auto &zone : doc->zones()) {
         addZone(zone);
+        ++processedItems;
+        reportProgress();
+    }
+
+    if (progressCallback)
+        progressCallback(totalItems, totalItems);
 
     // React to future additions/removals
     connect(doc, &flatlas::domain::SystemDocument::objectAdded,

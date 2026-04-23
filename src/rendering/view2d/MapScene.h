@@ -1,6 +1,7 @@
 #pragma once
 #include <QGraphicsScene>
 #include <QStringList>
+#include <functional>
 #include <memory>
 
 namespace flatlas::domain {
@@ -19,7 +20,8 @@ class MapScene : public QGraphicsScene {
 public:
     explicit MapScene(QObject *parent = nullptr);
 
-    void loadDocument(flatlas::domain::SystemDocument *doc);
+    void loadDocument(flatlas::domain::SystemDocument *doc,
+                      const std::function<void(int current, int total)> &progressCallback = {});
     void clear();
 
     void setGridVisible(bool visible);

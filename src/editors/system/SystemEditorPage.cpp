@@ -347,24 +347,15 @@ void SystemEditorPage::applyThemeStyling()
 
 bool SystemEditorPage::loadFile(const QString &filePath)
 {
+    emitLoadingProgress(5, tr("Loading system file..."));
     auto doc = SystemPersistence::load(filePath);
     if (!doc)
         return false;
 
     m_document = std::move(doc);
-    bindDocumentSignals();
-    m_selectedNicknames.clear();
-    loadDisplayFilterSettings();
-    m_mapScene->loadDocument(m_document.get());
-    m_mapView->setSystemName(m_document->name());
-    m_mapView->setDisplayFilterSettings(m_displayFilterSettings);
-    if (m_is3DViewEnabled) {
-        ensureSceneView3D();
-        m_sceneView3D->loadDocument(m_document.get());
-    }
-    refreshObjectList();
-    m_mapView->scheduleInitialFit();
+    loadDocumentIntoUi();
     refreshTitle();
+    emitLoadingProgress(100, tr("System loaded"));
     return true;
 }
 
@@ -373,19 +364,42 @@ void SystemEditorPage::setDocument(std::unique_ptr<SystemDocument> doc)
     if (m_document)
         SystemPersistence::clearExtras(m_document.get());
     m_document = std::move(doc);
+    loadDocumentIntoUi();
+    refreshTitle();
+    emitLoadingProgress(100, tr("System loaded"));
+}
+
+void SystemEditorPage::loadDocumentIntoUi()
+{
+    if (!m_document)
+        return;
+
     bindDocumentSignals();
     m_selectedNicknames.clear();
     loadDisplayFilterSettings();
-    m_mapScene->loadDocument(m_document.get());
+    emitLoadingProgress(20, tr("Preparing 2D system view..."));
+    m_mapScene->loadDocument(m_document.get(),
+                             [this](int current, int total) {
+        const int boundedTotal = std::max(1, total);
+        const int percent = 20 + static_cast<int>((static_cast<double>(current) / boundedTotal) * 65.0);
+        emitLoadingProgress(percent, tr("Building 2D system view..."));
+    });
     m_mapView->setSystemName(m_document->name());
     m_mapView->setDisplayFilterSettings(m_displayFilterSettings);
     if (m_is3DViewEnabled) {
         ensureSceneView3D();
+        emitLoadingProgress(88, tr("Preparing 3D view..."));
         m_sceneView3D->loadDocument(m_document.get());
     }
+    emitLoadingProgress(94, tr("Refreshing object navigation..."));
     refreshObjectList();
     m_mapView->scheduleInitialFit();
-    refreshTitle();
+    emitLoadingProgress(98, tr("Finalizing system view..."));
+}
+
+void SystemEditorPage::emitLoadingProgress(int percent, const QString &message)
+{
+    emit loadingProgressChanged(std::clamp(percent, 0, 100), message);
 }
 
 bool SystemEditorPage::save()
