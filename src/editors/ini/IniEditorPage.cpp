@@ -6,8 +6,10 @@
 #include "IniSyntaxHighlighter.h"
 #include "core/EditingContext.h"
 #include "core/PathUtils.h"
+#include "core/Theme.h"
 
 #include <QAction>
+#include <QActionGroup>
 #include <QApplication>
 #include <QClipboard>
 #include <QCryptographicHash>
@@ -47,6 +49,7 @@
 #include <QToolButton>
 #include <QTreeView>
 #include <QVBoxLayout>
+#include <QStyle>
 #include <QtConcurrent/QtConcurrent>
 
 #include <functional>
@@ -171,6 +174,97 @@ QWidget *focusedWidgetIn(QWidget *scope)
     return (focus == scope || scope->isAncestorOf(focus)) ? focus : nullptr;
 }
 
+constexpr int kCollapsedBottomPanelHeight = 30;
+constexpr int kBottomPanelAutoCollapseThreshold = 48;
+
+QString &cachedEditorThemeName()
+{
+    static QString name;
+    return name;
+}
+
+IniEditorPage::EditorThemeConfig buildEditorThemeConfig(const QString &name)
+{
+    if (name == QStringLiteral("paper")) {
+        return {name,
+                QObject::tr("Paper"),
+                QColor(QStringLiteral("#f5f1e8")),
+                QColor(QStringLiteral("#ebe2d2")),
+                QColor(QStringLiteral("#efe6d8")),
+                QColor(QStringLiteral("#342a22")),
+                QColor(QStringLiteral("#7b6858")),
+                QColor(QStringLiteral("#cfbda7")),
+                QColor(QStringLiteral("#a35a1f")),
+                QColor(QStringLiteral("#fffdf8")),
+                QColor(QStringLiteral("#2f241d")),
+                QColor(QStringLiteral("#d99e63")),
+                QColor(QStringLiteral("#ffffff")),
+                QColor(QStringLiteral("#efe4d0")),
+                QColor(QStringLiteral("#8b735f")),
+                QColor(QStringLiteral("#3b2e23")),
+                QColor(234, 208, 170, 110)};
+    }
+
+    if (name == QStringLiteral("midnight")) {
+        return {name,
+                QObject::tr("Midnight"),
+                QColor(QStringLiteral("#101622")),
+                QColor(QStringLiteral("#151d2c")),
+                QColor(QStringLiteral("#141b28")),
+                QColor(QStringLiteral("#d9e2f2")),
+                QColor(QStringLiteral("#7f90ab")),
+                QColor(QStringLiteral("#28364a")),
+                QColor(QStringLiteral("#5da9ff")),
+                QColor(QStringLiteral("#0d1320")),
+                QColor(QStringLiteral("#e4ebf7")),
+                QColor(QStringLiteral("#255d90")),
+                QColor(QStringLiteral("#ffffff")),
+                QColor(QStringLiteral("#162033")),
+                QColor(QStringLiteral("#7184a3")),
+                QColor(QStringLiteral("#f4f7fb")),
+                QColor(51, 87, 138, 120)};
+    }
+
+    const bool light = flatlas::core::Theme::instance().isLightTheme();
+    if (light) {
+        return {QStringLiteral("auto"),
+                QObject::tr("Auto"),
+                QColor(QStringLiteral("#f4f7fb")),
+                QColor(QStringLiteral("#eaf0f7")),
+                QColor(QStringLiteral("#edf2f8")),
+                QColor(QStringLiteral("#243041")),
+                QColor(QStringLiteral("#66758a")),
+                QColor(QStringLiteral("#c6d1df")),
+                QColor(QStringLiteral("#2f7dd1")),
+                QColor(QStringLiteral("#ffffff")),
+                QColor(QStringLiteral("#1f2937")),
+                QColor(QStringLiteral("#2f7dd1")),
+                QColor(QStringLiteral("#ffffff")),
+                QColor(QStringLiteral("#e8eef6")),
+                QColor(QStringLiteral("#6d7d91")),
+                QColor(QStringLiteral("#203247")),
+                QColor(180, 208, 241, 120)};
+    }
+
+    return {QStringLiteral("auto"),
+            QObject::tr("Auto"),
+            QColor(QStringLiteral("#171a1f")),
+            QColor(QStringLiteral("#1d2229")),
+            QColor(QStringLiteral("#1b2027")),
+            QColor(QStringLiteral("#e4e9f0")),
+            QColor(QStringLiteral("#7e8897")),
+            QColor(QStringLiteral("#2c333d")),
+            QColor(QStringLiteral("#4ea3ea")),
+            QColor(QStringLiteral("#0f1318")),
+            QColor(QStringLiteral("#e4e9f0")),
+            QColor(QStringLiteral("#255d90")),
+            QColor(QStringLiteral("#ffffff")),
+            QColor(QStringLiteral("#1b2027")),
+            QColor(QStringLiteral("#7e8897")),
+            QColor(QStringLiteral("#f4f7fb")),
+            QColor(46, 62, 84, 110)};
+}
+
 }
 
 IniEditorPage::IniEditorPage(QWidget *parent)
@@ -179,6 +273,11 @@ IniEditorPage::IniEditorPage(QWidget *parent)
     , m_autosaveTimer(new QTimer(this))
     , m_searchWatcher(new QFutureWatcher<QVector<IniSearchMatch>>(this))
 {
+    m_editorThemeName = editorThemeSetting();
+    QSettings settings;
+    m_bottomPanelExpanded = settings.value(editorUiSettingsPrefix() + QStringLiteral("/bottomPanelExpanded"), false).toBool();
+    m_lastExpandedBottomHeight = settings.value(editorUiSettingsPrefix() + QStringLiteral("/bottomPanelHeight"), 220).toInt();
+
     setupUi();
 
     m_analysisTimer->setSingleShot(true);
@@ -196,10 +295,18 @@ IniEditorPage::IniEditorPage(QWidget *parent)
 
     connect(m_searchWatcher, &QFutureWatcher<QVector<IniSearchMatch>>::finished,
             this, &IniEditorPage::handleGlobalSearchFinished);
+
+    connect(&flatlas::core::Theme::instance(), &flatlas::core::Theme::themeChanged,
+            this, [this](const QString &) {
+        if (m_editorThemeName == QStringLiteral("auto"))
+            applyEditorTheme();
+    });
 }
 
 void IniEditorPage::setupUi()
 {
+    setObjectName(QStringLiteral("iniEditorPage"));
+
     auto *rootLayout = new QVBoxLayout(this);
     rootLayout->setContentsMargins(0, 0, 0, 0);
     rootLayout->setSpacing(0);
@@ -208,6 +315,7 @@ void IniEditorPage::setupUi()
     rootLayout->addWidget(m_toolbar);
 
     m_breadcrumbBar = new QWidget(this);
+    m_breadcrumbBar->setObjectName(QStringLiteral("iniBreadcrumbBar"));
     auto *breadcrumbLayout = new QHBoxLayout(m_breadcrumbBar);
     breadcrumbLayout->setContentsMargins(8, 6, 8, 6);
     breadcrumbLayout->setSpacing(4);
@@ -282,6 +390,7 @@ void IniEditorPage::setupUi()
 void IniEditorPage::setupToolbar()
 {
     m_toolbar = new QToolBar(this);
+    m_toolbar->setObjectName(QStringLiteral("iniEditorToolbar"));
     m_toolbar->setMovable(false);
 
     auto *openAction = m_toolbar->addAction(tr("Open"));
@@ -344,6 +453,33 @@ void IniEditorPage::setupToolbar()
     auto *expandAction = m_toolbar->addAction(tr("Expand All"));
     connect(expandAction, &QAction::triggered, this, &IniEditorPage::expandAllSections);
 
+    auto *themeButton = new QToolButton(this);
+    themeButton->setObjectName(QStringLiteral("iniEditorThemeButton"));
+    themeButton->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+    themeButton->setToolTip(tr("Editor theme"));
+    themeButton->setPopupMode(QToolButton::InstantPopup);
+    auto *themeMenu = new QMenu(themeButton);
+    for (const QString &themeName : availableEditorThemes()) {
+        QString displayName = buildEditorThemeConfig(themeName).displayName;
+        if (themeName == QStringLiteral("auto"))
+            displayName = tr("Auto");
+        auto *action = themeMenu->addAction(displayName);
+        action->setCheckable(true);
+        action->setData(themeName);
+        if (themeName == m_editorThemeName)
+            action->setChecked(true);
+        connect(action, &QAction::triggered, this, [this, themeName]() {
+            setEditorThemeSetting(themeName);
+            applyEditorTheme();
+        });
+    }
+    connect(themeMenu, &QMenu::aboutToShow, this, [this, themeMenu]() {
+        for (QAction *action : themeMenu->actions())
+            action->setChecked(action->data().toString() == m_editorThemeName);
+    });
+    themeButton->setMenu(themeMenu);
+    m_toolbar->addWidget(themeButton);
+
     auto *spacer = new QWidget(this);
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     m_toolbar->addWidget(spacer);
@@ -358,10 +494,11 @@ void IniEditorPage::setupToolbar()
 
 void IniEditorPage::setupWorkspace()
 {
-    auto *rootSplitter = new QSplitter(Qt::Vertical, this);
-    static_cast<QVBoxLayout *>(layout())->addWidget(rootSplitter, 1);
+    m_rootSplitter = new QSplitter(Qt::Vertical, this);
+    m_rootSplitter->setChildrenCollapsible(false);
+    static_cast<QVBoxLayout *>(layout())->addWidget(m_rootSplitter, 1);
 
-    auto *workspaceSplitter = new QSplitter(Qt::Horizontal, rootSplitter);
+    auto *workspaceSplitter = new QSplitter(Qt::Horizontal, m_rootSplitter);
 
     auto *leftPane = new QWidget(workspaceSplitter);
     auto *leftLayout = new QVBoxLayout(leftPane);
@@ -500,22 +637,54 @@ void IniEditorPage::setupWorkspace()
         }
     });
 
-    setupBottomTabs();
+    m_bottomPanelContainer = new QWidget(m_rootSplitter);
+    m_bottomPanelContainer->setObjectName(QStringLiteral("iniBottomPanelContainer"));
+    auto *bottomPanelLayout = new QVBoxLayout(m_bottomPanelContainer);
+    bottomPanelLayout->setContentsMargins(0, 0, 0, 0);
+    bottomPanelLayout->setSpacing(0);
 
-    rootSplitter->addWidget(workspaceSplitter);
-    rootSplitter->addWidget(m_bottomTabs);
-    rootSplitter->setStretchFactor(0, 4);
-    rootSplitter->setStretchFactor(1, 2);
+    m_bottomPanelHeader = new QWidget(m_bottomPanelContainer);
+    m_bottomPanelHeader->setObjectName(QStringLiteral("iniBottomPanelHeader"));
+    auto *bottomHeaderLayout = new QHBoxLayout(m_bottomPanelHeader);
+    bottomHeaderLayout->setContentsMargins(8, 4, 8, 4);
+    bottomHeaderLayout->setSpacing(6);
+    m_bottomPanelToggleButton = new QToolButton(m_bottomPanelHeader);
+    m_bottomPanelToggleButton->setObjectName(QStringLiteral("iniBottomPanelToggleButton"));
+    m_bottomPanelToggleButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    bottomHeaderLayout->addWidget(m_bottomPanelToggleButton);
+    m_bottomPanelTitleLabel = new QLabel(m_bottomPanelHeader);
+    m_bottomPanelTitleLabel->setObjectName(QStringLiteral("iniBottomPanelTitleLabel"));
+    bottomHeaderLayout->addWidget(m_bottomPanelTitleLabel, 1);
+    bottomPanelLayout->addWidget(m_bottomPanelHeader);
+
+    connect(m_bottomPanelToggleButton, &QToolButton::clicked, this, [this]() {
+        setBottomPanelExpanded(!m_bottomPanelExpanded);
+    });
+
+    setupBottomTabs();
+    bottomPanelLayout->addWidget(m_bottomTabs, 1);
+
+    m_rootSplitter->addWidget(workspaceSplitter);
+    m_rootSplitter->addWidget(m_bottomPanelContainer);
+    m_rootSplitter->setStretchFactor(0, 4);
+    m_rootSplitter->setStretchFactor(1, 1);
+    connect(m_rootSplitter, &QSplitter::splitterMoved, this, [this](int, int) { handleRootSplitterMoved(); });
 
     workspaceSplitter->setStretchFactor(0, 1);
     workspaceSplitter->setStretchFactor(1, 4);
     centerSplitter->setStretchFactor(0, 4);
     centerSplitter->setStretchFactor(1, 1);
+
+    updateBottomPanelTitle();
+    setBottomPanelExpanded(m_bottomPanelExpanded, false, m_lastExpandedBottomHeight);
+    applyEditorTheme();
 }
 
 void IniEditorPage::setupBottomTabs()
 {
-    m_bottomTabs = new QTabWidget(this);
+    m_bottomTabs = new QTabWidget(m_bottomPanelContainer);
+    m_bottomTabs->setObjectName(QStringLiteral("iniBottomTabs"));
+    connect(m_bottomTabs, &QTabWidget::currentChanged, this, [this](int) { updateBottomPanelTitle(); });
 
     m_diagnosticsModel = new QStandardItemModel(this);
     m_diagnosticsModel->setHorizontalHeaderLabels({tr("Severity"), tr("Line"), tr("Section"), tr("Key"), tr("Message")});
@@ -736,6 +905,209 @@ void IniEditorPage::setupShortcuts()
     addAction(saveAction);
 }
 
+void IniEditorPage::updateBottomPanelUi()
+{
+    if (!m_bottomPanelToggleButton || !m_bottomPanelTitleLabel || !m_bottomTabs)
+        return;
+
+    m_bottomPanelToggleButton->setArrowType(m_bottomPanelExpanded ? Qt::DownArrow : Qt::RightArrow);
+    m_bottomPanelToggleButton->setText(m_bottomPanelExpanded ? tr("Hide Panels") : tr("Show Panels"));
+    m_bottomTabs->setVisible(m_bottomPanelExpanded);
+    updateBottomPanelTitle();
+}
+
+void IniEditorPage::setBottomPanelExpanded(bool expanded, bool rememberHeight, int requestedHeight)
+{
+    if (!m_rootSplitter || !m_bottomPanelContainer || !m_bottomTabs || !m_bottomPanelHeader)
+        return;
+
+    const int headerHeight = qMax(kCollapsedBottomPanelHeight, m_bottomPanelHeader->sizeHint().height() + 4);
+    const QList<int> sizes = m_rootSplitter->sizes();
+    const int currentBottomSize = sizes.size() >= 2 ? sizes.at(1) : 0;
+    if (rememberHeight && m_bottomPanelExpanded && currentBottomSize > headerHeight + 20)
+        m_lastExpandedBottomHeight = currentBottomSize;
+
+    m_updatingBottomPanel = true;
+    m_bottomPanelExpanded = expanded;
+    m_bottomPanelContainer->setMaximumHeight(expanded ? QWIDGETSIZE_MAX : headerHeight);
+    updateBottomPanelUi();
+
+    QList<int> newSizes = sizes;
+    if (newSizes.size() < 2)
+        newSizes = {600, expanded ? m_lastExpandedBottomHeight : headerHeight};
+
+    const int total = qMax(0, newSizes.at(0) + newSizes.at(1));
+    if (expanded) {
+        const int desiredBottom = qMax(headerHeight + 80,
+                                       requestedHeight > 0 ? requestedHeight : m_lastExpandedBottomHeight);
+        if (total > 0) {
+            const int bottom = qMin(desiredBottom, qMax(headerHeight + 80, total - 180));
+            newSizes[1] = bottom;
+            newSizes[0] = qMax(180, total - bottom);
+        } else {
+            newSizes[1] = desiredBottom;
+        }
+    } else {
+        if (total > 0) {
+            newSizes[1] = headerHeight;
+            newSizes[0] = qMax(180, total - headerHeight);
+        } else {
+            newSizes[1] = headerHeight;
+        }
+    }
+
+    {
+        QSignalBlocker blocker(m_rootSplitter);
+        m_rootSplitter->setSizes(newSizes);
+    }
+
+    QSettings settings;
+    settings.setValue(editorUiSettingsPrefix() + QStringLiteral("/bottomPanelExpanded"), m_bottomPanelExpanded);
+    settings.setValue(editorUiSettingsPrefix() + QStringLiteral("/bottomPanelHeight"), m_lastExpandedBottomHeight);
+    m_updatingBottomPanel = false;
+}
+
+void IniEditorPage::handleRootSplitterMoved()
+{
+    if (!m_rootSplitter || m_updatingBottomPanel)
+        return;
+
+    const QList<int> sizes = m_rootSplitter->sizes();
+    if (sizes.size() < 2)
+        return;
+
+    const int bottomSize = sizes.at(1);
+    const int headerHeight = qMax(kCollapsedBottomPanelHeight, m_bottomPanelHeader ? m_bottomPanelHeader->sizeHint().height() + 4 : kCollapsedBottomPanelHeight);
+
+    if (m_bottomPanelExpanded) {
+        if (bottomSize <= headerHeight + kBottomPanelAutoCollapseThreshold) {
+            setBottomPanelExpanded(false, true);
+            return;
+        }
+        m_lastExpandedBottomHeight = bottomSize;
+        QSettings settings;
+        settings.setValue(editorUiSettingsPrefix() + QStringLiteral("/bottomPanelHeight"), m_lastExpandedBottomHeight);
+        return;
+    }
+
+    if (bottomSize > headerHeight + 90)
+        setBottomPanelExpanded(true, false, bottomSize);
+}
+
+void IniEditorPage::updateBottomPanelTitle()
+{
+    if (!m_bottomPanelTitleLabel || !m_bottomTabs)
+        return;
+
+    const QString currentTabLabel = m_bottomTabs->tabText(m_bottomTabs->currentIndex());
+    m_bottomPanelTitleLabel->setText(m_bottomPanelExpanded
+        ? tr("Panels: %1").arg(currentTabLabel)
+        : tr("Panels hidden (%1)").arg(currentTabLabel));
+}
+
+QString IniEditorPage::editorUiSettingsPrefix() const
+{
+    return QStringLiteral("IniEditorPage");
+}
+
+QString IniEditorPage::editorThemeSetting() const
+{
+    const QString cached = cachedEditorThemeName();
+    if (availableEditorThemes().contains(cached))
+        return cached;
+
+    QSettings settings;
+    const QString stored = settings.value(editorUiSettingsPrefix() + QStringLiteral("/editorTheme"), QStringLiteral("auto")).toString().trimmed().toLower();
+    const QString resolved = availableEditorThemes().contains(stored) ? stored : QStringLiteral("auto");
+    cachedEditorThemeName() = resolved;
+    return resolved;
+}
+
+void IniEditorPage::setEditorThemeSetting(const QString &themeName)
+{
+    m_editorThemeName = availableEditorThemes().contains(themeName) ? themeName : QStringLiteral("auto");
+    cachedEditorThemeName() = m_editorThemeName;
+    QSettings settings;
+    settings.setValue(editorUiSettingsPrefix() + QStringLiteral("/editorTheme"), m_editorThemeName);
+    settings.sync();
+}
+
+QStringList IniEditorPage::availableEditorThemes()
+{
+    return {QStringLiteral("auto"), QStringLiteral("midnight"), QStringLiteral("paper")};
+}
+
+IniEditorPage::EditorThemeConfig IniEditorPage::resolvedEditorTheme() const
+{
+    if (m_editorThemeName == QStringLiteral("midnight"))
+        return buildEditorThemeConfig(QStringLiteral("midnight"));
+    if (m_editorThemeName == QStringLiteral("paper"))
+        return buildEditorThemeConfig(QStringLiteral("paper"));
+    return buildEditorThemeConfig(QStringLiteral("auto"));
+}
+
+void IniEditorPage::applyEditorTheme()
+{
+    m_editorThemeName = editorThemeSetting();
+    const EditorThemeConfig theme = resolvedEditorTheme();
+
+    if (m_editor) {
+        IniCodeEditor::ThemeColors colors;
+        colors.editorBackground = theme.editorBackground;
+        colors.editorForeground = theme.editorForeground;
+        colors.selectionBackground = theme.selectionBackground;
+        colors.selectionForeground = theme.selectionForeground;
+        colors.lineNumberBackground = theme.lineNumberBackground;
+        colors.lineNumberForeground = theme.lineNumberForeground;
+        colors.currentLineNumberForeground = theme.currentLineNumberForeground;
+        colors.currentLineBackground = theme.currentLineBackground;
+        m_editor->applyThemeColors(colors);
+    }
+
+    if (m_minimap) {
+        QPalette minimapPalette = m_minimap->palette();
+        minimapPalette.setColor(QPalette::Base, theme.chromeAltBackground);
+        minimapPalette.setColor(QPalette::Text, theme.mutedTextColor);
+        minimapPalette.setColor(QPalette::Highlight, theme.accentColor);
+        m_minimap->setPalette(minimapPalette);
+        m_minimap->viewport()->update();
+    }
+
+    const QString styleSheet = QStringLiteral(
+        "QWidget#iniEditorPage { background-color: %1; color: %2; }"
+        "QToolBar#iniEditorToolbar, QWidget#iniBottomPanelHeader, QWidget#iniBreadcrumbBar { background-color: %3; color: %2; border-bottom: 1px solid %4; }"
+        "QWidget#iniBottomPanelContainer { background-color: %5; border-top: 1px solid %4; }"
+        "QTreeView, QListWidget, QTabWidget::pane, QTextBrowser, QLineEdit { background-color: %6; color: %2; border: 1px solid %4; }"
+        "QTreeView::item:selected, QListWidget::item:selected { background-color: %7; color: %8; }"
+        "QTreeView::item:hover, QListWidget::item:hover { background-color: %5; }"
+        "QTabBar::tab { background-color: %5; color: %9; border: 1px solid %4; padding: 5px 10px; }"
+        "QTabBar::tab:selected { background-color: %6; color: %2; }"
+        "QTabBar::tab:hover { background-color: %3; }"
+        "QToolButton, QPushButton { background-color: %5; color: %2; border: 1px solid %4; padding: 4px 8px; }"
+        "QToolButton:hover, QPushButton:hover { background-color: %3; }"
+        "QLabel#iniBottomPanelTitleLabel { color: %9; font-weight: 600; }"
+    ).arg(theme.chromeBackground.name(),
+          theme.textColor.name(),
+          theme.toolbarBackground.name(),
+          theme.borderColor.name(),
+          theme.chromeAltBackground.name(),
+          theme.editorBackground.name(),
+          theme.accentColor.name(),
+          theme.selectionForeground.name(),
+          theme.mutedTextColor.name());
+
+    setStyleSheet(styleSheet);
+
+    for (auto &session : m_sessions)
+        applyEditorThemeToSession(session);
+}
+
+void IniEditorPage::applyEditorThemeToSession(FileSession &session) const
+{
+    if (session.highlighter)
+        session.highlighter->rehighlight();
+}
+
 void IniEditorPage::openWorkspace(const QString &rootPath)
 {
     setTreeRootPath(rootPath);
@@ -936,6 +1308,7 @@ void IniEditorPage::handleGlobalSearchFinished()
     const auto matches = m_searchWatcher->result();
     updateSearchResultsView(matches);
     m_bottomTabs->setCurrentWidget(m_searchResultsView);
+    setBottomPanelExpanded(true, false);
     m_statusLabel->setText(tr("%1 matches").arg(matches.size()));
 }
 
@@ -1401,6 +1774,7 @@ bool IniEditorPage::openFileInSession(const QString &filePath, QString *errorMes
     session.document->setDocumentLayout(new QPlainTextDocumentLayout(session.document));
     session.document->setPlainText(finalText);
     session.highlighter = new IniSyntaxHighlighter(session.document);
+    applyEditorThemeToSession(session);
     session.dirty = (session.document->toPlainText() != session.savedText);
     session.wasBini = wasBini;
     session.analysis = IniAnalysisService::analyzeText(session.document->toPlainText());

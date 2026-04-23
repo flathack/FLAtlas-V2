@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QColor>
 #include <QDateTime>
 #include <QHash>
 #include <QSet>
@@ -18,6 +19,7 @@ class QListWidgetItem;
 class QPlainTextEdit;
 class QPushButton;
 class QScrollBar;
+class QSplitter;
 class QStackedWidget;
 class QTabBar;
 class QTabWidget;
@@ -25,6 +27,7 @@ class QTextBrowser;
 class QTextDocument;
 class QTimer;
 class QToolBar;
+class QToolButton;
 class QTreeView;
 class QStandardItemModel;
 class QModelIndex;
@@ -58,6 +61,27 @@ public:
 signals:
     void titleChanged(const QString &title);
     void openFileRequested(const QString &filePath, const QString &searchText, int lineNumber);
+
+public:
+    struct EditorThemeConfig {
+        QString name;
+        QString displayName;
+        QColor chromeBackground;
+        QColor chromeAltBackground;
+        QColor toolbarBackground;
+        QColor textColor;
+        QColor mutedTextColor;
+        QColor borderColor;
+        QColor accentColor;
+        QColor editorBackground;
+        QColor editorForeground;
+        QColor selectionBackground;
+        QColor selectionForeground;
+        QColor lineNumberBackground;
+        QColor lineNumberForeground;
+        QColor currentLineNumberForeground;
+        QColor currentLineBackground;
+    };
 
 private slots:
     void onTextChanged();
@@ -168,6 +192,17 @@ private:
     void applyFolding();
     void collapseCurrentSection();
     void expandAllSections();
+    void updateBottomPanelUi();
+    void setBottomPanelExpanded(bool expanded, bool rememberHeight = true, int requestedHeight = -1);
+    void handleRootSplitterMoved();
+    void updateBottomPanelTitle();
+    QString editorUiSettingsPrefix() const;
+    QString editorThemeSetting() const;
+    void setEditorThemeSetting(const QString &themeName);
+    static QStringList availableEditorThemes();
+    EditorThemeConfig resolvedEditorTheme() const;
+    void applyEditorTheme();
+    void applyEditorThemeToSession(FileSession &session) const;
 
     IniCodeEditor *m_editor = nullptr;
     IniMiniMap *m_minimap = nullptr;
@@ -185,6 +220,11 @@ private:
     QTreeView *m_fileTree = nullptr;
     QListWidget *m_sectionList = nullptr;
     QListWidget *m_keyList = nullptr;
+    QSplitter *m_rootSplitter = nullptr;
+    QWidget *m_bottomPanelContainer = nullptr;
+    QWidget *m_bottomPanelHeader = nullptr;
+    QToolButton *m_bottomPanelToggleButton = nullptr;
+    QLabel *m_bottomPanelTitleLabel = nullptr;
     QTabWidget *m_bottomTabs = nullptr;
     QTreeView *m_diagnosticsView = nullptr;
     QTreeView *m_searchResultsView = nullptr;
@@ -203,6 +243,10 @@ private:
 
     QString m_treeRootPath;
     QVector<FileSession> m_sessions;
+    QString m_editorThemeName = QStringLiteral("auto");
+    bool m_bottomPanelExpanded = false;
+    bool m_updatingBottomPanel = false;
+    int m_lastExpandedBottomHeight = 220;
     bool m_loading = false;
     int m_currentSessionIndex = -1;
 };

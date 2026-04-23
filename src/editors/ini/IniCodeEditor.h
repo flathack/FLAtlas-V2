@@ -1,4 +1,5 @@
 #pragma once
+#include <QColor>
 #include <QPlainTextEdit>
 
 class QPaintEvent;
@@ -11,10 +12,22 @@ class LineNumberArea;
 class IniCodeEditor : public QPlainTextEdit {
     Q_OBJECT
 public:
+    struct ThemeColors {
+        QColor editorBackground;
+        QColor editorForeground;
+        QColor selectionBackground;
+        QColor selectionForeground;
+        QColor lineNumberBackground;
+        QColor lineNumberForeground;
+        QColor currentLineNumberForeground;
+        QColor currentLineBackground;
+    };
+
     explicit IniCodeEditor(QWidget *parent = nullptr);
 
     void lineNumberAreaPaintEvent(QPaintEvent *event);
     int lineNumberAreaWidth() const;
+    void applyThemeColors(const ThemeColors &colors);
 
     void goToLine(int lineNumber);
 
@@ -32,6 +45,7 @@ private slots:
 
 private:
     LineNumberArea *m_lineNumberArea;
+    ThemeColors m_themeColors;
 };
 
 class LineNumberArea : public QWidget {

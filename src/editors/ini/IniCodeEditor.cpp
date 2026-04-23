@@ -1,6 +1,7 @@
 #include "IniCodeEditor.h"
 
 #include <QFontDatabase>
+#include <QPalette>
 #include <QPainter>
 #include <QTextBlock>
 
@@ -34,6 +35,16 @@ IniCodeEditor::IniCodeEditor(QWidget *parent)
     const int tabWidth = 4;
     setTabStopDistance(QFontMetricsF(font).horizontalAdvance(' ') * tabWidth);
 
+    m_themeColors.editorBackground = QColor(QStringLiteral("#0f1318"));
+    m_themeColors.editorForeground = QColor(QStringLiteral("#e4e9f0"));
+    m_themeColors.selectionBackground = QColor(QStringLiteral("#255d90"));
+    m_themeColors.selectionForeground = QColor(QStringLiteral("#ffffff"));
+    m_themeColors.lineNumberBackground = QColor(QStringLiteral("#1b2027"));
+    m_themeColors.lineNumberForeground = QColor(QStringLiteral("#7e8897"));
+    m_themeColors.currentLineNumberForeground = QColor(QStringLiteral("#e4e9f0"));
+    m_themeColors.currentLineBackground = QColor(46, 62, 84, 110);
+    applyThemeColors(m_themeColors);
+
     connect(this, &QPlainTextEdit::blockCountChanged,
             this, &IniCodeEditor::updateLineNumberAreaWidth);
     connect(this, &QPlainTextEdit::updateRequest,
@@ -42,6 +53,22 @@ IniCodeEditor::IniCodeEditor(QWidget *parent)
             this, &IniCodeEditor::highlightCurrentLine);
 
     updateLineNumberAreaWidth(0);
+    highlightCurrentLine();
+}
+
+void IniCodeEditor::applyThemeColors(const ThemeColors &colors) {
+    m_themeColors = colors;
+
+    QPalette editorPalette = palette();
+    editorPalette.setColor(QPalette::Base, m_themeColors.editorBackground);
+    editorPalette.setColor(QPalette::Text, m_themeColors.editorForeground);
+    editorPalette.setColor(QPalette::Highlight, m_themeColors.selectionBackground);
+    editorPalette.setColor(QPalette::HighlightedText, m_themeColors.selectionForeground);
+    setPalette(editorPalette);
+
+    if (m_lineNumberArea)
+        m_lineNumberArea->update();
+    viewport()->update();
     highlightCurrentLine();
 }
 
@@ -79,7 +106,7 @@ void IniCodeEditor::resizeEvent(QResizeEvent *event) {
 
 void IniCodeEditor::lineNumberAreaPaintEvent(QPaintEvent *event) {
     QPainter painter(m_lineNumberArea);
-    painter.fillRect(event->rect(), palette().midlight());
+    painter.fillRect(event->rect(), m_themeColors.lineNumberBackground);
 
     QTextBlock block = firstVisibleBlock();
     int blockNumber = block.blockNumber();
@@ -96,14 +123,12 @@ void IniCodeEditor::lineNumberAreaPaintEvent(QPaintEvent *event) {
                 QFont boldFont = painter.font();
                 boldFont.setBold(true);
                 painter.setFont(boldFont);
-                painter.setPen(palette().color(QPalette::Text));
+                painter.setPen(m_themeColors.currentLineNumberForeground);
             } else {
                 QFont normalFont = painter.font();
                 normalFont.setBold(false);
                 painter.setFont(normalFont);
-                QColor dimmed = palette().color(QPalette::Text);
-                dimmed.setAlphaF(0.5f);
-                painter.setPen(dimmed);
+                painter.setPen(m_themeColors.lineNumberForeground);
             }
 
             painter.drawText(0, top, m_lineNumberArea->width() - 5,
@@ -122,7 +147,7 @@ void IniCodeEditor::highlightCurrentLine() {
 
     if (!isReadOnly()) {
         QTextEdit::ExtraSelection selection;
-        selection.format.setBackground(QColor(46, 62, 84, 110));
+        selection.format.setBackground(m_themeColors.currentLineBackground);
         selection.format.setProperty(QTextFormat::FullWidthSelection, true);
         selection.cursor = textCursor();
         selection.cursor.clearSelection();

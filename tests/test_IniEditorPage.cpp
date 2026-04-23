@@ -7,11 +7,15 @@
 #include <QFileSystemModel>
 #include <QListWidget>
 #include <QMessageBox>
+#include <QMenu>
 #include <QPlainTextEdit>
+#include <QTabWidget>
+#include <QSettings>
 #include <QTemporaryDir>
 #include <QTabBar>
 #include <QTextCursor>
 #include <QTimer>
+#include <QToolButton>
 #include <QTreeView>
 
 #include "editors/ini/IniEditorPage.h"
@@ -30,6 +34,8 @@ private slots:
     void treeRootStartsAboveDataFolder();
     void minimapTracksActiveFileAndUsesSmallerFont();
     void copySectionPlacesTextOnClipboard();
+    void bottomPanelsStartCollapsedAndCanExpand();
+    void editorThemeSelectionPersists();
 };
 
 void TestIniEditorPage::opensWorkspaceWithoutFile()
@@ -327,6 +333,55 @@ void TestIniEditorPage::copySectionPlacesTextOnClipboard()
 
     QCOMPARE(QApplication::clipboard()->text(),
              QStringLiteral("[System]\nnickname = Li01\nfile = systems\\li01\\li01.ini"));
+}
+
+void TestIniEditorPage::bottomPanelsStartCollapsedAndCanExpand()
+{
+    QSettings settings;
+    settings.remove(QStringLiteral("IniEditorPage/bottomPanelExpanded"));
+    settings.remove(QStringLiteral("IniEditorPage/bottomPanelHeight"));
+
+    IniEditorPage page;
+    page.openWorkspace(QDir::tempPath());
+
+    auto *bottomTabs = page.findChild<QTabWidget *>(QStringLiteral("iniBottomTabs"));
+    auto *toggleButton = page.findChild<QToolButton *>(QStringLiteral("iniBottomPanelToggleButton"));
+    QVERIFY(bottomTabs != nullptr);
+    QVERIFY(toggleButton != nullptr);
+    QVERIFY(bottomTabs->isHidden());
+
+    toggleButton->click();
+    QTRY_VERIFY(!bottomTabs->isHidden());
+}
+
+void TestIniEditorPage::editorThemeSelectionPersists()
+{
+    QSettings settings;
+    settings.setValue(QStringLiteral("IniEditorPage/editorTheme"), QStringLiteral("auto"));
+
+    IniEditorPage firstPage;
+    firstPage.openWorkspace(QDir::tempPath());
+
+    auto *themeButton = firstPage.findChild<QToolButton *>(QStringLiteral("iniEditorThemeButton"));
+    QVERIFY(themeButton != nullptr);
+    QVERIFY(themeButton->menu() != nullptr);
+
+    QAction *paperAction = nullptr;
+    for (QAction *action : themeButton->menu()->actions()) {
+        if (action && action->data().toString() == QStringLiteral("paper")) {
+            paperAction = action;
+            break;
+        }
+    }
+    QVERIFY(paperAction != nullptr);
+    paperAction->trigger();
+
+    IniEditorPage page;
+    page.openWorkspace(QDir::tempPath());
+
+    auto *editor = page.findChild<QPlainTextEdit *>(QStringLiteral("iniCodeEditor"));
+    QVERIFY(editor != nullptr);
+    QCOMPARE(editor->palette().color(QPalette::Base), QColor(QStringLiteral("#fffdf8")));
 }
 
 QTEST_MAIN(TestIniEditorPage)
