@@ -3,6 +3,7 @@
 #include "core/Theme.h"
 #include "items/SolarObjectItem.h"
 #include "items/ZoneItem2D.h"
+#include "domain/SolarObject.h"
 #include <QWheelEvent>
 #include <QMouseEvent>
 #include <QMenu>
@@ -18,6 +19,9 @@
 #include <QScrollBar>
 #include <QTimer>
 #include <QPalette>
+
+#include <functional>
+#include <limits>
 
 namespace flatlas::rendering {
 
@@ -80,6 +84,20 @@ SystemMapView::SystemMapView(QWidget *parent)
     // also intentionally omits this flag for the same reason.
     setOptimizationFlag(QGraphicsView::DontSavePainterState, true);
     setOptimizationFlag(QGraphicsView::DontAdjustForAntialiasing, true);
+    // We need mouse-move events without a pressed button so the overlap-cluster
+    // popup can appear on pure hover.
+    setMouseTracking(true);
+    if (viewport())
+        viewport()->setMouseTracking(true);
+    m_clusterHoverHideTimer = new QTimer(this);
+    m_clusterHoverHideTimer->setSingleShot(true);
+    m_clusterHoverHideTimer->setInterval(140);
+    connect(m_clusterHoverHideTimer, &QTimer::timeout, this, [this]() {
+        if (m_hoveredClusterIndex < 0)
+            return;
+        m_hoveredClusterIndex = -1;
+        viewport()->update();
+    });
     applyTheme();
 }
 
@@ -226,6 +244,8 @@ void SystemMapView::mousePressEvent(QMouseEvent *event)
 
 void SystemMapView::mouseMoveEvent(QMouseEvent *event)
 {
+    m_lastMouseViewportPos = event->pos();
+    m_hasMouseInViewport = true;
     if (m_panning) {
         const QPoint delta = event->pos() - m_lastPanPosition;
         m_lastPanPosition = event->pos();
@@ -245,6 +265,7 @@ void SystemMapView::mouseMoveEvent(QMouseEvent *event)
         event->accept();
         return;
     }
+    updateHoveredClusterForMouse(event->pos());
     QGraphicsView::mouseMoveEvent(event);
 }
 
@@ -411,6 +432,78 @@ void SystemMapView::drawForeground(QPainter *painter, const QRectF &rect)
                           QStringLiteral("%1 km").arg(worldH / 1000.0, 0, 'f', 2));
     }
 
+    if (m_hoveredClusterIndex >= 0 && m_hoveredClusterIndex < m_labelClusters.size()) {
+        const LabelCluster &cluster = m_labelClusters[m_hoveredClusterIndex];
+        const QFont popupFont(QStringLiteral("Segoe UI"), 8);
+        const QFontMetrics popupMetrics(popupFont);
+        painter->setFont(popupFont);
+
+        // Cap the popup at a readable number of entries. If the cluster is
+        // bigger, show the first N and a trailing "... (+N more)" line so the
+        // popup stays compact and the viewport is not flooded.
+        constexpr int kMaxPopupEntries = 8;
+        const int totalEntries = static_cast<int>(cluster.nicknames.size());
+        const bool truncated = totalEntries > kMaxPopupEntries;
+        const int visibleEntries = truncated ? kMaxPopupEntries : totalEntries;
+        QStringList shownLines;
+        shownLines.reserve(visibleEntries + (truncated ? 1 : 0));
+        for (int i = 0; i < visibleEntries; ++i)
+            shownLines.append(cluster.nicknames.at(i));
+        if (truncated)
+            shownLines.append(QStringLiteral("... (+%1 more)").arg(totalEntries - visibleEntries));
+
+        const int lineHeight = popupMetrics.height();
+        const int padding = 6;
+        const int spacing = 2;
+        int widestLine = 0;
+        for (const QString &name : shownLines)
+            widestLine = std::max(widestLine, popupMetrics.horizontalAdvance(name));
+
+        const int popupWidth = widestLine + padding * 2;
+        const int popupHeight = padding * 2
+            + lineHeight * static_cast<int>(shownLines.size())
+            + spacing * std::max<int>(0, static_cast<int>(shownLines.size()) - 1);
+
+        // Prefer placing the stack just above/right of the cluster so it does
+        // not hide the objects themselves; clamp into the viewport.
+        QPoint origin(cluster.viewportAnchor.x() + 12,
+                      cluster.viewportAnchor.y() - popupHeight - 8);
+        const QRect vp = viewport()->rect();
+        if (origin.x() + popupWidth + 4 > vp.right())
+            origin.setX(cluster.viewportAnchor.x() - popupWidth - 12);
+        if (origin.x() < vp.left() + 4)
+            origin.setX(vp.left() + 4);
+        if (origin.y() < vp.top() + 4)
+            origin.setY(cluster.viewportAnchor.y() + 12);
+        if (origin.y() + popupHeight + 4 > vp.bottom())
+            origin.setY(std::max(vp.top() + 4, vp.bottom() - popupHeight - 4));
+
+        const QRect popupRect(origin, QSize(popupWidth, popupHeight));
+        QColor bg(18, 22, 30, 225);
+        QColor border(m_overlayTextColor);
+        border.setAlpha(200);
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(bg);
+        painter->drawRoundedRect(popupRect, 4, 4);
+        painter->setPen(QPen(border, 1));
+        painter->setBrush(Qt::NoBrush);
+        painter->drawRoundedRect(popupRect, 4, 4);
+
+        // Leader line from the popup to the cluster anchor so the reader can
+        // still see which objects the stacked labels belong to.
+        QColor leader(m_overlayTextColor);
+        leader.setAlpha(160);
+        painter->setPen(QPen(leader, 1, Qt::DotLine));
+        painter->drawLine(cluster.viewportAnchor, popupRect.center());
+
+        painter->setPen(QColor(235, 240, 250, 240));
+        int y = popupRect.top() + padding + popupMetrics.ascent();
+        for (const QString &name : shownLines) {
+            painter->drawText(popupRect.left() + padding, y, name);
+            y += lineHeight + spacing;
+        }
+    }
+
     painter->restore();
 }
 
@@ -431,6 +524,7 @@ void SystemMapView::resizeEvent(QResizeEvent *event)
             m_minZoomScale = fitScaleForView(this, withNavMapPadding(targetRect));
     }
     applyInitialFitIfNeeded();
+    rebuildLabelClusters();
 }
 
 void SystemMapView::applyInitialFitIfNeeded()
@@ -450,11 +544,253 @@ void SystemMapView::updateItemDetailForScale()
     const qreal scale = transform().m11();
     const auto sceneItems = scene()->items();
     for (QGraphicsItem *item : sceneItems) {
-        if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item))
+        if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item)) {
+            // Reset suppression before re-applying the filter; rebuildLabelClusters
+            // will set it again for items that belong to an overlap cluster.
+            solarItem->setLabelSuppressedByCluster(false);
             solarItem->applyDisplayFilter(m_displayFilterSettings, scale);
-        else if (auto *zoneItem = dynamic_cast<ZoneItem2D *>(item))
+        } else if (auto *zoneItem = dynamic_cast<ZoneItem2D *>(item)) {
             zoneItem->applyDisplayFilter(m_displayFilterSettings);
+        }
     }
+    rebuildLabelClusters();
+    if (m_hasMouseInViewport)
+        updateHoveredClusterForMouse(m_lastMouseViewportPos);
+}
+
+void SystemMapView::rebuildLabelClusters()
+{
+    m_labelClusters.clear();
+    m_hoveredClusterIndex = -1;
+    if (!scene())
+        return;
+
+    // Match the label font used by SolarObjectItem so our overlap estimate
+    // reflects what the user actually sees on screen.
+    const QFont labelFont(QStringLiteral("Segoe UI"), 7);
+    const QFontMetrics fm(labelFont);
+    const int labelHeight = fm.height();
+
+    struct Candidate {
+        SolarObjectItem *item;
+        QRect labelRect; // viewport coords
+    };
+    QVector<Candidate> candidates;
+    candidates.reserve(64);
+
+    const qreal scale = transform().m11();
+    const auto sceneItems = scene()->items();
+    for (QGraphicsItem *item : sceneItems) {
+        auto *solarItem = dynamic_cast<SolarObjectItem *>(item);
+        if (!solarItem || !solarItem->isVisible())
+            continue;
+        if (solarItem->isSelected())
+            continue; // selected items always keep their label; skip clustering
+        // Respect existing label gates (filter + zoom threshold). If the label
+        // would be hidden anyway, it cannot overlap anything.
+        if (!m_displayFilterSettings.labelVisibleForType(solarItem->objectType()))
+            continue;
+        // Mirror the zoom threshold used in SolarObjectItem so we do not create
+        // clusters for labels that are not rendered at the current zoom.
+        if (scale < 0.25)
+            continue;
+
+        const QPoint itemView = mapFromScene(solarItem->scenePos());
+        const int labelWidth = fm.horizontalAdvance(solarItem->nickname());
+        // Label sits to the upper right of the object marker; approximate the
+        // offset in viewport pixels. The exact offset is not critical - we only
+        // need a stable proxy that detects overlapping labels.
+        const int offsetX = 6;
+        const int offsetY = -labelHeight - 2;
+        const QRect rect(itemView.x() + offsetX,
+                         itemView.y() + offsetY,
+                         labelWidth,
+                         labelHeight);
+        candidates.append({solarItem, rect});
+    }
+
+    const int count = candidates.size();
+    if (count < 2)
+        return;
+
+    // Inflate each rect slightly so labels that nearly touch still count as
+    // overlapping - visually they are just as hard to read.
+    constexpr int kOverlapPadding = 2;
+
+    QVector<int> parent(count);
+    for (int i = 0; i < count; ++i)
+        parent[i] = i;
+    std::function<int(int)> find = [&](int x) {
+        while (parent[x] != x) {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+        return x;
+    };
+    auto unite = [&](int a, int b) {
+        const int ra = find(a);
+        const int rb = find(b);
+        if (ra != rb)
+            parent[ra] = rb;
+    };
+
+    for (int i = 0; i < count; ++i) {
+        const QRect a = candidates[i].labelRect.adjusted(-kOverlapPadding, -kOverlapPadding,
+                                                          kOverlapPadding, kOverlapPadding);
+        for (int j = i + 1; j < count; ++j) {
+            if (a.intersects(candidates[j].labelRect))
+                unite(i, j);
+        }
+    }
+
+    QHash<int, int> rootToCluster;
+    for (int i = 0; i < count; ++i) {
+        const int root = find(i);
+        int clusterIdx = rootToCluster.value(root, -1);
+        if (clusterIdx < 0) {
+            clusterIdx = m_labelClusters.size();
+            rootToCluster.insert(root, clusterIdx);
+            LabelCluster cluster;
+            cluster.viewportBounds = candidates[i].labelRect;
+            m_labelClusters.append(cluster);
+        }
+        LabelCluster &cluster = m_labelClusters[clusterIdx];
+        cluster.members.append(candidates[i].item);
+        cluster.nicknames.append(candidates[i].item->nickname());
+        cluster.viewportBounds = cluster.viewportBounds.united(candidates[i].labelRect);
+    }
+
+    // Drop trivial clusters (size < 2) and suppress inline labels on real
+    // clusters. At normal zoom levels the labels of the primary navigational
+    // landmarks (suns, planets, stations, jumpgates, jumpholes) should remain
+    // visible even inside a cluster so the user can always orient themselves
+    // from far away. Only when the user zooms in deep enough the full stacked
+    // hover-popup becomes available for the fine-grained details.
+    constexpr qreal kPopupDeepZoomThreshold = 1.25;
+    const bool deepZoom = scale >= kPopupDeepZoomThreshold;
+
+    auto isPriorityType = [](flatlas::domain::SolarObject::Type t) {
+        using T = flatlas::domain::SolarObject::Type;
+        return t == T::Sun || t == T::Planet || t == T::Station
+            || t == T::JumpGate || t == T::JumpHole;
+    };
+
+    for (int i = m_labelClusters.size() - 1; i >= 0; --i) {
+        LabelCluster &cluster = m_labelClusters[i];
+        if (cluster.members.size() < 2) {
+            m_labelClusters.removeAt(i);
+            continue;
+        }
+
+        if (deepZoom) {
+            // Deep zoom: suppress every inline label in the cluster; the
+            // hover popup takes over.
+            for (SolarObjectItem *member : cluster.members) {
+                member->setLabelSuppressedByCluster(true);
+                member->setLabelVisibleForScale(scale);
+            }
+            cluster.popupEligible = true;
+        } else {
+            // Normal zoom: only suppress the low-priority labels so the
+            // primary landmarks stay readable.
+            bool anySuppressed = false;
+            for (SolarObjectItem *member : cluster.members) {
+                if (isPriorityType(member->objectType()))
+                    continue;
+                member->setLabelSuppressedByCluster(true);
+                member->setLabelVisibleForScale(scale);
+                anySuppressed = true;
+            }
+            if (!anySuppressed) {
+                // Nothing was actually decluttered - no popup needed either.
+                m_labelClusters.removeAt(i);
+                continue;
+            }
+            cluster.popupEligible = false;
+        }
+        cluster.viewportAnchor = cluster.viewportBounds.center();
+    }
+}
+
+void SystemMapView::updateHoveredClusterForMouse(const QPoint &viewportPos)
+{
+    if (m_labelClusters.isEmpty()) {
+        if (m_hoveredClusterIndex != -1) {
+            m_hoveredClusterIndex = -1;
+            viewport()->update();
+        }
+        return;
+    }
+
+    // Hysteresis: a cluster appears once the cursor is within the show radius
+    // around its bounding rect, and only disappears once the cursor leaves a
+    // larger hide radius. Combined with a short debounce timer this prevents
+    // the popup from flickering when the mouse passes between dense objects.
+    constexpr int kShowMargin = 18;
+    constexpr int kHideMargin = 42;
+
+    int bestIndex = -1;
+    int bestDistance = std::numeric_limits<int>::max();
+    for (int i = 0; i < m_labelClusters.size(); ++i) {
+        if (!m_labelClusters[i].popupEligible)
+            continue;
+        const QRect bounds = m_labelClusters[i].viewportBounds;
+        const QRect showRect = bounds.adjusted(-kShowMargin, -kShowMargin, kShowMargin, kShowMargin);
+        if (!showRect.contains(viewportPos))
+            continue;
+        const QPoint centre = bounds.center();
+        const int dx = centre.x() - viewportPos.x();
+        const int dy = centre.y() - viewportPos.y();
+        const int distSq = dx * dx + dy * dy;
+        if (distSq < bestDistance) {
+            bestDistance = distSq;
+            bestIndex = i;
+        }
+    }
+
+    if (bestIndex < 0 && m_hoveredClusterIndex >= 0
+        && m_hoveredClusterIndex < m_labelClusters.size()) {
+        // Still inside the wider hide rect around the currently hovered cluster?
+        const QRect bounds = m_labelClusters[m_hoveredClusterIndex].viewportBounds;
+        const QRect hideRect = bounds.adjusted(-kHideMargin, -kHideMargin, kHideMargin, kHideMargin);
+        if (hideRect.contains(viewportPos))
+            bestIndex = m_hoveredClusterIndex;
+    }
+
+    if (bestIndex == m_hoveredClusterIndex) {
+        if (bestIndex >= 0 && m_clusterHoverHideTimer)
+            m_clusterHoverHideTimer->stop();
+        return;
+    }
+
+    if (bestIndex >= 0) {
+        if (m_clusterHoverHideTimer)
+            m_clusterHoverHideTimer->stop();
+        m_hoveredClusterIndex = bestIndex;
+        viewport()->update();
+    } else if (m_clusterHoverHideTimer) {
+        // Defer the hide so a brief mouse twitch outside the bounds does not
+        // collapse the popup mid-read.
+        m_clusterHoverHideTimer->start();
+    }
+}
+
+void SystemMapView::scrollContentsBy(int dx, int dy)
+{
+    QGraphicsView::scrollContentsBy(dx, dy);
+    // Viewport positions of all labels shifted - rebuild so the suppression
+    // and popup anchors stay accurate while panning.
+    rebuildLabelClusters();
+    if (m_hasMouseInViewport)
+        updateHoveredClusterForMouse(m_lastMouseViewportPos);
+}
+
+void SystemMapView::leaveEvent(QEvent *event)
+{
+    m_hasMouseInViewport = false;
+    if (m_hoveredClusterIndex >= 0 && m_clusterHoverHideTimer)
+        m_clusterHoverHideTimer->start();
+    QGraphicsView::leaveEvent(event);
 }
 
 void SystemMapView::beginTrackedSelectionMove(QMouseEvent *event)

@@ -593,11 +593,21 @@ void SolarObjectItem::setLabelVisibleForScale(qreal scale)
     // zooms deeply in. The threshold used to be 2.0, which effectively hid
     // every object label at the standard zoom.
     constexpr qreal kLabelScaleThreshold = 0.25;
+    // Selected items always show their label so the user never loses sight of
+    // what they picked, even when it would normally be suppressed by the
+    // overlap-cluster logic below.
+    const bool meetsZoom = scale >= kLabelScaleThreshold;
+    const bool clusterGate = !m_labelSuppressedByCluster;
     const bool shouldShow = m_objectVisibleByFilter
         && m_labelVisibleByFilter
-        && (isSelected() || scale >= kLabelScaleThreshold);
+        && (isSelected() || (meetsZoom && clusterGate));
     if (m_labelItem)
         m_labelItem->setVisible(shouldShow);
+}
+
+void SolarObjectItem::setLabelSuppressedByCluster(bool suppressed)
+{
+    m_labelSuppressedByCluster = suppressed;
 }
 
 void SolarObjectItem::applyDisplayFilter(const SystemDisplayFilterSettings &settings, qreal scale)

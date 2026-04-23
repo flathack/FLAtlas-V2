@@ -5,9 +5,13 @@
 #include <QPixmap>
 #include <QPoint>
 #include <QRect>
+#include <QString>
+#include <QStringList>
+#include <QVector>
 #include "SystemDisplayFilter.h"
 
 class QRubberBand;
+class QTimer;
 
 namespace flatlas::rendering {
 
@@ -45,10 +49,22 @@ protected:
     void drawForeground(QPainter *painter, const QRectF &rect) override;
     void showEvent(QShowEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
+    void scrollContentsBy(int dx, int dy) override;
+    void leaveEvent(QEvent *event) override;
 
 private:
+    struct LabelCluster {
+        QVector<SolarObjectItem *> members;
+        QStringList nicknames;
+        QRect viewportBounds;   // union of member label rects in viewport coords
+        QPoint viewportAnchor;  // representative centre used to place the popup
+        bool popupEligible = false; // only set when hover popup should appear
+    };
+
     void applyInitialFitIfNeeded();
     void updateItemDetailForScale();
+    void rebuildLabelClusters();
+    void updateHoveredClusterForMouse(const QPoint &viewportPos);
     void beginTrackedSelectionMove(QMouseEvent *event);
     void finishTrackedSelectionMove();
     void updateRubberBandSelection(const QRect &viewportRect, Qt::KeyboardModifiers modifiers);
@@ -72,6 +88,11 @@ private:
     QPoint m_rubberBandOrigin;
     bool m_rubberBandSelecting = false;
     bool m_rubberBandDragged = false;
+    QVector<LabelCluster> m_labelClusters;
+    int m_hoveredClusterIndex = -1;
+    QPoint m_lastMouseViewportPos;
+    bool m_hasMouseInViewport = false;
+    QTimer *m_clusterHoverHideTimer = nullptr;
 };
 
 } // namespace flatlas::rendering

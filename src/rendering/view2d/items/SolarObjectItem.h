@@ -29,6 +29,12 @@ public:
     void updateFromObject(const flatlas::domain::SolarObject &obj);
     void setLabelVisibleForScale(qreal scale);
     void applyDisplayFilter(const SystemDisplayFilterSettings &settings, qreal scale);
+    // Suppress this item's inline label because it would overlap with others
+    // nearby. The caller is expected to follow up with setLabelVisibleForScale
+    // (or applyDisplayFilter) so the visibility state is refreshed.
+    void setLabelSuppressedByCluster(bool suppressed);
+    bool isLabelSuppressedByCluster() const { return m_labelSuppressedByCluster; }
+    qreal currentRadius() const { return m_currentRadius; }
     QRectF boundingRect() const override;
     void paint(QPainter *painter,
                const QStyleOptionGraphicsItem *option,
@@ -58,6 +64,7 @@ private:
     qreal m_hoverProgress = 0.0;
     bool m_objectVisibleByFilter = true;
     bool m_labelVisibleByFilter = true;
+    bool m_labelSuppressedByCluster = false;
 };
 
 } // namespace flatlas::rendering
