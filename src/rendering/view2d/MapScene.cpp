@@ -1,4 +1,5 @@
 #include "MapScene.h"
+#include "items/LightSourceItem.h"
 #include "items/SolarObjectItem.h"
 #include "items/ZoneItem2D.h"
 #include "items/TradelaneItem.h"
@@ -51,6 +52,8 @@ QString itemNickname(QGraphicsItem *item)
         return soi->nickname();
     if (auto *zi = dynamic_cast<flatlas::rendering::ZoneItem2D *>(item))
         return zi->nickname();
+    if (auto *li = dynamic_cast<flatlas::rendering::LightSourceItem *>(item))
+        return li->nickname();
     return {};
 }
 
@@ -168,6 +171,20 @@ void MapScene::clear()
         m_document = nullptr;
     }
     QGraphicsScene::clear();
+}
+
+void MapScene::setLightSources(const QVector<LightSourceVisual> &lightSources)
+{
+    const auto sceneItems = items();
+    for (QGraphicsItem *item : sceneItems) {
+        if (auto *lightItem = dynamic_cast<LightSourceItem *>(item)) {
+            removeItem(lightItem);
+            delete lightItem;
+        }
+    }
+
+    for (const LightSourceVisual &lightSource : lightSources)
+        addLightSource(lightSource);
 }
 
 void MapScene::setGridVisible(bool visible)
@@ -292,6 +309,17 @@ void MapScene::drawBackground(QPainter *painter, const QRectF &rect)
     painter->setPen(originPen);
     painter->drawLine(QPointF(visibleGrid.left(), 0), QPointF(visibleGrid.right(), 0));
     painter->drawLine(QPointF(0, visibleGrid.top()), QPointF(0, visibleGrid.bottom()));
+}
+
+void MapScene::addLightSource(const LightSourceVisual &lightSource)
+{
+    if (lightSource.nickname.trimmed().isEmpty())
+        return;
+
+    auto *item = new LightSourceItem(lightSource.nickname);
+    item->setPos(flToQt(lightSource.position.x(), lightSource.position.z()));
+    item->setData(0, lightSource.nickname);
+    addItem(item);
 }
 
 void MapScene::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObject> &obj)

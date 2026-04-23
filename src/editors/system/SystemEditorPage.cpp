@@ -6,6 +6,7 @@
 #include "SystemSettingsDialog.h"
 #include "SystemUndoCommands.h"
 #include "CreateObjectDialog.h"
+#include "SystemCreationDialogs.h"
 #include "CreateFieldZoneDialog.h"
 #include "CreateExclusionZoneDialog.h"
 #include "ExclusionZoneUtils.h"
@@ -21,9 +22,11 @@
 #include "domain/ZoneItem.h"
 #include "infrastructure/parser/IniParser.h"
 #include "infrastructure/freelancer/IdsDataService.h"
+#include "infrastructure/freelancer/IdsStringTable.h"
 #include "rendering/preview/ModelCache.h"
 #include "rendering/view2d/MapScene.h"
 #include "rendering/view2d/SystemMapView.h"
+#include "rendering/view2d/items/LightSourceItem.h"
 #include "rendering/view2d/items/SolarObjectItem.h"
 #include "rendering/view2d/items/ZoneItem2D.h"
 #include "rendering/view3d/ModelViewport3D.h"
@@ -58,13 +61,17 @@
 #include <QFont>
 #include <QPalette>
 #include <QDir>
+#include <QDirIterator>
 #include <QSignalBlocker>
 #include <QUrl>
 #include <QGraphicsEllipseItem>
+#include <QGraphicsLineItem>
+#include <QGraphicsPolygonItem>
 #include <QMouseEvent>
 #include <QKeyEvent>
 #include <QPen>
 #include <QRegularExpression>
+#include <QtMath>
 
 #include <QQuaternion>
 
@@ -78,6 +85,356 @@ using namespace flatlas::infrastructure;
 namespace flatlas::editors {
 
 namespace {
+
+using flatlas::infrastructure::IdsStringTable;
+
+QStringList loadSolarArchetypesMatching(const QString &gameRoot, const QStringList &keywords)
+{
+    QStringList values;
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
+    const QString solarArchPath =
+        flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("SOLAR/solararch.ini"));
+    if (solarArchPath.isEmpty())
+        return values;
+
+    const IniDocument doc = IniParser::parseFile(solarArchPath);
+    QSet<QString> seen;
+    for (const IniSection &section : doc) {
+        const QString nickname = section.value(QStringLiteral("nickname")).trimmed();
+        if (nickname.isEmpty())
+            continue;
+        const QString haystack = nickname.toLower();
+        bool matches = keywords.isEmpty();
+        for (const QString &keyword : keywords) {
+            if (haystack.contains(keyword.toLower())) {
+                matches = true;
+                break;
+            }
+        }
+        if (!matches || seen.contains(haystack))
+            continue;
+        seen.insert(haystack);
+        values.append(nickname);
+    }
+    std::sort(values.begin(), values.end(), [](const QString &a, const QString &b) {
+        return a.compare(b, Qt::CaseInsensitive) < 0;
+    });
+    return values;
+}
+
+QStringList loadLoadoutsMatching(const QString &gameRoot, const QStringList &keywords)
+{
+    QStringList values;
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
+    const QStringList sources = {
+        QStringLiteral("SHIPS/loadouts.ini"),
+        QStringLiteral("SOLAR/loadouts.ini"),
+    };
+    QSet<QString> seen;
+    for (const QString &relativePath : sources) {
+        const QString path = flatlas::core::PathUtils::ciResolvePath(dataDir, relativePath);
+        if (path.isEmpty())
+            continue;
+        const IniDocument doc = IniParser::parseFile(path);
+        for (const IniSection &section : doc) {
+            if (section.name.compare(QStringLiteral("Loadout"), Qt::CaseInsensitive) != 0)
+                continue;
+            const QString nickname = section.value(QStringLiteral("nickname")).trimmed();
+            if (nickname.isEmpty())
+                continue;
+            const QString haystack = nickname.toLower();
+            bool matches = keywords.isEmpty();
+            for (const QString &keyword : keywords) {
+                if (haystack.contains(keyword.toLower())) {
+                    matches = true;
+                    break;
+                }
+            }
+            if (!matches || seen.contains(haystack))
+                continue;
+            seen.insert(haystack);
+            values.append(nickname);
+        }
+    }
+    std::sort(values.begin(), values.end(), [](const QString &a, const QString &b) {
+        return a.compare(b, Qt::CaseInsensitive) < 0;
+    });
+    return values;
+}
+
+QStringList loadFactionDisplays(const QString &gameRoot)
+{
+    QStringList values;
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
+    const QString initialWorldPath =
+        flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("initialworld.ini"));
+    const QString exeDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("EXE"));
+    IdsStringTable ids;
+    if (!exeDir.isEmpty())
+        ids.loadFromFreelancerDir(exeDir);
+
+    const IniDocument doc = IniParser::parseFile(initialWorldPath);
+    QSet<QString> seen;
+    for (const IniSection &section : doc) {
+        if (section.name.compare(QStringLiteral("Group"), Qt::CaseInsensitive) != 0)
+            continue;
+        const QString nickname = section.value(QStringLiteral("nickname")).trimmed();
+        if (nickname.isEmpty())
+            continue;
+        const QString key = nickname.toLower();
+        if (seen.contains(key))
+            continue;
+        seen.insert(key);
+        bool ok = false;
+        const int idsName = section.value(QStringLiteral("ids_name")).trimmed().toInt(&ok);
+        const QString ingameName = ok && idsName > 0 ? ids.getString(idsName).trimmed() : QString();
+        values.append(ingameName.isEmpty() ? nickname : QStringLiteral("%1 - %2").arg(nickname, ingameName));
+    }
+    std::sort(values.begin(), values.end(), [](const QString &a, const QString &b) {
+        return a.compare(b, Qt::CaseInsensitive) < 0;
+    });
+    return values;
+}
+
+QString factionNicknameFromDisplay(const QString &raw)
+{
+    const QString value = raw.trimmed();
+    const int sep = value.indexOf(QStringLiteral(" - "));
+    return sep > 0 ? value.left(sep).trimmed() : value;
+}
+
+QStringList loadStarOptions(const QString &gameRoot)
+{
+    QStringList values{QStringLiteral("med_white_sun")};
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
+    const QString starArchPath =
+        flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("SOLAR/stararch.ini"));
+    if (!starArchPath.isEmpty()) {
+        const IniDocument doc = IniParser::parseFile(starArchPath);
+        for (const IniSection &section : doc) {
+            if (section.name.compare(QStringLiteral("star"), Qt::CaseInsensitive) != 0)
+                continue;
+            const QString nickname = section.value(QStringLiteral("nickname")).trimmed();
+            if (!nickname.isEmpty())
+                values.append(nickname);
+        }
+    }
+    values.removeDuplicates();
+    std::sort(values.begin(), values.end(), [](const QString &a, const QString &b) {
+        return a.compare(b, Qt::CaseInsensitive) < 0;
+    });
+    return values;
+}
+
+QStringList lightSourceTypesFromDocument(const IniDocument &extras)
+{
+    QStringList values{QStringLiteral("DIRECTIONAL"), QStringLiteral("POINT")};
+    for (const IniSection &section : extras) {
+        if (section.name.compare(QStringLiteral("LightSource"), Qt::CaseInsensitive) != 0)
+            continue;
+        const QString value = section.value(QStringLiteral("type")).trimmed().toUpper();
+        if (!value.isEmpty())
+            values.append(value);
+    }
+    values.removeDuplicates();
+    return values;
+}
+
+QStringList lightAttenCurvesFromDocument(const IniDocument &extras)
+{
+    QStringList values{QStringLiteral("DYNAMIC_DIRECTION")};
+    for (const IniSection &section : extras) {
+        if (section.name.compare(QStringLiteral("LightSource"), Qt::CaseInsensitive) != 0)
+            continue;
+        const QString value = section.value(QStringLiteral("atten_curve")).trimmed();
+        if (!value.isEmpty())
+            values.append(value);
+    }
+    values.removeDuplicates();
+    return values;
+}
+
+bool parseIniVector3(const QString &raw, QVector3D *outValue)
+{
+    if (!outValue)
+        return false;
+
+    const QStringList parts = raw.split(',', Qt::KeepEmptyParts);
+    if (parts.size() < 3)
+        return false;
+
+    bool okX = false;
+    bool okY = false;
+    bool okZ = false;
+    const float x = parts[0].trimmed().toFloat(&okX);
+    const float y = parts[1].trimmed().toFloat(&okY);
+    const float z = parts[2].trimmed().toFloat(&okZ);
+    if (!okX || !okY || !okZ)
+        return false;
+
+    *outValue = QVector3D(x, y, z);
+    return true;
+}
+
+QString suggestIndexedNickname(const QString &prefix, const QStringList &existing, int width = 3)
+{
+    int number = 1;
+    while (true) {
+        const QString candidate = QStringLiteral("%1%2").arg(prefix).arg(number, width, 10, QLatin1Char('0'));
+        if (!existing.contains(candidate, Qt::CaseInsensitive))
+            return candidate;
+        ++number;
+    }
+}
+
+QStringList collectEncounterNicknames(flatlas::domain::SystemDocument *document, const QString &gameRoot)
+{
+    QStringList values;
+    QSet<QString> seen;
+
+    if (document) {
+        const IniDocument extras = SystemPersistence::extraSections(document);
+        for (const IniSection &section : extras) {
+            if (section.name.compare(QStringLiteral("EncounterParameters"), Qt::CaseInsensitive) != 0)
+                continue;
+            const QString nickname = section.value(QStringLiteral("nickname")).trimmed();
+            if (nickname.isEmpty())
+                continue;
+            const QString key = nickname.toLower();
+            if (seen.contains(key))
+                continue;
+            seen.insert(key);
+            values.append(nickname);
+        }
+    }
+
+    const QString encountersDir = flatlas::core::PathUtils::ciResolvePath(
+        flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA")),
+        QStringLiteral("MISSIONS/encounters"));
+    if (!encountersDir.isEmpty()) {
+        QDirIterator it(encountersDir, QStringList{QStringLiteral("*.ini")}, QDir::Files);
+        while (it.hasNext()) {
+            const QString filePath = it.next();
+            const QString nickname = QFileInfo(filePath).completeBaseName().trimmed();
+            if (nickname.isEmpty())
+                continue;
+            const QString key = nickname.toLower();
+            if (seen.contains(key))
+                continue;
+            seen.insert(key);
+            values.append(nickname);
+        }
+    }
+
+    std::sort(values.begin(), values.end(), [](const QString &a, const QString &b) {
+        return a.compare(b, Qt::CaseInsensitive) < 0;
+    });
+    return values;
+}
+
+QStringList patrolDensityRestrictionsForUsage(const QString &usage)
+{
+    QStringList values{QStringLiteral("1, patroller"),
+                       QStringLiteral("1, police_patroller"),
+                       QStringLiteral("1, pirate_patroller")};
+    if (usage.trimmed().compare(QStringLiteral("trade"), Qt::CaseInsensitive) != 0) {
+        values.append(QStringLiteral("4, lawfuls"));
+        values.append(QStringLiteral("4, unlawfuls"));
+    }
+    return values;
+}
+
+bool ensureEncounterParameterExists(flatlas::domain::SystemDocument *document,
+                                    const QString &encounterNickname,
+                                    const QString &gameRoot,
+                                    QString *errorMessage)
+{
+    if (!document)
+        return false;
+
+    const QString nickname = encounterNickname.trimmed();
+    if (nickname.isEmpty()) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("Es wurde kein Encounter ausgewaehlt.");
+        return false;
+    }
+
+    IniDocument extras = SystemPersistence::extraSections(document);
+    for (const IniSection &section : extras) {
+        if (section.name.compare(QStringLiteral("EncounterParameters"), Qt::CaseInsensitive) != 0)
+            continue;
+        if (section.value(QStringLiteral("nickname")).trimmed().compare(nickname, Qt::CaseInsensitive) == 0)
+            return true;
+    }
+
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
+    const QString encounterRelPath = QStringLiteral("MISSIONS/encounters/%1.ini").arg(nickname);
+    const QString absolutePath = flatlas::core::PathUtils::ciResolvePath(dataDir, encounterRelPath);
+    if (absolutePath.isEmpty() || !QFileInfo::exists(absolutePath)) {
+        if (errorMessage) {
+            *errorMessage = QObject::tr("Fuer den Encounter '%1' wurde keine passende missions/encounters-Datei gefunden.")
+                                .arg(nickname);
+        }
+        return false;
+    }
+
+    IniSection section;
+    section.name = QStringLiteral("EncounterParameters");
+    section.entries = {
+        {QStringLiteral("nickname"), nickname},
+        {QStringLiteral("filename"), QStringLiteral("missions\\encounters\\%1.ini").arg(nickname)},
+    };
+    extras.append(section);
+    SystemPersistence::setExtraSections(document, extras);
+    document->setDirty(true);
+    return true;
+}
+
+double patrolYawDegrees(const QPointF &startFl, const QPointF &endFl)
+{
+    const double dx = endFl.x() - startFl.x();
+    const double dz = endFl.y() - startFl.y();
+    const double axisAngle = qRadiansToDegrees(std::atan2(dz, dx));
+    double yaw = 90.0 - axisAngle;
+    while (yaw > 180.0)
+        yaw -= 360.0;
+    while (yaw < -180.0)
+        yaw += 360.0;
+    return yaw;
+}
+
+QPolygonF orientedRectPolygon(const QPointF &start, const QPointF &end, qreal halfWidth)
+{
+    const QLineF axis(start, end);
+    const qreal length = axis.length();
+    if (length <= 0.001)
+        return QPolygonF();
+
+    const qreal nx = -(axis.dy() / length);
+    const qreal ny = axis.dx() / length;
+    const QPointF offset(nx * halfWidth, ny * halfWidth);
+
+    QPolygonF polygon;
+    polygon << (start + offset)
+            << (end + offset)
+            << (end - offset)
+            << (start - offset);
+    return polygon;
+}
+
+qreal pointLineDistance(const QPointF &point, const QPointF &start, const QPointF &end)
+{
+    const QLineF axis(start, end);
+    const qreal length = axis.length();
+    if (length <= 0.001)
+        return 0.0;
+
+    const qreal numerator = std::abs((end.y() - start.y()) * point.x()
+                                     - (end.x() - start.x()) * point.y()
+                                     + end.x() * start.y()
+                                     - end.y() * start.x());
+    return numerator / length;
+}
 
 QPushButton *makeSidebarButton(const QString &text, QWidget *parent)
 {
@@ -625,6 +982,7 @@ void SystemEditorPage::loadDocumentIntoUi()
         const int percent = 20 + static_cast<int>((static_cast<double>(current) / boundedTotal) * 65.0);
         emitLoadingProgress(percent, tr("Building 2D system view..."));
     });
+    syncLightSourcesInScene();
     m_mapView->setSystemName([this]() {
         const QString nickname = m_document->name().trimmed();
         const QString display  = m_document->displayName().trimmed();
@@ -831,14 +1189,26 @@ void SystemEditorPage::setupRightSidebar()
 
     m_createZoneButton = makeSidebarButton(tr("Zone"), creationGroup);
     connect(m_createZoneButton, &QPushButton::clicked, this, [this]() {
-        showNotYetPorted(tr("Zone"), QStringLiteral("FLAtlas/fl_editor/main_window.py::_start_simple_zone_creation"));
+        if (!m_document || !m_mapView || !m_mapScene || m_mapView->isPlacementModeActive())
+            return;
+        QStringList existingZoneNicknames;
+        for (const auto &zone : m_document->zones()) {
+            if (zone)
+                existingZoneNicknames.append(zone->nickname());
+        }
+        const QString systemToken = QFileInfo(m_document->filePath()).completeBaseName().toUpper();
+        const QString suggested =
+            suggestIndexedNickname(QStringLiteral("Zone_%1_zone_").arg(systemToken.isEmpty() ? QStringLiteral("SYSTEM") : systemToken),
+                                   existingZoneNicknames);
+        CreateSimpleZoneDialog dialog(suggested, this);
+        if (dialog.exec() != QDialog::Accepted)
+            return;
+        beginSimpleZonePlacement(dialog.result());
     });
     creationLayout->addWidget(m_createZoneButton);
 
     m_createPatrolZoneButton = makeSidebarButton(tr("Patrol-Zone"), creationGroup);
-    connect(m_createPatrolZoneButton, &QPushButton::clicked, this, [this]() {
-        showNotYetPorted(tr("Patrol-Zone"), QStringLiteral("FLAtlas/fl_editor/main_window.py::_start_patrol_zone_creation"));
-    });
+    connect(m_createPatrolZoneButton, &QPushButton::clicked, this, &SystemEditorPage::onCreatePatrolZone);
     creationLayout->addWidget(m_createPatrolZoneButton);
 
     m_createJumpButton = makeSidebarButton(tr("Jump"), creationGroup);
@@ -856,15 +1226,11 @@ void SystemEditorPage::setupRightSidebar()
     creationLayout->addWidget(m_createPlanetButton);
 
     m_createLightButton = makeSidebarButton(tr("Lichtquelle"), creationGroup);
-    connect(m_createLightButton, &QPushButton::clicked, this, [this]() {
-        showNotYetPorted(tr("Lichtquelle"), QStringLiteral("FLAtlas/fl_editor/main_window.py::_start_light_source_creation"));
-    });
+    connect(m_createLightButton, &QPushButton::clicked, this, &SystemEditorPage::onCreateLightSource);
     creationLayout->addWidget(m_createLightButton);
 
     m_createWreckButton = makeSidebarButton(tr("Wrack/Surprise"), creationGroup);
-    connect(m_createWreckButton, &QPushButton::clicked, this, [this]() {
-        createQuickObject(SolarObject::Wreck, QStringLiteral("new_wreck"), QStringLiteral("surprise_object"));
-    });
+    connect(m_createWreckButton, &QPushButton::clicked, this, &SystemEditorPage::onCreateSurprise);
     creationLayout->addWidget(m_createWreckButton);
 
     m_createBuoyButton = makeSidebarButton(tr("Boje"), creationGroup);
@@ -1034,6 +1400,20 @@ void SystemEditorPage::refreshObjectList()
         item->setText(0, zone->nickname());
         item->setText(1, zone->zoneType());
     }
+
+    auto *lightRoot = new QTreeWidgetItem(m_objectTree, {tr("LightSources")});
+    lightRoot->setFlags(lightRoot->flags() & ~Qt::ItemIsSelectable);
+    lightRoot->setExpanded(true);
+    const IniDocument extras = SystemPersistence::extraSections(m_document.get());
+    for (const IniSection &section : extras) {
+        if (section.name.compare(QStringLiteral("LightSource"), Qt::CaseInsensitive) != 0)
+            continue;
+        auto *item = new QTreeWidgetItem(lightRoot);
+        item->setText(0, section.value(QStringLiteral("nickname")).trimmed());
+        item->setText(1, QStringLiteral("LightSource"));
+    }
+
+    syncLightSourcesInScene();
 
     refreshObjectJumpList();
     m_systemFileInfoLabel->setText(QStringLiteral("%1").arg(QFileInfo(m_document->filePath()).fileName()));
@@ -1288,6 +1668,7 @@ void SystemEditorPage::onDeleteSelected()
 
     QVector<std::shared_ptr<SolarObject>> objectsToRemove;
     QVector<std::shared_ptr<ZoneItem>> zonesToRemove;
+    QStringList lightSourcesToRemove;
     for (const QString &nickname : m_selectedNicknames) {
         if (SolarObject *rootObject = findObjectByNickname(nickname)) {
             for (const QString &groupNickname : objectGroupNicknames(rootObject->nickname())) {
@@ -1306,9 +1687,11 @@ void SystemEditorPage::onDeleteSelected()
                 break;
             }
         }
+        if (findLightSourceSectionIndexByNickname(nickname) >= 0 && !lightSourcesToRemove.contains(nickname, Qt::CaseInsensitive))
+            lightSourcesToRemove.append(nickname);
     }
 
-    if (objectsToRemove.isEmpty() && zonesToRemove.isEmpty())
+    if (objectsToRemove.isEmpty() && zonesToRemove.isEmpty() && lightSourcesToRemove.isEmpty())
         return;
 
     if (!zonesToRemove.isEmpty()) {
@@ -1346,6 +1729,21 @@ void SystemEditorPage::onDeleteSelected()
     for (const auto &zone : zonesToRemove)
         stack->push(new RemoveZoneCommand(m_document.get(), zone));
     stack->endMacro();
+
+    if (!lightSourcesToRemove.isEmpty()) {
+        IniDocument extras = SystemPersistence::extraSections(m_document.get());
+        IniDocument filtered;
+        filtered.reserve(extras.size());
+        for (const IniSection &section : extras) {
+            const bool isLightSource = section.name.compare(QStringLiteral("LightSource"), Qt::CaseInsensitive) == 0;
+            const QString lightNickname = section.value(QStringLiteral("nickname")).trimmed();
+            if (isLightSource && lightSourcesToRemove.contains(lightNickname, Qt::CaseInsensitive))
+                continue;
+            filtered.append(section);
+        }
+        SystemPersistence::setExtraSections(m_document.get(), filtered);
+        m_document->setDirty(true);
+    }
 
     m_selectedNicknames.clear();
     refreshObjectList();
@@ -1531,6 +1929,17 @@ QString SystemEditorPage::serializeSelectionToIni() const
         }
     }
 
+    const IniDocument extras = SystemPersistence::extraSections(m_document.get());
+    for (const IniSection &section : extras) {
+        if (section.name.compare(QStringLiteral("LightSource"), Qt::CaseInsensitive) != 0)
+            continue;
+        if (section.value(QStringLiteral("nickname")).trimmed().compare(nickname, Qt::CaseInsensitive) != 0)
+            continue;
+        IniDocument doc;
+        doc.append(section);
+        return IniParser::serialize(doc).trimmed();
+    }
+
     return {};
 }
 
@@ -1693,6 +2102,8 @@ bool SystemEditorPage::isNicknameVisibleUnderCurrentFilter(const QString &nickna
         if (zone->nickname() == nickname)
             return isZoneVisibleUnderCurrentFilter(*zone);
     }
+    if (findLightSourceSectionIndexByNickname(nickname) >= 0)
+        return true;
     return false;
 }
 
@@ -1950,6 +2361,36 @@ void SystemEditorPage::applyIniEditorChanges()
         }
     }
 
+    if (parsed.size() == 1 && sectionName == QStringLiteral("lightsource")) {
+        const int index = findLightSourceSectionIndexByNickname(previousNickname);
+        if (index >= 0) {
+            IniDocument extras = SystemPersistence::extraSections(m_document.get());
+            const QString parsedNickname = section.value(QStringLiteral("nickname")).trimmed();
+            if (parsedNickname.isEmpty()) {
+                QMessageBox::warning(this, tr("Ungueltige Section"),
+                                     tr("Die LightSource-Section benoetigt einen Nickname."));
+                return;
+            }
+            if (parsedNickname.compare(previousNickname, Qt::CaseInsensitive) != 0
+                && (findObjectByNickname(parsedNickname)
+                    || findZoneByNickname(parsedNickname)
+                    || findLightSourceSectionIndexByNickname(parsedNickname) >= 0)) {
+                QMessageBox::warning(this, tr("Ungueltige Section"),
+                                     tr("Der Nickname kollidiert mit einem vorhandenen Eintrag."));
+                return;
+            }
+            extras[index] = section;
+            SystemPersistence::setExtraSections(m_document.get(), extras);
+            m_document->setDirty(true);
+            m_selectedNicknames = {parsedNickname};
+            refreshObjectList();
+            syncTreeSelectionFromNicknames(m_selectedNicknames);
+            updateSelectionSummary();
+            updateIniEditorForSelection();
+            return;
+        }
+    }
+
     QMessageBox::warning(this, tr("Section passt nicht"),
                          tr("Die Section passt nicht zum aktuell ausgewählten Eintrag."));
 }
@@ -2009,6 +2450,13 @@ void SystemEditorPage::updateSelectionSummary()
             emit selectionStatusChanged(tr("1 Objekt markiert"));
             return;
         }
+    }
+
+    if (findLightSourceSectionIndexByNickname(nickname) >= 0) {
+        m_selectionTitleLabel->setText(nickname);
+        m_selectionSubtitleLabel->setText(tr("LightSource"));
+        emit selectionStatusChanged(tr("1 Objekt markiert"));
+        return;
     }
 
     m_selectionTitleLabel->setText(tr("Kein Objekt ausgewählt"));
@@ -2101,6 +2549,10 @@ void SystemEditorPage::jumpToSelectedFromSidebar()
         }
         if (auto *zoneItem = dynamic_cast<flatlas::rendering::ZoneItem2D *>(item); zoneItem && zoneItem->nickname() == nickname) {
             m_mapView->centerOn(zoneItem);
+            return;
+        }
+        if (auto *lightItem = dynamic_cast<flatlas::rendering::LightSourceItem *>(item); lightItem && lightItem->nickname() == nickname) {
+            m_mapView->centerOn(lightItem);
             return;
         }
     }
@@ -2282,6 +2734,100 @@ bool SystemEditorPage::eventFilter(QObject *watched, QEvent *event)
         }
     }
 
+    if (m_pendingSimpleZoneRequest && m_mapView && watched == m_mapView->viewport()) {
+        switch (event->type()) {
+        case QEvent::MouseMove: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            updateSimpleZonePlacementPreview(m_mapView->mapToScene(mouseEvent->pos()));
+            return true;
+        }
+        case QEvent::MouseButtonPress: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (mouseEvent->button() == Qt::RightButton || mouseEvent->button() == Qt::MiddleButton) {
+                cancelSimpleZonePlacement();
+                return true;
+            }
+            if (mouseEvent->button() == Qt::LeftButton && m_pendingSimpleZoneHasCenter) {
+                finalizeSimpleZonePlacement(m_mapView->mapToScene(mouseEvent->pos()));
+                return true;
+            }
+            break;
+        }
+        case QEvent::KeyPress: {
+            auto *keyEvent = static_cast<QKeyEvent *>(event);
+            if (keyEvent->key() == Qt::Key_Escape) {
+                cancelSimpleZonePlacement();
+                return true;
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
+    if (m_pendingPatrolZoneRequest && m_mapView && watched == m_mapView->viewport()) {
+        switch (event->type()) {
+        case QEvent::MouseMove: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            updatePatrolZonePlacementPreview(m_mapView->mapToScene(mouseEvent->pos()));
+            return true;
+        }
+        case QEvent::MouseButtonPress: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (mouseEvent->button() == Qt::RightButton || mouseEvent->button() == Qt::MiddleButton) {
+                cancelPatrolZonePlacement();
+                return true;
+            }
+            if (mouseEvent->button() == Qt::LeftButton && m_pendingPatrolZoneHasStart) {
+                const QPointF scenePos = m_mapView->mapToScene(mouseEvent->pos());
+                if (m_pendingPatrolZoneStep == 2) {
+                    m_pendingPatrolZoneHasEnd = true;
+                    m_pendingPatrolZoneEndScenePos = scenePos;
+                    m_pendingPatrolZoneStep = 3;
+                    if (m_patrolZonePlacementPreview && m_mapScene) {
+                        m_mapScene->removeItem(m_patrolZonePlacementPreview);
+                        delete m_patrolZonePlacementPreview;
+                        m_patrolZonePlacementPreview = nullptr;
+                    }
+                    updatePatrolZonePlacementPreview(scenePos);
+                    m_mapView->setPlacementMode(true,
+                                                tr("3. Klick legt die Breite fest. 4. Klick speichert '%1'.")
+                                                    .arg(m_pendingPatrolZoneRequest->nickname));
+                } else if (m_pendingPatrolZoneStep == 3 && m_pendingPatrolZoneHasEnd) {
+                    m_pendingPatrolZoneHalfWidthScene = std::max<qreal>(1.0,
+                                                                        pointLineDistance(scenePos,
+                                                                                          m_pendingPatrolZoneStartScenePos,
+                                                                                          m_pendingPatrolZoneEndScenePos));
+                    if (m_patrolZoneWidthPreview) {
+                        m_patrolZoneWidthPreview->setPolygon(orientedRectPolygon(m_pendingPatrolZoneStartScenePos,
+                                                                                 m_pendingPatrolZoneEndScenePos,
+                                                                                 m_pendingPatrolZoneHalfWidthScene));
+                    }
+                    m_pendingPatrolZoneStep = 4;
+                    m_mapView->setPlacementMode(true,
+                                                tr("4. Klick speichert '%1'. [Esc] oder Rechtsklick bricht ab.")
+                                                    .arg(m_pendingPatrolZoneRequest->nickname));
+                } else if (m_pendingPatrolZoneStep == 4 && m_pendingPatrolZoneHasEnd) {
+                    finalizePatrolZonePlacement(scenePos);
+                }
+                return true;
+            }
+            break;
+        }
+        case QEvent::KeyPress: {
+            auto *keyEvent = static_cast<QKeyEvent *>(event);
+            if (keyEvent->key() == Qt::Key_Escape) {
+                cancelPatrolZonePlacement();
+                return true;
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
     return QWidget::eventFilter(watched, event);
 }
 
@@ -2411,7 +2957,347 @@ void SystemEditorPage::openSystemSettingsDialog()
 
 void SystemEditorPage::onCreateSun()
 {
-    createQuickObject(SolarObject::Sun, QStringLiteral("new_sun"), QStringLiteral("sun_1000"));
+    if (!m_document || !m_mapView || !m_mapScene || m_mapView->isPlacementModeActive())
+        return;
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    QStringList existingObjectNicknames;
+    for (const auto &obj : m_document->objects()) {
+        if (obj)
+            existingObjectNicknames.append(obj->nickname());
+    }
+
+    const QString systemToken = QFileInfo(m_document->filePath()).completeBaseName().toUpper();
+    const QString suggested =
+        suggestIndexedNickname(QStringLiteral("%1_sun_").arg(systemToken.isEmpty() ? QStringLiteral("SYSTEM") : systemToken),
+                               existingObjectNicknames);
+    CreateSunDialog dialog(suggested,
+                           loadSolarArchetypesMatching(gameRoot, {QStringLiteral("sun")}),
+                           loadStarOptions(gameRoot),
+                           this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const CreateSunRequest request = dialog.result();
+    if (request.nickname.isEmpty() || request.archetype.isEmpty())
+        return;
+
+    auto finalizePlacement = [this, request](const QPointF &scenePos) {
+        if (!m_document)
+            return;
+
+        if (findObjectByNickname(request.nickname) || findZoneByNickname(QStringLiteral("Zone_%1_death").arg(request.nickname))) {
+            QMessageBox::warning(this, tr("Sonne erstellen"),
+                                 tr("Im aktuellen System existiert bereits ein Eintrag mit diesem Nickname."));
+            return;
+        }
+
+        const QPointF worldXZ = MapScene::qtToFl(scenePos.x(), scenePos.y());
+        int assignedIdsName = 0;
+        int assignedIdsInfo = 66162;
+        const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+        if (!request.ingameName.isEmpty()) {
+            const auto dataset = flatlas::infrastructure::IdsDataService::loadFromGameRoot(gameRoot);
+            const QString targetDll =
+                flatlas::infrastructure::IdsDataService::defaultCreationDllName(dataset);
+            QString idsError;
+            int newGlobalId = 0;
+            if (flatlas::infrastructure::IdsDataService::writeStringEntry(
+                    dataset, targetDll, 261008, request.ingameName, &newGlobalId, &idsError)) {
+                assignedIdsName = newGlobalId;
+            } else {
+                QMessageBox::warning(this, tr("Sonne erstellen"),
+                                     tr("Der Ingame Name konnte nicht in die IDS-Daten geschrieben werden.\n%1")
+                                         .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
+                return;
+            }
+        }
+        if (!request.infoCardText.isEmpty()) {
+            const auto dataset = flatlas::infrastructure::IdsDataService::loadFromGameRoot(gameRoot);
+            const QString targetDll =
+                flatlas::infrastructure::IdsDataService::defaultCreationDllName(dataset);
+            QString idsError;
+            int newGlobalId = 0;
+            if (flatlas::infrastructure::IdsDataService::writeStringEntry(
+                    dataset, targetDll, 66162, request.infoCardText, &newGlobalId, &idsError)) {
+                assignedIdsInfo = newGlobalId;
+            } else {
+                QMessageBox::warning(this, tr("Sonne erstellen"),
+                                     tr("Der ids_info-Text konnte nicht in die IDS-Daten geschrieben werden.\n%1")
+                                         .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
+                return;
+            }
+        }
+
+        auto sun = std::make_shared<SolarObject>();
+        sun->setNickname(request.nickname);
+        sun->setType(SolarObject::Sun);
+        sun->setArchetype(request.archetype);
+        sun->setPosition(QVector3D(static_cast<float>(worldXZ.x()), 0.0f, static_cast<float>(worldXZ.y())));
+        sun->setRotation(QVector3D());
+        if (assignedIdsName > 0)
+            sun->setIdsName(assignedIdsName);
+        if (assignedIdsInfo > 0)
+            sun->setIdsInfo(assignedIdsInfo);
+        QVector<QPair<QString, QString>> objectEntries{
+            {QStringLiteral("nickname"), request.nickname},
+            {QStringLiteral("pos"), QStringLiteral("%1, 0, %2").arg(worldXZ.x(), 0, 'f', 0).arg(worldXZ.y(), 0, 'f', 0)},
+            {QStringLiteral("rotate"), QStringLiteral("0, 0, 0")},
+            {QStringLiteral("archetype"), request.archetype},
+            {QStringLiteral("atmosphere_range"), QString::number(request.atmosphereRange)},
+            {QStringLiteral("star"), request.star.isEmpty() ? QStringLiteral("med_white_sun") : request.star},
+        };
+        if (assignedIdsName > 0)
+            objectEntries.append({QStringLiteral("ids_name"), QString::number(assignedIdsName)});
+        if (assignedIdsInfo > 0)
+            objectEntries.append({QStringLiteral("ids_info"), QString::number(assignedIdsInfo)});
+        if (!request.burnColor.isEmpty())
+            objectEntries.append({QStringLiteral("burn_color"), request.burnColor});
+        sun->setRawEntries(objectEntries);
+
+        auto deathZone = std::make_shared<ZoneItem>();
+        deathZone->setNickname(QStringLiteral("Zone_%1_death").arg(request.nickname));
+        deathZone->setPosition(QVector3D(static_cast<float>(worldXZ.x()), 0.0f, static_cast<float>(worldXZ.y())));
+        deathZone->setRotation(QVector3D());
+        deathZone->setShape(ZoneItem::Sphere);
+        deathZone->setSize(QVector3D(static_cast<float>(request.deathZoneRadius), 0.0f, 0.0f));
+        deathZone->setDamage(request.deathZoneDamage);
+        deathZone->setRawEntries({
+            {QStringLiteral("nickname"), deathZone->nickname()},
+            {QStringLiteral("pos"), QStringLiteral("%1, 0, %2").arg(worldXZ.x(), 0, 'f', 0).arg(worldXZ.y(), 0, 'f', 0)},
+            {QStringLiteral("rotate"), QStringLiteral("0, 0, 0")},
+            {QStringLiteral("shape"), QStringLiteral("SPHERE")},
+            {QStringLiteral("size"), QString::number(request.deathZoneRadius)},
+            {QStringLiteral("damage"), QString::number(request.deathZoneDamage)},
+            {QStringLiteral("ids_info"), QStringLiteral("0")},
+        });
+
+        auto *stack = flatlas::core::UndoManager::instance().stack();
+        stack->beginMacro(tr("Sonne erstellen"));
+        stack->push(new AddObjectCommand(m_document.get(), sun, tr("Create Sun")));
+        stack->push(new AddZoneCommand(m_document.get(), deathZone, tr("Create Sun Death Zone")));
+        stack->endMacro();
+        refreshObjectList();
+        m_selectedNicknames = {sun->nickname()};
+        syncTreeSelectionFromNicknames(m_selectedNicknames);
+        syncSceneSelectionFromNicknames(m_selectedNicknames);
+        updateIniEditorForSelection();
+    };
+
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [placementGuard, finalizePlacement](const QPointF &scenePos) {
+        finalizePlacement(scenePos);
+        placementGuard->deleteLater();
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [placementGuard]() { placementGuard->deleteLater(); });
+    m_mapView->setPlacementMode(true,
+                                tr("Klicke auf die Map, um '%1' zu platzieren. [Esc] oder Rechtsklick bricht ab.")
+                                    .arg(request.nickname));
+}
+
+void SystemEditorPage::onCreateLightSource()
+{
+    if (!m_document || !m_mapView || !m_mapScene || m_mapView->isPlacementModeActive())
+        return;
+
+    const IniDocument extras = SystemPersistence::extraSections(m_document.get());
+    const QString systemToken = QFileInfo(m_document->filePath()).completeBaseName().toUpper();
+    const QString suggested =
+        suggestIndexedNickname(QStringLiteral("%1_light_").arg(systemToken.isEmpty() ? QStringLiteral("SYSTEM") : systemToken),
+                               lightSourceNicknames(),
+                               1);
+    CreateLightSourceDialog dialog(suggested,
+                                   lightSourceTypesFromDocument(extras),
+                                   lightAttenCurvesFromDocument(extras),
+                                   this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const CreateLightSourceRequest request = dialog.result();
+    if (request.nickname.isEmpty())
+        return;
+
+    auto finalizePlacement = [this, request](const QPointF &scenePos) {
+        if (!m_document)
+            return;
+        if (findLightSourceSectionIndexByNickname(request.nickname) >= 0
+            || findObjectByNickname(request.nickname)
+            || findZoneByNickname(request.nickname)) {
+            QMessageBox::warning(this, tr("Lichtquelle erstellen"),
+                                 tr("Im aktuellen System existiert bereits ein Eintrag mit diesem Nickname."));
+            return;
+        }
+        const QPointF worldXZ = MapScene::qtToFl(scenePos.x(), scenePos.y());
+        IniDocument extras = SystemPersistence::extraSections(m_document.get());
+        IniSection section;
+        section.name = QStringLiteral("LightSource");
+        section.entries = {
+            {QStringLiteral("nickname"), request.nickname},
+            {QStringLiteral("pos"), QStringLiteral("%1, 0, %2").arg(worldXZ.x(), 0, 'f', 0).arg(worldXZ.y(), 0, 'f', 0)},
+            {QStringLiteral("color"), request.color},
+            {QStringLiteral("range"), QString::number(request.range)},
+            {QStringLiteral("type"), request.type},
+            {QStringLiteral("atten_curve"), request.attenCurve},
+        };
+        extras.append(section);
+        SystemPersistence::setExtraSections(m_document.get(), extras);
+        m_document->setDirty(true);
+        refreshObjectList();
+        m_selectedNicknames = {request.nickname};
+        syncTreeSelectionFromNicknames(m_selectedNicknames);
+        updateSelectionSummary();
+        updateIniEditorForSelection();
+    };
+
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [placementGuard, finalizePlacement](const QPointF &scenePos) {
+        finalizePlacement(scenePos);
+        placementGuard->deleteLater();
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [placementGuard]() { placementGuard->deleteLater(); });
+    m_mapView->setPlacementMode(true,
+                                tr("Klicke auf die Map, um '%1' zu platzieren. [Esc] oder Rechtsklick bricht ab.")
+                                    .arg(request.nickname));
+}
+
+void SystemEditorPage::onCreateSurprise()
+{
+    if (!m_document || !m_mapView || !m_mapScene || m_mapView->isPlacementModeActive())
+        return;
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    QStringList existingObjectNicknames;
+    for (const auto &obj : m_document->objects()) {
+        if (obj)
+            existingObjectNicknames.append(obj->nickname());
+    }
+    const QString systemToken = QFileInfo(m_document->filePath()).completeBaseName().toUpper();
+    const QString suggested =
+        suggestIndexedNickname(QStringLiteral("%1_Wreck_").arg(systemToken.isEmpty() ? QStringLiteral("SYSTEM") : systemToken),
+                               existingObjectNicknames);
+    CreateSurpriseDialog dialog(suggested,
+                                loadSolarArchetypesMatching(gameRoot, {QStringLiteral("wreck"),
+                                                                       QStringLiteral("surprise"),
+                                                                       QStringLiteral("suprise")}),
+                                loadLoadoutsMatching(gameRoot, {}),
+                                this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const CreateSurpriseRequest request = dialog.result();
+    if (request.nickname.isEmpty() || request.archetype.isEmpty())
+        return;
+
+    auto finalizePlacement = [this, request](const QPointF &scenePos) {
+        if (!m_document)
+            return;
+        if (findObjectByNickname(request.nickname) || findZoneByNickname(request.nickname)) {
+            QMessageBox::warning(this, tr("Surprise erstellen"),
+                                 tr("Im aktuellen System existiert bereits ein Eintrag mit diesem Nickname."));
+            return;
+        }
+
+        const QPointF worldXZ = MapScene::qtToFl(scenePos.x(), scenePos.y());
+        int assignedIdsName = 0;
+        if (!request.ingameName.isEmpty()) {
+            const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+            const auto dataset = flatlas::infrastructure::IdsDataService::loadFromGameRoot(gameRoot);
+            const QString targetDll =
+                flatlas::infrastructure::IdsDataService::defaultCreationDllName(dataset);
+            QString idsError;
+            int newGlobalId = 0;
+            if (flatlas::infrastructure::IdsDataService::writeStringEntry(
+                    dataset, targetDll, 0, request.ingameName, &newGlobalId, &idsError)) {
+                assignedIdsName = newGlobalId;
+            } else {
+                QMessageBox::warning(this, tr("Surprise erstellen"),
+                                     tr("Der Ingame Name konnte nicht in die IDS-Daten geschrieben werden.\n%1")
+                                         .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
+                return;
+            }
+        }
+
+        auto obj = std::make_shared<SolarObject>();
+        obj->setNickname(request.nickname);
+        obj->setType(SolarObject::Wreck);
+        obj->setArchetype(request.archetype);
+        obj->setPosition(QVector3D(static_cast<float>(worldXZ.x()), 0.0f, static_cast<float>(worldXZ.y())));
+        obj->setRotation(QVector3D());
+        if (!request.loadout.isEmpty())
+            obj->setLoadout(request.loadout);
+        if (assignedIdsName > 0)
+            obj->setIdsName(assignedIdsName);
+        obj->setComment(request.comment);
+
+        QVector<QPair<QString, QString>> entries{
+            {QStringLiteral("nickname"), request.nickname},
+            {QStringLiteral("pos"), QStringLiteral("%1, 0, %2").arg(worldXZ.x(), 0, 'f', 0).arg(worldXZ.y(), 0, 'f', 0)},
+            {QStringLiteral("rotate"), QStringLiteral("0, 0, 0")},
+            {QStringLiteral("archetype"), request.archetype},
+        };
+        if (assignedIdsName > 0)
+            entries.append({QStringLiteral("ids_name"), QString::number(assignedIdsName)});
+        if (!request.loadout.isEmpty())
+            entries.append({QStringLiteral("loadout"), request.loadout});
+        if (!request.comment.isEmpty())
+            entries.append({QStringLiteral("comment"), request.comment});
+        obj->setRawEntries(entries);
+
+        auto *cmd = new AddObjectCommand(m_document.get(), obj, tr("Create Surprise"));
+        flatlas::core::UndoManager::instance().push(cmd);
+        refreshObjectList();
+        m_selectedNicknames = {obj->nickname()};
+        syncTreeSelectionFromNicknames(m_selectedNicknames);
+        syncSceneSelectionFromNicknames(m_selectedNicknames);
+        updateIniEditorForSelection();
+    };
+
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [placementGuard, finalizePlacement](const QPointF &scenePos) {
+        finalizePlacement(scenePos);
+        placementGuard->deleteLater();
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [placementGuard]() { placementGuard->deleteLater(); });
+    m_mapView->setPlacementMode(true,
+                                tr("Klicke auf die Map, um '%1' zu platzieren. [Esc] oder Rechtsklick bricht ab.")
+                                    .arg(request.nickname));
+}
+
+void SystemEditorPage::onCreatePatrolZone()
+{
+    if (!m_document || !m_mapView || !m_mapScene || m_mapView->isPlacementModeActive())
+        return;
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    QStringList existingZoneNicknames;
+    for (const auto &zone : m_document->zones()) {
+        if (zone)
+            existingZoneNicknames.append(zone->nickname());
+    }
+
+    const QString systemToken = QFileInfo(m_document->filePath()).completeBaseName().toUpper();
+    const QString suggested =
+        suggestIndexedNickname(QStringLiteral("Zone_%1_path_patrol_")
+                                   .arg(systemToken.isEmpty() ? QStringLiteral("SYSTEM") : systemToken),
+                               existingZoneNicknames);
+    CreatePatrolZoneDialog dialog(suggested,
+                                  collectEncounterNicknames(m_document.get(), gameRoot),
+                                  loadFactionDisplays(gameRoot),
+                                  this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const CreatePatrolZoneRequest request = dialog.result();
+    if (request.nickname.isEmpty() || request.encounter.isEmpty() || request.factionDisplay.isEmpty())
+        return;
+
+    beginPatrolZonePlacement(request);
 }
 
 void SystemEditorPage::onCreatePlanet()
@@ -2426,7 +3312,112 @@ void SystemEditorPage::onCreateBuoy()
 
 void SystemEditorPage::onCreateWeaponPlatform()
 {
-    createQuickObject(SolarObject::Weapons_Platform, QStringLiteral("new_platform"), QStringLiteral("weapons_platform"));
+    if (!m_document || !m_mapView || !m_mapScene || m_mapView->isPlacementModeActive())
+        return;
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    QStringList existingObjectNicknames;
+    for (const auto &obj : m_document->objects()) {
+        if (obj)
+            existingObjectNicknames.append(obj->nickname());
+    }
+    const QString systemToken = QFileInfo(m_document->filePath()).completeBaseName().toUpper();
+    const QString suggested =
+        suggestIndexedNickname(QStringLiteral("%1_Weapon_Platform_")
+                                   .arg(systemToken.isEmpty() ? QStringLiteral("SYSTEM") : systemToken),
+                               existingObjectNicknames);
+    CreateWeaponPlatformDialog dialog(suggested,
+                                      loadSolarArchetypesMatching(gameRoot, {QStringLiteral("weapon"),
+                                                                             QStringLiteral("platform"),
+                                                                             QStringLiteral("wplatform")}),
+                                      loadLoadoutsMatching(gameRoot, {QStringLiteral("weapon"),
+                                                                      QStringLiteral("platform")}),
+                                      loadFactionDisplays(gameRoot),
+                                      this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const CreateWeaponPlatformRequest request = dialog.result();
+    if (request.nickname.isEmpty() || request.archetype.isEmpty())
+        return;
+
+    auto finalizePlacement = [this, request](const QPointF &scenePos) {
+        if (!m_document)
+            return;
+        if (findObjectByNickname(request.nickname) || findZoneByNickname(request.nickname)) {
+            QMessageBox::warning(this, tr("Waffenplattform erstellen"),
+                                 tr("Im aktuellen System existiert bereits ein Eintrag mit diesem Nickname."));
+            return;
+        }
+
+        const QPointF worldXZ = MapScene::qtToFl(scenePos.x(), scenePos.y());
+        int assignedIdsName = 261164;
+        if (!request.ingameName.isEmpty()) {
+            const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+            const auto dataset = flatlas::infrastructure::IdsDataService::loadFromGameRoot(gameRoot);
+            const QString targetDll =
+                flatlas::infrastructure::IdsDataService::defaultCreationDllName(dataset);
+            QString idsError;
+            int newGlobalId = 0;
+            if (flatlas::infrastructure::IdsDataService::writeStringEntry(
+                    dataset, targetDll, 261164, request.ingameName, &newGlobalId, &idsError)) {
+                assignedIdsName = newGlobalId;
+            } else {
+                QMessageBox::warning(this, tr("Waffenplattform erstellen"),
+                                     tr("Der Ingame Name konnte nicht in die IDS-Daten geschrieben werden.\n%1")
+                                         .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
+                return;
+            }
+        }
+
+        auto obj = std::make_shared<SolarObject>();
+        obj->setNickname(request.nickname);
+        obj->setType(SolarObject::Weapons_Platform);
+        obj->setArchetype(request.archetype);
+        obj->setPosition(QVector3D(static_cast<float>(worldXZ.x()), 0.0f, static_cast<float>(worldXZ.y())));
+        obj->setRotation(QVector3D());
+        obj->setIdsName(assignedIdsName);
+        obj->setIdsInfo(66171);
+        obj->setLoadout(request.loadout);
+        QVector<QPair<QString, QString>> entries{
+            {QStringLiteral("nickname"), request.nickname},
+            {QStringLiteral("ids_name"), QString::number(assignedIdsName)},
+            {QStringLiteral("pos"), QStringLiteral("%1, 0, %2").arg(worldXZ.x(), 0, 'f', 0).arg(worldXZ.y(), 0, 'f', 0)},
+            {QStringLiteral("rotate"), QStringLiteral("0, 0, 0")},
+            {QStringLiteral("archetype"), request.archetype},
+            {QStringLiteral("reputation"), factionNicknameFromDisplay(request.reputation)},
+            {QStringLiteral("behavior"), request.behavior.isEmpty() ? QStringLiteral("NOTHING") : request.behavior},
+            {QStringLiteral("ids_info"), QStringLiteral("66171")},
+            {QStringLiteral("difficulty_level"), QString::number(request.difficultyLevel)},
+        };
+        if (!request.loadout.isEmpty())
+            entries.append({QStringLiteral("loadout"), request.loadout});
+        if (!request.pilot.isEmpty())
+            entries.append({QStringLiteral("pilot"), request.pilot});
+        if (request.hasVisit)
+            entries.append({QStringLiteral("visit"), QString::number(request.visit)});
+        obj->setRawEntries(entries);
+
+        auto *cmd = new AddObjectCommand(m_document.get(), obj, tr("Create Weapon Platform"));
+        flatlas::core::UndoManager::instance().push(cmd);
+        refreshObjectList();
+        m_selectedNicknames = {obj->nickname()};
+        syncTreeSelectionFromNicknames(m_selectedNicknames);
+        syncSceneSelectionFromNicknames(m_selectedNicknames);
+        updateIniEditorForSelection();
+    };
+
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [placementGuard, finalizePlacement](const QPointF &scenePos) {
+        finalizePlacement(scenePos);
+        placementGuard->deleteLater();
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [placementGuard]() { placementGuard->deleteLater(); });
+    m_mapView->setPlacementMode(true,
+                                tr("Klicke auf die Map, um '%1' zu platzieren. [Esc] oder Rechtsklick bricht ab.")
+                                    .arg(request.nickname));
 }
 
 void SystemEditorPage::onCreateDepot()
@@ -2690,6 +3681,70 @@ void SystemEditorPage::beginFieldZonePlacement(const CreateFieldZoneResult &requ
         tr("Klicke auf die Map, um '%1' zu platzieren.").arg(request.nickname));
 }
 
+void SystemEditorPage::beginSimpleZonePlacement(const CreateSimpleZoneRequest &request)
+{
+    cancelSimpleZonePlacement();
+    m_pendingSimpleZoneRequest = std::make_unique<CreateSimpleZoneRequest>(request);
+    m_pendingSimpleZoneHasCenter = false;
+    m_pendingSimpleZoneCenterScenePos = QPointF();
+
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [this, placementGuard](const QPointF &scenePos) {
+        if (!m_pendingSimpleZoneRequest || !m_mapView)
+            return;
+        m_pendingSimpleZoneHasCenter = true;
+        m_pendingSimpleZoneCenterScenePos = scenePos;
+        m_mapView->viewport()->installEventFilter(this);
+        m_mapView->viewport()->setMouseTracking(true);
+        updateSimpleZonePlacementPreview(scenePos);
+        placementGuard->deleteLater();
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [this, placementGuard]() {
+        cancelSimpleZonePlacement();
+        placementGuard->deleteLater();
+    });
+
+    m_mapView->setPlacementMode(true,
+                                tr("Klicke auf die Map, um '%1' zu platzieren.").arg(request.nickname));
+}
+
+void SystemEditorPage::beginPatrolZonePlacement(const CreatePatrolZoneRequest &request)
+{
+    cancelPatrolZonePlacement();
+    m_pendingPatrolZoneRequest = std::make_unique<CreatePatrolZoneRequest>(request);
+    m_pendingPatrolZoneHasStart = false;
+    m_pendingPatrolZoneStartScenePos = QPointF();
+    m_pendingPatrolZoneHasEnd = false;
+    m_pendingPatrolZoneEndScenePos = QPointF();
+    m_pendingPatrolZoneHalfWidthScene = 0.0;
+    m_pendingPatrolZoneStep = 1;
+
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [this, placementGuard](const QPointF &scenePos) {
+        if (!m_pendingPatrolZoneRequest || !m_mapView)
+            return;
+        m_pendingPatrolZoneHasStart = true;
+        m_pendingPatrolZoneStartScenePos = scenePos;
+        m_pendingPatrolZoneStep = 2;
+        m_mapView->viewport()->installEventFilter(this);
+        m_mapView->viewport()->setMouseTracking(true);
+        updatePatrolZonePlacementPreview(scenePos);
+        placementGuard->deleteLater();
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [this, placementGuard]() {
+        cancelPatrolZonePlacement();
+        placementGuard->deleteLater();
+    });
+
+    m_mapView->setPlacementMode(true,
+                                tr("1. Klick Startpunkt fuer '%1'. 2. Klick Endpunkt. 3. Klick Breite. 4. Klick speichert.")
+                                    .arg(request.nickname));
+}
+
 void SystemEditorPage::updateFieldZonePlacementPreview(const QPointF &currentScenePos)
 {
     if (!m_pendingFieldZoneRequest || !m_pendingFieldZoneHasCenter || !m_mapScene)
@@ -2710,6 +3765,63 @@ void SystemEditorPage::updateFieldZonePlacementPreview(const QPointF &currentSce
                       QPointF(m_pendingFieldZoneCenterScenePos.x() + std::abs(currentScenePos.x() - m_pendingFieldZoneCenterScenePos.x()),
                               m_pendingFieldZoneCenterScenePos.y() + std::abs(currentScenePos.y() - m_pendingFieldZoneCenterScenePos.y())));
     m_fieldZonePlacementPreview->setRect(rect.normalized());
+}
+
+void SystemEditorPage::updateSimpleZonePlacementPreview(const QPointF &currentScenePos)
+{
+    if (!m_pendingSimpleZoneRequest || !m_pendingSimpleZoneHasCenter || !m_mapScene)
+        return;
+
+    if (!m_simpleZonePlacementPreview) {
+        const QColor stroke(170, 220, 120, 220);
+        const QColor fill(170, 220, 120, 30);
+        m_simpleZonePlacementPreview = new QGraphicsEllipseItem();
+        m_simpleZonePlacementPreview->setPen(QPen(stroke, 2.0, Qt::DashLine));
+        m_simpleZonePlacementPreview->setBrush(fill);
+        m_simpleZonePlacementPreview->setZValue(9999.0);
+        m_mapScene->addItem(m_simpleZonePlacementPreview);
+    }
+
+    const QRectF rect(QPointF(m_pendingSimpleZoneCenterScenePos.x() - std::abs(currentScenePos.x() - m_pendingSimpleZoneCenterScenePos.x()),
+                              m_pendingSimpleZoneCenterScenePos.y() - std::abs(currentScenePos.y() - m_pendingSimpleZoneCenterScenePos.y())),
+                      QPointF(m_pendingSimpleZoneCenterScenePos.x() + std::abs(currentScenePos.x() - m_pendingSimpleZoneCenterScenePos.x()),
+                              m_pendingSimpleZoneCenterScenePos.y() + std::abs(currentScenePos.y() - m_pendingSimpleZoneCenterScenePos.y())));
+    m_simpleZonePlacementPreview->setRect(rect.normalized());
+}
+
+void SystemEditorPage::updatePatrolZonePlacementPreview(const QPointF &currentScenePos)
+{
+    if (!m_pendingPatrolZoneRequest || !m_pendingPatrolZoneHasStart || !m_mapScene)
+        return;
+
+    if (m_pendingPatrolZoneStep == 2) {
+        if (!m_patrolZonePlacementPreview) {
+            const QColor stroke(220, 200, 120, 220);
+            m_patrolZonePlacementPreview = new QGraphicsLineItem();
+            m_patrolZonePlacementPreview->setPen(QPen(stroke, 2.0, Qt::DashLine));
+            m_patrolZonePlacementPreview->setZValue(9999.0);
+            m_mapScene->addItem(m_patrolZonePlacementPreview);
+        }
+        m_patrolZonePlacementPreview->setLine(QLineF(m_pendingPatrolZoneStartScenePos, currentScenePos));
+        return;
+    }
+
+    if (m_pendingPatrolZoneStep == 3 && m_pendingPatrolZoneHasEnd) {
+        const qreal halfWidth = std::max<qreal>(1.0, pointLineDistance(currentScenePos,
+                                                                        m_pendingPatrolZoneStartScenePos,
+                                                                        m_pendingPatrolZoneEndScenePos));
+        if (!m_patrolZoneWidthPreview) {
+            const QColor stroke(220, 200, 120, 220);
+            const QColor fill(220, 200, 120, 30);
+            m_patrolZoneWidthPreview = new QGraphicsPolygonItem();
+            m_patrolZoneWidthPreview->setPen(QPen(stroke, 2.0, Qt::DashLine));
+            m_patrolZoneWidthPreview->setBrush(fill);
+            m_patrolZoneWidthPreview->setZValue(9999.0);
+            m_mapScene->addItem(m_patrolZoneWidthPreview);
+        }
+        m_patrolZoneWidthPreview->setPolygon(
+            orientedRectPolygon(m_pendingPatrolZoneStartScenePos, m_pendingPatrolZoneEndScenePos, halfWidth));
+    }
 }
 
 void SystemEditorPage::finalizeFieldZonePlacement(const QPointF &edgeScenePos)
@@ -2996,6 +4108,212 @@ void SystemEditorPage::finalizeExclusionZonePlacement(const QPointF &edgeScenePo
     cancelExclusionZonePlacement();
 }
 
+void SystemEditorPage::finalizeSimpleZonePlacement(const QPointF &edgeScenePos)
+{
+    if (!m_document || !m_pendingSimpleZoneRequest)
+        return;
+
+    const QString requestedNickname = m_pendingSimpleZoneRequest->nickname.trimmed();
+    static const QRegularExpression validNickname(QStringLiteral("^[A-Za-z0-9_]+$"));
+    if (requestedNickname.isEmpty() || !validNickname.match(requestedNickname).hasMatch()) {
+        QMessageBox::warning(this, tr("Zone erstellen"),
+                             tr("Der Nickname ist ungueltig. Bitte pruefe den Namen im Dialog."));
+        cancelSimpleZonePlacement();
+        return;
+    }
+    if (findZoneByNickname(requestedNickname) || findObjectByNickname(requestedNickname)) {
+        QMessageBox::warning(this, tr("Zone erstellen"),
+                             tr("Im aktuellen System existiert bereits ein Objekt oder eine Zone mit diesem Nickname."));
+        cancelSimpleZonePlacement();
+        return;
+    }
+
+    const QPointF centerFl = MapScene::qtToFl(m_pendingSimpleZoneCenterScenePos.x(), m_pendingSimpleZoneCenterScenePos.y());
+    const QPointF edgeFl = MapScene::qtToFl(edgeScenePos.x(), edgeScenePos.y());
+    const double deltaX = std::abs(edgeFl.x() - centerFl.x());
+    const double deltaZ = std::abs(edgeFl.y() - centerFl.y());
+    const double radius = std::max(std::max(deltaX, deltaZ), 500.0);
+    const double sizeY = std::min(std::max(std::min(deltaX, deltaZ), 250.0), radius);
+
+    auto zone = std::make_shared<ZoneItem>();
+    zone->setNickname(requestedNickname);
+    zone->setPosition(QVector3D(static_cast<float>(centerFl.x()), 0.0f, static_cast<float>(centerFl.y())));
+    zone->setRotation(QVector3D());
+    zone->setComment(m_pendingSimpleZoneRequest->comment);
+    zone->setDamage(m_pendingSimpleZoneRequest->damage);
+    zone->setSortKey(m_pendingSimpleZoneRequest->sort);
+
+    QString sizeText;
+    const QString shape = m_pendingSimpleZoneRequest->shape.toUpper();
+    if (shape == QStringLiteral("ELLIPSOID")) {
+        zone->setShape(ZoneItem::Ellipsoid);
+        zone->setSize(QVector3D(static_cast<float>(deltaX), static_cast<float>(sizeY), static_cast<float>(deltaZ)));
+        sizeText = QStringLiteral("%1, %2, %3")
+                       .arg(std::max(deltaX, 500.0), 0, 'f', 0)
+                       .arg(sizeY, 0, 'f', 0)
+                       .arg(std::max(deltaZ, 500.0), 0, 'f', 0);
+    } else if (shape == QStringLiteral("BOX")) {
+        zone->setShape(ZoneItem::Box);
+        zone->setSize(QVector3D(static_cast<float>(deltaX), static_cast<float>(sizeY), static_cast<float>(deltaZ)));
+        sizeText = QStringLiteral("%1, %2, %3")
+                       .arg(std::max(deltaX, 500.0), 0, 'f', 0)
+                       .arg(sizeY, 0, 'f', 0)
+                       .arg(std::max(deltaZ, 500.0), 0, 'f', 0);
+    } else if (shape == QStringLiteral("CYLINDER")) {
+        const double length = std::max(std::max(deltaX, deltaZ) * 2.0, 1000.0);
+        zone->setShape(ZoneItem::Cylinder);
+        zone->setSize(QVector3D(static_cast<float>(radius), static_cast<float>(length), static_cast<float>(radius)));
+        sizeText = QStringLiteral("%1, %2")
+                       .arg(radius, 0, 'f', 0)
+                       .arg(length, 0, 'f', 0);
+    } else if (shape == QStringLiteral("RING")) {
+        const double length = std::max(std::max(deltaX, deltaZ) * 2.0, 1000.0);
+        zone->setShape(ZoneItem::Ring);
+        zone->setSize(QVector3D(static_cast<float>(radius), static_cast<float>(length), static_cast<float>(radius)));
+        sizeText = QStringLiteral("%1, %2")
+                       .arg(radius, 0, 'f', 0)
+                       .arg(length, 0, 'f', 0);
+    } else {
+        zone->setShape(ZoneItem::Sphere);
+        zone->setSize(QVector3D(static_cast<float>(radius), 0.0f, 0.0f));
+        sizeText = QString::number(radius, 'f', 0);
+    }
+
+    QVector<QPair<QString, QString>> entries{
+        {QStringLiteral("nickname"), requestedNickname},
+        {QStringLiteral("pos"), QStringLiteral("%1, 0, %2").arg(centerFl.x(), 0, 'f', 0).arg(centerFl.y(), 0, 'f', 0)},
+        {QStringLiteral("rotate"), QStringLiteral("0, 0, 0")},
+        {QStringLiteral("shape"), shape},
+        {QStringLiteral("size"), sizeText},
+        {QStringLiteral("sort"), QString::number(m_pendingSimpleZoneRequest->sort)},
+    };
+    if (m_pendingSimpleZoneRequest->damage > 0)
+        entries.append({QStringLiteral("damage"), QString::number(m_pendingSimpleZoneRequest->damage)});
+    zone->setRawEntries(entries);
+
+    auto *cmd = new AddZoneCommand(m_document.get(), zone, tr("Create Zone"));
+    flatlas::core::UndoManager::instance().push(cmd);
+    refreshObjectList();
+    m_selectedNicknames = {zone->nickname()};
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateIniEditorForSelection();
+    cancelSimpleZonePlacement();
+}
+
+void SystemEditorPage::finalizePatrolZonePlacement(const QPointF &endScenePos)
+{
+    if (!m_document || !m_pendingPatrolZoneRequest)
+        return;
+
+    const CreatePatrolZoneRequest request = *m_pendingPatrolZoneRequest;
+    static const QRegularExpression validNickname(QStringLiteral("^[A-Za-z0-9_]+$"));
+    if (request.nickname.trimmed().isEmpty() || !validNickname.match(request.nickname.trimmed()).hasMatch()) {
+        QMessageBox::warning(this, tr("Patrol-Zone erstellen"),
+                             tr("Der Nickname ist ungueltig. Bitte pruefe den Namen im Dialog."));
+        cancelPatrolZonePlacement();
+        return;
+    }
+    if (findZoneByNickname(request.nickname) || findObjectByNickname(request.nickname)) {
+        QMessageBox::warning(this, tr("Patrol-Zone erstellen"),
+                             tr("Im aktuellen System existiert bereits ein Objekt oder eine Zone mit diesem Nickname."));
+        cancelPatrolZonePlacement();
+        return;
+    }
+
+    const QString factionNickname = factionNicknameFromDisplay(request.factionDisplay);
+    if (request.encounter.trimmed().isEmpty() || factionNickname.isEmpty()) {
+        QMessageBox::warning(this, tr("Patrol-Zone erstellen"),
+                             tr("Encounter und Faction muessen gesetzt sein."));
+        cancelPatrolZonePlacement();
+        return;
+    }
+
+    QString encounterError;
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    if (!ensureEncounterParameterExists(m_document.get(), request.encounter, gameRoot, &encounterError)) {
+        QMessageBox::warning(this, tr("Patrol-Zone erstellen"), encounterError);
+        cancelPatrolZonePlacement();
+        return;
+    }
+
+    if (!m_pendingPatrolZoneHasEnd) {
+        cancelPatrolZonePlacement();
+        return;
+    }
+
+    Q_UNUSED(endScenePos);
+
+    const QPointF startFl = MapScene::qtToFl(m_pendingPatrolZoneStartScenePos.x(), m_pendingPatrolZoneStartScenePos.y());
+    const QPointF endFl = MapScene::qtToFl(m_pendingPatrolZoneEndScenePos.x(), m_pendingPatrolZoneEndScenePos.y());
+    const double dx = endFl.x() - startFl.x();
+    const double dz = endFl.y() - startFl.y();
+    const double length = std::max(std::hypot(dx, dz), 1000.0);
+    const QPointF centerFl((startFl.x() + endFl.x()) * 0.5, (startFl.y() + endFl.y()) * 0.5);
+    const double yaw = patrolYawDegrees(startFl, endFl);
+    const double radius = std::max(static_cast<double>(m_pendingPatrolZoneHalfWidthScene) * 100.0, 100.0);
+    const QString usage = request.usage.trimmed().isEmpty() ? QStringLiteral("patrol") : request.usage.trimmed().toLower();
+
+    auto zone = std::make_shared<ZoneItem>();
+    zone->setNickname(request.nickname);
+    zone->setPosition(QVector3D(static_cast<float>(centerFl.x()), 0.0f, static_cast<float>(centerFl.y())));
+    zone->setRotation(QVector3D(90.0f, static_cast<float>(yaw), 0.0f));
+    zone->setShape(ZoneItem::Cylinder);
+    zone->setSize(QVector3D(static_cast<float>(radius), static_cast<float>(length), static_cast<float>(radius)));
+    zone->setComment(request.comment);
+    zone->setDamage(request.damage);
+    zone->setSortKey(request.sort);
+    zone->setUsage(usage);
+    zone->setPopType(request.popType);
+    zone->setPathLabel(QStringLiteral("%1, %2").arg(request.pathLabel.isEmpty() ? QStringLiteral("patrol") : request.pathLabel)
+                           .arg(request.pathIndex));
+
+    QVector<QPair<QString, QString>> entries{
+        {QStringLiteral("nickname"), request.nickname},
+        {QStringLiteral("pos"), QStringLiteral("%1, 0, %2").arg(centerFl.x(), 0, 'f', 0).arg(centerFl.y(), 0, 'f', 0)},
+        {QStringLiteral("rotate"), QStringLiteral("90, %1, 0").arg(yaw, 0, 'f', 6)},
+        {QStringLiteral("shape"), QStringLiteral("CYLINDER")},
+        {QStringLiteral("size"),
+         QStringLiteral("%1, %2, %3")
+             .arg(radius, 0, 'f', 6)
+             .arg(length, 0, 'f', 6)
+             .arg(radius, 0, 'f', 6)},
+        {QStringLiteral("sort"), QString::number(request.sort)},
+        {QStringLiteral("toughness"), QString::number(request.toughness)},
+        {QStringLiteral("density"), QString::number(request.density)},
+        {QStringLiteral("repop_time"), QString::number(request.repopTime)},
+        {QStringLiteral("max_battle_size"), QString::number(request.maxBattleSize)},
+        {QStringLiteral("pop_type"), request.popType},
+        {QStringLiteral("relief_time"), QString::number(request.reliefTime)},
+        {QStringLiteral("path_label"), QStringLiteral("%1, %2")
+                                           .arg(request.pathLabel.isEmpty() ? QStringLiteral("patrol") : request.pathLabel)
+                                           .arg(request.pathIndex)},
+        {QStringLiteral("usage"), usage},
+        {QStringLiteral("mission_eligible"), request.missionEligible ? QStringLiteral("true") : QStringLiteral("false")},
+    };
+    if (request.damage > 0)
+        entries.append({QStringLiteral("damage"), QString::number(request.damage)});
+    const QStringList restrictions = patrolDensityRestrictionsForUsage(usage);
+    for (const QString &restriction : restrictions)
+        entries.append({QStringLiteral("density_restriction"), restriction});
+    entries.append({QStringLiteral("encounter"),
+                    QStringLiteral("%1, %2, %3")
+                        .arg(request.encounter)
+                        .arg(request.encounterLevel)
+                        .arg(QString::number(request.encounterChance, 'f', 2))});
+    entries.append({QStringLiteral("faction"), QStringLiteral("%1, 1").arg(factionNickname)});
+    zone->setRawEntries(entries);
+
+    auto *cmd = new AddZoneCommand(m_document.get(), zone, tr("Create Patrol Zone"));
+    flatlas::core::UndoManager::instance().push(cmd);
+    refreshObjectList();
+    m_selectedNicknames = {zone->nickname()};
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateIniEditorForSelection();
+    cancelPatrolZonePlacement();
+}
+
 void SystemEditorPage::cancelFieldZonePlacement()
 {
     clearFieldZonePlacementPreview();
@@ -3007,6 +4325,49 @@ void SystemEditorPage::cancelFieldZonePlacement()
     m_pendingFieldZoneRequest.reset();
     m_pendingFieldZoneHasCenter = false;
     m_pendingFieldZoneCenterScenePos = QPointF();
+}
+
+void SystemEditorPage::cancelSimpleZonePlacement()
+{
+    if (m_simpleZonePlacementPreview && m_mapScene) {
+        m_mapScene->removeItem(m_simpleZonePlacementPreview);
+        delete m_simpleZonePlacementPreview;
+        m_simpleZonePlacementPreview = nullptr;
+    }
+    if (m_mapView && m_mapView->viewport()) {
+        m_mapView->setPlacementMode(false);
+        m_mapView->viewport()->removeEventFilter(this);
+        m_mapView->viewport()->setToolTip(QString());
+    }
+    m_pendingSimpleZoneRequest.reset();
+    m_pendingSimpleZoneHasCenter = false;
+    m_pendingSimpleZoneCenterScenePos = QPointF();
+}
+
+void SystemEditorPage::cancelPatrolZonePlacement()
+{
+    if (m_patrolZonePlacementPreview && m_mapScene) {
+        m_mapScene->removeItem(m_patrolZonePlacementPreview);
+        delete m_patrolZonePlacementPreview;
+        m_patrolZonePlacementPreview = nullptr;
+    }
+    if (m_patrolZoneWidthPreview && m_mapScene) {
+        m_mapScene->removeItem(m_patrolZoneWidthPreview);
+        delete m_patrolZoneWidthPreview;
+        m_patrolZoneWidthPreview = nullptr;
+    }
+    if (m_mapView && m_mapView->viewport()) {
+        m_mapView->setPlacementMode(false);
+        m_mapView->viewport()->removeEventFilter(this);
+        m_mapView->viewport()->setToolTip(QString());
+    }
+    m_pendingPatrolZoneRequest.reset();
+    m_pendingPatrolZoneHasStart = false;
+    m_pendingPatrolZoneStartScenePos = QPointF();
+    m_pendingPatrolZoneHasEnd = false;
+    m_pendingPatrolZoneEndScenePos = QPointF();
+    m_pendingPatrolZoneHalfWidthScene = 0.0;
+    m_pendingPatrolZoneStep = 0;
 }
 
 void SystemEditorPage::cancelExclusionZonePlacement()
@@ -3149,6 +4510,36 @@ ZoneItem *SystemEditorPage::findZoneByNickname(const QString &nickname) const
     return nullptr;
 }
 
+int SystemEditorPage::findLightSourceSectionIndexByNickname(const QString &nickname) const
+{
+    if (!m_document)
+        return -1;
+    const IniDocument extras = SystemPersistence::extraSections(m_document.get());
+    for (int index = 0; index < extras.size(); ++index) {
+        if (extras[index].name.compare(QStringLiteral("LightSource"), Qt::CaseInsensitive) != 0)
+            continue;
+        if (extras[index].value(QStringLiteral("nickname")).trimmed().compare(nickname.trimmed(), Qt::CaseInsensitive) == 0)
+            return index;
+    }
+    return -1;
+}
+
+QStringList SystemEditorPage::lightSourceNicknames() const
+{
+    QStringList values;
+    if (!m_document)
+        return values;
+    const IniDocument extras = SystemPersistence::extraSections(m_document.get());
+    for (const IniSection &section : extras) {
+        if (section.name.compare(QStringLiteral("LightSource"), Qt::CaseInsensitive) != 0)
+            continue;
+        const QString nickname = section.value(QStringLiteral("nickname")).trimmed();
+        if (!nickname.isEmpty())
+            values.append(nickname);
+    }
+    return values;
+}
+
 QString SystemEditorPage::normalizeObjectNicknameToGroupRoot(const QString &nickname) const
 {
     SolarObject *object = findObjectByNickname(nickname);
@@ -3186,6 +4577,8 @@ QStringList SystemEditorPage::normalizeSelectionNicknames(const QStringList &nic
             normalized.append(normalizeObjectNicknameToGroupRoot(nickname));
         else if (findZoneByNickname(nickname))
             normalized.append(nickname);
+        else if (findLightSourceSectionIndexByNickname(nickname) >= 0)
+            normalized.append(nickname);
     }
     normalized.removeDuplicates();
     return normalized;
@@ -3199,9 +4592,42 @@ QStringList SystemEditorPage::expandSelectionNicknamesForScene(const QStringList
             expanded.append(objectGroupNicknames(normalizeObjectNicknameToGroupRoot(nickname)));
         else if (findZoneByNickname(nickname))
             expanded.append(nickname);
+        else if (findLightSourceSectionIndexByNickname(nickname) >= 0)
+            expanded.append(nickname);
     }
     expanded.removeDuplicates();
     return expanded;
+}
+
+void SystemEditorPage::syncLightSourcesInScene()
+{
+    if (!m_mapScene) {
+        return;
+    }
+
+    QVector<MapScene::LightSourceVisual> lightSources;
+    if (m_document) {
+        const IniDocument extras = SystemPersistence::extraSections(m_document.get());
+        for (const IniSection &section : extras) {
+            if (section.name.compare(QStringLiteral("LightSource"), Qt::CaseInsensitive) != 0)
+                continue;
+
+            const QString nickname = section.value(QStringLiteral("nickname")).trimmed();
+            if (nickname.isEmpty())
+                continue;
+
+            QVector3D position;
+            if (!parseIniVector3(section.value(QStringLiteral("pos")).trimmed(), &position))
+                continue;
+
+            MapScene::LightSourceVisual visual;
+            visual.nickname = nickname;
+            visual.position = position;
+            lightSources.append(visual);
+        }
+    }
+
+    m_mapScene->setLightSources(lightSources);
 }
 
 QStringList SystemEditorPage::objectGroupNicknames(const QString &rootNickname) const

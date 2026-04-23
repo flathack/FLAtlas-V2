@@ -1,6 +1,7 @@
 #include "SystemMapView.h"
 #include "MapScene.h"
 #include "core/Theme.h"
+#include "items/LightSourceItem.h"
 #include "items/SolarObjectItem.h"
 #include "items/ZoneItem2D.h"
 #include "domain/SolarObject.h"
@@ -60,6 +61,17 @@ double fitScaleForView(const QGraphicsView *view, const QRectF &targetRect)
     const double scaleX = static_cast<double>(viewportRect.width()) / targetRect.width();
     const double scaleY = static_cast<double>(viewportRect.height()) / targetRect.height();
     return std::max(0.0001, std::min(scaleX, scaleY));
+}
+
+QString itemNickname(QGraphicsItem *item)
+{
+    if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item))
+        return solarItem->nickname();
+    if (auto *zoneItem = dynamic_cast<ZoneItem2D *>(item))
+        return zoneItem->nickname();
+    if (auto *lightItem = dynamic_cast<LightSourceItem *>(item))
+        return lightItem->nickname();
+    return {};
 }
 
 }
@@ -215,11 +227,7 @@ void SystemMapView::wheelEvent(QWheelEvent *event)
                 QHash<QString, QPointF> currentScenePositions;
                 const auto sceneItems = m_mapScene->selectedItems();
                 for (QGraphicsItem *item : sceneItems) {
-                    QString nickname;
-                    if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item))
-                        nickname = solarItem->nickname();
-                    else if (auto *zoneItem = dynamic_cast<ZoneItem2D *>(item))
-                        nickname = zoneItem->nickname();
+                    const QString nickname = itemNickname(item);
                     if (nickname.isEmpty() || !m_moveStartPositions.contains(nickname))
                         continue;
                     currentScenePositions.insert(nickname, item->scenePos());
@@ -349,11 +357,7 @@ void SystemMapView::mouseMoveEvent(QMouseEvent *event)
         QHash<QString, QPointF> currentScenePositions;
         const auto sceneItems = m_mapScene->selectedItems();
         for (QGraphicsItem *item : sceneItems) {
-            QString nickname;
-            if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item))
-                nickname = solarItem->nickname();
-            else if (auto *zoneItem = dynamic_cast<ZoneItem2D *>(item))
-                nickname = zoneItem->nickname();
+            const QString nickname = itemNickname(item);
             if (nickname.isEmpty() || !m_moveStartPositions.contains(nickname))
                 continue;
             currentScenePositions.insert(nickname, item->scenePos());
@@ -613,11 +617,7 @@ void SystemMapView::drawForeground(QPainter *painter, const QRectF &rect)
         QHash<QString, QPointF> currentScenePositions;
         const auto sceneItems = m_mapScene->selectedItems();
         for (QGraphicsItem *item : sceneItems) {
-            QString nickname;
-            if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item))
-                nickname = solarItem->nickname();
-            else if (auto *zoneItem = dynamic_cast<ZoneItem2D *>(item))
-                nickname = zoneItem->nickname();
+            const QString nickname = itemNickname(item);
             if (nickname.isEmpty() || !m_moveStartPositions.contains(nickname))
                 continue;
             currentScenePositions.insert(nickname, item->scenePos());
@@ -1093,12 +1093,7 @@ void SystemMapView::beginTrackedSelectionMove(QMouseEvent *event)
 
     const auto sceneItems = m_mapScene->selectedItems();
     for (QGraphicsItem *item : sceneItems) {
-        QString nickname;
-        if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item))
-            nickname = solarItem->nickname();
-        else if (auto *zoneItem = dynamic_cast<ZoneItem2D *>(item))
-            nickname = zoneItem->nickname();
-
+        const QString nickname = itemNickname(item);
         if (!nickname.isEmpty())
             m_moveStartPositions.insert(nickname, item->scenePos());
     }
@@ -1123,12 +1118,7 @@ void SystemMapView::finishTrackedSelectionMove()
     const double yOffset = m_moveVerticalOffsetMeters;
     const bool hasYOffset = std::abs(yOffset) > 1e-6;
     for (QGraphicsItem *item : sceneItems) {
-        QString nickname;
-        if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item))
-            nickname = solarItem->nickname();
-        else if (auto *zoneItem = dynamic_cast<ZoneItem2D *>(item))
-            nickname = zoneItem->nickname();
-
+        const QString nickname = itemNickname(item);
         if (nickname.isEmpty() || !m_moveStartPositions.contains(nickname))
             continue;
 
@@ -1174,13 +1164,7 @@ void SystemMapView::updateRubberBandSelection(const QRect &viewportRect, Qt::Key
 
 QString SystemMapView::itemNicknameAtViewportPos(const QPoint &pos) const
 {
-    if (QGraphicsItem *item = itemAt(pos)) {
-        if (auto *solarItem = dynamic_cast<SolarObjectItem *>(item))
-            return solarItem->nickname();
-        if (auto *zoneItem = dynamic_cast<ZoneItem2D *>(item))
-            return zoneItem->nickname();
-    }
-    return {};
+    return itemNickname(itemAt(pos));
 }
 
 } // namespace flatlas::rendering

@@ -14,6 +14,8 @@ namespace flatlas::rendering { class MapScene; class SystemMapView; class SceneV
 namespace flatlas::editors {
 struct CreateFieldZoneResult;
 struct CreateExclusionZoneResult;
+struct CreateSimpleZoneRequest;
+struct CreatePatrolZoneRequest;
 struct ExclusionShellSettings;
 }
 class QToolBar;
@@ -32,6 +34,8 @@ class QScrollArea;
 class QVBoxLayout;
 class QStackedWidget;
 class QGraphicsEllipseItem;
+class QGraphicsLineItem;
+class QGraphicsPolygonItem;
 
 namespace flatlas::editors { class IniCodeEditor; class IniSyntaxHighlighter; }
 
@@ -114,6 +118,9 @@ private:
                            const QString &defaultArchetype = QString());
     void showNotYetPorted(const QString &featureName, const QString &v1Hint = QString()) const;
     void onCreateSun();
+    void onCreateLightSource();
+    void onCreateSurprise();
+    void onCreatePatrolZone();
     void onCreatePlanet();
     void onCreateBuoy();
     void onCreateWeaponPlatform();
@@ -157,6 +164,14 @@ private:
     void finalizeFieldZonePlacement(const QPointF &edgeScenePos);
     void cancelFieldZonePlacement();
     void clearFieldZonePlacementPreview();
+    void beginSimpleZonePlacement(const CreateSimpleZoneRequest &request);
+    void updateSimpleZonePlacementPreview(const QPointF &currentScenePos);
+    void finalizeSimpleZonePlacement(const QPointF &edgeScenePos);
+    void cancelSimpleZonePlacement();
+    void beginPatrolZonePlacement(const CreatePatrolZoneRequest &request);
+    void updatePatrolZonePlacementPreview(const QPointF &currentScenePos);
+    void finalizePatrolZonePlacement(const QPointF &endScenePos);
+    void cancelPatrolZonePlacement();
     void beginExclusionZonePlacement(const CreateExclusionZoneResult &request);
     void updateExclusionZonePlacementPreview(const QPointF &currentScenePos);
     void finalizeExclusionZonePlacement(const QPointF &edgeScenePos);
@@ -184,6 +199,9 @@ private:
     void removeLinkedFieldSectionsForNicknames(const QStringList &zoneNicknames);
     bool writePendingGeneratedZoneFiles(QString *errorMessage);
     bool writePendingTextFiles(QString *errorMessage);
+    void syncLightSourcesInScene();
+    int findLightSourceSectionIndexByNickname(const QString &nickname) const;
+    QStringList lightSourceNicknames() const;
 
     std::unique_ptr<flatlas::domain::SystemDocument> m_document;
     flatlas::rendering::MapScene *m_mapScene = nullptr;
@@ -262,6 +280,19 @@ private:
     bool m_pendingFieldZoneHasCenter = false;
     QPointF m_pendingFieldZoneCenterScenePos;
     QGraphicsEllipseItem *m_fieldZonePlacementPreview = nullptr;
+    std::unique_ptr<CreateSimpleZoneRequest> m_pendingSimpleZoneRequest;
+    bool m_pendingSimpleZoneHasCenter = false;
+    QPointF m_pendingSimpleZoneCenterScenePos;
+    QGraphicsEllipseItem *m_simpleZonePlacementPreview = nullptr;
+    std::unique_ptr<CreatePatrolZoneRequest> m_pendingPatrolZoneRequest;
+    bool m_pendingPatrolZoneHasStart = false;
+    QPointF m_pendingPatrolZoneStartScenePos;
+    bool m_pendingPatrolZoneHasEnd = false;
+    QPointF m_pendingPatrolZoneEndScenePos;
+    qreal m_pendingPatrolZoneHalfWidthScene = 0.0;
+    int m_pendingPatrolZoneStep = 0;
+    QGraphicsLineItem *m_patrolZonePlacementPreview = nullptr;
+    QGraphicsPolygonItem *m_patrolZoneWidthPreview = nullptr;
     std::unique_ptr<CreateExclusionZoneResult> m_pendingExclusionZoneRequest;
     bool m_pendingExclusionZoneHasCenter = false;
     QPointF m_pendingExclusionZoneCenterScenePos;

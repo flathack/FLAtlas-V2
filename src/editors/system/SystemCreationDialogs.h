@@ -1,0 +1,237 @@
+#pragma once
+
+#include <QDialog>
+#include <QString>
+#include <QStringList>
+
+class QCheckBox;
+class QComboBox;
+class QDialogButtonBox;
+class QDoubleSpinBox;
+class QLineEdit;
+class QPushButton;
+class QSpinBox;
+class QTextEdit;
+
+namespace flatlas::editors {
+
+struct CreateSimpleZoneRequest {
+    QString nickname;
+    QString comment;
+    QString shape;
+    int sort = 99;
+    int damage = 0;
+};
+
+struct CreatePatrolZoneRequest {
+    QString nickname;
+    QString usage = QStringLiteral("patrol");
+    QString comment;
+    int sort = 99;
+    int radius = 750;
+    int damage = 0;
+    int toughness = 6;
+    int density = 3;
+    int repopTime = 90;
+    int maxBattleSize = 4;
+    QString popType = QStringLiteral("attack_patrol");
+    int reliefTime = 30;
+    QString pathLabel = QStringLiteral("patrol");
+    int pathIndex = 1;
+    QString encounter;
+    QString factionDisplay;
+    int encounterLevel = 6;
+    double encounterChance = 0.29;
+    bool missionEligible = true;
+};
+
+struct CreateLightSourceRequest {
+    QString nickname;
+    QString type;
+    QString color;
+    int range = 100000;
+    QString attenCurve;
+};
+
+struct CreateSunRequest {
+    QString nickname;
+    QString ingameName;
+    QString infoCardText;
+    QString archetype;
+    QString burnColor;
+    int deathZoneRadius = 2000;
+    int deathZoneDamage = 200000;
+    int atmosphereRange = 5000;
+    QString star = QStringLiteral("med_white_sun");
+};
+
+struct CreateSurpriseRequest {
+    QString nickname;
+    QString ingameName;
+    QString archetype;
+    QString loadout;
+    QString comment;
+};
+
+struct CreateWeaponPlatformRequest {
+    QString nickname;
+    QString ingameName;
+    QString archetype;
+    QString loadout;
+    QString reputation;
+    QString behavior = QStringLiteral("NOTHING");
+    QString pilot = QStringLiteral("pilot_solar_hard");
+    int difficultyLevel = 6;
+    bool hasVisit = false;
+    int visit = 0;
+};
+
+class CreateSimpleZoneDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit CreateSimpleZoneDialog(const QString &suggestedNickname,
+                                    QWidget *parent = nullptr);
+
+    CreateSimpleZoneRequest result() const;
+
+private:
+    QLineEdit *m_nicknameEdit = nullptr;
+    QLineEdit *m_commentEdit = nullptr;
+    QComboBox *m_shapeCombo = nullptr;
+    QSpinBox *m_sortSpin = nullptr;
+    QSpinBox *m_damageSpin = nullptr;
+};
+
+class CreatePatrolZoneDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit CreatePatrolZoneDialog(const QString &suggestedNickname,
+                                    const QStringList &encounters,
+                                    const QStringList &factions,
+                                    QWidget *parent = nullptr);
+
+    CreatePatrolZoneRequest result() const;
+
+private slots:
+    void onUsageChanged(const QString &usage);
+
+private:
+    QStringList popTypesForUsage(const QString &usage) const;
+    void applyPopTypeItems(const QString &usage);
+    void applyEncounterDefault(const QString &usage);
+
+    QLineEdit *m_nicknameEdit = nullptr;
+    QComboBox *m_usageCombo = nullptr;
+    QLineEdit *m_commentEdit = nullptr;
+    QSpinBox *m_sortSpin = nullptr;
+    QSpinBox *m_radiusSpin = nullptr;
+    QSpinBox *m_damageSpin = nullptr;
+    QSpinBox *m_toughnessSpin = nullptr;
+    QSpinBox *m_densitySpin = nullptr;
+    QSpinBox *m_repopSpin = nullptr;
+    QSpinBox *m_battleSpin = nullptr;
+    QComboBox *m_popTypeCombo = nullptr;
+    QSpinBox *m_reliefSpin = nullptr;
+    QLineEdit *m_pathLabelEdit = nullptr;
+    QSpinBox *m_pathIndexSpin = nullptr;
+    QComboBox *m_encounterCombo = nullptr;
+    QComboBox *m_factionCombo = nullptr;
+    QSpinBox *m_encounterLevelSpin = nullptr;
+    QDoubleSpinBox *m_encounterChanceSpin = nullptr;
+    QCheckBox *m_missionEligibleCheck = nullptr;
+};
+
+class CreateLightSourceDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit CreateLightSourceDialog(const QString &suggestedNickname,
+                                     const QStringList &types,
+                                     const QStringList &attenCurves,
+                                     QWidget *parent = nullptr);
+
+    CreateLightSourceRequest result() const;
+
+private slots:
+    void pickColor();
+
+private:
+    QLineEdit *m_nicknameEdit = nullptr;
+    QComboBox *m_typeCombo = nullptr;
+    QPushButton *m_colorButton = nullptr;
+    QLineEdit *m_colorLabel = nullptr;
+    QSpinBox *m_rangeSpin = nullptr;
+    QComboBox *m_attenCurveCombo = nullptr;
+};
+
+class CreateSunDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit CreateSunDialog(const QString &suggestedNickname,
+                             const QStringList &archetypes,
+                             const QStringList &stars,
+                             QWidget *parent = nullptr);
+
+    CreateSunRequest result() const;
+
+private slots:
+    void pickBurnColor();
+
+private:
+    QLineEdit *m_nicknameEdit = nullptr;
+    QLineEdit *m_ingameNameEdit = nullptr;
+    QTextEdit *m_infoCardEdit = nullptr;
+    QComboBox *m_archetypeCombo = nullptr;
+    QPushButton *m_burnColorButton = nullptr;
+    QLineEdit *m_burnColorLabel = nullptr;
+    QSpinBox *m_deathZoneRadiusSpin = nullptr;
+    QSpinBox *m_deathZoneDamageSpin = nullptr;
+    QSpinBox *m_atmosphereRangeSpin = nullptr;
+    QComboBox *m_starCombo = nullptr;
+};
+
+class CreateSurpriseDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit CreateSurpriseDialog(const QString &suggestedNickname,
+                                  const QStringList &archetypes,
+                                  const QStringList &loadouts,
+                                  QWidget *parent = nullptr);
+
+    CreateSurpriseRequest result() const;
+
+private:
+    QLineEdit *m_nicknameEdit = nullptr;
+    QLineEdit *m_ingameNameEdit = nullptr;
+    QComboBox *m_archetypeCombo = nullptr;
+    QComboBox *m_loadoutCombo = nullptr;
+    QLineEdit *m_commentEdit = nullptr;
+};
+
+class CreateWeaponPlatformDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit CreateWeaponPlatformDialog(const QString &suggestedNickname,
+                                        const QStringList &archetypes,
+                                        const QStringList &loadouts,
+                                        const QStringList &factions,
+                                        QWidget *parent = nullptr);
+
+    CreateWeaponPlatformRequest result() const;
+
+private slots:
+    void updateVisitEnabledState();
+
+private:
+    QLineEdit *m_nicknameEdit = nullptr;
+    QLineEdit *m_ingameNameEdit = nullptr;
+    QComboBox *m_archetypeCombo = nullptr;
+    QComboBox *m_loadoutCombo = nullptr;
+    QComboBox *m_factionCombo = nullptr;
+    QLineEdit *m_behaviorEdit = nullptr;
+    QLineEdit *m_pilotEdit = nullptr;
+    QSpinBox *m_difficultySpin = nullptr;
+    QCheckBox *m_visitCheck = nullptr;
+    QSpinBox *m_visitSpin = nullptr;
+};
+
+} // namespace flatlas::editors

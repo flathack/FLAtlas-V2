@@ -1,6 +1,7 @@
 #pragma once
 #include <QGraphicsScene>
 #include <QStringList>
+#include <QVector3D>
 #include <functional>
 #include <memory>
 
@@ -18,11 +19,17 @@ class ZoneItem2D;
 class MapScene : public QGraphicsScene {
     Q_OBJECT
 public:
+    struct LightSourceVisual {
+        QString nickname;
+        QVector3D position;
+    };
+
     explicit MapScene(QObject *parent = nullptr);
 
     void loadDocument(flatlas::domain::SystemDocument *doc,
                       const std::function<void(int current, int total)> &progressCallback = {});
     void clear();
+    void setLightSources(const QVector<LightSourceVisual> &lightSources);
 
     void setGridVisible(bool visible);
     bool isGridVisible() const;
@@ -46,6 +53,7 @@ protected:
 private:
     void addSolarObject(const std::shared_ptr<flatlas::domain::SolarObject> &obj);
     void addZone(const std::shared_ptr<flatlas::domain::ZoneItem> &zone);
+    void addLightSource(const LightSourceVisual &lightSource);
 
     flatlas::domain::SystemDocument *m_document = nullptr;
     bool m_gridVisible = true;

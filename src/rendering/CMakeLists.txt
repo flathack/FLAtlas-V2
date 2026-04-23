@@ -3,6 +3,7 @@ add_library(flatlas_rendering STATIC
     view2d/SystemDisplayFilter.h view2d/SystemDisplayFilter.cpp
     view2d/MapScene.h view2d/MapScene.cpp
     view2d/SystemMapView.h view2d/SystemMapView.cpp
+    view2d/items/LightSourceItem.h view2d/items/LightSourceItem.cpp
     view2d/items/SolarObjectItem.h view2d/items/SolarObjectItem.cpp
     view2d/items/ZoneItem2D.h view2d/items/ZoneItem2D.cpp
     view2d/items/TradelaneItem.h view2d/items/TradelaneItem.cpp
