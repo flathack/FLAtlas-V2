@@ -1,24 +1,44 @@
 #include "SystemCreationDialogs.h"
 
+#include "core/EditingContext.h"
+#include "core/PathUtils.h"
+#include "infrastructure/freelancer/IdsStringTable.h"
+#include "infrastructure/parser/IniParser.h"
+#include "infrastructure/parser/XmlInfocard.h"
+#include "rendering/view3d/ModelViewport3D.h"
+
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
 #include <QCompleter>
 #include <QDialogButtonBox>
+#include <QDirIterator>
 #include <QDoubleSpinBox>
+#include <QFileInfo>
 #include <QFormLayout>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QStackedLayout>
 #include <QStringListModel>
 #include <QTextEdit>
+#include <QTimer>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 namespace flatlas::editors {
 
 namespace {
+
+using flatlas::infrastructure::IdsStringTable;
+using flatlas::infrastructure::IniDocument;
+using flatlas::infrastructure::IniParser;
+using flatlas::infrastructure::IniSection;
 
 void configureContainsCompleter(QComboBox *combo)
 {
@@ -37,6 +57,308 @@ void configureContainsCompleter(QComboBox *combo)
     completer->setCaseSensitivity(Qt::CaseInsensitive);
     completer->setFilterMode(Qt::MatchContains);
     combo->setCompleter(completer);
+}
+
+QString primaryGamePath()
+{
+    return flatlas::core::EditingContext::instance().primaryGamePath();
+}
+
+QString dataDirFor(const QString &gamePath)
+{
+    if (gamePath.isEmpty())
+        return {};
+    return flatlas::core::PathUtils::ciResolvePath(gamePath, QStringLiteral("DATA"));
+}
+
+QString exeDirFor(const QString &gamePath)
+{
+    if (gamePath.isEmpty())
+        return {};
+    return flatlas::core::PathUtils::ciResolvePath(gamePath, QStringLiteral("EXE"));
+}
+
+QString normalizedKey(const QString &value)
+{
+    return value.trimmed().toLower();
+}
+
+QString equipmentNicknameFromLoadoutValue(const QString &rawValue)
+{
+    return rawValue.split(QLatin1Char(','), Qt::KeepEmptyParts).value(0).trimmed();
+}
+
+struct SharedCreationCatalog {
+    QHash<QString, QString> archetypeModelPaths;
+    QHash<QString, QStringList> loadoutContents;
+    QStringList pilotNicknames;
+};
+
+const SharedCreationCatalog &sharedCreationCatalog()
+{
+    static QString cachedGameKey;
+    static SharedCreationCatalog catalog;
+
+    const QString gamePath = primaryGamePath();
+    const QString gameKey = normalizedKey(gamePath);
+    if (gameKey == cachedGameKey)
+        return catalog;
+
+    cachedGameKey = gameKey;
+    catalog = {};
+
+    const QString dataDir = dataDirFor(gamePath);
+    const QString exeDir = exeDirFor(gamePath);
+    if (dataDir.isEmpty())
+        return catalog;
+
+    IdsStringTable ids;
+    if (!exeDir.isEmpty())
+        ids.loadFromFreelancerDir(exeDir);
+
+    QHash<QString, QString> resolvedNames;
+    const QStringList nameScanRoots = {
+        flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("EQUIPMENT")),
+        flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("SHIPS")),
+        flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("SOLAR")),
+    };
+
+    for (const QString &root : nameScanRoots) {
+        if (root.isEmpty())
+            continue;
+        QDirIterator it(root, QStringList{QStringLiteral("*.ini")}, QDir::Files, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            const QString filePath = it.next();
+            const IniDocument doc = IniParser::parseFile(filePath);
+            for (const IniSection &section : doc) {
+                const QString nickname = section.value(QStringLiteral("nickname")).trimmed();
+                if (nickname.isEmpty())
+                    continue;
+                const QString key = normalizedKey(nickname);
+                if (resolvedNames.contains(key))
+                    continue;
+
+                bool ok = false;
+                const int idsName = section.value(QStringLiteral("ids_name")).trimmed().toInt(&ok);
+                if (!ok || idsName <= 0)
+                    continue;
+                const QString ingameName = ids.getString(idsName).trimmed();
+                if (!ingameName.isEmpty())
+                    resolvedNames.insert(key, ingameName);
+            }
+        }
+    }
+
+    const QString solarArchPath =
+        flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("SOLAR/solararch.ini"));
+    if (!solarArchPath.isEmpty()) {
+        const IniDocument doc = IniParser::parseFile(solarArchPath);
+        for (const IniSection &section : doc) {
+            const QString nickname = section.value(QStringLiteral("nickname")).trimmed();
+            const QString relativeModelPath = section.value(QStringLiteral("DA_archetype")).trimmed();
+            if (nickname.isEmpty() || relativeModelPath.isEmpty())
+                continue;
+            const QString absoluteModelPath = flatlas::core::PathUtils::ciResolvePath(dataDir, relativeModelPath);
+            if (!absoluteModelPath.isEmpty())
+                catalog.archetypeModelPaths.insert(normalizedKey(nickname), absoluteModelPath);
+        }
+    }
+
+    const QStringList loadoutSources = {
+        QStringLiteral("SHIPS/loadouts.ini"),
+        QStringLiteral("SHIPS/loadouts_special.ini"),
+        QStringLiteral("SOLAR/loadouts.ini"),
+    };
+    for (const QString &relativePath : loadoutSources) {
+        const QString absolutePath = flatlas::core::PathUtils::ciResolvePath(dataDir, relativePath);
+        if (absolutePath.isEmpty())
+            continue;
+
+        const IniDocument doc = IniParser::parseFile(absolutePath);
+        for (const IniSection &section : doc) {
+            if (section.name.compare(QStringLiteral("Loadout"), Qt::CaseInsensitive) != 0)
+                continue;
+            const QString nickname = section.value(QStringLiteral("nickname")).trimmed();
+            if (nickname.isEmpty())
+                continue;
+
+            QStringList displayEntries;
+            for (const auto &entry : section.entries) {
+                const QString entryKey = entry.first.trimmed();
+                if (entryKey.compare(QStringLiteral("equip"), Qt::CaseInsensitive) != 0
+                    && entryKey.compare(QStringLiteral("cargo"), Qt::CaseInsensitive) != 0
+                    && entryKey.compare(QStringLiteral("addon"), Qt::CaseInsensitive) != 0) {
+                    continue;
+                }
+
+                const QString itemNickname = equipmentNicknameFromLoadoutValue(entry.second);
+                if (itemNickname.isEmpty())
+                    continue;
+
+                const QString ingameName = resolvedNames.value(normalizedKey(itemNickname));
+                displayEntries.append(QStringLiteral("%1 - %2")
+                                          .arg(itemNickname,
+                                               ingameName.isEmpty()
+                                                   ? QObject::tr("(kein Ingame-Name)")
+                                                   : ingameName));
+            }
+            catalog.loadoutContents.insert(normalizedKey(nickname), displayEntries);
+        }
+    }
+
+    QStringList pilots;
+    const QString missionsDir = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("MISSIONS"));
+    const QStringList pilotSources = {
+        flatlas::core::PathUtils::ciResolvePath(missionsDir, QStringLiteral("pilots_population.ini")),
+        flatlas::core::PathUtils::ciResolvePath(missionsDir, QStringLiteral("pilots_story.ini")),
+    };
+    for (const QString &pilotSource : pilotSources) {
+        if (pilotSource.isEmpty())
+            continue;
+        const IniDocument doc = IniParser::parseFile(pilotSource);
+        for (const IniSection &section : doc) {
+            if (section.name.compare(QStringLiteral("Pilot"), Qt::CaseInsensitive) != 0)
+                continue;
+            const QString nickname = section.value(QStringLiteral("nickname")).trimmed();
+            if (!nickname.isEmpty())
+                pilots.append(nickname);
+        }
+    }
+    pilots.removeDuplicates();
+    std::sort(pilots.begin(), pilots.end(), [](const QString &lhs, const QString &rhs) {
+        return lhs.compare(rhs, Qt::CaseInsensitive) < 0;
+    });
+    catalog.pilotNicknames = pilots;
+
+    return catalog;
+}
+
+QWidget *createPreviewFrame(flatlas::rendering::ModelViewport3D **outPreview,
+                            QLabel **outFallback,
+                            QStackedLayout **outStack,
+                            QWidget *parent)
+{
+    auto *previewFrame = new QFrame(parent);
+    previewFrame->setFrameShape(QFrame::StyledPanel);
+    previewFrame->setMinimumWidth(340);
+
+    auto *previewLayout = new QVBoxLayout(previewFrame);
+    previewLayout->setContentsMargins(8, 8, 8, 8);
+    previewLayout->setSpacing(6);
+
+    auto *previewTitle = new QLabel(QObject::tr("3D-Vorschau"), previewFrame);
+    previewTitle->setStyleSheet(QStringLiteral("font-weight:600;"));
+    previewLayout->addWidget(previewTitle);
+
+    auto *previewHost = new QWidget(previewFrame);
+    auto *stack = new QStackedLayout(previewHost);
+    stack->setContentsMargins(0, 0, 0, 0);
+
+    auto *preview = new flatlas::rendering::ModelViewport3D(previewHost);
+    stack->addWidget(preview);
+
+    auto *fallback = new QLabel(QObject::tr("Waehle einen Archetype um die Vorschau zu laden."), previewHost);
+    fallback->setAlignment(Qt::AlignCenter);
+    fallback->setWordWrap(true);
+    fallback->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    stack->addWidget(fallback);
+    stack->setCurrentWidget(fallback);
+
+    previewLayout->addWidget(previewHost, 1);
+
+    if (outPreview)
+        *outPreview = preview;
+    if (outFallback)
+        *outFallback = fallback;
+    if (outStack)
+        *outStack = stack;
+    return previewFrame;
+}
+
+void refreshArchetypePreview(QComboBox *archetypeCombo,
+                             const QHash<QString, QString> &archetypeModelPaths,
+                             flatlas::rendering::ModelViewport3D *preview,
+                             QLabel *fallback,
+                             QStackedLayout *stack)
+{
+    if (!archetypeCombo || !preview || !fallback || !stack)
+        return;
+
+    const QString archetype = archetypeCombo->currentText().trimmed();
+    auto showFallback = [&](const QString &message) {
+        fallback->setText(message);
+        stack->setCurrentWidget(fallback);
+        preview->clearModel();
+    };
+
+    if (archetype.isEmpty()) {
+        showFallback(QObject::tr("Waehle einen Archetype um die Vorschau zu laden."));
+        return;
+    }
+
+    const QString modelPath = archetypeModelPaths.value(normalizedKey(archetype));
+    if (modelPath.isEmpty() || !QFileInfo::exists(modelPath)) {
+        showFallback(QObject::tr("Kein 3D-Modell fuer %1 vorhanden.").arg(archetype));
+        return;
+    }
+
+    QString errorMessage;
+    if (!preview->loadModelFile(modelPath, &errorMessage)) {
+        showFallback(QObject::tr("Modell konnte nicht geladen werden: %1")
+                         .arg(errorMessage.isEmpty() ? QObject::tr("unbekannter Fehler") : errorMessage));
+        return;
+    }
+
+    stack->setCurrentWidget(preview);
+}
+
+void updateLoadoutContentsUi(QComboBox *loadoutCombo,
+                             const QHash<QString, QStringList> &loadoutContents,
+                             QListWidget *listWidget,
+                             QLabel *statusLabel)
+{
+    if (!loadoutCombo || !listWidget || !statusLabel)
+        return;
+
+    listWidget->clear();
+    const QString loadout = loadoutCombo->currentText().trimmed();
+    if (loadout.isEmpty()) {
+        statusLabel->setText(QObject::tr("Kein Loadout ausgewaehlt."));
+        return;
+    }
+
+    const QStringList entries = loadoutContents.value(normalizedKey(loadout));
+    if (entries.isEmpty()) {
+        statusLabel->setText(QObject::tr("Keine aufloesbaren Loadout-Inhalte gefunden."));
+        return;
+    }
+
+    listWidget->addItems(entries);
+    statusLabel->setText(QObject::tr("%1 Eintraege im Loadout.").arg(entries.size()));
+}
+
+QStringList fixedVisitOptions()
+{
+    return {
+        QStringLiteral("32 - Standard nebula (vanilla-typisch)"),
+        QStringLiteral("36 - Vanilla-Variante (zusaetzliches Flag, genaue Bedeutung unklar)"),
+        QStringLiteral("0 - Keine speziellen Visit-Flags"),
+        QStringLiteral("128 - Versteckt / nicht auf Karte zeigen"),
+    };
+}
+
+void populateFixedVisitCombo(QComboBox *combo)
+{
+    if (!combo)
+        return;
+    combo->clear();
+    const QStringList options = fixedVisitOptions();
+    for (const QString &option : options)
+        combo->addItem(option);
+    configureContainsCompleter(combo);
+    const int fixedIndex = combo->findText(QStringLiteral("0 - Keine speziellen Visit-Flags"), Qt::MatchFixedString);
+    combo->setCurrentIndex(fixedIndex >= 0 ? fixedIndex : 0);
+    combo->setEnabled(false);
 }
 
 QDialogButtonBox *createDialogButtons(QDialog *dialog)
@@ -471,33 +793,87 @@ CreateSurpriseDialog::CreateSurpriseDialog(const QString &suggestedNickname,
     : QDialog(parent)
 {
     setWindowTitle(tr("Surprise erstellen"));
-    setMinimumWidth(520);
+    setMinimumSize(1020, 660);
 
-    auto *layout = new QFormLayout(this);
-    m_nicknameEdit = new QLineEdit(suggestedNickname, this);
-    layout->addRow(tr("Nickname:"), m_nicknameEdit);
+    const SharedCreationCatalog &catalog = sharedCreationCatalog();
+    m_archetypeModelPaths = catalog.archetypeModelPaths;
+    m_loadoutContents = catalog.loadoutContents;
 
-    m_ingameNameEdit = new QLineEdit(this);
+    auto *root = new QHBoxLayout(this);
+
+    auto *formHost = new QWidget(this);
+    auto *formLayout = new QFormLayout(formHost);
+    formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+
+    m_nicknameEdit = new QLineEdit(suggestedNickname, formHost);
+    formLayout->addRow(tr("Nickname:"), m_nicknameEdit);
+
+    m_ingameNameEdit = new QLineEdit(formHost);
     m_ingameNameEdit->setPlaceholderText(tr("Ingame Name (optional)"));
-    layout->addRow(tr("Ingame Name:"), m_ingameNameEdit);
+    formLayout->addRow(tr("Ingame Name:"), m_ingameNameEdit);
 
-    m_archetypeCombo = createEditableCombo(archetypes, this);
+    m_infoCardEdit = new QTextEdit(formHost);
+    m_infoCardEdit->setMinimumHeight(120);
+    m_infoCardEdit->setLineWrapMode(QTextEdit::WidgetWidth);
+    m_infoCardEdit->setPlaceholderText(tr("Info text / Infocard text (optional)"));
+    formLayout->addRow(tr("ids_info Text:"), m_infoCardEdit);
+
+    m_archetypeCombo = createEditableCombo(archetypes, formHost);
     if (m_archetypeCombo->count() > 0)
         m_archetypeCombo->setCurrentIndex(0);
-    layout->addRow(tr("Archetype:"), m_archetypeCombo);
+    formLayout->addRow(tr("Archetype:"), m_archetypeCombo);
 
     QStringList loadoutValues = loadouts;
     loadoutValues.prepend(QString());
     loadoutValues.removeDuplicates();
-    m_loadoutCombo = createEditableCombo(loadoutValues, this);
+    m_loadoutCombo = createEditableCombo(loadoutValues, formHost);
     m_loadoutCombo->setCurrentIndex(0);
-    layout->addRow(tr("Loadout:"), m_loadoutCombo);
+    formLayout->addRow(tr("Loadout:"), m_loadoutCombo);
 
-    m_commentEdit = new QLineEdit(this);
+    m_loadoutContentsStatus = new QLabel(tr("Kein Loadout ausgewaehlt."), formHost);
+    m_loadoutContentsStatus->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    m_loadoutContentsStatus->setWordWrap(true);
+    formLayout->addRow(QString(), m_loadoutContentsStatus);
+
+    m_loadoutContentsList = new QListWidget(formHost);
+    m_loadoutContentsList->setMinimumHeight(170);
+    formLayout->addRow(tr("Loadout-Inhalt:"), m_loadoutContentsList);
+
+    m_visitCombo = new QComboBox(formHost);
+    m_visitCombo->setEditable(true);
+    m_visitCombo->setInsertPolicy(QComboBox::NoInsert);
+    populateFixedVisitCombo(m_visitCombo);
+    formLayout->addRow(tr("Visit:"), m_visitCombo);
+
+    m_visitHintLabel = new QLabel(tr("Dieser Create-Flow schreibt immer visit = 0."), formHost);
+    m_visitHintLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    m_visitHintLabel->setWordWrap(true);
+    formLayout->addRow(QString(), m_visitHintLabel);
+
+    m_commentEdit = new QLineEdit(formHost);
     m_commentEdit->setPlaceholderText(tr("optional"));
-    layout->addRow(tr("Kommentar:"), m_commentEdit);
+    formLayout->addRow(tr("Kommentar:"), m_commentEdit);
 
-    layout->addRow(createDialogButtons(this));
+    auto *buttons = createDialogButtons(this);
+
+    auto *leftLayout = new QVBoxLayout();
+    leftLayout->addWidget(formHost);
+    leftLayout->addStretch(1);
+    leftLayout->addWidget(buttons);
+
+    root->addLayout(leftLayout, 3);
+    root->addWidget(createPreviewFrame(&m_preview, &m_previewFallback, &m_previewStack, this), 4);
+
+    m_previewRefreshTimer = new QTimer(this);
+    m_previewRefreshTimer->setSingleShot(true);
+    m_previewRefreshTimer->setInterval(180);
+    connect(m_previewRefreshTimer, &QTimer::timeout, this, &CreateSurpriseDialog::refreshPreview);
+
+    connect(m_archetypeCombo, &QComboBox::currentTextChanged, this, &CreateSurpriseDialog::schedulePreviewRefresh);
+    connect(m_loadoutCombo, &QComboBox::currentTextChanged, this, &CreateSurpriseDialog::updateLoadoutContents);
+
+    updateLoadoutContents();
+    refreshPreview();
 }
 
 CreateSurpriseRequest CreateSurpriseDialog::result() const
@@ -505,10 +881,32 @@ CreateSurpriseRequest CreateSurpriseDialog::result() const
     CreateSurpriseRequest value;
     value.nickname = m_nicknameEdit->text().trimmed();
     value.ingameName = m_ingameNameEdit->text().trimmed();
+    value.infoCardText = m_infoCardEdit->toPlainText().trimmed();
     value.archetype = m_archetypeCombo->currentText().trimmed();
     value.loadout = m_loadoutCombo->currentText().trimmed();
     value.comment = m_commentEdit->text().trimmed();
+    value.visit = 0;
     return value;
+}
+
+void CreateSurpriseDialog::schedulePreviewRefresh()
+{
+    if (!m_previewRefreshTimer) {
+        refreshPreview();
+        return;
+    }
+    ++m_previewRefreshGeneration;
+    m_previewRefreshTimer->start();
+}
+
+void CreateSurpriseDialog::refreshPreview()
+{
+    refreshArchetypePreview(m_archetypeCombo, m_archetypeModelPaths, m_preview, m_previewFallback, m_previewStack);
+}
+
+void CreateSurpriseDialog::updateLoadoutContents()
+{
+    updateLoadoutContentsUi(m_loadoutCombo, m_loadoutContents, m_loadoutContentsList, m_loadoutContentsStatus);
 }
 
 CreateWeaponPlatformDialog::CreateWeaponPlatformDialog(const QString &suggestedNickname,
@@ -519,59 +917,115 @@ CreateWeaponPlatformDialog::CreateWeaponPlatformDialog(const QString &suggestedN
     : QDialog(parent)
 {
     setWindowTitle(tr("Waffenplattform erstellen"));
-    setMinimumWidth(560);
+    setMinimumSize(1060, 720);
 
-    auto *layout = new QFormLayout(this);
-    m_nicknameEdit = new QLineEdit(suggestedNickname, this);
-    layout->addRow(tr("Nickname:"), m_nicknameEdit);
+    const SharedCreationCatalog &catalog = sharedCreationCatalog();
+    m_archetypeModelPaths = catalog.archetypeModelPaths;
+    m_loadoutContents = catalog.loadoutContents;
 
-    m_ingameNameEdit = new QLineEdit(this);
+    auto *root = new QHBoxLayout(this);
+
+    auto *formHost = new QWidget(this);
+    auto *formLayout = new QFormLayout(formHost);
+    formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+
+    m_nicknameEdit = new QLineEdit(suggestedNickname, formHost);
+    formLayout->addRow(tr("Nickname:"), m_nicknameEdit);
+
+    m_ingameNameEdit = new QLineEdit(formHost);
     m_ingameNameEdit->setPlaceholderText(tr("Ingame Name (optional)"));
-    layout->addRow(tr("Ingame Name:"), m_ingameNameEdit);
+    formLayout->addRow(tr("Ingame Name:"), m_ingameNameEdit);
 
-    m_archetypeCombo = createEditableCombo(archetypes, this);
+    m_archetypeCombo = createEditableCombo(archetypes, formHost);
     if (m_archetypeCombo->count() > 0)
         m_archetypeCombo->setCurrentIndex(0);
-    layout->addRow(tr("Archetype:"), m_archetypeCombo);
+    formLayout->addRow(tr("Archetype:"), m_archetypeCombo);
 
     QStringList loadoutValues = loadouts;
     if (!loadoutValues.contains(QString(), Qt::CaseSensitive))
         loadoutValues.prepend(QString());
     loadoutValues.removeDuplicates();
-    m_loadoutCombo = createEditableCombo(loadoutValues, this);
-    layout->addRow(tr("Loadout:"), m_loadoutCombo);
+    m_loadoutCombo = createEditableCombo(loadoutValues, formHost);
+    formLayout->addRow(tr("Loadout:"), m_loadoutCombo);
 
-    m_factionCombo = createEditableCombo(factions, this);
-    layout->addRow(tr("Reputation:"), m_factionCombo);
+    m_loadoutContentsStatus = new QLabel(tr("Kein Loadout ausgewaehlt."), formHost);
+    m_loadoutContentsStatus->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    m_loadoutContentsStatus->setWordWrap(true);
+    formLayout->addRow(QString(), m_loadoutContentsStatus);
 
-    m_behaviorEdit = new QLineEdit(QStringLiteral("NOTHING"), this);
-    layout->addRow(tr("Behavior:"), m_behaviorEdit);
+    m_loadoutContentsList = new QListWidget(formHost);
+    m_loadoutContentsList->setMinimumHeight(190);
+    formLayout->addRow(tr("Loadout-Inhalt:"), m_loadoutContentsList);
 
-    m_pilotEdit = new QLineEdit(QStringLiteral("pilot_solar_hard"), this);
-    layout->addRow(tr("Pilot:"), m_pilotEdit);
+    m_factionCombo = createEditableCombo(factions, formHost);
+    formLayout->addRow(tr("Reputation:"), m_factionCombo);
 
-    m_difficultySpin = new QSpinBox(this);
+    m_behaviorEdit = new QLineEdit(QStringLiteral("NOTHING"), formHost);
+    formLayout->addRow(tr("Behavior:"), m_behaviorEdit);
+
+    m_pilotCombo = new QComboBox(formHost);
+    m_pilotCombo->setInsertPolicy(QComboBox::NoInsert);
+    m_pilotCombo->addItems(catalog.pilotNicknames);
+    const int defaultPilotIndex = m_pilotCombo->findText(QStringLiteral("pilot_solar_hard"), Qt::MatchFixedString);
+    m_pilotCombo->setCurrentIndex(defaultPilotIndex >= 0 ? defaultPilotIndex : 0);
+    formLayout->addRow(tr("Pilot:"), m_pilotCombo);
+
+    m_difficultySpin = new QSpinBox(formHost);
     m_difficultySpin->setRange(0, 100);
     m_difficultySpin->setValue(6);
-    layout->addRow(tr("difficulty_level:"), m_difficultySpin);
+    formLayout->addRow(tr("difficulty_level:"), m_difficultySpin);
 
-    m_visitCheck = new QCheckBox(tr("visit setzen"), this);
-    layout->addRow(QString(), m_visitCheck);
+    m_visitCombo = new QComboBox(formHost);
+    m_visitCombo->setEditable(true);
+    m_visitCombo->setInsertPolicy(QComboBox::NoInsert);
+    populateFixedVisitCombo(m_visitCombo);
+    formLayout->addRow(tr("Visit:"), m_visitCombo);
 
-    m_visitSpin = new QSpinBox(this);
-    m_visitSpin->setRange(0, 1000000);
-    m_visitSpin->setValue(0);
-    m_visitSpin->setEnabled(false);
-    layout->addRow(tr("Visit:"), m_visitSpin);
+    m_visitHintLabel = new QLabel(tr("Die Anzeige erklaert Visit-Flags, gespeichert wird hier immer visit = 0."), formHost);
+    m_visitHintLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    m_visitHintLabel->setWordWrap(true);
+    formLayout->addRow(QString(), m_visitHintLabel);
 
-    connect(m_visitCheck, &QCheckBox::toggled, this, &CreateWeaponPlatformDialog::updateVisitEnabledState);
-    layout->addRow(createDialogButtons(this));
+    auto *buttons = createDialogButtons(this);
+
+    auto *leftLayout = new QVBoxLayout();
+    leftLayout->addWidget(formHost);
+    leftLayout->addStretch(1);
+    leftLayout->addWidget(buttons);
+
+    root->addLayout(leftLayout, 3);
+    root->addWidget(createPreviewFrame(&m_preview, &m_previewFallback, &m_previewStack, this), 4);
+
+    m_previewRefreshTimer = new QTimer(this);
+    m_previewRefreshTimer->setSingleShot(true);
+    m_previewRefreshTimer->setInterval(180);
+    connect(m_previewRefreshTimer, &QTimer::timeout, this, &CreateWeaponPlatformDialog::refreshPreview);
+
+    connect(m_archetypeCombo, &QComboBox::currentTextChanged, this, &CreateWeaponPlatformDialog::schedulePreviewRefresh);
+    connect(m_loadoutCombo, &QComboBox::currentTextChanged, this, &CreateWeaponPlatformDialog::updateLoadoutContents);
+
+    updateLoadoutContents();
+    refreshPreview();
 }
 
-void CreateWeaponPlatformDialog::updateVisitEnabledState()
+void CreateWeaponPlatformDialog::schedulePreviewRefresh()
 {
-    if (m_visitSpin)
-        m_visitSpin->setEnabled(m_visitCheck && m_visitCheck->isChecked());
+    if (!m_previewRefreshTimer) {
+        refreshPreview();
+        return;
+    }
+    ++m_previewRefreshGeneration;
+    m_previewRefreshTimer->start();
+}
+
+void CreateWeaponPlatformDialog::refreshPreview()
+{
+    refreshArchetypePreview(m_archetypeCombo, m_archetypeModelPaths, m_preview, m_previewFallback, m_previewStack);
+}
+
+void CreateWeaponPlatformDialog::updateLoadoutContents()
+{
+    updateLoadoutContentsUi(m_loadoutCombo, m_loadoutContents, m_loadoutContentsList, m_loadoutContentsStatus);
 }
 
 CreateWeaponPlatformRequest CreateWeaponPlatformDialog::result() const
@@ -583,10 +1037,9 @@ CreateWeaponPlatformRequest CreateWeaponPlatformDialog::result() const
     value.loadout = m_loadoutCombo->currentText().trimmed();
     value.reputation = m_factionCombo->currentText().trimmed();
     value.behavior = m_behaviorEdit->text().trimmed();
-    value.pilot = m_pilotEdit->text().trimmed();
+    value.pilot = m_pilotCombo ? m_pilotCombo->currentText().trimmed() : QString();
     value.difficultyLevel = m_difficultySpin->value();
-    value.hasVisit = m_visitCheck->isChecked();
-    value.visit = m_visitSpin->value();
+    value.visit = 0;
     return value;
 }
 

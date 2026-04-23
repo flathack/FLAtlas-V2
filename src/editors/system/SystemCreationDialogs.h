@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QDialog>
+#include <QHash>
 #include <QString>
 #include <QStringList>
 
@@ -8,10 +9,16 @@ class QCheckBox;
 class QComboBox;
 class QDialogButtonBox;
 class QDoubleSpinBox;
+class QLabel;
 class QLineEdit;
+class QListWidget;
 class QPushButton;
 class QSpinBox;
+class QStackedLayout;
 class QTextEdit;
+class QTimer;
+
+namespace flatlas::rendering { class ModelViewport3D; }
 
 namespace flatlas::editors {
 
@@ -68,9 +75,11 @@ struct CreateSunRequest {
 struct CreateSurpriseRequest {
     QString nickname;
     QString ingameName;
+    QString infoCardText;
     QString archetype;
     QString loadout;
     QString comment;
+    int visit = 0;
 };
 
 struct CreateWeaponPlatformRequest {
@@ -82,7 +91,6 @@ struct CreateWeaponPlatformRequest {
     QString behavior = QStringLiteral("NOTHING");
     QString pilot = QStringLiteral("pilot_solar_hard");
     int difficultyLevel = 6;
-    bool hasVisit = false;
     int visit = 0;
 };
 
@@ -200,11 +208,27 @@ public:
     CreateSurpriseRequest result() const;
 
 private:
+    void schedulePreviewRefresh();
+    void refreshPreview();
+    void updateLoadoutContents();
+
     QLineEdit *m_nicknameEdit = nullptr;
     QLineEdit *m_ingameNameEdit = nullptr;
+    QTextEdit *m_infoCardEdit = nullptr;
     QComboBox *m_archetypeCombo = nullptr;
     QComboBox *m_loadoutCombo = nullptr;
     QLineEdit *m_commentEdit = nullptr;
+    QListWidget *m_loadoutContentsList = nullptr;
+    QLabel *m_loadoutContentsStatus = nullptr;
+    QComboBox *m_visitCombo = nullptr;
+    QLabel *m_visitHintLabel = nullptr;
+    flatlas::rendering::ModelViewport3D *m_preview = nullptr;
+    QLabel *m_previewFallback = nullptr;
+    QStackedLayout *m_previewStack = nullptr;
+    QTimer *m_previewRefreshTimer = nullptr;
+    int m_previewRefreshGeneration = 0;
+    QHash<QString, QString> m_archetypeModelPaths;
+    QHash<QString, QStringList> m_loadoutContents;
 };
 
 class CreateWeaponPlatformDialog : public QDialog {
@@ -219,7 +243,9 @@ public:
     CreateWeaponPlatformRequest result() const;
 
 private slots:
-    void updateVisitEnabledState();
+    void schedulePreviewRefresh();
+    void refreshPreview();
+    void updateLoadoutContents();
 
 private:
     QLineEdit *m_nicknameEdit = nullptr;
@@ -227,11 +253,20 @@ private:
     QComboBox *m_archetypeCombo = nullptr;
     QComboBox *m_loadoutCombo = nullptr;
     QComboBox *m_factionCombo = nullptr;
+    QComboBox *m_pilotCombo = nullptr;
     QLineEdit *m_behaviorEdit = nullptr;
-    QLineEdit *m_pilotEdit = nullptr;
     QSpinBox *m_difficultySpin = nullptr;
-    QCheckBox *m_visitCheck = nullptr;
-    QSpinBox *m_visitSpin = nullptr;
+    QListWidget *m_loadoutContentsList = nullptr;
+    QLabel *m_loadoutContentsStatus = nullptr;
+    QComboBox *m_visitCombo = nullptr;
+    QLabel *m_visitHintLabel = nullptr;
+    flatlas::rendering::ModelViewport3D *m_preview = nullptr;
+    QLabel *m_previewFallback = nullptr;
+    QStackedLayout *m_previewStack = nullptr;
+    QTimer *m_previewRefreshTimer = nullptr;
+    int m_previewRefreshGeneration = 0;
+    QHash<QString, QString> m_archetypeModelPaths;
+    QHash<QString, QStringList> m_loadoutContents;
 };
 
 } // namespace flatlas::editors

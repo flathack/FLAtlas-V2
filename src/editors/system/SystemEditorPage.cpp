@@ -21,6 +21,7 @@
 #include "domain/SolarObject.h"
 #include "domain/ZoneItem.h"
 #include "infrastructure/parser/IniParser.h"
+#include "infrastructure/parser/XmlInfocard.h"
 #include "infrastructure/freelancer/IdsDataService.h"
 #include "infrastructure/freelancer/IdsStringTable.h"
 #include "rendering/preview/ModelCache.h"
@@ -128,6 +129,7 @@ QStringList loadLoadoutsMatching(const QString &gameRoot, const QStringList &key
     const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
     const QStringList sources = {
         QStringLiteral("SHIPS/loadouts.ini"),
+        QStringLiteral("SHIPS/loadouts_special.ini"),
         QStringLiteral("SOLAR/loadouts.ini"),
     };
     QSet<QString> seen;
@@ -156,6 +158,50 @@ QStringList loadLoadoutsMatching(const QString &gameRoot, const QStringList &key
             values.append(nickname);
         }
     }
+    std::sort(values.begin(), values.end(), [](const QString &a, const QString &b) {
+        return a.compare(b, Qt::CaseInsensitive) < 0;
+    });
+    return values;
+}
+
+QStringList loadLoadoutsWithPrefix(const QString &gameRoot, const QString &prefix)
+{
+    QStringList values;
+    const QString normalizedPrefix = prefix.trimmed();
+    if (normalizedPrefix.isEmpty())
+        return values;
+
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
+    const QStringList sources = {
+        QStringLiteral("SHIPS/loadouts.ini"),
+        QStringLiteral("SHIPS/loadouts_special.ini"),
+        QStringLiteral("SOLAR/loadouts.ini"),
+    };
+    QSet<QString> seen;
+    for (const QString &relativePath : sources) {
+        const QString path = flatlas::core::PathUtils::ciResolvePath(dataDir, relativePath);
+        if (path.isEmpty())
+            continue;
+
+        const IniDocument doc = IniParser::parseFile(path);
+        for (const IniSection &section : doc) {
+            if (section.name.compare(QStringLiteral("Loadout"), Qt::CaseInsensitive) != 0)
+                continue;
+
+            const QString nickname = section.value(QStringLiteral("nickname")).trimmed();
+            if (nickname.isEmpty()
+                || !nickname.startsWith(normalizedPrefix, Qt::CaseInsensitive)) {
+                continue;
+            }
+
+            const QString key = nickname.toLower();
+            if (seen.contains(key))
+                continue;
+            seen.insert(key);
+            values.append(nickname);
+        }
+    }
+
     std::sort(values.begin(), values.end(), [](const QString &a, const QString &b) {
         return a.compare(b, Qt::CaseInsensitive) < 0;
     });
@@ -3183,7 +3229,7 @@ void SystemEditorPage::onCreateSurprise()
                                 loadSolarArchetypesMatching(gameRoot, {QStringLiteral("wreck"),
                                                                        QStringLiteral("surprise"),
                                                                        QStringLiteral("suprise")}),
-                                loadLoadoutsMatching(gameRoot, {}),
+                                loadLoadoutsWithPrefix(gameRoot, QStringLiteral("SECRET")),
                                 this);
     if (dialog.exec() != QDialog::Accepted)
         return;
@@ -3203,6 +3249,7 @@ void SystemEditorPage::onCreateSurprise()
 
         const QPointF worldXZ = MapScene::qtToFl(scenePos.x(), scenePos.y());
         int assignedIdsName = 0;
+        int assignedIdsInfo = 0;
         if (!request.ingameName.isEmpty()) {
             const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
             const auto dataset = flatlas::infrastructure::IdsDataService::loadFromGameRoot(gameRoot);
@@ -3220,6 +3267,25 @@ void SystemEditorPage::onCreateSurprise()
                 return;
             }
         }
+        if (!request.infoCardText.isEmpty()) {
+            const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+            const auto dataset = flatlas::infrastructure::IdsDataService::loadFromGameRoot(gameRoot);
+            const QString targetDll =
+                flatlas::infrastructure::IdsDataService::defaultCreationDllName(dataset);
+            const QString infocardXml =
+                flatlas::infrastructure::XmlInfocard::wrapAsInfocard(request.infoCardText);
+            QString idsError;
+            int newGlobalId = 0;
+            if (flatlas::infrastructure::IdsDataService::writeInfocardEntry(
+                    dataset, targetDll, 0, infocardXml, &newGlobalId, &idsError)) {
+                assignedIdsInfo = newGlobalId;
+            } else {
+                QMessageBox::warning(this, tr("Surprise erstellen"),
+                                     tr("Der ids_info-Text konnte nicht in die IDS-Daten geschrieben werden.\n%1")
+                                         .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
+                return;
+            }
+        }
 
         auto obj = std::make_shared<SolarObject>();
         obj->setNickname(request.nickname);
@@ -3231,6 +3297,8 @@ void SystemEditorPage::onCreateSurprise()
             obj->setLoadout(request.loadout);
         if (assignedIdsName > 0)
             obj->setIdsName(assignedIdsName);
+        if (assignedIdsInfo > 0)
+            obj->setIdsInfo(assignedIdsInfo);
         obj->setComment(request.comment);
 
         QVector<QPair<QString, QString>> entries{
@@ -3241,8 +3309,11 @@ void SystemEditorPage::onCreateSurprise()
         };
         if (assignedIdsName > 0)
             entries.append({QStringLiteral("ids_name"), QString::number(assignedIdsName)});
+        if (assignedIdsInfo > 0)
+            entries.append({QStringLiteral("ids_info"), QString::number(assignedIdsInfo)});
         if (!request.loadout.isEmpty())
             entries.append({QStringLiteral("loadout"), request.loadout});
+        entries.append({QStringLiteral("visit"), QStringLiteral("0")});
         if (!request.comment.isEmpty())
             entries.append({QStringLiteral("comment"), request.comment});
         obj->setRawEntries(entries);
@@ -3394,8 +3465,7 @@ void SystemEditorPage::onCreateWeaponPlatform()
             entries.append({QStringLiteral("loadout"), request.loadout});
         if (!request.pilot.isEmpty())
             entries.append({QStringLiteral("pilot"), request.pilot});
-        if (request.hasVisit)
-            entries.append({QStringLiteral("visit"), QString::number(request.visit)});
+        entries.append({QStringLiteral("visit"), QStringLiteral("0")});
         obj->setRawEntries(entries);
 
         auto *cmd = new AddObjectCommand(m_document.get(), obj, tr("Create Weapon Platform"));
