@@ -11,6 +11,7 @@
 
 namespace flatlas::domain { class SystemDocument; class SolarObject; class ZoneItem; }
 namespace flatlas::rendering { class MapScene; class SystemMapView; class SceneView3D; }
+namespace flatlas::editors { struct CreateFieldZoneResult; }
 class QToolBar;
 class QSplitter;
 class QTreeWidget;
@@ -26,6 +27,7 @@ class QFrame;
 class QScrollArea;
 class QVBoxLayout;
 class QStackedWidget;
+class QGraphicsEllipseItem;
 
 namespace flatlas::editors { class IniCodeEditor; class IniSyntaxHighlighter; }
 
@@ -59,6 +61,11 @@ signals:
     void loadingProgressChanged(int percent, const QString &message);
 
 private:
+    struct PendingGeneratedZoneFile {
+        QString absolutePath;
+        QString content;
+    };
+
     void loadDocumentIntoUi();
     void emitLoadingProgress(int percent, const QString &message);
     flatlas::domain::SolarObject *findObjectByNickname(const QString &nickname) const;
@@ -104,6 +111,7 @@ private:
     void onCreateTradeLane();
     void onCreateBase();
     void onCreateDockingRing();
+    void onCreateAsteroidNebulaZone();
     void refreshObjectList();
     void onCanvasSelectionChanged(const QStringList &nicknames);
     void onTreeSelectionChanged();
@@ -132,6 +140,17 @@ private:
     void rebuildMultiSelectionEditorList();
     QWidget *buildMultiSelectionRow(const QString &nickname, const QString &kindText);
     void removeNicknameFromSelection(const QString &nickname);
+    bool eventFilter(QObject *watched, QEvent *event) override;
+    void beginFieldZonePlacement(const CreateFieldZoneResult &request);
+    void updateFieldZonePlacementPreview(const QPointF &currentScenePos);
+    void finalizeFieldZonePlacement(const QPointF &edgeScenePos);
+    void cancelFieldZonePlacement();
+    void clearFieldZonePlacementPreview();
+    void addLinkedFieldSection(const QString &sectionName,
+                               const QString &zoneNickname,
+                               const QString &relativeFilePath);
+    void removeLinkedFieldSectionsForNicknames(const QStringList &zoneNicknames);
+    bool writePendingGeneratedZoneFiles(QString *errorMessage);
 
     std::unique_ptr<flatlas::domain::SystemDocument> m_document;
     flatlas::rendering::MapScene *m_mapScene = nullptr;
@@ -204,6 +223,11 @@ private:
     QHash<QString, QVector3D> m_liveMoveStartWorld;
     QHash<QString, QVector3D> m_liveMoveCurrentWorld;
     bool m_liveMoveActive = false;
+    QHash<QString, PendingGeneratedZoneFile> m_pendingGeneratedZoneFiles;
+    std::unique_ptr<CreateFieldZoneResult> m_pendingFieldZoneRequest;
+    bool m_pendingFieldZoneHasCenter = false;
+    QPointF m_pendingFieldZoneCenterScenePos;
+    QGraphicsEllipseItem *m_fieldZonePlacementPreview = nullptr;
 };
 
 } // namespace flatlas::editors

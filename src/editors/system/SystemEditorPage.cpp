@@ -5,6 +5,7 @@
 #include "SystemPersistence.h"
 #include "SystemUndoCommands.h"
 #include "CreateObjectDialog.h"
+#include "CreateFieldZoneDialog.h"
 #include "core/Theme.h"
 #include "editors/ini/IniCodeEditor.h"
 #include "editors/ini/IniSyntaxHighlighter.h"
@@ -27,6 +28,7 @@
 #include "core/UndoManager.h"
 
 #include <QDialog>
+#include <QEvent>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -55,6 +57,11 @@
 #include <QDir>
 #include <QSignalBlocker>
 #include <QUrl>
+#include <QGraphicsEllipseItem>
+#include <QMouseEvent>
+#include <QKeyEvent>
+#include <QPen>
+#include <QRegularExpression>
 
 #include <QQuaternion>
 
@@ -137,6 +144,92 @@ QString normalizedPathKey(const QString &value)
     normalized = normalized.toLower();
 #endif
     return normalized;
+}
+
+QString normalizedNameToken(const QString &value)
+{
+    QString token = value.trimmed();
+    token.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9_]+")), QStringLiteral("_"));
+    token.replace(QRegularExpression(QStringLiteral("_+")), QStringLiteral("_"));
+    token.remove(QRegularExpression(QStringLiteral("^_+|_+$")));
+    return token;
+}
+
+QString zoneArtTokenFromNickname(const QString &nickname, const QString &fallbackKind, const QString &systemToken)
+{
+    QString token = normalizedNameToken(nickname).toLower();
+    if (token.startsWith(QStringLiteral("zone_")))
+        token = token.mid(5);
+    const QString systemPrefix = systemToken.toLower() + QLatin1Char('_');
+    if (token.startsWith(systemPrefix))
+        token = token.mid(systemPrefix.size());
+    token.remove(QRegularExpression(QStringLiteral("_\\d+$")));
+    token = normalizedNameToken(token).toLower();
+    if (token.isEmpty())
+        token = normalizedNameToken(fallbackKind).toLower();
+    return token;
+}
+
+QString suggestedGeneratedFieldFileName(const QString &systemFileStem,
+                                        const QString &zoneNickname,
+                                        CreateFieldZoneResult::Type type)
+{
+    const QString systemToken = normalizedNameToken(systemFileStem).toUpper();
+    const QString artToken = zoneArtTokenFromNickname(zoneNickname,
+                                                      type == CreateFieldZoneResult::Type::Asteroid
+                                                          ? QStringLiteral("asteroid")
+                                                          : QStringLiteral("nebula"),
+                                                      normalizedNameToken(systemFileStem));
+    const QRegularExpression suffixPattern(QStringLiteral("_(\\d+)$"));
+    const QRegularExpressionMatch suffixMatch = suffixPattern.match(zoneNickname);
+    const QString numericSuffix = suffixMatch.hasMatch() ? suffixMatch.captured(1) : QStringLiteral("001");
+    return QStringLiteral("%1_%2_%3.ini").arg(systemToken, artToken, numericSuffix);
+}
+
+QString normalizedGeneratedZoneTemplateText(const QString &content, const QString &sourceNote)
+{
+    QString normalized = content;
+    normalized.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    normalized.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+    const QStringList rawLines = normalized.split(QLatin1Char('\n'));
+
+    QStringList cleanedLines;
+    bool blankPending = false;
+    bool skippingExclusionSection = false;
+    for (const QString &rawLine : rawLines) {
+        const QString trimmed = rawLine.trimmed();
+        if (trimmed.compare(QStringLiteral("[Exclusion Zones]"), Qt::CaseInsensitive) == 0) {
+            skippingExclusionSection = true;
+            continue;
+        }
+        if (trimmed.startsWith(QLatin1Char('[')) && trimmed.endsWith(QLatin1Char(']'))
+            && skippingExclusionSection) {
+            skippingExclusionSection = false;
+        }
+        if (skippingExclusionSection)
+            continue;
+        if (rawLine.trimmed().isEmpty()) {
+            if (!cleanedLines.isEmpty())
+                blankPending = true;
+            continue;
+        }
+        if (blankPending && !cleanedLines.isEmpty())
+            cleanedLines.append(QString());
+        blankPending = false;
+        cleanedLines.append(rawLine.trimmed());
+    }
+
+    while (!cleanedLines.isEmpty() && cleanedLines.last().trimmed().isEmpty())
+        cleanedLines.removeLast();
+
+    const QString trimmedSource = sourceNote.trimmed();
+    if (!trimmedSource.isEmpty()) {
+        if (!cleanedLines.isEmpty())
+            cleanedLines.append(QString());
+        cleanedLines.append(trimmedSource);
+    }
+
+    return cleanedLines.join(QLatin1Char('\n')) + QLatin1Char('\n');
 }
 
 const QHash<QString, QString> &solarArchetypeModelPathsForPreview()
@@ -515,6 +608,8 @@ void SystemEditorPage::loadDocumentIntoUi()
     if (!m_document)
         return;
 
+    cancelFieldZonePlacement();
+    m_pendingGeneratedZoneFiles.clear();
     bindDocumentSignals();
     m_selectedNicknames.clear();
     loadDisplayFilterSettings();
@@ -553,9 +648,17 @@ bool SystemEditorPage::save()
 {
     if (!m_document || m_document->filePath().isEmpty())
         return false;
+    QString generatedFileError;
+    if (!writePendingGeneratedZoneFiles(&generatedFileError)) {
+        if (!generatedFileError.isEmpty())
+            QMessageBox::warning(this, tr("Speichern fehlgeschlagen"), generatedFileError);
+        return false;
+    }
     bool ok = SystemPersistence::save(*m_document);
-    if (ok)
+    if (ok) {
         m_document->setDirty(false);
+        m_pendingGeneratedZoneFiles.clear();
+    }
     return ok;
 }
 
@@ -710,9 +813,8 @@ void SystemEditorPage::setupRightSidebar()
     creationLayout->addWidget(m_createObjectButton);
 
     m_createAsteroidNebulaButton = makeSidebarButton(tr("Asteroid / Nebel"), creationGroup);
-    connect(m_createAsteroidNebulaButton, &QPushButton::clicked, this, [this]() {
-        showNotYetPorted(tr("Asteroid / Nebel"), QStringLiteral("FLAtlas/fl_editor/main_window.py::_start_zone_creation"));
-    });
+    connect(m_createAsteroidNebulaButton, &QPushButton::clicked,
+            this, &SystemEditorPage::onCreateAsteroidNebulaZone);
     creationLayout->addWidget(m_createAsteroidNebulaButton);
 
     m_createZoneButton = makeSidebarButton(tr("Zone"), creationGroup);
@@ -1200,6 +1302,16 @@ void SystemEditorPage::onDeleteSelected()
     if (objectsToRemove.isEmpty() && zonesToRemove.isEmpty())
         return;
 
+    if (!zonesToRemove.isEmpty()) {
+        QStringList zoneNicknames;
+        zoneNicknames.reserve(zonesToRemove.size());
+        for (const auto &zone : std::as_const(zonesToRemove)) {
+            if (zone)
+                zoneNicknames.append(zone->nickname());
+        }
+        removeLinkedFieldSectionsForNicknames(zoneNicknames);
+    }
+
     auto *stack = flatlas::core::UndoManager::instance().stack();
     stack->beginMacro(tr("Delete Selection"));
     for (const auto &obj : objectsToRemove)
@@ -1364,6 +1476,7 @@ QString SystemEditorPage::serializeSelectionToIni() const
     for (const auto &zone : m_document->zones()) {
         if (zone->nickname() == nickname) {
             IniDocument doc;
+            QString leadingComment;
             if (m_liveMoveActive && m_liveMoveCurrentWorld.contains(zone->nickname())) {
                 const QVector3D savedPos = zone->position();
                 const QVector3D livePos = m_liveMoveCurrentWorld.value(zone->nickname());
@@ -1371,12 +1484,23 @@ QString SystemEditorPage::serializeSelectionToIni() const
                     QSignalBlocker blocker(zone.get());
                     zone->setPosition(livePos);
                     doc.append(SystemPersistence::serializeZoneSection(*zone));
+                    leadingComment = zone->comment().trimmed();
                     zone->setPosition(savedPos);
                 }
             } else {
                 doc.append(SystemPersistence::serializeZoneSection(*zone));
+                leadingComment = zone->comment().trimmed();
             }
-            return IniParser::serialize(doc).trimmed();
+            QString text = IniParser::serialize(doc).trimmed();
+            if (!leadingComment.isEmpty()) {
+                const QStringList lines =
+                    leadingComment.split(QRegularExpression(QStringLiteral("[\\r\\n]+")), Qt::SkipEmptyParts);
+                QStringList commentLines;
+                for (const QString &line : lines)
+                    commentLines.append(QStringLiteral("; %1").arg(line.trimmed()));
+                text = commentLines.join(QLatin1Char('\n')) + QLatin1Char('\n') + text;
+            }
+            return text;
         }
     }
 
@@ -1775,7 +1899,17 @@ void SystemEditorPage::applyIniEditorChanges()
                 IniDocument beforeDoc;
                 beforeDoc.append(SystemPersistence::serializeZoneSection(*zone));
                 const QString beforeText = IniParser::serialize(beforeDoc).trimmed();
+                const QString previousComment = zone->comment();
+                bool parsedHasCommentEntry = false;
+                for (const auto &entry : section.entries) {
+                    if (entry.first.compare(QStringLiteral("comment"), Qt::CaseInsensitive) == 0) {
+                        parsedHasCommentEntry = true;
+                        break;
+                    }
+                }
                 SystemPersistence::applyZoneSection(*zone, section);
+                if (!parsedHasCommentEntry && !previousComment.trimmed().isEmpty())
+                    zone->setComment(previousComment);
                 IniDocument afterDoc;
                 afterDoc.append(SystemPersistence::serializeZoneSection(*zone));
                 const QString afterText = IniParser::serialize(afterDoc).trimmed();
@@ -2051,6 +2185,43 @@ void SystemEditorPage::onItemsMoving(const QHash<QString, QPointF> &currentScene
     updateIniEditorForSelection();
 }
 
+bool SystemEditorPage::eventFilter(QObject *watched, QEvent *event)
+{
+    if (m_pendingFieldZoneRequest && m_mapView && watched == m_mapView->viewport()) {
+        switch (event->type()) {
+        case QEvent::MouseMove: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            updateFieldZonePlacementPreview(m_mapView->mapToScene(mouseEvent->pos()));
+            return true;
+        }
+        case QEvent::MouseButtonPress: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (mouseEvent->button() == Qt::RightButton || mouseEvent->button() == Qt::MiddleButton) {
+                cancelFieldZonePlacement();
+                return true;
+            }
+            if (mouseEvent->button() == Qt::LeftButton && m_pendingFieldZoneHasCenter) {
+                finalizeFieldZonePlacement(m_mapView->mapToScene(mouseEvent->pos()));
+                return true;
+            }
+            break;
+        }
+        case QEvent::KeyPress: {
+            auto *keyEvent = static_cast<QKeyEvent *>(event);
+            if (keyEvent->key() == Qt::Key_Escape) {
+                cancelFieldZonePlacement();
+                return true;
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
+    return QWidget::eventFilter(watched, event);
+}
+
 void SystemEditorPage::syncTreeSelectionFromNicknames(const QStringList &nicknames)
 {
     if (!m_objectTree)
@@ -2166,6 +2337,303 @@ void SystemEditorPage::onCreateBase()
 void SystemEditorPage::onCreateDockingRing()
 {
     createQuickObject(SolarObject::DockingRing, QStringLiteral("new_docking_ring"), QStringLiteral("docking_ring"));
+}
+
+void SystemEditorPage::onCreateAsteroidNebulaZone()
+{
+    if (!m_document || !m_mapView || !m_mapScene)
+        return;
+
+    CreateFieldZoneDialog dialog(m_document.get(), this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    beginFieldZonePlacement(dialog.result());
+}
+
+void SystemEditorPage::beginFieldZonePlacement(const CreateFieldZoneResult &request)
+{
+    cancelFieldZonePlacement();
+    m_pendingFieldZoneRequest = std::make_unique<CreateFieldZoneResult>(request);
+    m_pendingFieldZoneHasCenter = false;
+    m_pendingFieldZoneCenterScenePos = QPointF();
+
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [this, placementGuard](const QPointF &scenePos) {
+        if (!m_pendingFieldZoneRequest || !m_mapView)
+            return;
+        m_pendingFieldZoneHasCenter = true;
+        m_pendingFieldZoneCenterScenePos = scenePos;
+        m_mapView->viewport()->installEventFilter(this);
+        m_mapView->viewport()->setMouseTracking(true);
+        m_mapView->viewport()->setToolTip(tr("Maus bewegen und erneut klicken, um die Zonengröße festzulegen. Esc oder Rechtsklick bricht ab."));
+        updateFieldZonePlacementPreview(scenePos);
+        placementGuard->deleteLater();
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [this, placementGuard]() {
+        cancelFieldZonePlacement();
+        placementGuard->deleteLater();
+    });
+
+    m_mapView->setPlacementMode(true,
+        tr("Klicke auf die Map, um '%1' zu platzieren.").arg(request.nickname));
+}
+
+void SystemEditorPage::updateFieldZonePlacementPreview(const QPointF &currentScenePos)
+{
+    if (!m_pendingFieldZoneRequest || !m_pendingFieldZoneHasCenter || !m_mapScene)
+        return;
+
+    if (!m_fieldZonePlacementPreview) {
+        const QColor stroke(93, 184, 255, 220);
+        const QColor fill(93, 184, 255, 38);
+        m_fieldZonePlacementPreview = new QGraphicsEllipseItem();
+        m_fieldZonePlacementPreview->setPen(QPen(stroke, 2.0, Qt::DashLine));
+        m_fieldZonePlacementPreview->setBrush(fill);
+        m_fieldZonePlacementPreview->setZValue(10000.0);
+        m_mapScene->addItem(m_fieldZonePlacementPreview);
+    }
+
+    const QRectF rect(QPointF(m_pendingFieldZoneCenterScenePos.x() - std::abs(currentScenePos.x() - m_pendingFieldZoneCenterScenePos.x()),
+                              m_pendingFieldZoneCenterScenePos.y() - std::abs(currentScenePos.y() - m_pendingFieldZoneCenterScenePos.y())),
+                      QPointF(m_pendingFieldZoneCenterScenePos.x() + std::abs(currentScenePos.x() - m_pendingFieldZoneCenterScenePos.x()),
+                              m_pendingFieldZoneCenterScenePos.y() + std::abs(currentScenePos.y() - m_pendingFieldZoneCenterScenePos.y())));
+    m_fieldZonePlacementPreview->setRect(rect.normalized());
+}
+
+void SystemEditorPage::finalizeFieldZonePlacement(const QPointF &edgeScenePos)
+{
+    if (!m_document || !m_pendingFieldZoneRequest)
+        return;
+
+    const QPointF centerScenePos = m_pendingFieldZoneCenterScenePos;
+    const QPointF centerFl = MapScene::qtToFl(centerScenePos.x(), centerScenePos.y());
+    const QPointF edgeFl = MapScene::qtToFl(edgeScenePos.x(), edgeScenePos.y());
+    const double sizeX = std::max(std::abs(edgeFl.x() - centerFl.x()), 500.0);
+    const double sizeZ = std::max(std::abs(edgeFl.y() - centerFl.y()), 500.0);
+    const double sizeY = std::min(sizeX, sizeZ);
+
+    const QString systemFileStem = QFileInfo(m_document->filePath()).completeBaseName();
+    const QString generatedFileName =
+        suggestedGeneratedFieldFileName(systemFileStem, m_pendingFieldZoneRequest->nickname, m_pendingFieldZoneRequest->type);
+    const QString relativeDir =
+        (m_pendingFieldZoneRequest->type == CreateFieldZoneResult::Type::Asteroid)
+            ? QStringLiteral("solar\\ASTEROIDS")
+            : QStringLiteral("solar\\NEBULA");
+    const QString relativeFilePath = relativeDir + QLatin1Char('\\') + generatedFileName;
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
+    const QString solarDir = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("SOLAR"));
+    const QString targetDirName =
+        (m_pendingFieldZoneRequest->type == CreateFieldZoneResult::Type::Asteroid)
+            ? QStringLiteral("ASTEROIDS")
+            : QStringLiteral("NEBULA");
+    QString targetDir = flatlas::core::PathUtils::ciResolvePath(solarDir, targetDirName);
+    if (targetDir.isEmpty())
+        targetDir = QDir(solarDir).absoluteFilePath(targetDirName);
+    const QString absoluteGeneratedPath = QDir(targetDir).absoluteFilePath(generatedFileName);
+
+    QFile sourceFile(m_pendingFieldZoneRequest->referenceAbsolutePath);
+    if (!sourceFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, tr("Zone erstellen"),
+                             tr("Die Referenzdatei konnte nicht gelesen werden:\n%1")
+                                 .arg(m_pendingFieldZoneRequest->referenceAbsolutePath));
+        cancelFieldZonePlacement();
+        return;
+    }
+
+    const QString sourceSubdir =
+        (m_pendingFieldZoneRequest->type == CreateFieldZoneResult::Type::Asteroid)
+            ? QStringLiteral("solar\\ASTEROIDS")
+            : QStringLiteral("solar\\NEBULA");
+    const QByteArray sourceRaw = sourceFile.readAll();
+    QString sourceText = QString::fromUtf8(sourceRaw);
+    if (sourceText.isEmpty() && !sourceRaw.isEmpty())
+        sourceText = QString::fromLocal8Bit(sourceRaw);
+    const QString generatedContent = normalizedGeneratedZoneTemplateText(
+        sourceText,
+        QStringLiteral("; Copied by FL Atlas from file: %1\\%2")
+            .arg(sourceSubdir, m_pendingFieldZoneRequest->referenceFileName));
+
+    int assignedIdsName = 0;
+    if (!m_pendingFieldZoneRequest->ingameName.trimmed().isEmpty()) {
+        const auto dataset = flatlas::infrastructure::IdsDataService::loadFromGameRoot(gameRoot);
+        const QString targetDll =
+            flatlas::infrastructure::IdsDataService::defaultCreationDllName(dataset);
+        QString idsError;
+        int newGlobalId = 0;
+        if (!flatlas::infrastructure::IdsDataService::writeStringEntry(
+                dataset, targetDll, 0, m_pendingFieldZoneRequest->ingameName.trimmed(), &newGlobalId, &idsError)) {
+            QMessageBox::warning(this, tr("Zone erstellen"),
+                                 idsError.trimmed().isEmpty()
+                                     ? tr("Der Ingame-Name konnte nicht als IDS-Eintrag geschrieben werden.")
+                                     : tr("Der Ingame-Name konnte nicht als IDS-Eintrag geschrieben werden:\n%1")
+                                           .arg(idsError));
+            cancelFieldZonePlacement();
+            return;
+        }
+        assignedIdsName = newGlobalId;
+    }
+
+    auto zone = std::make_shared<ZoneItem>();
+    zone->setNickname(m_pendingFieldZoneRequest->nickname);
+    zone->setPosition(QVector3D(static_cast<float>(centerFl.x()), 0.0f, static_cast<float>(centerFl.y())));
+    zone->setRotation(QVector3D(0.0f, 0.0f, 0.0f));
+    zone->setShape(ZoneItem::Ellipsoid);
+    zone->setSize(QVector3D(static_cast<float>(sizeX), static_cast<float>(sizeY), static_cast<float>(sizeZ)));
+    zone->setDamage(m_pendingFieldZoneRequest->damage);
+    zone->setSortKey(m_pendingFieldZoneRequest->sort);
+    zone->setInterference(m_pendingFieldZoneRequest->hasInterference
+                              ? static_cast<float>(m_pendingFieldZoneRequest->interference)
+                              : 0.0f);
+    zone->setComment(m_pendingFieldZoneRequest->comment);
+
+    QVector<QPair<QString, QString>> entries;
+    entries.append({QStringLiteral("nickname"), m_pendingFieldZoneRequest->nickname});
+    entries.append({QStringLiteral("ids_name"), QString::number(assignedIdsName)});
+    entries.append({QStringLiteral("pos"),
+                    QStringLiteral("%1, 0, %2")
+                        .arg(centerFl.x(), 0, 'f', 2)
+                        .arg(centerFl.y(), 0, 'f', 2)});
+    entries.append({QStringLiteral("rotate"), QStringLiteral("0, 0, 0")});
+    entries.append({QStringLiteral("shape"), QStringLiteral("ELLIPSOID")});
+    entries.append({QStringLiteral("size"),
+                    QStringLiteral("%1, %2, %3")
+                        .arg(sizeX, 0, 'f', 0)
+                        .arg(sizeY, 0, 'f', 0)
+                        .arg(sizeZ, 0, 'f', 0)});
+    entries.append({QStringLiteral("property_flags"), QString::number(m_pendingFieldZoneRequest->propertyFlags)});
+    entries.append({QStringLiteral("ids_info"), QStringLiteral("66146")});
+    entries.append({QStringLiteral("visit"), QString::number(m_pendingFieldZoneRequest->visit)});
+    entries.append({QStringLiteral("damage"), QString::number(m_pendingFieldZoneRequest->damage)});
+    if (m_pendingFieldZoneRequest->hasInterference)
+        entries.append({QStringLiteral("interference"),
+                        QString::number(m_pendingFieldZoneRequest->interference, 'f', 2)});
+    if (!m_pendingFieldZoneRequest->music.trimmed().isEmpty())
+        entries.append({QStringLiteral("Music"), m_pendingFieldZoneRequest->music.trimmed()});
+    if (!m_pendingFieldZoneRequest->spacedust.trimmed().isEmpty()) {
+        entries.append({QStringLiteral("spacedust"), m_pendingFieldZoneRequest->spacedust.trimmed()});
+        entries.append({QStringLiteral("spacedust_maxparticles"),
+                        QString::number(m_pendingFieldZoneRequest->spacedustMaxParticles)});
+    }
+    entries.append({QStringLiteral("sort"), QString::number(m_pendingFieldZoneRequest->sort)});
+    zone->setRawEntries(entries);
+
+    addLinkedFieldSection(
+        m_pendingFieldZoneRequest->type == CreateFieldZoneResult::Type::Asteroid
+            ? QStringLiteral("Asteroids")
+            : QStringLiteral("Nebula"),
+        zone->nickname(),
+        relativeFilePath);
+    m_pendingGeneratedZoneFiles.insert(relativeFilePath.toLower(),
+                                       PendingGeneratedZoneFile{absoluteGeneratedPath, generatedContent});
+
+    m_document->addZone(zone);
+    refreshObjectList();
+    m_selectedNicknames = {zone->nickname()};
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateIniEditorForSelection();
+    cancelFieldZonePlacement();
+}
+
+void SystemEditorPage::cancelFieldZonePlacement()
+{
+    clearFieldZonePlacementPreview();
+    if (m_mapView && m_mapView->viewport()) {
+        m_mapView->setPlacementMode(false);
+        m_mapView->viewport()->removeEventFilter(this);
+        m_mapView->viewport()->setToolTip(QString());
+    }
+    m_pendingFieldZoneRequest.reset();
+    m_pendingFieldZoneHasCenter = false;
+    m_pendingFieldZoneCenterScenePos = QPointF();
+}
+
+void SystemEditorPage::clearFieldZonePlacementPreview()
+{
+    if (!m_fieldZonePlacementPreview || !m_mapScene)
+        return;
+    m_mapScene->removeItem(m_fieldZonePlacementPreview);
+    delete m_fieldZonePlacementPreview;
+    m_fieldZonePlacementPreview = nullptr;
+}
+
+void SystemEditorPage::addLinkedFieldSection(const QString &sectionName,
+                                             const QString &zoneNickname,
+                                             const QString &relativeFilePath)
+{
+    if (!m_document)
+        return;
+
+    IniDocument extras = SystemPersistence::extraSections(m_document.get());
+    IniSection linkedSection;
+    linkedSection.name = sectionName;
+    linkedSection.entries.append({QStringLiteral("file"), relativeFilePath});
+    linkedSection.entries.append({QStringLiteral("zone"), zoneNickname});
+    extras.append(linkedSection);
+    SystemPersistence::setExtraSections(m_document.get(), extras);
+}
+
+void SystemEditorPage::removeLinkedFieldSectionsForNicknames(const QStringList &zoneNicknames)
+{
+    if (!m_document || zoneNicknames.isEmpty())
+        return;
+
+    IniDocument extras = SystemPersistence::extraSections(m_document.get());
+    IniDocument filtered;
+    filtered.reserve(extras.size());
+
+    for (const IniSection &section : std::as_const(extras)) {
+        const bool isLinkedFieldSection =
+            section.name.compare(QStringLiteral("Asteroids"), Qt::CaseInsensitive) == 0
+            || section.name.compare(QStringLiteral("Nebula"), Qt::CaseInsensitive) == 0;
+        if (!isLinkedFieldSection) {
+            filtered.append(section);
+            continue;
+        }
+
+        const QString linkedZone = section.value(QStringLiteral("zone")).trimmed();
+        bool shouldRemove = false;
+        for (const QString &nickname : zoneNicknames) {
+            if (linkedZone.compare(nickname, Qt::CaseInsensitive) == 0) {
+                shouldRemove = true;
+                break;
+            }
+        }
+        if (shouldRemove) {
+            const QString relativeFile = section.value(QStringLiteral("file")).trimmed().toLower();
+            m_pendingGeneratedZoneFiles.remove(relativeFile);
+            continue;
+        }
+        filtered.append(section);
+    }
+
+    SystemPersistence::setExtraSections(m_document.get(), filtered);
+}
+
+bool SystemEditorPage::writePendingGeneratedZoneFiles(QString *errorMessage)
+{
+    for (auto it = m_pendingGeneratedZoneFiles.constBegin(); it != m_pendingGeneratedZoneFiles.constEnd(); ++it) {
+        const PendingGeneratedZoneFile &fileData = it.value();
+        if (fileData.absolutePath.trimmed().isEmpty())
+            continue;
+
+        QDir().mkpath(QFileInfo(fileData.absolutePath).absolutePath());
+        QFile file(fileData.absolutePath);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+            if (errorMessage) {
+                *errorMessage = tr("Die generierte Referenzdatei konnte nicht geschrieben werden:\n%1")
+                                    .arg(fileData.absolutePath);
+            }
+            return false;
+        }
+        file.write(fileData.content.toUtf8());
+    }
+    return true;
 }
 
 SolarObject *SystemEditorPage::findObjectByNickname(const QString &nickname) const

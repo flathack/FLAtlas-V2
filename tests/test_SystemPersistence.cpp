@@ -160,6 +160,25 @@ private slots:
         QCOMPARE(doc->zones()[3]->shape(), ZoneItem::Ring);
     }
 
+    void loadZoneCommentFromLeadingIniComment()
+    {
+        QString ini = QStringLiteral(
+            "[SystemInfo]\n"
+            "nickname = test\n"
+            "\n"
+            "; First line\n"
+            "; Second line\n"
+            "[Zone]\n"
+            "nickname = zone_comment\n"
+            "shape = SPHERE\n"
+            "size = 1000\n"
+        );
+        auto doc = SystemPersistence::load(writeTemp(ini));
+        QVERIFY(doc);
+        QCOMPARE(doc->zones().size(), 1);
+        QCOMPARE(doc->zones()[0]->comment(), QStringLiteral("First line\nSecond line"));
+    }
+
     void typeDetection()
     {
         QString ini = QStringLiteral(
@@ -280,6 +299,40 @@ private slots:
         QString content = QString::fromUtf8(f.readAll());
         QVERIFY(content.contains(QStringLiteral("[LightSource]")));
         QVERIFY(content.contains(QStringLiteral("[Ambient]")));
+    }
+
+    void saveZoneCommentAsIniComment()
+    {
+        auto doc = std::make_unique<SystemDocument>();
+        doc->setName(QStringLiteral("Li01"));
+
+        auto zone = std::make_shared<ZoneItem>();
+        zone->setNickname(QStringLiteral("zone_comment"));
+        zone->setShape(ZoneItem::Sphere);
+        zone->setSize(QVector3D(1000, 1000, 1000));
+        zone->setComment(QStringLiteral("Devon Field"));
+        zone->setRawEntries({
+            {QStringLiteral("nickname"), QStringLiteral("zone_comment")},
+            {QStringLiteral("shape"), QStringLiteral("SPHERE")},
+            {QStringLiteral("size"), QStringLiteral("1000, 1000, 1000")}
+        });
+        doc->addZone(zone);
+
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.path() + QStringLiteral("/zone_comment.ini");
+        QVERIFY(SystemPersistence::save(*doc, path));
+
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString written = QString::fromUtf8(file.readAll());
+        QVERIFY(written.contains(QStringLiteral("; Devon Field\n[Zone]\n")));
+        QVERIFY(!written.contains(QStringLiteral("comment = Devon Field")));
+
+        auto reloaded = SystemPersistence::load(path);
+        QVERIFY(reloaded);
+        QCOMPARE(reloaded->zones().size(), 1);
+        QCOMPARE(reloaded->zones()[0]->comment(), QStringLiteral("Devon Field"));
     }
 
     void saveNewDocument()

@@ -26,6 +26,10 @@ public:
     /// Gibt die gespeicherten Extra-Sections für ein Dokument zurück.
     static flatlas::infrastructure::IniDocument extraSections(const flatlas::domain::SystemDocument *doc);
 
+    /// Ersetzt die gespeicherten Extra-Sections für ein Dokument.
+    static void setExtraSections(const flatlas::domain::SystemDocument *doc,
+                                 const flatlas::infrastructure::IniDocument &extras);
+
     /// Entfernt gespeicherte Extra-Sections (Aufräumen bei Dokumentschließung).
     static void clearExtras(const flatlas::domain::SystemDocument *doc);
 

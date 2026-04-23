@@ -7,10 +7,13 @@
 #include "../../core/PathUtils.h"
 #include "../../core/EditingContext.h"
 #include "../../infrastructure/freelancer/IdsStringTable.h"
+#include "../../infrastructure/parser/BiniDecoder.h"
 
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
+#include <QRegularExpression>
+#include <QStringDecoder>
 #include <QTextStream>
 #include <QVector3D>
 
@@ -34,6 +37,64 @@ static QVector3D parseVec3(const QString &text)
     float y = parts[1].trimmed().toFloat(&okY);
     float z = parts[2].trimmed().toFloat(&okZ);
     return (okX && okY && okZ) ? QVector3D(x, y, z) : QVector3D();
+}
+
+static QString decodeIniText(const QByteArray &raw)
+{
+    if (raw.isEmpty())
+        return {};
+
+    if (BiniDecoder::isBini(raw))
+        return {};
+
+    QStringDecoder utf8(QStringDecoder::Utf8, QStringDecoder::Flag::Stateless);
+    const QString utf8Text = utf8(raw);
+    if (!utf8.hasError())
+        return utf8Text;
+    return QString::fromLatin1(raw);
+}
+
+static QVector<QString> extractLeadingZoneComments(const QString &filePath)
+{
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+
+    const QString text = decodeIniText(file.readAll());
+    if (text.isEmpty())
+        return {};
+
+    QVector<QString> comments;
+    QStringList pendingCommentLines;
+    const QStringList lines = text.split(QLatin1Char('\n'));
+    for (const QString &rawLine : lines) {
+        const QString trimmed = rawLine.trimmed();
+        if (trimmed.isEmpty()) {
+            pendingCommentLines.clear();
+            continue;
+        }
+
+        if (trimmed.startsWith(QLatin1Char(';'))) {
+            pendingCommentLines.append(trimmed.mid(1).trimmed());
+            continue;
+        }
+        if (trimmed.startsWith(QLatin1String("//"))) {
+            pendingCommentLines.append(trimmed.mid(2).trimmed());
+            continue;
+        }
+
+        if (trimmed.startsWith(QLatin1Char('[')) && trimmed.endsWith(QLatin1Char(']'))) {
+            const QString sectionName = trimmed.mid(1, trimmed.size() - 2).trimmed();
+            if (sectionName.compare(QStringLiteral("Zone"), Qt::CaseInsensitive) == 0)
+                comments.append(pendingCommentLines.join(QLatin1Char('\n')).trimmed());
+            pendingCommentLines.clear();
+            continue;
+        }
+
+        pendingCommentLines.clear();
+    }
+
+    return comments;
 }
 
 static QVector3D parseZoneSize(const QString &text)
@@ -169,6 +230,28 @@ static void setOptionalEntry(QVector<IniEntry> &entries, const QString &key, con
         return;
     }
     upsertEntry(entries, key, value);
+}
+
+static void appendSerializedSection(QString &out,
+                                    const IniSection &section,
+                                    const QString &leadingComment = QString())
+{
+    if (!out.isEmpty() && !out.endsWith(QLatin1Char('\n')))
+        out.append(QLatin1Char('\n'));
+    if (!out.isEmpty())
+        out.append(QLatin1Char('\n'));
+
+    const QString trimmedComment = leadingComment.trimmed();
+    if (!trimmedComment.isEmpty()) {
+        const QStringList commentLines =
+            trimmedComment.split(QRegularExpression(QStringLiteral("[\\r\\n]+")), Qt::SkipEmptyParts);
+        for (const QString &commentLine : commentLines)
+            out += QStringLiteral("; %1\n").arg(commentLine.trimmed());
+    }
+
+    out += QLatin1Char('[') + section.name + QLatin1String("]\n");
+    for (const auto &entry : section.entries)
+        out += entry.first + QLatin1String(" = ") + entry.second + QLatin1Char('\n');
 }
 
 static void setOptionalIntEntry(QVector<IniEntry> &entries, const QString &key, int value)
@@ -320,12 +403,14 @@ std::unique_ptr<SystemDocument> SystemPersistence::load(const QString &filePath)
     const IniDocument ini = IniParser::parseFile(filePath);
     if (ini.isEmpty())
         return nullptr;
+    const QVector<QString> zoneComments = extractLeadingZoneComments(filePath);
 
     auto doc = std::make_unique<SystemDocument>();
     doc->setFilePath(filePath);
 
     IniDocument extras;
 
+    int zoneIndex = 0;
     for (const IniSection &sec : ini) {
         const QString sectionName = sec.name.toLower();
 
@@ -351,7 +436,10 @@ std::unique_ptr<SystemDocument> SystemPersistence::load(const QString &filePath)
         if (sectionName == QLatin1String("zone")) {
             auto zone = std::make_shared<ZoneItem>();
             applyZoneSection(*zone, sec);
+            if (zoneIndex < zoneComments.size() && !zoneComments[zoneIndex].trimmed().isEmpty())
+                zone->setComment(zoneComments[zoneIndex].trimmed());
             doc->addZone(std::move(zone));
+            ++zoneIndex;
             continue;
         }
 
@@ -418,7 +506,7 @@ IniSection SystemPersistence::serializeZoneSection(const ZoneItem &zone)
     setOptionalEntry(sec.entries, QStringLiteral("usage"), zone.usage());
     setOptionalEntry(sec.entries, QStringLiteral("pop_type"), zone.popType());
     setOptionalEntry(sec.entries, QStringLiteral("path_label"), zone.pathLabel());
-    setOptionalEntry(sec.entries, QStringLiteral("comment"), zone.comment());
+    removeEntry(sec.entries, QStringLiteral("comment"));
     setOptionalVec3Entry(sec.entries, QStringLiteral("tightness"), zone.tightnessXyz());
     setOptionalIntEntry(sec.entries, QStringLiteral("damage"), zone.damage());
     setOptionalFloatEntry(sec.entries, QStringLiteral("interference"), zone.interference());
@@ -497,25 +585,20 @@ void SystemPersistence::applyZoneSection(ZoneItem &zone, const IniSection &sec)
 
 bool SystemPersistence::save(const SystemDocument &doc, const QString &filePath)
 {
-    IniDocument ini;
+    QString text;
+    appendSerializedSection(text, buildSystemInfo(doc));
 
-    // [SystemInfo]
-    ini.append(buildSystemInfo(doc));
-
-    // [Object] sections
     for (const auto &obj : doc.objects())
-        ini.append(serializeObjectSection(*obj));
+        appendSerializedSection(text, serializeObjectSection(*obj));
 
-    // [Zone] sections
     for (const auto &zone : doc.zones())
-        ini.append(serializeZoneSection(*zone));
+        appendSerializedSection(text, serializeZoneSection(*zone), zone->comment());
 
-    // extra sections (LightSource, Ambient, etc.)
     const auto it = s_extras.constFind(&doc);
-    if (it != s_extras.constEnd())
-        ini.append(*it);
-
-    const QString text = IniParser::serialize(ini);
+    if (it != s_extras.constEnd()) {
+        for (const IniSection &section : *it)
+            appendSerializedSection(text, section);
+    }
 
     QFile file(filePath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
@@ -536,6 +619,13 @@ bool SystemPersistence::save(const SystemDocument &doc)
 IniDocument SystemPersistence::extraSections(const SystemDocument *doc)
 {
     return s_extras.value(doc);
+}
+
+void SystemPersistence::setExtraSections(const SystemDocument *doc, const IniDocument &extras)
+{
+    if (!doc)
+        return;
+    s_extras.insert(doc, extras);
 }
 
 void SystemPersistence::clearExtras(const SystemDocument *doc)
