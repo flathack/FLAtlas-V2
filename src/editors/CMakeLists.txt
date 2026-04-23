@@ -7,6 +7,8 @@ add_library(flatlas_editors STATIC
     system/SystemUndoCommands.h
     system/CreateObjectDialog.h system/CreateObjectDialog.cpp
     system/CreateFieldZoneDialog.h system/CreateFieldZoneDialog.cpp
+    system/CreateExclusionZoneDialog.h system/CreateExclusionZoneDialog.cpp
+    system/ExclusionZoneUtils.h system/ExclusionZoneUtils.cpp
     universe/UniverseEditorPage.h universe/UniverseEditorPage.cpp
     universe/UniverseSerializer.h universe/UniverseSerializer.cpp
     universe/NewSystemDialog.h universe/NewSystemDialog.cpp

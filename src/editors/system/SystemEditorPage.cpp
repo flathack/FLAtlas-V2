@@ -6,6 +6,8 @@
 #include "SystemUndoCommands.h"
 #include "CreateObjectDialog.h"
 #include "CreateFieldZoneDialog.h"
+#include "CreateExclusionZoneDialog.h"
+#include "ExclusionZoneUtils.h"
 #include "core/Theme.h"
 #include "editors/ini/IniCodeEditor.h"
 #include "editors/ini/IniSyntaxHighlighter.h"
@@ -609,7 +611,9 @@ void SystemEditorPage::loadDocumentIntoUi()
         return;
 
     cancelFieldZonePlacement();
+    cancelExclusionZonePlacement();
     m_pendingGeneratedZoneFiles.clear();
+    m_pendingTextFileWrites.clear();
     bindDocumentSignals();
     m_selectedNicknames.clear();
     loadDisplayFilterSettings();
@@ -654,10 +658,17 @@ bool SystemEditorPage::save()
             QMessageBox::warning(this, tr("Speichern fehlgeschlagen"), generatedFileError);
         return false;
     }
+    QString pendingTextError;
+    if (!writePendingTextFiles(&pendingTextError)) {
+        if (!pendingTextError.isEmpty())
+            QMessageBox::warning(this, tr("Speichern fehlgeschlagen"), pendingTextError);
+        return false;
+    }
     bool ok = SystemPersistence::save(*m_document);
     if (ok) {
         m_document->setDirty(false);
         m_pendingGeneratedZoneFiles.clear();
+        m_pendingTextFileWrites.clear();
     }
     return ok;
 }
@@ -910,9 +921,8 @@ void SystemEditorPage::setupRightSidebar()
     editingLayout->addWidget(m_editRingButton);
 
     m_addExclusionZoneButton = makeSidebarButton(tr("Exclusion Zone hinzufügen..."), editingGroup);
-    connect(m_addExclusionZoneButton, &QPushButton::clicked, this, [this]() {
-        showNotYetPorted(tr("Exclusion Zone"), QStringLiteral("FLAtlas/fl_editor/main_window.py::_start_exclusion_zone_creation"));
-    });
+    connect(m_addExclusionZoneButton, &QPushButton::clicked,
+            this, &SystemEditorPage::onCreateExclusionZone);
     editingLayout->addWidget(m_addExclusionZoneButton);
 
     m_editBaseButton = makeSidebarButton(tr("Base"), editingGroup);
@@ -1306,8 +1316,26 @@ void SystemEditorPage::onDeleteSelected()
         QStringList zoneNicknames;
         zoneNicknames.reserve(zonesToRemove.size());
         for (const auto &zone : std::as_const(zonesToRemove)) {
-            if (zone)
+            if (zone) {
                 zoneNicknames.append(zone->nickname());
+                QString linkedSectionName;
+                QString fieldZoneNickname;
+                QString relativeFilePath;
+                QString absoluteFilePath;
+                QString currentText;
+                if (resolveLinkedFieldInfoForExclusion(zone->nickname(),
+                                                       &linkedSectionName,
+                                                       &fieldZoneNickname,
+                                                       &relativeFilePath,
+                                                       &absoluteFilePath,
+                                                       &currentText,
+                                                       nullptr)) {
+                    const auto patched =
+                        ExclusionZoneUtils::patchFieldIniRemoveExclusion(currentText, zone->nickname());
+                    if (patched.second)
+                        stageFieldIniText(relativeFilePath, absoluteFilePath, patched.first);
+                }
+            }
         }
         removeLinkedFieldSectionsForNicknames(zoneNicknames);
     }
@@ -1995,6 +2023,7 @@ void SystemEditorPage::updateSidebarButtons()
         return;
     const QString selectedNickname = primarySelectedNickname();
     const bool hasSingleSelection = m_selectedNicknames.size() == 1;
+    ZoneItem *selectedZone = nullptr;
     bool isObject = false;
     bool isZone = false;
     SolarObject::Type objectType = SolarObject::Other;
@@ -2008,6 +2037,7 @@ void SystemEditorPage::updateSidebarButtons()
             for (const auto &zone : m_document->zones()) {
                 if (zone->nickname() == selectedNickname) {
                     isZone = true;
+                    selectedZone = zone.get();
                     break;
                 }
             }
@@ -2023,7 +2053,9 @@ void SystemEditorPage::updateSidebarButtons()
     if (m_editRingButton)
         m_editRingButton->setEnabled(hasSingleSelection && isObject && (objectType == SolarObject::Planet || objectType == SolarObject::DockingRing));
     if (m_addExclusionZoneButton)
-        m_addExclusionZoneButton->setEnabled(hasSingleSelection && isZone);
+        m_addExclusionZoneButton->setEnabled(hasSingleSelection && isZone
+                                             && selectedZone
+                                             && isFieldZone(*selectedZone));
     if (m_editBaseButton)
         m_editBaseButton->setEnabled(hasSingleSelection && isObject && objectType == SolarObject::Station);
     if (m_baseBuilderButton)
@@ -2219,6 +2251,38 @@ bool SystemEditorPage::eventFilter(QObject *watched, QEvent *event)
         }
     }
 
+    if (m_pendingExclusionZoneRequest && m_mapView && watched == m_mapView->viewport()) {
+        switch (event->type()) {
+        case QEvent::MouseMove: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            updateExclusionZonePlacementPreview(m_mapView->mapToScene(mouseEvent->pos()));
+            return true;
+        }
+        case QEvent::MouseButtonPress: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (mouseEvent->button() == Qt::RightButton || mouseEvent->button() == Qt::MiddleButton) {
+                cancelExclusionZonePlacement();
+                return true;
+            }
+            if (mouseEvent->button() == Qt::LeftButton && m_pendingExclusionZoneHasCenter) {
+                finalizeExclusionZonePlacement(m_mapView->mapToScene(mouseEvent->pos()));
+                return true;
+            }
+            break;
+        }
+        case QEvent::KeyPress: {
+            auto *keyEvent = static_cast<QKeyEvent *>(event);
+            if (keyEvent->key() == Qt::Key_Escape) {
+                cancelExclusionZonePlacement();
+                return true;
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
     return QWidget::eventFilter(watched, event);
 }
 
@@ -2349,6 +2413,205 @@ void SystemEditorPage::onCreateAsteroidNebulaZone()
         return;
 
     beginFieldZonePlacement(dialog.result());
+}
+
+bool SystemEditorPage::isFieldZone(const ZoneItem &zone) const
+{
+    QString sectionName;
+    QString linkedZoneNickname;
+    QString relativeFilePath;
+    return resolveLinkedFieldSectionForZone(zone.nickname(),
+                                            &sectionName,
+                                            &linkedZoneNickname,
+                                            &relativeFilePath);
+}
+
+bool SystemEditorPage::resolveLinkedFieldSectionForZone(const QString &zoneNickname,
+                                                        QString *outSectionName,
+                                                        QString *outFieldZoneNickname,
+                                                        QString *outRelativeFilePath,
+                                                        QString *outAbsoluteFilePath) const
+{
+    if (!m_document)
+        return false;
+
+    const IniDocument extras = SystemPersistence::extraSections(m_document.get());
+    const QString target = zoneNickname.trimmed().toLower();
+    for (const IniSection &section : extras) {
+        const bool isFieldSection =
+            section.name.compare(QStringLiteral("Nebula"), Qt::CaseInsensitive) == 0
+            || section.name.compare(QStringLiteral("Asteroids"), Qt::CaseInsensitive) == 0;
+        if (!isFieldSection)
+            continue;
+
+        const QString linkedZone = section.value(QStringLiteral("zone")).trimmed();
+        const QString relativeFile = section.value(QStringLiteral("file")).trimmed();
+        if (linkedZone.compare(target, Qt::CaseInsensitive) != 0 || relativeFile.isEmpty())
+            continue;
+
+        if (outSectionName)
+            *outSectionName = section.name;
+        if (outFieldZoneNickname)
+            *outFieldZoneNickname = linkedZone;
+        if (outRelativeFilePath)
+            *outRelativeFilePath = relativeFile;
+        if (outAbsoluteFilePath) {
+            QString absolutePath;
+            const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+            QString normalizedRelative = relativeFile;
+            normalizedRelative.replace(QLatin1Char('\\'), QLatin1Char('/'));
+            normalizedRelative = normalizedRelative.trimmed();
+            const QStringList candidates = normalizedRelative.startsWith(QStringLiteral("DATA/"), Qt::CaseInsensitive)
+                ? QStringList{normalizedRelative}
+                : QStringList{normalizedRelative, QStringLiteral("DATA/%1").arg(normalizedRelative)};
+            for (const QString &candidate : candidates) {
+                absolutePath = flatlas::core::PathUtils::ciResolvePath(gameRoot, candidate);
+                if (!absolutePath.isEmpty())
+                    break;
+            }
+            *outAbsoluteFilePath = absolutePath;
+        }
+        return true;
+    }
+
+    return false;
+}
+
+QString SystemEditorPage::pendingFieldIniText(const QString &relativeFilePath, const QString &absoluteFilePath) const
+{
+    const QString relativeKey = relativeFilePath.trimmed().toLower();
+    if (m_pendingGeneratedZoneFiles.contains(relativeKey))
+        return m_pendingGeneratedZoneFiles.value(relativeKey).content;
+
+    const QString absoluteKey = normalizedPathKey(absoluteFilePath);
+    if (!absoluteKey.isEmpty() && m_pendingTextFileWrites.contains(absoluteKey))
+        return m_pendingTextFileWrites.value(absoluteKey).content;
+
+    QFile file(absoluteFilePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return {};
+    const QByteArray raw = file.readAll();
+    QString text = QString::fromUtf8(raw);
+    if (text.isEmpty() && !raw.isEmpty())
+        text = QString::fromLocal8Bit(raw);
+    return text;
+}
+
+void SystemEditorPage::stageFieldIniText(const QString &relativeFilePath,
+                                         const QString &absoluteFilePath,
+                                         const QString &content)
+{
+    const QString relativeKey = relativeFilePath.trimmed().toLower();
+    if (m_pendingGeneratedZoneFiles.contains(relativeKey)) {
+        PendingGeneratedZoneFile updated = m_pendingGeneratedZoneFiles.value(relativeKey);
+        updated.content = content;
+        m_pendingGeneratedZoneFiles.insert(relativeKey, updated);
+        return;
+    }
+
+    const QString absoluteKey = normalizedPathKey(absoluteFilePath);
+    if (!absoluteKey.isEmpty())
+        m_pendingTextFileWrites.insert(absoluteKey, PendingTextFileWrite{absoluteFilePath, content});
+}
+
+bool SystemEditorPage::resolveLinkedFieldInfoForExclusion(const QString &exclusionZoneNickname,
+                                                          QString *outSectionName,
+                                                          QString *outFieldZoneNickname,
+                                                          QString *outRelativeFilePath,
+                                                          QString *outAbsoluteFilePath,
+                                                          QString *outCurrentText,
+                                                          ExclusionShellSettings *outShellSettings) const
+{
+    if (!m_document)
+        return false;
+
+    const QString target = exclusionZoneNickname.trimmed();
+    const IniDocument extras = SystemPersistence::extraSections(m_document.get());
+    for (const IniSection &section : extras) {
+        const bool isFieldSection =
+            section.name.compare(QStringLiteral("Nebula"), Qt::CaseInsensitive) == 0
+            || section.name.compare(QStringLiteral("Asteroids"), Qt::CaseInsensitive) == 0;
+        if (!isFieldSection)
+            continue;
+
+        const QString linkedZone = section.value(QStringLiteral("zone")).trimmed();
+        const QString relativeFile = section.value(QStringLiteral("file")).trimmed();
+        QString absoluteFile;
+        if (relativeFile.isEmpty())
+            continue;
+        resolveLinkedFieldSectionForZone(linkedZone, nullptr, nullptr, nullptr, &absoluteFile);
+        const QString currentText = pendingFieldIniText(relativeFile, absoluteFile);
+        if (currentText.isEmpty())
+            continue;
+        bool found = false;
+        ExclusionShellSettings settings = ExclusionZoneUtils::readFieldIniExclusionSettings(currentText, target, &found);
+        if (!found)
+            continue;
+
+        if (outSectionName)
+            *outSectionName = section.name;
+        if (outFieldZoneNickname)
+            *outFieldZoneNickname = linkedZone;
+        if (outRelativeFilePath)
+            *outRelativeFilePath = relativeFile;
+        if (outAbsoluteFilePath)
+            *outAbsoluteFilePath = absoluteFile;
+        if (outCurrentText)
+            *outCurrentText = currentText;
+        if (outShellSettings)
+            *outShellSettings = settings;
+        return true;
+    }
+
+    return false;
+}
+
+void SystemEditorPage::onCreateExclusionZone()
+{
+    if (!m_document)
+        return;
+
+    const QString selectedNickname = primarySelectedNickname();
+    ZoneItem *fieldZone = findZoneByNickname(selectedNickname);
+    if (!fieldZone || !isFieldZone(*fieldZone)) {
+        QMessageBox::warning(this, tr("Exclusion Zone"),
+                             tr("Bitte wähle zuerst eine Nebel- oder Asteroiden-Feldzone aus."));
+        return;
+    }
+
+    QString sectionName;
+    QString linkedZoneNickname;
+    QString relativeFilePath;
+    if (!resolveLinkedFieldSectionForZone(fieldZone->nickname(),
+                                          &sectionName,
+                                          &linkedZoneNickname,
+                                          &relativeFilePath)) {
+        QMessageBox::warning(this, tr("Exclusion Zone"),
+                             tr("Für die ausgewählte Feld-Zone konnte keine verknüpfte Referenzdatei ermittelt werden."));
+        return;
+    }
+
+    QStringList existingZoneNicknames;
+    for (const auto &zone : m_document->zones()) {
+        if (zone)
+            existingZoneNicknames.append(zone->nickname());
+    }
+
+    const QString systemNickname = QFileInfo(m_document->filePath()).completeBaseName();
+    const QString suggestedNickname =
+        ExclusionZoneUtils::generateExclusionNickname(systemNickname, fieldZone->nickname(), existingZoneNicknames);
+    const bool supportsShell = sectionName.compare(QStringLiteral("Nebula"), Qt::CaseInsensitive) == 0;
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    CreateExclusionZoneDialog dialog(suggestedNickname,
+                                     fieldZone->nickname(),
+                                     relativeFilePath,
+                                     supportsShell,
+                                     supportsShell ? ExclusionZoneUtils::nebulaShellOptionsForGamePath(gameRoot) : QStringList{},
+                                     this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    beginExclusionZonePlacement(dialog.result());
 }
 
 void SystemEditorPage::beginFieldZonePlacement(const CreateFieldZoneResult &request)
@@ -2540,6 +2803,153 @@ void SystemEditorPage::finalizeFieldZonePlacement(const QPointF &edgeScenePos)
     cancelFieldZonePlacement();
 }
 
+void SystemEditorPage::beginExclusionZonePlacement(const CreateExclusionZoneResult &request)
+{
+    cancelExclusionZonePlacement();
+    m_pendingExclusionZoneRequest = std::make_unique<CreateExclusionZoneResult>(request);
+    m_pendingExclusionZoneHasCenter = false;
+    m_pendingExclusionZoneCenterScenePos = QPointF();
+
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [this, placementGuard](const QPointF &scenePos) {
+        if (!m_pendingExclusionZoneRequest || !m_mapView)
+            return;
+        m_pendingExclusionZoneHasCenter = true;
+        m_pendingExclusionZoneCenterScenePos = scenePos;
+        m_mapView->viewport()->installEventFilter(this);
+        m_mapView->viewport()->setMouseTracking(true);
+        updateExclusionZonePlacementPreview(scenePos);
+        placementGuard->deleteLater();
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [this, placementGuard]() {
+        cancelExclusionZonePlacement();
+        placementGuard->deleteLater();
+    });
+
+    m_mapView->setPlacementMode(true,
+        tr("Klicke auf die Map, um '%1' zu platzieren.").arg(request.nickname));
+}
+
+void SystemEditorPage::updateExclusionZonePlacementPreview(const QPointF &currentScenePos)
+{
+    if (!m_pendingExclusionZoneRequest || !m_pendingExclusionZoneHasCenter || !m_mapScene)
+        return;
+
+    if (!m_exclusionZonePlacementPreview) {
+        const QColor stroke(220, 110, 60, 220);
+        const QColor fill(220, 110, 60, 30);
+        m_exclusionZonePlacementPreview = new QGraphicsEllipseItem();
+        m_exclusionZonePlacementPreview->setPen(QPen(stroke, 2.0, Qt::DashLine));
+        m_exclusionZonePlacementPreview->setBrush(fill);
+        m_exclusionZonePlacementPreview->setZValue(10001.0);
+        m_mapScene->addItem(m_exclusionZonePlacementPreview);
+    }
+
+    const QRectF rect(QPointF(m_pendingExclusionZoneCenterScenePos.x() - std::abs(currentScenePos.x() - m_pendingExclusionZoneCenterScenePos.x()),
+                              m_pendingExclusionZoneCenterScenePos.y() - std::abs(currentScenePos.y() - m_pendingExclusionZoneCenterScenePos.y())),
+                      QPointF(m_pendingExclusionZoneCenterScenePos.x() + std::abs(currentScenePos.x() - m_pendingExclusionZoneCenterScenePos.x()),
+                              m_pendingExclusionZoneCenterScenePos.y() + std::abs(currentScenePos.y() - m_pendingExclusionZoneCenterScenePos.y())));
+    m_exclusionZonePlacementPreview->setRect(rect.normalized());
+}
+
+void SystemEditorPage::finalizeExclusionZonePlacement(const QPointF &edgeScenePos)
+{
+    if (!m_document || !m_pendingExclusionZoneRequest)
+        return;
+
+    const QString requestedNickname = m_pendingExclusionZoneRequest->nickname.trimmed();
+    static const QRegularExpression validNickname(QStringLiteral("^[A-Za-z0-9_]+$"));
+    if (requestedNickname.isEmpty() || !validNickname.match(requestedNickname).hasMatch()) {
+        QMessageBox::warning(this, tr("Exclusion Zone"),
+                             tr("Der Nickname ist ungueltig. Bitte oeffne den Dialog erneut und pruefe den Namen."));
+        cancelExclusionZonePlacement();
+        return;
+    }
+    if (findZoneByNickname(requestedNickname) || findObjectByNickname(requestedNickname)) {
+        QMessageBox::warning(this, tr("Exclusion Zone"),
+                             tr("Im aktuellen System existiert bereits ein Objekt oder eine Zone mit diesem Nickname."));
+        cancelExclusionZonePlacement();
+        return;
+    }
+
+    const QPointF centerScenePos = m_pendingExclusionZoneCenterScenePos;
+    const QPointF centerFl = MapScene::qtToFl(centerScenePos.x(), centerScenePos.y());
+    const QPointF edgeFl = MapScene::qtToFl(edgeScenePos.x(), edgeScenePos.y());
+    const double sizeX = std::max(std::abs(edgeFl.x() - centerFl.x()), 500.0);
+    const double sizeZ = std::max(std::abs(edgeFl.y() - centerFl.y()), 500.0);
+    const double sizeY = std::min(sizeX, sizeZ);
+
+    QString fieldSectionName;
+    QString linkedFieldNickname;
+    QString relativeFilePath;
+    QString absoluteFilePath;
+    if (!resolveLinkedFieldSectionForZone(m_pendingExclusionZoneRequest->fieldZoneNickname,
+                                          &fieldSectionName,
+                                          &linkedFieldNickname,
+                                          &relativeFilePath,
+                                          &absoluteFilePath)) {
+        QMessageBox::warning(this, tr("Exclusion Zone"),
+                             tr("Die verknüpfte Felddatei konnte nicht mehr aufgelöst werden."));
+        cancelExclusionZonePlacement();
+        return;
+    }
+
+    const QVector3D position(static_cast<float>(centerFl.x()), 0.0f, static_cast<float>(centerFl.y()));
+    const QVector3D size(static_cast<float>(sizeX), static_cast<float>(sizeY), static_cast<float>(sizeZ));
+    const QVector3D rotation(0.0f, 0.0f, 0.0f);
+
+    auto zone = std::make_shared<ZoneItem>();
+    zone->setNickname(requestedNickname);
+    zone->setPosition(position);
+    zone->setRotation(rotation);
+    zone->setSize(size);
+    zone->setComment(m_pendingExclusionZoneRequest->comment);
+    zone->setSortKey(m_pendingExclusionZoneRequest->sort);
+    const QString shape = m_pendingExclusionZoneRequest->shape;
+    if (shape == QStringLiteral("BOX"))
+        zone->setShape(ZoneItem::Box);
+    else if (shape == QStringLiteral("CYLINDER"))
+        zone->setShape(ZoneItem::Cylinder);
+    else if (shape == QStringLiteral("ELLIPSOID"))
+        zone->setShape(ZoneItem::Ellipsoid);
+    else
+        zone->setShape(ZoneItem::Sphere);
+    zone->setRawEntries(ExclusionZoneUtils::buildZoneEntries(zone->nickname(),
+                                                             shape,
+                                                             position,
+                                                             size,
+                                                             rotation,
+                                                             zone->comment(),
+                                                             zone->sortKey()));
+
+    if (m_pendingExclusionZoneRequest->linkToFieldZone) {
+        const QString currentText = pendingFieldIniText(relativeFilePath, absoluteFilePath);
+        if (currentText.isEmpty()) {
+            QMessageBox::warning(this, tr("Exclusion Zone"),
+                                 tr("Die verknüpfte Felddatei konnte nicht gelesen werden."));
+            cancelExclusionZonePlacement();
+            return;
+        }
+        const auto patched = ExclusionZoneUtils::patchFieldIniExclusionSection(
+            currentText,
+            zone->nickname(),
+            fieldSectionName.compare(QStringLiteral("Nebula"), Qt::CaseInsensitive) == 0
+                ? m_pendingExclusionZoneRequest->shellSettings
+                : ExclusionShellSettings{});
+        stageFieldIniText(relativeFilePath, absoluteFilePath, patched.first);
+    }
+
+    m_document->addZone(zone);
+    refreshObjectList();
+    m_selectedNicknames = {zone->nickname()};
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateIniEditorForSelection();
+    cancelExclusionZonePlacement();
+}
+
 void SystemEditorPage::cancelFieldZonePlacement()
 {
     clearFieldZonePlacementPreview();
@@ -2551,6 +2961,22 @@ void SystemEditorPage::cancelFieldZonePlacement()
     m_pendingFieldZoneRequest.reset();
     m_pendingFieldZoneHasCenter = false;
     m_pendingFieldZoneCenterScenePos = QPointF();
+}
+
+void SystemEditorPage::cancelExclusionZonePlacement()
+{
+    if (m_exclusionZonePlacementPreview && m_mapScene) {
+        m_mapScene->removeItem(m_exclusionZonePlacementPreview);
+        delete m_exclusionZonePlacementPreview;
+        m_exclusionZonePlacementPreview = nullptr;
+    }
+    if (m_mapView && m_mapView->viewport()) {
+        m_mapView->setPlacementMode(false);
+        m_mapView->viewport()->removeEventFilter(this);
+    }
+    m_pendingExclusionZoneRequest.reset();
+    m_pendingExclusionZoneHasCenter = false;
+    m_pendingExclusionZoneCenterScenePos = QPointF();
 }
 
 void SystemEditorPage::clearFieldZonePlacementPreview()
@@ -2629,6 +3055,25 @@ bool SystemEditorPage::writePendingGeneratedZoneFiles(QString *errorMessage)
                 *errorMessage = tr("Die generierte Referenzdatei konnte nicht geschrieben werden:\n%1")
                                     .arg(fileData.absolutePath);
             }
+            return false;
+        }
+        file.write(fileData.content.toUtf8());
+    }
+    return true;
+}
+
+bool SystemEditorPage::writePendingTextFiles(QString *errorMessage)
+{
+    for (auto it = m_pendingTextFileWrites.constBegin(); it != m_pendingTextFileWrites.constEnd(); ++it) {
+        const PendingTextFileWrite &fileData = it.value();
+        if (fileData.absolutePath.trimmed().isEmpty())
+            continue;
+        QDir().mkpath(QFileInfo(fileData.absolutePath).absolutePath());
+        QFile file(fileData.absolutePath);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+            if (errorMessage)
+                *errorMessage = tr("Die verknüpfte Feld-INI konnte nicht geschrieben werden:\n%1")
+                                    .arg(fileData.absolutePath);
             return false;
         }
         file.write(fileData.content.toUtf8());

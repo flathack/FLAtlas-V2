@@ -11,7 +11,11 @@
 
 namespace flatlas::domain { class SystemDocument; class SolarObject; class ZoneItem; }
 namespace flatlas::rendering { class MapScene; class SystemMapView; class SceneView3D; }
-namespace flatlas::editors { struct CreateFieldZoneResult; }
+namespace flatlas::editors {
+struct CreateFieldZoneResult;
+struct CreateExclusionZoneResult;
+struct ExclusionShellSettings;
+}
 class QToolBar;
 class QSplitter;
 class QTreeWidget;
@@ -66,6 +70,11 @@ private:
         QString content;
     };
 
+    struct PendingTextFileWrite {
+        QString absolutePath;
+        QString content;
+    };
+
     void loadDocumentIntoUi();
     void emitLoadingProgress(int percent, const QString &message);
     flatlas::domain::SolarObject *findObjectByNickname(const QString &nickname) const;
@@ -112,6 +121,7 @@ private:
     void onCreateBase();
     void onCreateDockingRing();
     void onCreateAsteroidNebulaZone();
+    void onCreateExclusionZone();
     void refreshObjectList();
     void onCanvasSelectionChanged(const QStringList &nicknames);
     void onTreeSelectionChanged();
@@ -146,11 +156,33 @@ private:
     void finalizeFieldZonePlacement(const QPointF &edgeScenePos);
     void cancelFieldZonePlacement();
     void clearFieldZonePlacementPreview();
+    void beginExclusionZonePlacement(const CreateExclusionZoneResult &request);
+    void updateExclusionZonePlacementPreview(const QPointF &currentScenePos);
+    void finalizeExclusionZonePlacement(const QPointF &edgeScenePos);
+    void cancelExclusionZonePlacement();
+    bool isFieldZone(const flatlas::domain::ZoneItem &zone) const;
+    bool resolveLinkedFieldSectionForZone(const QString &zoneNickname,
+                                          QString *outSectionName,
+                                          QString *outFieldZoneNickname,
+                                          QString *outRelativeFilePath,
+                                          QString *outAbsoluteFilePath = nullptr) const;
+    bool resolveLinkedFieldInfoForExclusion(const QString &exclusionZoneNickname,
+                                           QString *outSectionName,
+                                           QString *outFieldZoneNickname,
+                                           QString *outRelativeFilePath,
+                                           QString *outAbsoluteFilePath,
+                                           QString *outCurrentText = nullptr,
+                                           ExclusionShellSettings *outShellSettings = nullptr) const;
+    QString pendingFieldIniText(const QString &relativeFilePath, const QString &absoluteFilePath) const;
+    void stageFieldIniText(const QString &relativeFilePath,
+                           const QString &absoluteFilePath,
+                           const QString &content);
     void addLinkedFieldSection(const QString &sectionName,
                                const QString &zoneNickname,
                                const QString &relativeFilePath);
     void removeLinkedFieldSectionsForNicknames(const QStringList &zoneNicknames);
     bool writePendingGeneratedZoneFiles(QString *errorMessage);
+    bool writePendingTextFiles(QString *errorMessage);
 
     std::unique_ptr<flatlas::domain::SystemDocument> m_document;
     flatlas::rendering::MapScene *m_mapScene = nullptr;
@@ -224,10 +256,15 @@ private:
     QHash<QString, QVector3D> m_liveMoveCurrentWorld;
     bool m_liveMoveActive = false;
     QHash<QString, PendingGeneratedZoneFile> m_pendingGeneratedZoneFiles;
+    QHash<QString, PendingTextFileWrite> m_pendingTextFileWrites;
     std::unique_ptr<CreateFieldZoneResult> m_pendingFieldZoneRequest;
     bool m_pendingFieldZoneHasCenter = false;
     QPointF m_pendingFieldZoneCenterScenePos;
     QGraphicsEllipseItem *m_fieldZonePlacementPreview = nullptr;
+    std::unique_ptr<CreateExclusionZoneResult> m_pendingExclusionZoneRequest;
+    bool m_pendingExclusionZoneHasCenter = false;
+    QPointF m_pendingExclusionZoneCenterScenePos;
+    QGraphicsEllipseItem *m_exclusionZonePlacementPreview = nullptr;
 };
 
 } // namespace flatlas::editors
