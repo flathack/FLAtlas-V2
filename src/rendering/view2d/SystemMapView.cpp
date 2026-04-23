@@ -70,7 +70,14 @@ SystemMapView::SystemMapView(QWidget *parent)
     setResizeAnchor(QGraphicsView::AnchorUnderMouse);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    setCacheMode(QGraphicsView::CacheBackground);
+    // NOTE: Do NOT enable QGraphicsView::CacheBackground here. drawBackground()
+    // resets the painter transform so the wallpaper is drawn in viewport
+    // coordinates; a cached background is stored in *scene* coordinates and
+    // therefore gets translated together with the scroll position while the
+    // user pans the view with the middle mouse button. The cache is then
+    // invalidated on release, which is what produced the "background follows
+    // the map during drag, snaps back on release" bug. The UniverseMapView
+    // also intentionally omits this flag for the same reason.
     setOptimizationFlag(QGraphicsView::DontSavePainterState, true);
     setOptimizationFlag(QGraphicsView::DontAdjustForAntialiasing, true);
     applyTheme();
@@ -113,12 +120,15 @@ void SystemMapView::applyTheme()
     const QColor text = pal.color(QPalette::Text);
     m_overlayTextColor = text;
     m_backgroundPixmap = QPixmap(flatlas::core::Theme::instance().wallpaperResourcePath());
+    // A slightly stronger darkening overlay makes the wallpaper recede
+    // ("durchsichtiger" in perceived contrast) so zones and solar objects
+    // pop a bit more against the background.
     if (base.lightness() >= 170) {
         m_backgroundColor = QColor(236, 241, 247);
-        m_backgroundDarkenAlpha = !m_backgroundPixmap.isNull() ? 110 : 0;
+        m_backgroundDarkenAlpha = !m_backgroundPixmap.isNull() ? 150 : 0;
     } else {
         m_backgroundColor = QColor(15, 18, 24);
-        m_backgroundDarkenAlpha = !m_backgroundPixmap.isNull() ? 180 : 0;
+        m_backgroundDarkenAlpha = !m_backgroundPixmap.isNull() ? 215 : 0;
     }
     viewport()->update();
 }

@@ -27,6 +27,13 @@ public:
     QString name() const;
     void setName(const QString &name);
 
+    /// Human-readable display name resolved from universe.ini +
+    /// Freelancer IDS strings (e.g. "New York" for system "Li01").
+    /// Empty if the lookup is unavailable. Purely informational — the
+    /// serialiser never writes this back to the system .ini.
+    QString displayName() const;
+    void setDisplayName(const QString &name);
+
     QString filePath() const;
     void setFilePath(const QString &path);
 
@@ -55,6 +62,7 @@ signals:
 
 private:
     QString m_name;
+    QString m_displayName;
     QString m_filePath;
     // Freelancer's NavMapScale default: 1.36. Vanilla system .ini files that
     // omit the value rely on the universe.ini NavMapScale; if that lookup

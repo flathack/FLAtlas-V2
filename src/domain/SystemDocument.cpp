@@ -10,6 +10,9 @@ SystemDocument::~SystemDocument() = default;
 QString SystemDocument::name() const { return m_name; }
 void SystemDocument::setName(const QString &name) { if (m_name != name) { m_name = name; emit nameChanged(); } }
 
+QString SystemDocument::displayName() const { return m_displayName; }
+void SystemDocument::setDisplayName(const QString &name) { m_displayName = name; }
+
 QString SystemDocument::filePath() const { return m_filePath; }
 void SystemDocument::setFilePath(const QString &path) { m_filePath = path; }
 

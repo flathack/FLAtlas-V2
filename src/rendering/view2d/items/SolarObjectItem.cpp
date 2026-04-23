@@ -580,7 +580,11 @@ void SolarObjectItem::updateFromObject(const flatlas::domain::SolarObject &obj)
 
 void SolarObjectItem::setLabelVisibleForScale(qreal scale)
 {
-    constexpr qreal kLabelScaleThreshold = 2.0;
+    // Labels should already be visible at the initial "fit to NavMap" zoom
+    // level (~0.37 for a typical vanilla system), not only after the user
+    // zooms deeply in. The threshold used to be 2.0, which effectively hid
+    // every object label at the standard zoom.
+    constexpr qreal kLabelScaleThreshold = 0.25;
     const bool shouldShow = m_objectVisibleByFilter
         && m_labelVisibleByFilter
         && (isSelected() || scale >= kLabelScaleThreshold);

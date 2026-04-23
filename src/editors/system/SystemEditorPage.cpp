@@ -521,7 +521,13 @@ void SystemEditorPage::loadDocumentIntoUi()
         const int percent = 20 + static_cast<int>((static_cast<double>(current) / boundedTotal) * 65.0);
         emitLoadingProgress(percent, tr("Building 2D system view..."));
     });
-    m_mapView->setSystemName(m_document->name());
+    m_mapView->setSystemName([this]() {
+        const QString nickname = m_document->name().trimmed();
+        const QString display  = m_document->displayName().trimmed();
+        if (!display.isEmpty() && display.compare(nickname, Qt::CaseInsensitive) != 0)
+            return QStringLiteral("%1 - %2").arg(nickname, display);
+        return nickname;
+    }());
     m_mapView->setDisplayFilterSettings(m_displayFilterSettings);
     if (m_is3DViewEnabled) {
         ensureSceneView3D();

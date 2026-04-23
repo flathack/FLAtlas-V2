@@ -174,6 +174,10 @@ QPen ZoneItem2D::penForZone(const flatlas::domain::ZoneItem &zone)
 
 QBrush ZoneItem2D::brushForZone(const flatlas::domain::ZoneItem &zone)
 {
+    // Zone fill alphas were previously so subtle (8–18) that area zones
+    // barely registered on top of the darker wallpaper. Roughly doubling
+    // the alphas keeps the colours muted enough not to drown the solar
+    // objects while making zone categories clearly distinguishable.
     const QString name = zone.nickname().toLower();
     const QString usage = zone.usage().toLower();
     const QString popType = zone.popType().toLower();
@@ -185,23 +189,23 @@ QBrush ZoneItem2D::brushForZone(const flatlas::domain::ZoneItem &zone)
     if (popType.contains(QStringLiteral("trade_path")))
         return QBrush(Qt::NoBrush);
     if (name.contains(QStringLiteral("pop_ambient")) || popType.contains(QStringLiteral("background")))
-        return QBrush(QColor(190, 145, 60, 16));
+        return QBrush(QColor(190, 145, 60, 36));
     if (name.contains(QStringLiteral("death")) || name.contains(QStringLiteral("destroy_vignette")) || damage > 0)
         return QBrush(Qt::NoBrush);
     if (name.contains(QStringLiteral("nebula")) || name.contains(QStringLiteral("badlands")))
-        return QBrush(QColor(120, 60, 200, 18));
+        return QBrush(QColor(120, 60, 200, 42));
     if (name.contains(QStringLiteral("debris")) || name.contains(QStringLiteral("asteroid")))
-        return QBrush(QColor(160, 120, 50, 18));
+        return QBrush(QColor(160, 120, 50, 42));
     if (name.contains(QStringLiteral("tradelane")))
-        return QBrush(QColor(60, 180, 220, 12));
+        return QBrush(QColor(60, 180, 220, 28));
     if (name.contains(QStringLiteral("jumpgate")) || name.contains(QStringLiteral("hole")))
-        return QBrush(QColor(160, 80, 200, 18));
+        return QBrush(QColor(160, 80, 200, 42));
     if (name.contains(QStringLiteral("exclusion")))
-        return QBrush(QColor(200, 80, 40, 8));
+        return QBrush(QColor(200, 80, 40, 20));
     if (name.contains(QStringLiteral("path")) || name.contains(QStringLiteral("patrol")) || name.contains(QStringLiteral("vignette")))
         return QBrush(Qt::NoBrush);
 
-    return QBrush(QColor(60, 140, 180, 14));
+    return QBrush(QColor(60, 140, 180, 32));
 }
 
 void ZoneItem2D::updateFromZone(const flatlas::domain::ZoneItem &zone)

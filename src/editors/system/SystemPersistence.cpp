@@ -5,6 +5,8 @@
 #include "../../domain/SolarObject.h"
 #include "../../domain/ZoneItem.h"
 #include "../../core/PathUtils.h"
+#include "../../core/EditingContext.h"
+#include "../../infrastructure/freelancer/IdsStringTable.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -275,6 +277,38 @@ static void applyUniverseNavMapScale(SystemDocument *doc, const QString &filePat
         const double navMapScale = section.value(QStringLiteral("NavMapScale")).toDouble(&ok);
         if (ok && navMapScale > 0.0)
             doc->setNavMapScale(navMapScale);
+
+        // Resolve the human-readable system name via `ids_name` / `strid_name`
+        // in universe.ini and the Freelancer IDS string table (e.g. 196609
+        // → "New York"). This is purely for UI display — the serialiser never
+        // writes it back to the system .ini.
+        int idsName = 0;
+        int stridName = 0;
+        bool idsOk = false;
+        bool stridOk = false;
+        const int parsedIds = section.value(QStringLiteral("ids_name")).toInt(&idsOk);
+        const int parsedStrid = section.value(QStringLiteral("strid_name")).toInt(&stridOk);
+        if (idsOk)
+            idsName = parsedIds;
+        if (stridOk)
+            stridName = parsedStrid;
+
+        if (idsName > 0 || stridName > 0) {
+            const QString gamePath = flatlas::core::EditingContext::instance().primaryGamePath();
+            if (!gamePath.trimmed().isEmpty()) {
+                const QString exeDir = flatlas::core::PathUtils::ciResolvePath(gamePath, QStringLiteral("EXE"));
+                const QString lookupDir = exeDir.isEmpty() ? gamePath : exeDir;
+                flatlas::infrastructure::IdsStringTable ids;
+                ids.loadFromFreelancerDir(lookupDir);
+                QString resolved;
+                if (idsName > 0)
+                    resolved = ids.getString(idsName).trimmed();
+                if (resolved.isEmpty() && stridName > 0)
+                    resolved = ids.getString(stridName).trimmed();
+                if (!resolved.isEmpty())
+                    doc->setDisplayName(resolved);
+            }
+        }
         return;
     }
 }
