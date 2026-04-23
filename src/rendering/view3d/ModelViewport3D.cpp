@@ -367,6 +367,40 @@ bool ModelViewport3D::loadModelFile(const QString &filePath, QString *errorMessa
     return true;
 }
 
+bool ModelViewport3D::loadModelNode(const flatlas::infrastructure::ModelNode &model, QString *errorMessage)
+{
+    ++m_loadGeneration;
+    clearModel();
+
+#ifdef FLATLAS_HAS_QT3D
+    if (!m_window || !m_container || !m_rootEntity) {
+        const QString message = tr("The 3D renderer is not available.");
+        setStatusMessage(message);
+        if (errorMessage)
+            *errorMessage = message;
+        emit modelLoaded(QString(), false, message);
+        return false;
+    }
+#endif
+
+    try {
+        rebuildScene(model);
+    } catch (...) {
+        clearModel();
+        const QString message = tr("The grouped preview could not be rendered safely.");
+        if (errorMessage)
+            *errorMessage = message;
+        setStatusMessage(message);
+        emit modelLoaded(QString(), false, message);
+        return false;
+    }
+
+    m_hasModel = true;
+    setStatusMessage(QString());
+    emit modelLoaded(QString(), true, QString());
+    return true;
+}
+
 void ModelViewport3D::rebuildScene(const flatlas::infrastructure::ModelNode &model)
 {
 #ifdef FLATLAS_HAS_QT3D

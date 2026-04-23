@@ -10,16 +10,21 @@
 
 #include "core/Config.h"
 #include "core/EditingContext.h"
+#include "core/PathUtils.h"
 #include "domain/SystemDocument.h"
 #include "domain/SolarObject.h"
 #include "domain/ZoneItem.h"
+#include "infrastructure/parser/IniParser.h"
+#include "rendering/preview/ModelCache.h"
 #include "rendering/view2d/MapScene.h"
 #include "rendering/view2d/SystemMapView.h"
 #include "rendering/view2d/items/SolarObjectItem.h"
 #include "rendering/view2d/items/ZoneItem2D.h"
+#include "rendering/view3d/ModelViewport3D.h"
 #include "rendering/view3d/SceneView3D.h"
 #include "core/UndoManager.h"
 
+#include <QDialog>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -45,8 +50,13 @@
 #include <QDesktopServices>
 #include <QFont>
 #include <QPalette>
+#include <QDir>
 #include <QSignalBlocker>
 #include <QUrl>
+
+#include <QQuaternion>
+
+#include <algorithm>
 
 using namespace flatlas::domain;
 using namespace flatlas::rendering;
@@ -101,6 +111,119 @@ SystemDisplayFilterSettings defaultDisplayFilterSettings()
     };
     return settings;
 }
+
+QString rawObjectEntryValue(const SolarObject &obj, const QString &key)
+{
+    const auto entries = obj.rawEntries();
+    for (int index = entries.size() - 1; index >= 0; --index) {
+        if (entries[index].first.compare(key, Qt::CaseInsensitive) == 0)
+            return entries[index].second.trimmed();
+    }
+    return {};
+}
+
+QString parentNicknameForObject(const SolarObject &obj)
+{
+    return rawObjectEntryValue(obj, QStringLiteral("parent"));
+}
+
+QString normalizedPathKey(const QString &value)
+{
+    QString normalized = QDir::fromNativeSeparators(value).trimmed();
+#ifdef Q_OS_WIN
+    normalized = normalized.toLower();
+#endif
+    return normalized;
+}
+
+const QHash<QString, QString> &solarArchetypeModelPathsForPreview()
+{
+    static QString cachedGamePath;
+    static QHash<QString, QString> cache;
+
+    const QString gamePath = normalizedPathKey(flatlas::core::EditingContext::instance().primaryGamePath());
+    if (gamePath == cachedGamePath)
+        return cache;
+
+    cachedGamePath = gamePath;
+    cache.clear();
+    if (gamePath.isEmpty())
+        return cache;
+
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gamePath, QStringLiteral("DATA"));
+    const QString solarArchPath = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("SOLAR/solararch.ini"));
+    if (solarArchPath.isEmpty())
+        return cache;
+
+    const IniDocument document = IniParser::parseFile(solarArchPath);
+    for (const auto &section : document) {
+        const QString nickname = normalizedPathKey(section.value(QStringLiteral("nickname")));
+        const QString relativeModelPath = section.value(QStringLiteral("DA_archetype")).trimmed();
+        if (nickname.isEmpty() || relativeModelPath.isEmpty())
+            continue;
+
+        const QString modelPath = flatlas::core::PathUtils::ciResolvePath(dataDir, relativeModelPath);
+        if (!modelPath.isEmpty())
+            cache.insert(nickname, modelPath);
+    }
+
+    return cache;
+}
+
+QQuaternion quaternionFromFreelancerRotation(const QVector3D &rotation)
+{
+    return QQuaternion::fromEulerAngles(rotation.x(), rotation.y(), rotation.z());
+}
+
+class SystemGroupPreviewDialog final : public QDialog {
+public:
+    explicit SystemGroupPreviewDialog(QWidget *parent = nullptr)
+        : QDialog(parent)
+    {
+        setWindowTitle(tr("3D Preview"));
+        resize(980, 760);
+
+        auto *layout = new QVBoxLayout(this);
+        auto *headerLayout = new QHBoxLayout();
+
+        m_titleLabel = new QLabel(tr("No preview loaded"), this);
+        m_titleLabel->setWordWrap(true);
+        headerLayout->addWidget(m_titleLabel, 1);
+
+        auto *resetButton = new QPushButton(tr("Reset Camera"), this);
+        connect(resetButton, &QPushButton::clicked, this, [this]() {
+            if (m_viewport)
+                m_viewport->resetView();
+        });
+        headerLayout->addWidget(resetButton);
+        layout->addLayout(headerLayout);
+
+        m_viewport = new ModelViewport3D(this);
+        layout->addWidget(m_viewport, 1);
+    }
+
+    bool loadModelFile(const QString &filePath, const QString &title, QString *errorMessage = nullptr)
+    {
+        if (!m_viewport)
+            return false;
+        m_titleLabel->setText(title);
+        return m_viewport->loadModelFile(filePath, errorMessage);
+    }
+
+    bool loadModelNode(const flatlas::infrastructure::ModelNode &node,
+                       const QString &title,
+                       QString *errorMessage = nullptr)
+    {
+        if (!m_viewport)
+            return false;
+        m_titleLabel->setText(title);
+        return m_viewport->loadModelNode(node, errorMessage);
+    }
+
+private:
+    QLabel *m_titleLabel = nullptr;
+    ModelViewport3D *m_viewport = nullptr;
+};
 
 }
 
@@ -202,6 +325,8 @@ void SystemEditorPage::setupUi()
     m_iniEditor = new IniCodeEditor(editorHost);
     m_iniEditorHighlighter = new IniSyntaxHighlighter(m_iniEditor->document());
     m_iniEditor->setPlaceholderText(tr("Wähle links ein Objekt oder eine Zone aus."));
+    m_iniEditor->setLineWrapMode(QPlainTextEdit::NoWrap);
+    m_iniEditor->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     iniEditorLayout->addWidget(m_iniEditor, 1);
 
     m_applyIniButton = new QPushButton(tr("Übernehmen"), iniEditorHost);
@@ -209,6 +334,10 @@ void SystemEditorPage::setupUi()
 
     m_openSystemIniButton = new QPushButton(tr("System ini öffnen"), iniEditorHost);
     iniEditorLayout->addWidget(m_openSystemIniButton);
+
+    m_preview3DButton = new QPushButton(tr("3D Preview"), iniEditorHost);
+    m_preview3DButton->setEnabled(false);
+    iniEditorLayout->addWidget(m_preview3DButton);
     m_editorStack->addWidget(m_singleEditorPage);
 
     m_multiSelectionPage = new QWidget(m_editorStack);
@@ -301,6 +430,7 @@ void SystemEditorPage::connectSignals()
     connect(m_mapScene, &MapScene::selectionNicknamesChanged, this, &SystemEditorPage::onCanvasSelectionChanged);
     connect(m_applyIniButton, &QPushButton::clicked, this, &SystemEditorPage::applyIniEditorChanges);
     connect(m_openSystemIniButton, &QPushButton::clicked, this, &SystemEditorPage::openSystemIniExternally);
+    connect(m_preview3DButton, &QPushButton::clicked, this, &SystemEditorPage::open3DPreviewForSelection);
     connect(m_mapView, &SystemMapView::itemsMoved, this, &SystemEditorPage::onItemsMoved);
 
     // 3D → 2D selection sync
@@ -741,9 +871,15 @@ void SystemEditorPage::refreshObjectList()
     objRoot->setFlags(objRoot->flags() & ~Qt::ItemIsSelectable);
     objRoot->setExpanded(true);
     for (const auto &obj : m_document->objects()) {
+        if (isChildObject(*obj))
+            continue;
         auto *item = new QTreeWidgetItem(objRoot);
         item->setText(0, obj->nickname());
-        item->setText(1, QMetaEnum::fromType<SolarObject::Type>().valueToKey(obj->type()));
+        const int childCount = static_cast<int>(objectGroupNicknames(obj->nickname()).size()) - 1;
+        QString typeText = QString::fromLatin1(QMetaEnum::fromType<SolarObject::Type>().valueToKey(obj->type()));
+        if (childCount > 0)
+            typeText = tr("%1 (%2 parts)").arg(typeText).arg(childCount + 1);
+        item->setText(1, typeText);
     }
 
     auto *zoneRoot = new QTreeWidgetItem(m_objectTree, {tr("Zones")});
@@ -774,9 +910,10 @@ void SystemEditorPage::onCanvasSelectionChanged(const QStringList &nicknames)
 {
     if (m_isShuttingDown)
         return;
-    m_selectedNicknames = nicknames;
+    m_selectedNicknames = normalizeSelectionNicknames(nicknames);
     pruneSelectionByCurrentFilter();
     syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
 
     const QString primaryNickname = primarySelectedNickname();
     if (m_sceneView3D && m_is3DViewEnabled && m_selectedNicknames.size() == 1)
@@ -818,7 +955,7 @@ void SystemEditorPage::onTreeSelectionChanged()
     }
     nicknames.removeDuplicates();
 
-    m_selectedNicknames = nicknames;
+    m_selectedNicknames = normalizeSelectionNicknames(nicknames);
     pruneSelectionByCurrentFilter();
     syncSceneSelectionFromNicknames(m_selectedNicknames);
 
@@ -859,14 +996,19 @@ void SystemEditorPage::onDeleteSelected()
     QVector<std::shared_ptr<SolarObject>> objectsToRemove;
     QVector<std::shared_ptr<ZoneItem>> zonesToRemove;
     for (const QString &nickname : m_selectedNicknames) {
-        for (const auto &obj : m_document->objects()) {
-            if (obj->nickname() == nickname) {
-                objectsToRemove.append(obj);
-                break;
+        if (SolarObject *rootObject = findObjectByNickname(nickname)) {
+            for (const QString &groupNickname : objectGroupNicknames(rootObject->nickname())) {
+                for (const auto &obj : m_document->objects()) {
+                    if (obj->nickname() == groupNickname && !objectsToRemove.contains(obj)) {
+                        objectsToRemove.append(obj);
+                        break;
+                    }
+                }
             }
+            continue;
         }
         for (const auto &zone : m_document->zones()) {
-            if (zone->nickname() == nickname) {
+            if (zone->nickname() == nickname && !zonesToRemove.contains(zone)) {
                 zonesToRemove.append(zone);
                 break;
             }
@@ -893,6 +1035,52 @@ void SystemEditorPage::onDuplicateSelected()
     if (!m_document || m_selectedNicknames.size() != 1)
         return;
     const QString nickname = m_selectedNicknames.first();
+
+    if (SolarObject *rootObject = findObjectByNickname(nickname)) {
+        const QStringList groupNicknames = objectGroupNicknames(rootObject->nickname());
+        if (groupNicknames.size() > 1) {
+            QHash<QString, QString> renameMap;
+            for (const QString &groupNickname : groupNicknames)
+                renameMap.insert(groupNickname, groupNickname + QStringLiteral("_copy"));
+
+            auto *stack = flatlas::core::UndoManager::instance().stack();
+            stack->beginMacro(tr("Duplicate Object Group"));
+            for (const QString &groupNickname : groupNicknames) {
+                SolarObject *source = findObjectByNickname(groupNickname);
+                if (!source)
+                    continue;
+
+                auto dup = std::make_shared<SolarObject>();
+                dup->setNickname(renameMap.value(groupNickname, groupNickname + QStringLiteral("_copy")));
+                dup->setArchetype(source->archetype());
+                dup->setPosition(source->position() + QVector3D(500, 0, 0));
+                dup->setRotation(source->rotation());
+                dup->setType(source->type());
+                dup->setBase(source->base());
+                dup->setDockWith(source->dockWith());
+                dup->setGotoTarget(source->gotoTarget());
+                dup->setLoadout(source->loadout());
+                dup->setComment(source->comment());
+                dup->setIdsName(source->idsName());
+                dup->setIdsInfo(source->idsInfo());
+
+                QVector<QPair<QString, QString>> entries = source->rawEntries();
+                for (auto &entry : entries) {
+                    if (entry.first.compare(QStringLiteral("nickname"), Qt::CaseInsensitive) == 0)
+                        entry.second = dup->nickname();
+                    else if (entry.first.compare(QStringLiteral("parent"), Qt::CaseInsensitive) == 0)
+                        entry.second = renameMap.value(entry.second.trimmed(), entry.second);
+                }
+                dup->setRawEntries(entries);
+
+                stack->push(new AddObjectCommand(m_document.get(), dup, tr("Duplicate Object Group")));
+            }
+            stack->endMacro();
+            m_selectedNicknames = {renameMap.value(rootObject->nickname(), rootObject->nickname())};
+            refreshObjectList();
+            return;
+        }
+    }
 
     for (const auto &obj : m_document->objects()) {
         if (obj->nickname() == nickname) {
@@ -966,12 +1154,13 @@ QString SystemEditorPage::serializeSelectionToIni() const
         return {};
     const QString nickname = m_selectedNicknames.first().trimmed();
 
-    for (const auto &obj : m_document->objects()) {
-        if (obj->nickname() == nickname) {
-            IniDocument doc;
-            doc.append(SystemPersistence::serializeObjectSection(*obj));
-            return IniParser::serialize(doc).trimmed();
+    if (SolarObject *rootObject = findObjectByNickname(nickname)) {
+        IniDocument doc;
+        for (const QString &groupNickname : objectGroupNicknames(rootObject->nickname())) {
+            if (SolarObject *obj = findObjectByNickname(groupNickname))
+                doc.append(SystemPersistence::serializeObjectSection(*obj));
         }
+        return IniParser::serialize(doc).trimmed();
     }
 
     for (const auto &zone : m_document->zones()) {
@@ -1107,7 +1296,7 @@ void SystemEditorPage::removeNicknameFromSelection(const QString &nickname)
 {
     if (m_isShuttingDown)
         return;
-    m_selectedNicknames.removeAll(nickname);
+    m_selectedNicknames.removeAll(normalizeObjectNicknameToGroupRoot(nickname));
     m_selectedNicknames.removeDuplicates();
     syncTreeSelectionFromNicknames(m_selectedNicknames);
     syncSceneSelectionFromNicknames(m_selectedNicknames);
@@ -1297,9 +1486,9 @@ void SystemEditorPage::applyIniEditorChanges()
     }
 
     const IniDocument parsed = IniParser::parseText(text);
-    if (parsed.size() != 1) {
+    if (parsed.isEmpty()) {
         QMessageBox::warning(this, tr("Ungültige Section"),
-                             tr("Bitte genau eine [Object]- oder [Zone]-Section einfügen."));
+                             tr("Bitte mindestens eine gültige INI-Section einfügen."));
         return;
     }
 
@@ -1312,28 +1501,66 @@ void SystemEditorPage::applyIniEditorChanges()
     }
 
     const QString previousNickname = m_selectedNicknames.first();
+    SolarObject *selectedRootObject = findObjectByNickname(previousNickname);
 
     if (sectionName == QStringLiteral("object")) {
-        for (const auto &obj : m_document->objects()) {
-            if (obj->nickname() == previousNickname) {
-                IniDocument beforeDoc;
-                beforeDoc.append(SystemPersistence::serializeObjectSection(*obj));
-                const QString beforeText = IniParser::serialize(beforeDoc).trimmed();
-                SystemPersistence::applyObjectSection(*obj, section);
-                IniDocument afterDoc;
-                afterDoc.append(SystemPersistence::serializeObjectSection(*obj));
-                const QString afterText = IniParser::serialize(afterDoc).trimmed();
-                if (beforeText != afterText)
-                    m_document->setDirty(true);
-                m_selectedNicknames = {obj->nickname()};
-                refreshObjectList();
-                onCanvasSelectionChanged(m_selectedNicknames);
+        if (!selectedRootObject) {
+            QMessageBox::warning(this, tr("Section passt nicht"),
+                                 tr("Die Section passt nicht zum aktuell ausgewählten Eintrag."));
+            return;
+        }
+
+        const QStringList groupNicknames = objectGroupNicknames(selectedRootObject->nickname());
+        const QSet<QString> expectedNicknames(groupNicknames.begin(), groupNicknames.end());
+        QSet<QString> parsedNicknames;
+
+        for (const IniSection &parsedSection : parsed) {
+            if (parsedSection.name.trimmed().compare(QStringLiteral("object"), Qt::CaseInsensitive) != 0) {
+                QMessageBox::warning(this, tr("Ungültige Section"),
+                                     tr("Bei Parent-/Child-Gruppen dürfen nur [Object]-Sections bearbeitet werden."));
                 return;
             }
+
+            const QString parsedNickname = parsedSection.value(QStringLiteral("nickname")).trimmed();
+            if (parsedNickname.isEmpty()) {
+                QMessageBox::warning(this, tr("Ungültige Section"),
+                                     tr("Jede [Object]-Section benötigt einen Nickname."));
+                return;
+            }
+            parsedNicknames.insert(parsedNickname);
         }
+
+        if (parsedNicknames != expectedNicknames) {
+            QMessageBox::warning(this, tr("Section passt nicht"),
+                                 tr("Die bearbeitete Auswahl muss Parent und alle zugehörigen Child-Objekte vollständig enthalten."));
+            return;
+        }
+
+        bool changedAnything = false;
+        for (const IniSection &parsedSection : parsed) {
+            SolarObject *target = findObjectByNickname(parsedSection.value(QStringLiteral("nickname")).trimmed());
+            if (!target)
+                continue;
+
+            IniDocument beforeDoc;
+            beforeDoc.append(SystemPersistence::serializeObjectSection(*target));
+            const QString beforeText = IniParser::serialize(beforeDoc).trimmed();
+            SystemPersistence::applyObjectSection(*target, parsedSection);
+            IniDocument afterDoc;
+            afterDoc.append(SystemPersistence::serializeObjectSection(*target));
+            const QString afterText = IniParser::serialize(afterDoc).trimmed();
+            changedAnything = changedAnything || (beforeText != afterText);
+        }
+
+        if (changedAnything)
+            m_document->setDirty(true);
+        m_selectedNicknames = normalizeSelectionNicknames({selectedRootObject->nickname()});
+        refreshObjectList();
+        onCanvasSelectionChanged(m_selectedNicknames);
+        return;
     }
 
-    if (sectionName == QStringLiteral("zone")) {
+    if (parsed.size() == 1 && sectionName == QStringLiteral("zone")) {
         for (const auto &zone : m_document->zones()) {
             if (zone->nickname() == previousNickname) {
                 IniDocument beforeDoc;
@@ -1393,14 +1620,16 @@ void SystemEditorPage::updateSelectionSummary()
     }
 
     const QString nickname = m_selectedNicknames.first();
-    for (const auto &obj : m_document->objects()) {
-        if (obj->nickname() == nickname) {
-            m_selectionTitleLabel->setText(obj->nickname());
-            m_selectionSubtitleLabel->setText(tr("Objekt · %1")
-                                                  .arg(QString::fromLatin1(QMetaEnum::fromType<SolarObject::Type>().valueToKey(obj->type()))));
-            emit selectionStatusChanged(tr("1 Objekt markiert"));
-            return;
-        }
+    if (SolarObject *obj = findObjectByNickname(nickname)) {
+        m_selectionTitleLabel->setText(obj->nickname());
+        const int groupCount = objectGroupNicknames(obj->nickname()).size();
+        QString subtitle = tr("Objekt · %1")
+            .arg(QString::fromLatin1(QMetaEnum::fromType<SolarObject::Type>().valueToKey(obj->type())));
+        if (groupCount > 1)
+            subtitle += tr(" · %1 parts").arg(groupCount);
+        m_selectionSubtitleLabel->setText(subtitle);
+        emit selectionStatusChanged(groupCount > 1 ? tr("1 Objektgruppe markiert") : tr("1 Objekt markiert"));
+        return;
     }
 
     for (const auto &zone : m_document->zones()) {
@@ -1429,12 +1658,9 @@ void SystemEditorPage::updateSidebarButtons()
     SolarObject::Type objectType = SolarObject::Other;
 
     if (m_document && hasSingleSelection) {
-        for (const auto &obj : m_document->objects()) {
-            if (obj->nickname() == selectedNickname) {
-                isObject = true;
-                objectType = obj->type();
-                break;
-            }
+        if (SolarObject *obj = findObjectByNickname(selectedNickname)) {
+            isObject = true;
+            objectType = obj->type();
         }
         if (!isObject) {
             for (const auto &zone : m_document->zones()) {
@@ -1464,6 +1690,8 @@ void SystemEditorPage::updateSidebarButtons()
         m_saveFileButton->setEnabled(m_document != nullptr);
     if (m_objectJumpButton)
         m_objectJumpButton->setEnabled(m_objectJumpCombo && m_objectJumpCombo->count() > 0);
+    if (m_preview3DButton)
+        m_preview3DButton->setEnabled(hasSingleObjectGroupSelection());
 }
 
 void SystemEditorPage::refreshObjectJumpList()
@@ -1476,8 +1704,10 @@ void SystemEditorPage::refreshObjectJumpList()
     if (!m_document)
         return;
 
-    for (const auto &obj : m_document->objects())
-        m_objectJumpCombo->addItem(obj->nickname());
+    for (const auto &obj : m_document->objects()) {
+        if (!isChildObject(*obj))
+            m_objectJumpCombo->addItem(obj->nickname());
+    }
     for (const auto &zone : m_document->zones())
         m_objectJumpCombo->addItem(zone->nickname());
 }
@@ -1573,7 +1803,7 @@ void SystemEditorPage::syncTreeSelectionFromNicknames(const QStringList &nicknam
 void SystemEditorPage::syncSceneSelectionFromNicknames(const QStringList &nicknames)
 {
     if (m_mapScene)
-        m_mapScene->selectNicknames(nicknames);
+    m_mapScene->selectNicknames(expandSelectionNicknamesForScene(nicknames));
 }
 
 QString SystemEditorPage::primarySelectedNickname() const
@@ -1654,6 +1884,193 @@ void SystemEditorPage::onCreateBase()
 void SystemEditorPage::onCreateDockingRing()
 {
     createQuickObject(SolarObject::DockingRing, QStringLiteral("new_docking_ring"), QStringLiteral("docking_ring"));
+}
+
+SolarObject *SystemEditorPage::findObjectByNickname(const QString &nickname) const
+{
+    if (!m_document)
+        return nullptr;
+    for (const auto &obj : m_document->objects()) {
+        if (obj->nickname() == nickname)
+            return obj.get();
+    }
+    return nullptr;
+}
+
+ZoneItem *SystemEditorPage::findZoneByNickname(const QString &nickname) const
+{
+    if (!m_document)
+        return nullptr;
+    for (const auto &zone : m_document->zones()) {
+        if (zone->nickname() == nickname)
+            return zone.get();
+    }
+    return nullptr;
+}
+
+QString SystemEditorPage::normalizeObjectNicknameToGroupRoot(const QString &nickname) const
+{
+    SolarObject *object = findObjectByNickname(nickname);
+    if (!object)
+        return nickname;
+
+    QString currentNickname = object->nickname();
+    QSet<QString> visited;
+    while (object) {
+        if (visited.contains(currentNickname))
+            break;
+        visited.insert(currentNickname);
+
+        const QString parentNickname = parentNicknameForObject(*object);
+        if (parentNickname.isEmpty())
+            break;
+
+        SolarObject *parentObject = findObjectByNickname(parentNickname);
+        if (!parentObject)
+            break;
+
+        currentNickname = parentObject->nickname();
+        object = parentObject;
+    }
+
+    return currentNickname;
+}
+
+QStringList SystemEditorPage::normalizeSelectionNicknames(const QStringList &nicknames) const
+{
+    QStringList normalized;
+    normalized.reserve(nicknames.size());
+    for (const QString &nickname : nicknames) {
+        if (findObjectByNickname(nickname))
+            normalized.append(normalizeObjectNicknameToGroupRoot(nickname));
+        else if (findZoneByNickname(nickname))
+            normalized.append(nickname);
+    }
+    normalized.removeDuplicates();
+    return normalized;
+}
+
+QStringList SystemEditorPage::expandSelectionNicknamesForScene(const QStringList &nicknames) const
+{
+    QStringList expanded;
+    for (const QString &nickname : nicknames) {
+        if (findObjectByNickname(nickname))
+            expanded.append(objectGroupNicknames(normalizeObjectNicknameToGroupRoot(nickname)));
+        else if (findZoneByNickname(nickname))
+            expanded.append(nickname);
+    }
+    expanded.removeDuplicates();
+    return expanded;
+}
+
+QStringList SystemEditorPage::objectGroupNicknames(const QString &rootNickname) const
+{
+    if (!m_document)
+        return {};
+
+    const QString canonicalRoot = normalizeObjectNicknameToGroupRoot(rootNickname);
+    if (!findObjectByNickname(canonicalRoot))
+        return {};
+
+    QStringList ordered{canonicalRoot};
+    bool appended = true;
+    while (appended) {
+        appended = false;
+        for (const auto &obj : m_document->objects()) {
+            const QString parentNickname = parentNicknameForObject(*obj);
+            if (parentNickname.isEmpty() || ordered.contains(obj->nickname()))
+                continue;
+            if (ordered.contains(parentNickname)) {
+                ordered.append(obj->nickname());
+                appended = true;
+            }
+        }
+    }
+    return ordered;
+}
+
+bool SystemEditorPage::isChildObject(const SolarObject &obj) const
+{
+    return !parentNicknameForObject(obj).isEmpty();
+}
+
+bool SystemEditorPage::hasSingleObjectGroupSelection() const
+{
+    return m_selectedNicknames.size() == 1 && findObjectByNickname(m_selectedNicknames.first()) != nullptr;
+}
+
+void SystemEditorPage::open3DPreviewForSelection()
+{
+    if (!hasSingleObjectGroupSelection())
+        return;
+
+    SolarObject *rootObject = findObjectByNickname(m_selectedNicknames.first());
+    if (!rootObject)
+        return;
+
+    const QStringList groupNicknames = objectGroupNicknames(rootObject->nickname());
+    const auto &modelPaths = solarArchetypeModelPathsForPreview();
+
+    if (groupNicknames.size() == 1) {
+        const QString modelPath = modelPaths.value(normalizedPathKey(rootObject->archetype()));
+        if (modelPath.isEmpty()) {
+            QMessageBox::warning(this, tr("3D Preview"),
+                                 tr("Für das ausgewählte Objekt konnte kein Modell aufgelöst werden."));
+            return;
+        }
+
+        auto dialog = std::make_unique<SystemGroupPreviewDialog>(this);
+        QString errorMessage;
+        if (!dialog->loadModelFile(modelPath, rootObject->nickname(), &errorMessage)) {
+            QMessageBox::warning(this, tr("3D Preview"), errorMessage);
+            return;
+        }
+        dialog->exec();
+        return;
+    }
+
+    flatlas::infrastructure::ModelNode combinedRoot;
+    combinedRoot.name = rootObject->nickname();
+    const QVector3D rootPosition = rootObject->position();
+    int addedModels = 0;
+
+    for (const QString &groupNickname : groupNicknames) {
+        SolarObject *object = findObjectByNickname(groupNickname);
+        if (!object)
+            continue;
+
+        const QString modelPath = modelPaths.value(normalizedPathKey(object->archetype()));
+        if (modelPath.isEmpty())
+            continue;
+
+        const flatlas::infrastructure::DecodedModel decoded = flatlas::rendering::ModelCache::instance().load(modelPath);
+        if (!decoded.isValid())
+            continue;
+
+        flatlas::infrastructure::ModelNode wrapper;
+        wrapper.name = object->nickname();
+        wrapper.origin = object->position() - rootPosition;
+        wrapper.rotation = quaternionFromFreelancerRotation(object->rotation());
+        wrapper.children.append(decoded.rootNode);
+        combinedRoot.children.append(wrapper);
+        ++addedModels;
+    }
+
+    if (addedModels <= 0) {
+        QMessageBox::warning(this, tr("3D Preview"),
+                             tr("Für die ausgewählte Objektgruppe konnte kein darstellbares Modell geladen werden."));
+        return;
+    }
+
+    auto dialog = std::make_unique<SystemGroupPreviewDialog>(this);
+    QString errorMessage;
+    if (!dialog->loadModelNode(combinedRoot,
+                               tr("%1 (%2 parts)").arg(rootObject->nickname()).arg(groupNicknames.size()),
+                               &errorMessage)) {
+        QMessageBox::warning(this, tr("3D Preview"), errorMessage);
+        return;
+    }
+    dialog->exec();
 }
 
 } // namespace flatlas::editors

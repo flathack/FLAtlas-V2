@@ -60,6 +60,15 @@ signals:
 private:
     void loadDocumentIntoUi();
     void emitLoadingProgress(int percent, const QString &message);
+    flatlas::domain::SolarObject *findObjectByNickname(const QString &nickname) const;
+    flatlas::domain::ZoneItem *findZoneByNickname(const QString &nickname) const;
+    QString normalizeObjectNicknameToGroupRoot(const QString &nickname) const;
+    QStringList normalizeSelectionNicknames(const QStringList &nicknames) const;
+    QStringList expandSelectionNicknamesForScene(const QStringList &nicknames) const;
+    QStringList objectGroupNicknames(const QString &rootNickname) const;
+    bool isChildObject(const flatlas::domain::SolarObject &obj) const;
+    bool hasSingleObjectGroupSelection() const;
+    void open3DPreviewForSelection();
     void setupUi();
     void setupToolBar();
     void setupObjectList();
@@ -139,6 +148,7 @@ private:
     IniSyntaxHighlighter *m_iniEditorHighlighter = nullptr;
     QPushButton *m_applyIniButton = nullptr;
     QPushButton *m_openSystemIniButton = nullptr;
+    QPushButton *m_preview3DButton = nullptr;
     QWidget *m_multiSelectionPage = nullptr;
     QLabel *m_multiSelectionLabel = nullptr;
     QScrollArea *m_multiSelectionScrollArea = nullptr;

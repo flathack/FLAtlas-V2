@@ -28,6 +28,7 @@ public:
     ~ModelViewport3D() override;
 
     bool loadModelFile(const QString &filePath, QString *errorMessage = nullptr);
+    bool loadModelNode(const flatlas::infrastructure::ModelNode &model, QString *errorMessage = nullptr);
     void clearModel();
     void resetView();
 

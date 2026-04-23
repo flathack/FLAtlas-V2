@@ -23,7 +23,21 @@ namespace flatlas::rendering {
 
 namespace {
 
-constexpr double kInitialGridFillFactor = 1.12;
+double fitScaleForView(const QGraphicsView *view, const QRectF &targetRect)
+{
+    if (!view)
+        return 0.0;
+
+    const QRect viewportRect = view->viewport()->rect().adjusted(2, 2, -2, -2);
+    if (viewportRect.width() <= 0 || viewportRect.height() <= 0)
+        return 0.0;
+    if (targetRect.width() <= 0.0 || targetRect.height() <= 0.0)
+        return 0.0;
+
+    const double scaleX = static_cast<double>(viewportRect.width()) / targetRect.width();
+    const double scaleY = static_cast<double>(viewportRect.height()) / targetRect.height();
+    return std::max(0.0001, std::min(scaleX, scaleY));
+}
 
 }
 
@@ -122,12 +136,10 @@ void SystemMapView::zoomToFit()
     resetTransform();
     fitInView(targetRect, Qt::KeepAspectRatio);
     centerOn(targetRect.center());
-    scale(kInitialGridFillFactor, kInitialGridFillFactor);
-    centerOn(targetRect.center());
 
     setTransformationAnchor(previousAnchor);
     setResizeAnchor(previousResizeAnchor);
-    m_minZoomScale = qMax(0.0001, transform().m11());
+    m_minZoomScale = fitScaleForView(this, targetRect);
     updateItemDetailForScale();
     if (--m_pendingInitialFitPasses <= 0) {
         m_pendingInitialFit = false;
@@ -369,6 +381,13 @@ void SystemMapView::showEvent(QShowEvent *event)
 void SystemMapView::resizeEvent(QResizeEvent *event)
 {
     QGraphicsView::resizeEvent(event);
+    if (scene()) {
+        QRectF targetRect = scene()->sceneRect();
+        if (targetRect.isNull() || targetRect.width() <= 0.0 || targetRect.height() <= 0.0)
+            targetRect = scene()->itemsBoundingRect();
+        if (!targetRect.isNull() && targetRect.width() > 0.0 && targetRect.height() > 0.0)
+            m_minZoomScale = fitScaleForView(this, targetRect);
+    }
     applyInitialFitIfNeeded();
 }
 
