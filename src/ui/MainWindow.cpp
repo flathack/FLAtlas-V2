@@ -613,16 +613,7 @@ bool MainWindow::saveWidgetWithPrompt(QWidget *widget)
     }
 
     if (auto *editor = qobject_cast<flatlas::editors::IniEditorPage *>(widget)) {
-        QString targetPath = editor->filePath();
-        if (targetPath.isEmpty()) {
-            targetPath = QFileDialog::getSaveFileName(
-                this, tr("Save INI File"), QString(),
-                tr("INI Files (*.ini);;All Files (*)"));
-            if (targetPath.isEmpty())
-                return false;
-            return editor->saveAs(targetPath);
-        }
-        return editor->save();
+        return editor->saveAllDirtyTabs(this);
     }
 
     if (auto *editor = qobject_cast<flatlas::editors::UniverseEditorPage *>(widget)) {
@@ -706,13 +697,11 @@ flatlas::editors::SystemEditorPage *MainWindow::currentSystemEditor() const
 
 void MainWindow::openIniFile()
 {
-    const QString preferredRoot = flatlas::core::PathUtils::ciResolvePath(
-        flatlas::core::EditingContext::instance().primaryGamePath(),
-        QStringLiteral("DATA"));
+    const QString preferredRoot = flatlas::core::EditingContext::instance().primaryGamePath();
 
     for (int i = 0; i < m_centerTabs->count(); ++i) {
         auto *editor = qobject_cast<flatlas::editors::IniEditorPage *>(m_centerTabs->widget(i));
-        if (!editor || !editor->filePath().isEmpty())
+        if (!editor)
             continue;
         editor->openWorkspace(preferredRoot);
         m_centerTabs->setCurrentIndex(i);
@@ -745,27 +734,40 @@ void MainWindow::openIniFile(const QString &filePath, const QString &searchText,
     if (filePath.isEmpty())
         return;
 
-    auto *editor = new flatlas::editors::IniEditorPage(this);
+    flatlas::editors::IniEditorPage *editor = nullptr;
+    for (int i = 0; i < m_centerTabs->count(); ++i) {
+        editor = qobject_cast<flatlas::editors::IniEditorPage *>(m_centerTabs->widget(i));
+        if (editor) {
+            m_centerTabs->setCurrentIndex(i);
+            break;
+        }
+    }
+
+    if (!editor) {
+        editor = new flatlas::editors::IniEditorPage(this);
+        const QString preferredRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+        editor->openWorkspace(preferredRoot);
+
+        int idx = m_centerTabs->addTab(editor, tr("File Editor"));
+        m_centerTabs->setCurrentIndex(idx);
+
+        connect(editor, &flatlas::editors::IniEditorPage::titleChanged,
+                this, [this, editor](const QString &title) {
+            int i = m_centerTabs->indexOf(editor);
+            if (i >= 0)
+                m_centerTabs->setTabText(i, title);
+        });
+        connect(editor, &flatlas::editors::IniEditorPage::openFileRequested,
+                this, [this](const QString &requestedPath, const QString &requestedSearchText, int requestedLineNumber) {
+            openIniFile(requestedPath, requestedSearchText, requestedLineNumber);
+        });
+    }
+
     if (!editor->openFile(filePath)) {
         QMessageBox::warning(this, tr("Error"),
                              tr("Could not open file:\n%1").arg(filePath));
-        delete editor;
         return;
     }
-
-    int idx = m_centerTabs->addTab(editor, editor->fileName());
-    m_centerTabs->setCurrentIndex(idx);
-
-    connect(editor, &flatlas::editors::IniEditorPage::titleChanged,
-            this, [this, editor](const QString &title) {
-        int i = m_centerTabs->indexOf(editor);
-        if (i >= 0)
-            m_centerTabs->setTabText(i, title);
-    });
-    connect(editor, &flatlas::editors::IniEditorPage::openFileRequested,
-            this, [this](const QString &requestedPath, const QString &requestedSearchText, int requestedLineNumber) {
-        openIniFile(requestedPath, requestedSearchText, requestedLineNumber);
-    });
 
     if (!searchText.trimmed().isEmpty())
         editor->focusSearch(searchText);

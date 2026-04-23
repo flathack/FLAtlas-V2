@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QDateTime>
+#include <QHash>
 #include <QSet>
 #include <QVector>
 #include <QWidget>
@@ -16,8 +17,12 @@ class QListWidget;
 class QListWidgetItem;
 class QPlainTextEdit;
 class QPushButton;
+class QScrollBar;
+class QStackedWidget;
+class QTabBar;
 class QTabWidget;
 class QTextBrowser;
+class QTextDocument;
 class QTimer;
 class QToolBar;
 class QTreeView;
@@ -29,6 +34,8 @@ class QFutureWatcher;
 namespace flatlas::editors {
 
 class IniCodeEditor;
+class IniFindReplaceDialog;
+class IniMiniMap;
 class IniSyntaxHighlighter;
 
 class IniEditorPage : public QWidget {
@@ -40,6 +47,7 @@ public:
     bool openFile(const QString &filePath);
     bool save();
     bool saveAs(const QString &filePath);
+    bool saveAllDirtyTabs(QWidget *dialogParent = nullptr);
 
     QString filePath() const;
     QString fileName() const;
@@ -57,6 +65,7 @@ private slots:
     void refreshCurrentSectionFromCursor();
     void startGlobalSearch();
     void handleGlobalSearchFinished();
+    void onFileTabChanged(int index);
     void openFromFileTree(const QModelIndex &index);
     void openFromSearchResult(const QModelIndex &index);
     void activateSelectedSnapshot();
@@ -73,47 +82,83 @@ private:
         QString text;
     };
 
+    struct FileSession {
+        QString filePath;
+        QString savedText;
+        QString pendingRecoveryText;
+        flatlas::infrastructure::IniAnalysisResult analysis;
+        QVector<Snapshot> snapshots;
+        QSet<int> collapsedSectionLines;
+        QTextDocument *document = nullptr;
+        IniSyntaxHighlighter *highlighter = nullptr;
+        bool dirty = false;
+        bool wasBini = false;
+        int nextSnapshotId = 1;
+        int cursorPosition = 0;
+        int verticalScrollValue = 0;
+        int horizontalScrollValue = 0;
+        int selectedSectionStartLine = -1;
+    };
+
     void setupUi();
     void setupToolbar();
-    void setupSearchStrip();
     void setupWorkspace();
     void setupBottomTabs();
     void setupShortcuts();
 
     void updateTitle();
+    void updateActiveTabText();
     void updateDirtyState();
     void updateWorkspaceContext();
     void updateBreadcrumbs();
     void setTreeRootPath(const QString &rootPath);
+    void restoreTreeState();
+    void saveTreeState() const;
+    void revealPathInTree(const QString &path);
     QString preferredProjectRoot() const;
     bool isIniLikePath(const QString &path) const;
+    FileSession *currentSession();
+    const FileSession *currentSession() const;
+    int findSessionIndex(const QString &filePath) const;
+    void activateSession(int index);
+    void storeCurrentSessionState();
+    void bindActiveSession();
+    void clearActiveSession();
+    void setCurrentSessionIndex(int index);
+    bool ensureWorkspaceRootForFile(const QString &filePath);
+    bool openFileInSession(const QString &filePath, QString *errorMessage = nullptr);
+    bool saveSession(FileSession &session, const QString &targetPath);
+    bool confirmCloseSession(int index);
+    void closeSession(int index, bool force = false);
+    void updateTabBarVisibility();
+    QString sessionDisplayName(const FileSession &session) const;
+    QString workspaceSettingsKey() const;
 
     void populateSectionList();
     void populateKeyListForSectionStartLine(int startLine);
     void updateDiagnosticsView();
     void updateSearchResultsView(const QVector<flatlas::infrastructure::IniSearchMatch> &matches);
-    void syncMinimapText();
-    void syncMinimapScroll();
     void updateStatusSummary();
 
     bool findWithCurrentOptions(bool forward);
     void findNext();
     void findPrev();
     void replaceAll();
+    void showFindReplaceDialog();
     QString currentSectionText() const;
     void copySelectionToCollector(const QString &text, const QString &label);
     void copyCurrentSelection();
     void cutCurrentSelection();
     void copyCurrentSection();
 
-    void captureSnapshot(const QString &label);
+    void captureSnapshot(FileSession &session, const QString &label);
     void refreshSnapshotList();
     void updateSnapshotDiff();
     QString buildDiffHtml(const QString &fromText, const QString &toText) const;
 
     QString recoveryFilePathFor(const QString &filePath) const;
-    void writeRecoverySnapshot();
-    void clearRecoverySnapshot();
+    void writeRecoverySnapshot(FileSession &session);
+    void clearRecoverySnapshot(FileSession &session);
     void updateRecoveryUi();
 
     QStringList loadRecentFiles() const;
@@ -125,19 +170,15 @@ private:
     void expandAllSections();
 
     IniCodeEditor *m_editor = nullptr;
-    IniSyntaxHighlighter *m_highlighter = nullptr;
-    QPlainTextEdit *m_minimap = nullptr;
+    IniMiniMap *m_minimap = nullptr;
     QToolBar *m_toolbar = nullptr;
     QWidget *m_breadcrumbBar = nullptr;
-    QWidget *m_searchStrip = nullptr;
-    QLineEdit *m_searchEdit = nullptr;
-    QLineEdit *m_replaceEdit = nullptr;
-    QLineEdit *m_globalSearchEdit = nullptr;
-    QLineEdit *m_gotoLineEdit = nullptr;
+    IniFindReplaceDialog *m_findReplaceDialog = nullptr;
+    QStackedWidget *m_editorStack = nullptr;
+    QWidget *m_emptyEditorPage = nullptr;
+    QTabBar *m_fileTabs = nullptr;
     QLineEdit *m_sectionFilterEdit = nullptr;
     QLineEdit *m_keyFilterEdit = nullptr;
-    QCheckBox *m_caseSensitiveCheck = nullptr;
-    QCheckBox *m_regexCheck = nullptr;
     QLabel *m_statusLabel = nullptr;
     QLabel *m_summaryLabel = nullptr;
     QFileSystemModel *m_fileModel = nullptr;
@@ -157,21 +198,13 @@ private:
     QStandardItemModel *m_diagnosticsModel = nullptr;
     QStandardItemModel *m_searchResultsModel = nullptr;
     QTimer *m_analysisTimer = nullptr;
-    QTimer *m_snapshotTimer = nullptr;
     QTimer *m_autosaveTimer = nullptr;
     QFutureWatcher<QVector<flatlas::infrastructure::IniSearchMatch>> *m_searchWatcher = nullptr;
 
-    QString m_filePath;
-    QString m_savedText;
-    QString m_pendingRecoveryText;
     QString m_treeRootPath;
-    flatlas::infrastructure::IniAnalysisResult m_analysis;
-    QVector<Snapshot> m_snapshots;
-    QSet<int> m_collapsedSectionLines;
-    bool m_dirty = false;
-    bool m_wasBini = false;
+    QVector<FileSession> m_sessions;
     bool m_loading = false;
-    int m_nextSnapshotId = 1;
+    int m_currentSessionIndex = -1;
 };
 
 } // namespace flatlas::editors

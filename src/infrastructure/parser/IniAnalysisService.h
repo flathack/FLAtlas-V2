@@ -23,6 +23,9 @@ struct IniSectionInfo {
     int startLine = 0;
     int endLine = 0;
     bool duplicateSection = false;
+    QString identityKey;
+    QString identityValue;
+    QString displayLabel;
     QVector<IniKeyInfo> keys;
 };
 

@@ -12,6 +12,7 @@ class TestIniAnalysisService : public QObject {
     Q_OBJECT
 private slots:
     void detectsSectionsDiagnosticsAndLineMapping();
+    void allowsDuplicateFreelancerSections();
     void searchesAcrossIniFiles();
 };
 
@@ -30,6 +31,7 @@ void TestIniAnalysisService::detectsSectionsDiagnosticsAndLineMapping()
     QCOMPARE(result.sections.size(), 2);
     QCOMPARE(result.sections.at(0).name, QStringLiteral("System"));
     QCOMPARE(result.sections.at(1).name, QStringLiteral("Base"));
+    QCOMPARE(result.sections.at(0).displayLabel, QStringLiteral("[System] nickname = Li01"));
     QCOMPARE(result.sectionIndexForLine(3), 0);
     QCOMPARE(result.sectionIndexForLine(7), 1);
 
@@ -50,6 +52,32 @@ void TestIniAnalysisService::detectsSectionsDiagnosticsAndLineMapping()
     QVERIFY(foundOrphan);
     QVERIFY(foundDuplicateKey);
     QVERIFY(foundMissingEquals);
+}
+
+void TestIniAnalysisService::allowsDuplicateFreelancerSections()
+{
+    const QString text = QStringLiteral(
+        "[Good]\n"
+        "nickname = escape_lifeboat\n"
+        "[Good]\n"
+        "nickname = commodity_gold\n");
+
+    const IniAnalysisResult result = IniAnalysisService::analyzeText(text);
+    QCOMPARE(result.sections.size(), 2);
+    QCOMPARE(result.sections.at(0).displayLabel, QStringLiteral("[Good] nickname = escape_lifeboat"));
+    QCOMPARE(result.sections.at(1).displayLabel, QStringLiteral("[Good] nickname = commodity_gold"));
+
+    bool foundDuplicateSection = false;
+    bool foundDuplicateKey = false;
+    for (const auto &diagnostic : result.diagnostics) {
+        if (diagnostic.code == QStringLiteral("duplicate-section"))
+            foundDuplicateSection = true;
+        if (diagnostic.code == QStringLiteral("duplicate-key"))
+            foundDuplicateKey = true;
+    }
+
+    QVERIFY(!foundDuplicateSection);
+    QVERIFY(!foundDuplicateKey);
 }
 
 void TestIniAnalysisService::searchesAcrossIniFiles()

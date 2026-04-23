@@ -185,7 +185,7 @@ void IniCodeEditor::goToLine(int lineNumber) {
     if (block.isValid()) {
         QTextCursor cursor(block);
         setTextCursor(cursor);
-        centerCursor();
+        ensureCursorVisible();
     }
 }
 

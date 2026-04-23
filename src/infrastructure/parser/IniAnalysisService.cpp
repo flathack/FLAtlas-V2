@@ -80,6 +80,68 @@ bool lineMatchesOptions(const QString &line,
     return line.contains(query, options.caseSensitive ? Qt::CaseSensitive : Qt::CaseInsensitive);
 }
 
+QStringList preferredIdentityKeys(const QString &sectionName)
+{
+    const QString normalized = normalizedName(sectionName);
+    if (normalized == QStringLiteral("good")
+        || normalized == QStringLiteral("commodity")
+        || normalized == QStringLiteral("package")
+        || normalized == QStringLiteral("engine")
+        || normalized == QStringLiteral("power")
+        || normalized == QStringLiteral("shieldgenerator")
+        || normalized == QStringLiteral("munition")) {
+        return {QStringLiteral("nickname"), QStringLiteral("archetype"), QStringLiteral("ids_name")};
+    }
+
+    if (normalized == QStringLiteral("system")
+        || normalized == QStringLiteral("base")
+        || normalized == QStringLiteral("room")
+        || normalized == QStringLiteral("factionprops")) {
+        return {QStringLiteral("nickname"), QStringLiteral("base"), QStringLiteral("file")};
+    }
+
+    return {
+        QStringLiteral("nickname"),
+        QStringLiteral("archetype"),
+        QStringLiteral("base"),
+        QStringLiteral("system"),
+        QStringLiteral("room"),
+        QStringLiteral("file"),
+        QStringLiteral("name"),
+        QStringLiteral("ids_name")
+    };
+}
+
+void finalizeSectionPresentation(IniSectionInfo *section)
+{
+    if (!section)
+        return;
+
+    const QStringList preferredKeys = preferredIdentityKeys(section->name);
+    for (const QString &preferredKey : preferredKeys) {
+        for (const auto &key : section->keys) {
+            if (normalizedName(key.key) != preferredKey)
+                continue;
+            section->identityKey = key.key;
+            section->identityValue = key.value;
+            section->displayLabel = QStringLiteral("[%1] %2 = %3")
+                .arg(section->name, key.key, key.value);
+            return;
+        }
+    }
+
+    if (!section->keys.isEmpty()) {
+        const auto &key = section->keys.first();
+        section->identityKey = key.key;
+        section->identityValue = key.value;
+        section->displayLabel = QStringLiteral("[%1] %2 = %3")
+            .arg(section->name, key.key, key.value);
+        return;
+    }
+
+    section->displayLabel = QStringLiteral("[%1]").arg(section->name);
+}
+
 } // namespace
 
 int IniAnalysisResult::sectionIndexForLine(int lineNumber) const
@@ -119,7 +181,7 @@ IniAnalysisResult IniAnalysisService::analyzeText(const QString &text)
     const QStringList lines = text.split(QLatin1Char('\n'));
     int currentSectionIndex = -1;
     QHash<QString, int> sectionCounts;
-    QHash<QString, QHash<QString, int>> keyCountsBySection;
+    QHash<QString, int> currentSectionKeyCounts;
 
     for (int i = 0; i < lines.size(); ++i) {
         QString line = lines.at(i);
@@ -150,6 +212,9 @@ IniAnalysisResult IniAnalysisService::analyzeText(const QString &text)
             }
 
             if (currentSectionIndex >= 0)
+                finalizeSectionPresentation(&result.sections[currentSectionIndex]);
+
+            if (currentSectionIndex >= 0)
                 result.sections[currentSectionIndex].endLine = lineNumber - 1;
 
             IniSectionInfo section;
@@ -159,17 +224,10 @@ IniAnalysisResult IniAnalysisService::analyzeText(const QString &text)
             const QString normalizedSection = normalizedName(sectionName);
             sectionCounts[normalizedSection] += 1;
             section.duplicateSection = sectionCounts.value(normalizedSection) > 1;
-            if (section.duplicateSection) {
-                appendDiagnostic(&result.diagnostics,
-                                 IniDiagnosticSeverity::Warning,
-                                 QStringLiteral("duplicate-section"),
-                                 QStringLiteral("Section '%1' exists multiple times.").arg(sectionName),
-                                 lineNumber,
-                                 sectionName);
-            }
 
             result.sections.append(section);
             currentSectionIndex = result.sections.size() - 1;
+            currentSectionKeyCounts.clear();
             continue;
         }
 
@@ -213,10 +271,9 @@ IniAnalysisResult IniAnalysisService::analyzeText(const QString &text)
         section.endLine = lineNumber;
         section.keys.append({key, value, lineNumber});
 
-        const QString normalizedSection = normalizedName(section.name);
         const QString normalizedKey = normalizedName(key);
-        keyCountsBySection[normalizedSection][normalizedKey] += 1;
-        if (keyCountsBySection[normalizedSection].value(normalizedKey) > 1) {
+        currentSectionKeyCounts[normalizedKey] += 1;
+        if (currentSectionKeyCounts.value(normalizedKey) > 1) {
             appendDiagnostic(&result.diagnostics,
                              IniDiagnosticSeverity::Warning,
                              QStringLiteral("duplicate-key"),
@@ -227,8 +284,10 @@ IniAnalysisResult IniAnalysisService::analyzeText(const QString &text)
         }
     }
 
-    if (!result.sections.isEmpty())
+    if (!result.sections.isEmpty()) {
+        finalizeSectionPresentation(&result.sections.last());
         result.sections.last().endLine = qMax(result.sections.last().endLine, lines.size());
+    }
 
     return result;
 }
