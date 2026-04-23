@@ -7,6 +7,7 @@
 #include "../../core/PathUtils.h"
 #include "../../core/EditingContext.h"
 #include "../../infrastructure/freelancer/IdsStringTable.h"
+#include "../../infrastructure/parser/IniAnalysisService.h"
 #include "../../infrastructure/parser/BiniDecoder.h"
 
 #include <QFile>
@@ -24,6 +25,9 @@ namespace flatlas::editors {
 
 // ─── static storage ───────────────────────────────────────────────────────────
 QHash<const SystemDocument *, IniDocument> SystemPersistence::s_extras;
+QHash<const SystemDocument *, IniSection> SystemPersistence::s_systemInfoSections;
+QHash<const SystemDocument *, IniDocument> SystemPersistence::s_layoutSections;
+QHash<const SystemDocument *, bool> SystemPersistence::s_nonStandardOrder;
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -215,6 +219,15 @@ static void upsertEntry(QVector<IniEntry> &entries, const QString &key, const QS
     entries.append({key, value});
 }
 
+static int findEntryIndex(const QVector<IniEntry> &entries, const QString &key)
+{
+    for (int index = 0; index < entries.size(); ++index) {
+        if (entries[index].first.compare(key, Qt::CaseInsensitive) == 0)
+            return index;
+    }
+    return -1;
+}
+
 static void removeEntry(QVector<IniEntry> &entries, const QString &key)
 {
     for (int i = entries.size() - 1; i >= 0; --i) {
@@ -230,6 +243,13 @@ static void setOptionalEntry(QVector<IniEntry> &entries, const QString &key, con
         return;
     }
     upsertEntry(entries, key, value);
+}
+
+static bool vec3Equals(const QVector3D &lhs, const QVector3D &rhs)
+{
+    return qFuzzyCompare(lhs.x() + 1.0f, rhs.x() + 1.0f)
+           && qFuzzyCompare(lhs.y() + 1.0f, rhs.y() + 1.0f)
+           && qFuzzyCompare(lhs.z() + 1.0f, rhs.z() + 1.0f);
 }
 
 static void appendSerializedSection(QString &out,
@@ -254,11 +274,279 @@ static void appendSerializedSection(QString &out,
         out += entry.first + QLatin1String(" = ") + entry.second + QLatin1Char('\n');
 }
 
+enum class SystemSectionGroup {
+    SystemInfo = 0,
+    Archetype = 10,
+    EncounterParameters = 20,
+    TexturePanels = 30,
+    Music = 40,
+    Dust = 50,
+    FieldRefs = 60,
+    Ambient = 70,
+    Background = 80,
+    Content = 90,
+    Other = 100,
+};
+
+static IniSection buildSystemInfo(const SystemDocument &doc, const IniSection &baseSection = IniSection{});
+
+static QString normalizedSectionName(const QString &name)
+{
+    return name.trimmed().toLower();
+}
+
+static SystemSectionGroup classifySystemSection(const IniSection &section)
+{
+    const QString name = normalizedSectionName(section.name);
+    if (name == QStringLiteral("systeminfo"))
+        return SystemSectionGroup::SystemInfo;
+    if (name == QStringLiteral("archetype"))
+        return SystemSectionGroup::Archetype;
+    if (name == QStringLiteral("encounterparameters"))
+        return SystemSectionGroup::EncounterParameters;
+    if (name == QStringLiteral("texturepanels"))
+        return SystemSectionGroup::TexturePanels;
+    if (name == QStringLiteral("music"))
+        return SystemSectionGroup::Music;
+    if (name == QStringLiteral("dust"))
+        return SystemSectionGroup::Dust;
+    if (name == QStringLiteral("nebula")
+        || name == QStringLiteral("asteroids")
+        || name == QStringLiteral("dynamicasteroids")) {
+        return SystemSectionGroup::FieldRefs;
+    }
+    if (name == QStringLiteral("ambient"))
+        return SystemSectionGroup::Ambient;
+    if (name == QStringLiteral("background"))
+        return SystemSectionGroup::Background;
+    if (name == QStringLiteral("object")
+        || name == QStringLiteral("zone")
+        || name == QStringLiteral("lightsource")) {
+        return SystemSectionGroup::Content;
+    }
+    return SystemSectionGroup::Other;
+}
+
+static QString normalizedIniValue(const QString &value)
+{
+    return value.trimmed().toLower();
+}
+
+static QString sectionIdentityKey(const IniSection &section)
+{
+    const QString sectionName = normalizedSectionName(section.name);
+    if (sectionName == QStringLiteral("systeminfo"))
+        return sectionName;
+
+    const QVector<QString> identityKeys = {
+        QStringLiteral("nickname"),
+        QStringLiteral("zone"),
+        QStringLiteral("file"),
+        QStringLiteral("name"),
+        QStringLiteral("base"),
+    };
+    for (const QString &key : identityKeys) {
+        const QString value = section.value(key).trimmed();
+        if (!value.isEmpty())
+            return QStringLiteral("%1|%2|%3").arg(sectionName, key, normalizedIniValue(value));
+    }
+    return sectionName;
+}
+
+static void insertSectionByStandardOrder(IniDocument &sections, const IniSection &section)
+{
+    const auto sectionGroup = classifySystemSection(section);
+
+    int insertIndex = sections.size();
+    for (int index = sections.size() - 1; index >= 0; --index) {
+        const auto existingGroup = classifySystemSection(sections[index]);
+        if (existingGroup == sectionGroup) {
+            insertIndex = index + 1;
+            break;
+        }
+        if (static_cast<int>(existingGroup) < static_cast<int>(sectionGroup))
+            break;
+        insertIndex = index;
+    }
+
+    sections.insert(insertIndex, section);
+}
+
+static IniDocument standardizeSystemSectionOrder(const IniDocument &sections)
+{
+    IniDocument ordered;
+    ordered.reserve(sections.size());
+    for (const IniSection &section : sections)
+        insertSectionByStandardOrder(ordered, section);
+    return ordered;
+}
+
+static bool hasDifferentSectionSequence(const IniDocument &lhs, const IniDocument &rhs)
+{
+    if (lhs.size() != rhs.size())
+        return true;
+    for (int index = 0; index < lhs.size(); ++index) {
+        if (sectionIdentityKey(lhs[index]) != sectionIdentityKey(rhs[index]))
+            return true;
+    }
+    return false;
+}
+
+struct RawSectionBlock {
+    IniSection section;
+    QString text;
+};
+
+static QString normalizeLineEndings(const QString &text)
+{
+    QString normalized = text;
+    normalized.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    normalized.replace(QChar('\r'), QChar('\n'));
+    return normalized;
+}
+
+static QVector<RawSectionBlock> extractRawSectionBlocks(const QString &rawText,
+                                                        const IniDocument &sections,
+                                                        const IniAnalysisResult &analysis,
+                                                        QString *outTrailingText = nullptr)
+{
+    QVector<RawSectionBlock> blocks;
+    if (sections.isEmpty() || analysis.sections.size() != sections.size()) {
+        if (outTrailingText)
+            *outTrailingText = rawText;
+        return blocks;
+    }
+
+    const QString normalizedText = normalizeLineEndings(rawText);
+    const QStringList lines = normalizedText.split(QLatin1Char('\n'));
+    blocks.reserve(sections.size());
+
+    int nextBlockStartLine = 1;
+    for (int index = 0; index < sections.size(); ++index) {
+        const IniSectionInfo &info = analysis.sections.at(index);
+        const int blockStartLine = qMax(1, nextBlockStartLine);
+        const int blockEndLine = qMin(info.endLine, lines.size());
+        QStringList blockLines;
+        for (int line = blockStartLine; line <= blockEndLine; ++line)
+            blockLines.append(lines.at(line - 1));
+
+        RawSectionBlock block;
+        block.section = sections.at(index);
+        block.text = blockLines.join(QLatin1Char('\n'));
+        blocks.append(block);
+        nextBlockStartLine = blockEndLine + 1;
+    }
+
+    QStringList trailingLines;
+    for (int line = qMax(1, nextBlockStartLine); line <= lines.size(); ++line)
+        trailingLines.append(lines.at(line - 1));
+    if (outTrailingText)
+        *outTrailingText = trailingLines.join(QLatin1Char('\n'));
+
+    return blocks;
+}
+
+static QString rebuildRawTextWithStandardOrder(const QVector<RawSectionBlock> &blocks,
+                                               const QString &trailingText)
+{
+    if (blocks.isEmpty())
+        return trailingText;
+
+    IniDocument sections;
+    sections.reserve(blocks.size());
+    for (const RawSectionBlock &block : blocks)
+        sections.append(block.section);
+    const IniDocument orderedSections = standardizeSystemSectionOrder(sections);
+
+    QHash<QString, QVector<int>> blockIndicesByKey;
+    blockIndicesByKey.reserve(blocks.size());
+    for (int index = 0; index < blocks.size(); ++index)
+        blockIndicesByKey[sectionIdentityKey(blocks[index].section)].append(index);
+
+    QString rebuilt;
+    for (const IniSection &orderedSection : orderedSections) {
+        const QString key = sectionIdentityKey(orderedSection);
+        auto it = blockIndicesByKey.find(key);
+        if (it == blockIndicesByKey.end() || it->isEmpty())
+            continue;
+        const QString chunk = blocks[it->takeFirst()].text;
+        if (!rebuilt.isEmpty() && !rebuilt.endsWith(QLatin1Char('\n')) && !chunk.startsWith(QLatin1Char('\n')))
+            rebuilt.append(QLatin1Char('\n'));
+        rebuilt.append(chunk);
+    }
+
+    if (!trailingText.isEmpty()) {
+        if (!rebuilt.isEmpty() && !rebuilt.endsWith(QLatin1Char('\n')) && !trailingText.startsWith(QLatin1Char('\n')))
+            rebuilt.append(QLatin1Char('\n'));
+        rebuilt.append(trailingText);
+    }
+    return rebuilt;
+}
+
+static IniDocument buildCurrentSections(const SystemDocument &doc,
+                                        const IniDocument &extras,
+                                        const IniSection &systemInfoSection)
+{
+    IniDocument sections;
+    sections.reserve(1 + doc.objects().size() + doc.zones().size() + extras.size());
+    sections.append(buildSystemInfo(doc, systemInfoSection));
+    for (const IniSection &section : extras)
+        sections.append(section);
+    for (const auto &obj : doc.objects())
+        sections.append(SystemPersistence::serializeObjectSection(*obj));
+    for (const auto &zone : doc.zones())
+        sections.append(SystemPersistence::serializeZoneSection(*zone));
+    return sections;
+}
+
+static IniDocument mergeSectionsWithLayout(const IniDocument &layoutSections,
+                                           const IniDocument &currentSections)
+{
+    if (layoutSections.isEmpty())
+        return standardizeSystemSectionOrder(currentSections);
+
+    QHash<QString, QVector<int>> availableByKey;
+    availableByKey.reserve(currentSections.size());
+    for (int index = 0; index < currentSections.size(); ++index)
+        availableByKey[sectionIdentityKey(currentSections[index])].append(index);
+
+    QVector<bool> consumed(currentSections.size(), false);
+    IniDocument merged;
+    merged.reserve(currentSections.size());
+
+    for (const IniSection &layoutSection : layoutSections) {
+        const QString key = sectionIdentityKey(layoutSection);
+        auto it = availableByKey.find(key);
+        if (it == availableByKey.end() || it->isEmpty())
+            continue;
+        const int currentIndex = it->takeFirst();
+        if (currentIndex < 0 || currentIndex >= currentSections.size() || consumed[currentIndex])
+            continue;
+        consumed[currentIndex] = true;
+        merged.append(currentSections[currentIndex]);
+    }
+
+    for (int index = 0; index < currentSections.size(); ++index) {
+        if (consumed[index])
+            continue;
+        insertSectionByStandardOrder(merged, currentSections[index]);
+    }
+
+    return merged;
+}
+
 static void setOptionalIntEntry(QVector<IniEntry> &entries, const QString &key, int value)
 {
     if (value == 0) {
         removeEntry(entries, key);
         return;
+    }
+    const int existingIndex = findEntryIndex(entries, key);
+    if (existingIndex >= 0) {
+        bool ok = false;
+        const int parsed = entries[existingIndex].second.trimmed().toInt(&ok);
+        if (ok && parsed == value)
+            return;
     }
     upsertEntry(entries, key, QString::number(value));
 }
@@ -269,6 +557,13 @@ static void setOptionalFloatEntry(QVector<IniEntry> &entries, const QString &key
         removeEntry(entries, key);
         return;
     }
+    const int existingIndex = findEntryIndex(entries, key);
+    if (existingIndex >= 0) {
+        bool ok = false;
+        const float parsed = entries[existingIndex].second.trimmed().toFloat(&ok);
+        if (ok && qFuzzyCompare(parsed + 1.0f, value + 1.0f))
+            return;
+    }
     upsertEntry(entries, key, QString::number(static_cast<double>(value)));
 }
 
@@ -277,6 +572,12 @@ static void setOptionalVec3Entry(QVector<IniEntry> &entries, const QString &key,
     if (value.isNull()) {
         removeEntry(entries, key);
         return;
+    }
+    const int existingIndex = findEntryIndex(entries, key);
+    if (existingIndex >= 0) {
+        const QVector3D parsed = parseVec3(entries[existingIndex].second);
+        if (vec3Equals(parsed, value))
+            return;
     }
     upsertEntry(entries, key, vec3ToString(value));
 }
@@ -416,6 +717,7 @@ std::unique_ptr<SystemDocument> SystemPersistence::load(const QString &filePath)
 
         // ── SystemInfo ──────────────────────────────────────────────
         if (sectionName == QLatin1String("systeminfo")) {
+            s_systemInfoSections[doc.get()] = sec;
             doc->setName(sec.value(QStringLiteral("nickname")));
             bool ok = false;
             const double navMapScale = sec.value(QStringLiteral("NavMapScale")).toDouble(&ok);
@@ -448,6 +750,8 @@ std::unique_ptr<SystemDocument> SystemPersistence::load(const QString &filePath)
     }
 
     s_extras[doc.get()] = extras;
+    s_layoutSections[doc.get()] = ini;
+    s_nonStandardOrder[doc.get()] = hasDifferentSectionSequence(ini, standardizeSystemSectionOrder(ini));
     // Ensure the document has a usable name BEFORE looking up NavMapScale in
     // universe.ini — vanilla system .ini files frequently omit `nickname` in
     // [SystemInfo], and without a name the universe lookup would otherwise
@@ -461,12 +765,29 @@ std::unique_ptr<SystemDocument> SystemPersistence::load(const QString &filePath)
 
 // ─── save ─────────────────────────────────────────────────────────────────────
 
-static IniSection buildSystemInfo(const SystemDocument &doc)
+static IniSection buildSystemInfo(const SystemDocument &doc, const IniSection &baseSection)
 {
-    IniSection sec;
+    IniSection sec = baseSection;
     sec.name = QStringLiteral("SystemInfo");
-    sec.entries.append({QStringLiteral("nickname"), doc.name()});
-    sec.entries.append({QStringLiteral("NavMapScale"), QString::number(doc.navMapScale(), 'f', 6)});
+    const QString nickname = doc.name().trimmed();
+    if (!nickname.isEmpty()) {
+        const int nicknameIndex = findEntryIndex(sec.entries, QStringLiteral("nickname"));
+        if (nicknameIndex < 0 || sec.entries[nicknameIndex].second.trimmed() != nickname)
+            upsertEntry(sec.entries, QStringLiteral("nickname"), nickname);
+    }
+
+    const int navIndex = findEntryIndex(sec.entries, QStringLiteral("NavMapScale"));
+    if (navIndex >= 0) {
+        bool ok = false;
+        const double parsed = sec.entries[navIndex].second.trimmed().toDouble(&ok);
+        if (!(ok && qFuzzyCompare(parsed + 1.0, doc.navMapScale() + 1.0))) {
+            upsertEntry(sec.entries, QStringLiteral("NavMapScale"),
+                        QString::number(doc.navMapScale(), 'f', 6));
+        }
+    } else {
+        upsertEntry(sec.entries, QStringLiteral("NavMapScale"),
+                    QString::number(doc.navMapScale(), 'f', 6));
+    }
     return sec;
 }
 
@@ -476,7 +797,12 @@ IniSection SystemPersistence::serializeObjectSection(const SolarObject &obj)
     sec.name = QStringLiteral("Object");
     sec.entries = obj.rawEntries();
 
-    upsertEntry(sec.entries, QStringLiteral("nickname"), obj.nickname());
+    const QString nickname = obj.nickname().trimmed();
+    if (!nickname.isEmpty()) {
+        const int nicknameIndex = findEntryIndex(sec.entries, QStringLiteral("nickname"));
+        if (nicknameIndex < 0 || sec.entries[nicknameIndex].second.trimmed() != nickname)
+            upsertEntry(sec.entries, QStringLiteral("nickname"), nickname);
+    }
     setOptionalIntEntry(sec.entries, QStringLiteral("ids_name"), obj.idsName());
     setOptionalIntEntry(sec.entries, QStringLiteral("ids_info"), obj.idsInfo());
     setOptionalVec3Entry(sec.entries, QStringLiteral("pos"), obj.position());
@@ -497,16 +823,39 @@ IniSection SystemPersistence::serializeZoneSection(const ZoneItem &zone)
     sec.name = QStringLiteral("Zone");
     sec.entries = zone.rawEntries();
 
-    upsertEntry(sec.entries, QStringLiteral("nickname"), zone.nickname());
+    const QString nickname = zone.nickname().trimmed();
+    if (!nickname.isEmpty()) {
+        const int nicknameIndex = findEntryIndex(sec.entries, QStringLiteral("nickname"));
+        if (nicknameIndex < 0 || sec.entries[nicknameIndex].second.trimmed() != nickname)
+            upsertEntry(sec.entries, QStringLiteral("nickname"), nickname);
+    }
     setOptionalVec3Entry(sec.entries, QStringLiteral("pos"), zone.position());
-    setOptionalVec3Entry(sec.entries, QStringLiteral("size"), zone.size());
+    if (!zone.size().isNull()) {
+        const int sizeIndex = findEntryIndex(sec.entries, QStringLiteral("size"));
+        if (sizeIndex >= 0) {
+            const QVector3D parsed = parseZoneSize(sec.entries[sizeIndex].second);
+            if (!vec3Equals(parsed, zone.size()))
+                upsertEntry(sec.entries, QStringLiteral("size"), vec3ToString(zone.size()));
+        } else {
+            upsertEntry(sec.entries, QStringLiteral("size"), vec3ToString(zone.size()));
+        }
+    } else {
+        removeEntry(sec.entries, QStringLiteral("size"));
+    }
     setOptionalVec3Entry(sec.entries, QStringLiteral("rotate"), zone.rotation());
-    upsertEntry(sec.entries, QStringLiteral("shape"), shapeToString(zone.shape()));
+    const int shapeIndex = findEntryIndex(sec.entries, QStringLiteral("shape"));
+    if (shapeIndex >= 0) {
+        if (parseShape(sec.entries[shapeIndex].second) != zone.shape())
+            upsertEntry(sec.entries, QStringLiteral("shape"), shapeToString(zone.shape()));
+    } else {
+        upsertEntry(sec.entries, QStringLiteral("shape"), shapeToString(zone.shape()));
+    }
     setOptionalEntry(sec.entries, QStringLiteral("zone_type"), zone.zoneType());
     setOptionalEntry(sec.entries, QStringLiteral("usage"), zone.usage());
     setOptionalEntry(sec.entries, QStringLiteral("pop_type"), zone.popType());
     setOptionalEntry(sec.entries, QStringLiteral("path_label"), zone.pathLabel());
-    removeEntry(sec.entries, QStringLiteral("comment"));
+    if (!zone.comment().trimmed().isEmpty() && findEntryIndex(sec.entries, QStringLiteral("comment")) < 0)
+        removeEntry(sec.entries, QStringLiteral("comment"));
     setOptionalVec3Entry(sec.entries, QStringLiteral("tightness"), zone.tightnessXyz());
     setOptionalIntEntry(sec.entries, QStringLiteral("damage"), zone.damage());
     setOptionalFloatEntry(sec.entries, QStringLiteral("interference"), zone.interference());
@@ -585,19 +934,27 @@ void SystemPersistence::applyZoneSection(ZoneItem &zone, const IniSection &sec)
 
 bool SystemPersistence::save(const SystemDocument &doc, const QString &filePath)
 {
+    const IniDocument extras = s_extras.value(&doc);
+    const IniSection systemInfoSection = s_systemInfoSections.value(&doc);
+    const IniDocument currentSections = buildCurrentSections(doc, extras, systemInfoSection);
+    const IniDocument layoutSections = s_layoutSections.value(&doc);
+    const IniDocument orderedSections = mergeSectionsWithLayout(layoutSections, currentSections);
+
     QString text;
-    appendSerializedSection(text, buildSystemInfo(doc));
-
-    for (const auto &obj : doc.objects())
-        appendSerializedSection(text, serializeObjectSection(*obj));
-
-    for (const auto &zone : doc.zones())
-        appendSerializedSection(text, serializeZoneSection(*zone), zone->comment());
-
-    const auto it = s_extras.constFind(&doc);
-    if (it != s_extras.constEnd()) {
-        for (const IniSection &section : *it)
-            appendSerializedSection(text, section);
+    for (const IniSection &section : orderedSections) {
+        QString leadingComment;
+        if (normalizedSectionName(section.name) == QStringLiteral("zone")) {
+            if (findEntryIndex(section.entries, QStringLiteral("comment")) < 0) {
+                const QString zoneNickname = section.value(QStringLiteral("nickname")).trimmed();
+                for (const auto &zone : doc.zones()) {
+                    if (zone && zone->nickname().compare(zoneNickname, Qt::CaseInsensitive) == 0) {
+                        leadingComment = zone->comment();
+                        break;
+                    }
+                }
+            }
+        }
+        appendSerializedSection(text, section, leadingComment);
     }
 
     QFile file(filePath);
@@ -606,6 +963,13 @@ bool SystemPersistence::save(const SystemDocument &doc, const QString &filePath)
 
     QTextStream out(&file);
     out << text;
+    if (!orderedSections.isEmpty()
+        && normalizedSectionName(orderedSections.first().name) == QStringLiteral("systeminfo")) {
+        s_systemInfoSections[&doc] = orderedSections.first();
+    }
+    s_layoutSections[&doc] = orderedSections;
+    s_nonStandardOrder[&doc] =
+        hasDifferentSectionSequence(orderedSections, standardizeSystemSectionOrder(orderedSections));
     return true;
 }
 
@@ -631,6 +995,92 @@ void SystemPersistence::setExtraSections(const SystemDocument *doc, const IniDoc
 void SystemPersistence::clearExtras(const SystemDocument *doc)
 {
     s_extras.remove(doc);
+    s_systemInfoSections.remove(doc);
+    s_layoutSections.remove(doc);
+    s_nonStandardOrder.remove(doc);
+}
+
+bool SystemPersistence::hasNonStandardSectionOrder(const SystemDocument *doc)
+{
+    return doc && s_nonStandardOrder.value(doc, false);
+}
+
+bool SystemPersistence::normalizeSectionOrder(const SystemDocument *doc)
+{
+    if (!doc)
+        return false;
+
+    const IniDocument currentSections = buildCurrentSections(*doc,
+                                                             s_extras.value(doc),
+                                                             s_systemInfoSections.value(doc));
+    const IniDocument arrangedSections = mergeSectionsWithLayout(s_layoutSections.value(doc), currentSections);
+    const IniDocument normalizedSections = standardizeSystemSectionOrder(arrangedSections);
+    const bool changed = hasDifferentSectionSequence(arrangedSections, normalizedSections);
+    s_layoutSections.insert(doc, normalizedSections);
+    s_nonStandardOrder.insert(doc, false);
+    return changed;
+}
+
+bool SystemPersistence::normalizeSectionOrderInFile(const QString &filePath,
+                                                    bool *changed,
+                                                    QString *errorMessage)
+{
+    if (changed)
+        *changed = false;
+    if (filePath.trimmed().isEmpty()) {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("Kein Dateipfad angegeben.");
+        return false;
+    }
+
+    bool wasBini = false;
+    const QString rawText = IniAnalysisService::loadIniLikeText(filePath, &wasBini);
+    if (rawText.isEmpty()) {
+        QFileInfo info(filePath);
+        if (!info.exists() || info.size() == 0) {
+            if (errorMessage)
+                *errorMessage = QStringLiteral("Die System-INI konnte nicht gelesen werden.");
+            return false;
+        }
+    }
+    if (wasBini) {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("Die Section-Reihenfolge kann fuer BINI-Dateien nicht direkt angepasst werden.");
+        return false;
+    }
+
+    const IniDocument sections = IniParser::parseText(rawText);
+    const IniAnalysisResult analysis = IniAnalysisService::analyzeText(rawText);
+    if (sections.size() != analysis.sections.size()) {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("Die System-INI konnte nicht sicher in rohe Section-Bloecke aufgeteilt werden.");
+        return false;
+    }
+
+    const IniDocument orderedSections = standardizeSystemSectionOrder(sections);
+    const bool needsChange = hasDifferentSectionSequence(sections, orderedSections);
+    if (changed)
+        *changed = needsChange;
+    if (!needsChange)
+        return true;
+
+    QString trailingText;
+    const QVector<RawSectionBlock> blocks = extractRawSectionBlocks(rawText, sections, analysis, &trailingText);
+    if (blocks.size() != sections.size()) {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("Die rohen Section-Bloecke konnten nicht vollstaendig extrahiert werden.");
+        return false;
+    }
+
+    const QString reorderedText = rebuildRawTextWithStandardOrder(blocks, trailingText);
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("Die sortierte System-INI konnte nicht geschrieben werden.");
+        return false;
+    }
+    file.write(reorderedText.toUtf8());
+    return true;
 }
 
 } // namespace flatlas::editors

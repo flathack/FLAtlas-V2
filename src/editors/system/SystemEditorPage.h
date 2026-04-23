@@ -76,6 +76,7 @@ private:
     };
 
     void loadDocumentIntoUi();
+    void openSystemSettingsDialog();
     void emitLoadingProgress(int percent, const QString &message);
     flatlas::domain::SolarObject *findObjectByNickname(const QString &nickname) const;
     flatlas::domain::ZoneItem *findZoneByNickname(const QString &nickname) const;

@@ -4,6 +4,7 @@
 #include <QTemporaryFile>
 #include <QTemporaryDir>
 #include <QFile>
+#include <QRegularExpression>
 #include <QTextStream>
 
 #include "editors/system/SystemPersistence.h"
@@ -32,6 +33,21 @@ private:
         QTextStream out(&f);
         out << content;
         return path;
+    }
+
+    QStringList sectionHeaders(const QString &path)
+    {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+            return {};
+        const QString text = QString::fromUtf8(file.readAll());
+        QStringList headers;
+        const QRegularExpression pattern(QStringLiteral("^\\s*\\[([^\\]]+)\\]\\s*$"),
+                                         QRegularExpression::MultilineOption);
+        auto it = pattern.globalMatch(text);
+        while (it.hasNext())
+            headers.append(it.next().captured(1).trimmed());
+        return headers;
     }
 
 private slots:
@@ -333,6 +349,227 @@ private slots:
         QVERIFY(reloaded);
         QCOMPARE(reloaded->zones().size(), 1);
         QCOMPARE(reloaded->zones()[0]->comment(), QStringLiteral("Devon Field"));
+    }
+
+    void savePreservesExistingSectionOrder()
+    {
+        const QString ini = QStringLiteral(
+            "[SystemInfo]\n"
+            "nickname = Li01\n"
+            "\n"
+            "[Music]\n"
+            "space = music_li_space\n"
+            "\n"
+            "[Object]\n"
+            "nickname = obj_a\n"
+            "archetype = station\n"
+            "\n"
+            "[Zone]\n"
+            "nickname = zone_a\n"
+            "shape = SPHERE\n"
+            "size = 1000\n"
+            "\n"
+            "[Background]\n"
+            "basic_stars = solar\\starsphere\\starsphere_li.cmp\n"
+            "\n"
+            "[Object]\n"
+            "nickname = obj_b\n"
+            "archetype = waypoint\n");
+
+        const QString path = writeTemp(ini);
+        auto doc = SystemPersistence::load(path);
+        QVERIFY(doc);
+        QVERIFY(SystemPersistence::hasNonStandardSectionOrder(doc.get()));
+
+        doc->objects()[0]->setArchetype(QStringLiteral("station_updated"));
+
+        QTemporaryDir dir;
+        const QString savedPath = dir.path() + QStringLiteral("/preserve_order.ini");
+        QVERIFY(SystemPersistence::save(*doc, savedPath));
+
+        QCOMPARE(sectionHeaders(savedPath),
+                 QStringList({QStringLiteral("SystemInfo"),
+                              QStringLiteral("Music"),
+                              QStringLiteral("Object"),
+                              QStringLiteral("Zone"),
+                              QStringLiteral("Background"),
+                              QStringLiteral("Object")}));
+    }
+
+    void saveInsertsNewSectionsAtStandardPosition()
+    {
+        const QString ini = QStringLiteral(
+            "[SystemInfo]\n"
+            "nickname = Li01\n"
+            "\n"
+            "[Music]\n"
+            "space = music_li_space\n"
+            "\n"
+            "[Background]\n"
+            "basic_stars = solar\\starsphere\\starsphere_li.cmp\n"
+            "\n"
+            "[Object]\n"
+            "nickname = obj_existing\n"
+            "archetype = station\n");
+
+        const QString path = writeTemp(ini);
+        auto doc = SystemPersistence::load(path);
+        QVERIFY(doc);
+
+        auto zone = std::make_shared<ZoneItem>();
+        zone->setNickname(QStringLiteral("zone_new"));
+        zone->setShape(ZoneItem::Sphere);
+        zone->setSize(QVector3D(1000, 1000, 1000));
+        zone->setRawEntries({
+            {QStringLiteral("nickname"), QStringLiteral("zone_new")},
+            {QStringLiteral("shape"), QStringLiteral("SPHERE")},
+            {QStringLiteral("size"), QStringLiteral("1000, 1000, 1000")}
+        });
+        doc->addZone(zone);
+
+        IniDocument extras = SystemPersistence::extraSections(doc.get());
+        IniSection nebula;
+        nebula.name = QStringLiteral("Nebula");
+        nebula.entries = {
+            {QStringLiteral("file"), QStringLiteral("solar\\NEBULA\\li01_new.ini")},
+            {QStringLiteral("zone"), QStringLiteral("zone_new")}
+        };
+        extras.append(nebula);
+        SystemPersistence::setExtraSections(doc.get(), extras);
+
+        QTemporaryDir dir;
+        const QString savedPath = dir.path() + QStringLiteral("/insert_order.ini");
+        QVERIFY(SystemPersistence::save(*doc, savedPath));
+
+        QCOMPARE(sectionHeaders(savedPath),
+                 QStringList({QStringLiteral("SystemInfo"),
+                              QStringLiteral("Music"),
+                              QStringLiteral("Nebula"),
+                              QStringLiteral("Background"),
+                              QStringLiteral("Object"),
+                              QStringLiteral("Zone")}));
+    }
+
+    void normalizeSectionOrderReordersToStandardGroups()
+    {
+        const QString ini = QStringLiteral(
+            "[SystemInfo]\n"
+            "nickname = Li01\n"
+            "\n"
+            "[Object]\n"
+            "nickname = obj_a\n"
+            "archetype = station\n"
+            "\n"
+            "[Music]\n"
+            "space = music_li_space\n"
+            "\n"
+            "[Background]\n"
+            "basic_stars = solar\\starsphere\\starsphere_li.cmp\n"
+            "\n"
+            "[Zone]\n"
+            "nickname = zone_a\n"
+            "shape = SPHERE\n"
+            "size = 1000\n");
+
+        const QString path = writeTemp(ini);
+        auto doc = SystemPersistence::load(path);
+        QVERIFY(doc);
+        QVERIFY(SystemPersistence::hasNonStandardSectionOrder(doc.get()));
+        QVERIFY(SystemPersistence::normalizeSectionOrder(doc.get()));
+        QVERIFY(!SystemPersistence::hasNonStandardSectionOrder(doc.get()));
+
+        QTemporaryDir dir;
+        const QString savedPath = dir.path() + QStringLiteral("/normalized.ini");
+        QVERIFY(SystemPersistence::save(*doc, savedPath));
+
+        QCOMPARE(sectionHeaders(savedPath),
+                 QStringList({QStringLiteral("SystemInfo"),
+                              QStringLiteral("Music"),
+                              QStringLiteral("Background"),
+                              QStringLiteral("Object"),
+                              QStringLiteral("Zone")}));
+    }
+
+    void systemInfoKeysPreservedDuringSaveAndNormalize()
+    {
+        const QString ini = QStringLiteral(
+            "[SystemInfo]\n"
+            "nickname = Li01\n"
+            "space_color = 10, 20, 30\n"
+            "local_faction = li_n_grp\n"
+            "NavMapScale = 1.500000\n"
+            "\n"
+            "[Object]\n"
+            "nickname = obj_a\n"
+            "archetype = station\n"
+            "\n"
+            "[Music]\n"
+            "space = music_li_space\n");
+
+        const QString path = writeTemp(ini);
+        auto doc = SystemPersistence::load(path);
+        QVERIFY(doc);
+        QVERIFY(SystemPersistence::normalizeSectionOrder(doc.get()));
+
+        QTemporaryDir dir;
+        const QString savedPath = dir.path() + QStringLiteral("/systeminfo_preserved.ini");
+        QVERIFY(SystemPersistence::save(*doc, savedPath));
+
+        QFile file(savedPath);
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString written = QString::fromUtf8(file.readAll());
+        QVERIFY(written.contains(QStringLiteral("space_color = 10, 20, 30")));
+        QVERIFY(written.contains(QStringLiteral("local_faction = li_n_grp")));
+        QVERIFY(written.contains(QStringLiteral("NavMapScale = 1.500000")));
+        QVERIFY(written.contains(QStringLiteral("nickname = Li01")));
+    }
+
+    void normalizeSectionOrderInFile_preservesRawLines()
+    {
+        const QString ini = QStringLiteral(
+            "[Object]\n"
+            "nickname = obj_a\n"
+            "pos = 10, 0, -20\n"
+            "comment = keep object comment\n"
+            "\n"
+            "; Zone comment should stay a raw comment line\n"
+            "[Zone]\n"
+            "nickname = zone_a\n"
+            "pos = 0, 0, 0\n"
+            "size = 1000, 2000, 3000\n"
+            "shape = SPHERE\n"
+            "comment = keep zone key\n"
+            "\n"
+            "[Music]\n"
+            "space = music_tau_space\n"
+            "\n"
+            "[SystemInfo]\n"
+            "space_color = 10, 40, 80\n"
+            "local_faction = li_p_grp\n");
+
+        const QString path = writeTemp(ini);
+        bool changed = false;
+        QString errorMessage;
+        QVERIFY(SystemPersistence::normalizeSectionOrderInFile(path, &changed, &errorMessage));
+        QVERIFY(changed);
+
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString written = QString::fromUtf8(file.readAll());
+
+        QVERIFY(written.contains(QStringLiteral("pos = 10, 0, -20")));
+        QVERIFY(written.contains(QStringLiteral("pos = 0, 0, 0")));
+        QVERIFY(written.contains(QStringLiteral("size = 1000, 2000, 3000")));
+        QVERIFY(written.contains(QStringLiteral("comment = keep zone key")));
+        QVERIFY(written.contains(QStringLiteral("; Zone comment should stay a raw comment line")));
+        QVERIFY(written.contains(QStringLiteral("space_color = 10, 40, 80")));
+        QVERIFY(written.contains(QStringLiteral("local_faction = li_p_grp")));
+
+        QCOMPARE(sectionHeaders(path),
+                 QStringList({QStringLiteral("SystemInfo"),
+                              QStringLiteral("Music"),
+                              QStringLiteral("Object"),
+                              QStringLiteral("Zone")}));
     }
 
     void saveNewDocument()

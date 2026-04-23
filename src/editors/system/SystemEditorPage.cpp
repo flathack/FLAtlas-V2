@@ -3,6 +3,7 @@
 #include "SystemEditorPage.h"
 #include "SystemDisplayFilterDialog.h"
 #include "SystemPersistence.h"
+#include "SystemSettingsDialog.h"
 #include "SystemUndoCommands.h"
 #include "CreateObjectDialog.h"
 #include "CreateFieldZoneDialog.h"
@@ -950,9 +951,7 @@ void SystemEditorPage::setupRightSidebar()
 
     m_systemSettingsButton = new QPushButton(tr("System-Einstellungen"), m_rightSidebar);
     m_systemSettingsButton->setMinimumHeight(30);
-    connect(m_systemSettingsButton, &QPushButton::clicked, this, [this]() {
-        showNotYetPorted(tr("System-Einstellungen"), QStringLiteral("FLAtlas/fl_editor/main_window.py::_open_system_settings"));
-    });
+    connect(m_systemSettingsButton, &QPushButton::clicked, this, &SystemEditorPage::openSystemSettingsDialog);
     layout->addWidget(m_systemSettingsButton);
 
     auto *jumpRow = new QHBoxLayout();
@@ -2361,6 +2360,53 @@ void SystemEditorPage::showNotYetPorted(const QString &featureName, const QStrin
     if (!v1Hint.trimmed().isEmpty())
         text += tr("\n\nV1-Referenz: %1").arg(v1Hint);
     QMessageBox::information(const_cast<SystemEditorPage *>(this), tr("Noch nicht portiert"), text);
+}
+
+void SystemEditorPage::openSystemSettingsDialog()
+{
+    if (!m_document)
+        return;
+
+    SystemSettingsDialog dialog(m_document.get(),
+                                SystemPersistence::hasNonStandardSectionOrder(m_document.get()),
+                                this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const QString trimmedName = dialog.systemNickname().trimmed();
+    if (!trimmedName.isEmpty() && trimmedName != m_document->name()) {
+        m_document->setName(trimmedName);
+        m_document->setDirty(true);
+        refreshTitle();
+    }
+
+    if (!qFuzzyCompare(static_cast<float>(dialog.navMapScale() + 1.0),
+                       static_cast<float>(m_document->navMapScale() + 1.0))) {
+        m_document->setNavMapScale(dialog.navMapScale());
+        m_document->setDirty(true);
+    }
+
+    if (dialog.shouldNormalizeSectionOrder()) {
+        if (m_document->isDirty()) {
+            QMessageBox::warning(this, tr("System-Einstellungen"),
+                                 tr("Die Section-Reihenfolge kann nur fuer den aktuellen Dateistand auf der Festplatte standardisiert werden.\n"
+                                    "Bitte speichere oder verwerfe zuerst ungespeicherte Aenderungen."));
+            return;
+        }
+
+        bool changed = false;
+        QString errorMessage;
+        if (!SystemPersistence::normalizeSectionOrderInFile(m_document->filePath(), &changed, &errorMessage)) {
+            QMessageBox::warning(this, tr("System-Einstellungen"),
+                                 errorMessage.trimmed().isEmpty()
+                                     ? tr("Die Section-Reihenfolge konnte nicht standardisiert werden.")
+                                     : errorMessage);
+            return;
+        }
+
+        if (changed)
+            loadFile(m_document->filePath());
+    }
 }
 
 void SystemEditorPage::onCreateSun()
