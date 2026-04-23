@@ -47,6 +47,30 @@ MapScene::MapScene(QObject *parent)
     // ±33000 FL units → ±330 scene units
     const double halfExtentScene = referenceHalfExtentWorld(nullptr) * kScale;
     setSceneRect(-halfExtentScene, -halfExtentScene, halfExtentScene * 2.0, halfExtentScene * 2.0);
+
+    // Wire selection forwarding exactly once for the lifetime of the scene.
+    // Previously this was re-connected inside loadDocument(), which caused
+    // duplicate emissions of selectionNicknamesChanged when a second system
+    // was opened and amplified selection-sync recursion in the editor page.
+    connect(this, &QGraphicsScene::selectionChanged, this, [this]() {
+        const auto sel = selectedItems();
+        if (sel.isEmpty()) {
+            emit selectionCleared();
+            emit selectionNicknamesChanged({});
+            return;
+        }
+        QStringList nicknames;
+        nicknames.reserve(sel.size());
+        for (QGraphicsItem *item : sel) {
+            const QString nickname = itemNickname(item);
+            if (!nickname.isEmpty())
+                nicknames.append(nickname);
+        }
+        nicknames.removeDuplicates();
+        emit selectionNicknamesChanged(nicknames);
+        if (!nicknames.isEmpty())
+            emit objectSelected(nicknames.first());
+    });
 }
 
 void MapScene::loadDocument(flatlas::domain::SystemDocument *doc,
@@ -116,27 +140,7 @@ void MapScene::loadDocument(flatlas::domain::SystemDocument *doc,
             }
         }
     });
-
-    // Forward selection changes
-    connect(this, &QGraphicsScene::selectionChanged, this, [this]() {
-        const auto sel = selectedItems();
-        if (sel.isEmpty()) {
-            emit selectionCleared();
-            emit selectionNicknamesChanged({});
-            return;
-        }
-        QStringList nicknames;
-        nicknames.reserve(sel.size());
-        for (QGraphicsItem *item : sel) {
-            const QString nickname = itemNickname(item);
-            if (!nickname.isEmpty())
-                nicknames.append(nickname);
-        }
-        nicknames.removeDuplicates();
-        emit selectionNicknamesChanged(nicknames);
-        if (!nicknames.isEmpty())
-            emit objectSelected(nicknames.first());
-    });
+    // Note: selection forwarding is wired once in the constructor.
 }
 
 void MapScene::clear()

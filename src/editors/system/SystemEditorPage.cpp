@@ -175,6 +175,13 @@ QQuaternion quaternionFromFreelancerRotation(const QVector3D &rotation)
     return QQuaternion::fromEulerAngles(rotation.x(), rotation.y(), rotation.z());
 }
 
+QString solarObjectTypeLabel(SolarObject::Type type)
+{
+    const QMetaEnum typeEnum = QMetaEnum::fromType<SolarObject::Type>();
+    const char *enumKey = typeEnum.valueToKey(type);
+    return enumKey ? QString::fromLatin1(enumKey) : QObject::tr("Other");
+}
+
 class SystemGroupPreviewDialog final : public QDialog {
 public:
     explicit SystemGroupPreviewDialog(QWidget *parent = nullptr)
@@ -861,22 +868,38 @@ void SystemEditorPage::setupRightSidebar()
 void SystemEditorPage::refreshObjectList()
 {
     const QStringList previousSelection = m_selectedNicknames;
+    // Clearing and rebuilding the tree emits itemSelectionChanged. Block those
+    // signals so onTreeSelectionChanged() cannot fire a scene-selection
+    // round-trip while the document is still being loaded into the UI.
+    QSignalBlocker treeBlocker(m_objectTree);
     m_objectTree->clear();
     if (!m_document) {
+        treeBlocker.unblock();
         updateIniEditorForSelection();
         return;
+    }
+
+    QHash<QString, int> groupChildCounts;
+    for (const auto &obj : m_document->objects()) {
+        if (!obj || !isChildObject(*obj))
+            continue;
+        const QString rootNickname = normalizeObjectNicknameToGroupRoot(obj->nickname());
+        if (!rootNickname.isEmpty() && rootNickname != obj->nickname())
+            groupChildCounts[rootNickname] += 1;
     }
 
     auto *objRoot = new QTreeWidgetItem(m_objectTree, {tr("Objects")});
     objRoot->setFlags(objRoot->flags() & ~Qt::ItemIsSelectable);
     objRoot->setExpanded(true);
     for (const auto &obj : m_document->objects()) {
+        if (!obj)
+            continue;
         if (isChildObject(*obj))
             continue;
         auto *item = new QTreeWidgetItem(objRoot);
         item->setText(0, obj->nickname());
-        const int childCount = static_cast<int>(objectGroupNicknames(obj->nickname()).size()) - 1;
-        QString typeText = QString::fromLatin1(QMetaEnum::fromType<SolarObject::Type>().valueToKey(obj->type()));
+        const int childCount = groupChildCounts.value(obj->nickname(), 0);
+        QString typeText = solarObjectTypeLabel(obj->type());
         if (childCount > 0)
             typeText = tr("%1 (%2 parts)").arg(typeText).arg(childCount + 1);
         item->setText(1, typeText);
@@ -898,9 +921,18 @@ void SystemEditorPage::refreshObjectList()
                                     .arg(m_document->zones().size()));
     applyObjectListSearchFilter();
     refreshSidebarVisibilityState();
+    // Restore selection with the sync guard active so neither the tree nor the
+    // scene emit a round-trip back into this page while the load is still in
+    // progress. The tree is already signal-blocked; for the scene we gate with
+    // m_syncingSelection which onCanvasSelectionChanged honors as an early
+    // return.
+    const bool wasSyncing = m_syncingSelection;
+    m_syncingSelection = true;
     syncTreeSelectionFromNicknames(previousSelection);
     if (m_mapScene)
-        syncSceneSelectionFromNicknames(previousSelection);
+        m_mapScene->selectNicknames(expandSelectionNicknamesForScene(previousSelection));
+    m_syncingSelection = wasSyncing;
+    treeBlocker.unblock();
     updateIniEditorForSelection();
     updateSidebarButtons();
     updateSelectionSummary();
@@ -910,10 +942,29 @@ void SystemEditorPage::onCanvasSelectionChanged(const QStringList &nicknames)
 {
     if (m_isShuttingDown)
         return;
+    // Guard against re-entrant notifications triggered by our own programmatic
+    // scene-selection updates (group expansion, refresh, etc.). Without this
+    // guard, selectNicknames() -> selectionNicknamesChanged -> this slot ->
+    // selectNicknames() leads to infinite recursion and a stack overflow.
+    if (m_syncingSelection)
+        return;
     m_selectedNicknames = normalizeSelectionNicknames(nicknames);
     pruneSelectionByCurrentFilter();
     syncTreeSelectionFromNicknames(m_selectedNicknames);
-    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    // Only push an expanded group selection back to the scene if the scene
+    // does not already match the full expanded set. This keeps parent/child
+    // highlights in sync without ever re-triggering the same canvas event.
+    if (m_mapScene) {
+        const QStringList expanded = expandSelectionNicknamesForScene(m_selectedNicknames);
+        const QSet<QString> currentScene(nicknames.begin(), nicknames.end());
+        const QSet<QString> targetScene(expanded.begin(), expanded.end());
+        if (currentScene != targetScene) {
+            const bool wasSyncing = m_syncingSelection;
+            m_syncingSelection = true;
+            m_mapScene->selectNicknames(expanded);
+            m_syncingSelection = wasSyncing;
+        }
+    }
 
     const QString primaryNickname = primarySelectedNickname();
     if (m_sceneView3D && m_is3DViewEnabled && m_selectedNicknames.size() == 1)
@@ -945,6 +996,8 @@ void SystemEditorPage::onCanvasSelectionChanged(const QStringList &nicknames)
 void SystemEditorPage::onTreeSelectionChanged()
 {
     if (m_isShuttingDown)
+        return;
+    if (m_syncingSelection)
         return;
     QStringList nicknames;
     const auto selectedItems = m_objectTree->selectedItems();
@@ -1623,8 +1676,7 @@ void SystemEditorPage::updateSelectionSummary()
     if (SolarObject *obj = findObjectByNickname(nickname)) {
         m_selectionTitleLabel->setText(obj->nickname());
         const int groupCount = objectGroupNicknames(obj->nickname()).size();
-        QString subtitle = tr("Objekt · %1")
-            .arg(QString::fromLatin1(QMetaEnum::fromType<SolarObject::Type>().valueToKey(obj->type())));
+        QString subtitle = tr("Objekt · %1").arg(solarObjectTypeLabel(obj->type()));
         if (groupCount > 1)
             subtitle += tr(" · %1 parts").arg(groupCount);
         m_selectionSubtitleLabel->setText(subtitle);
@@ -1802,8 +1854,15 @@ void SystemEditorPage::syncTreeSelectionFromNicknames(const QStringList &nicknam
 
 void SystemEditorPage::syncSceneSelectionFromNicknames(const QStringList &nicknames)
 {
-    if (m_mapScene)
+    if (!m_mapScene)
+        return;
+    // Programmatic scene updates must be invisible to our canvas-selection
+    // slot, otherwise the manual selectionNicknamesChanged emission from
+    // MapScene::selectNicknames re-enters and recurses.
+    const bool wasSyncing = m_syncingSelection;
+    m_syncingSelection = true;
     m_mapScene->selectNicknames(expandSelectionNicknamesForScene(nicknames));
+    m_syncingSelection = wasSyncing;
 }
 
 QString SystemEditorPage::primarySelectedNickname() const

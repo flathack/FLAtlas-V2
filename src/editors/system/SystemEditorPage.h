@@ -191,6 +191,7 @@ private:
     QLabel *m_systemStatsLabel = nullptr;
     QPushButton *m_saveFileButton = nullptr;
     bool m_isShuttingDown = false;
+    bool m_syncingSelection = false;
 };
 
 } // namespace flatlas::editors
