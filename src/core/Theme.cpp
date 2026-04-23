@@ -20,6 +20,23 @@ QStringList Theme::availableThemes() const
 
 QString Theme::currentTheme() const { return m_current; }
 
+bool Theme::isLightTheme(const QString &themeName) const
+{
+    const QString resolvedTheme = themeName.isEmpty() ? m_current : themeName;
+    const auto &allPalettes = palettes();
+    const Palette &palette = allPalettes.contains(resolvedTheme)
+        ? allPalettes[resolvedTheme]
+        : allPalettes[QStringLiteral("dark")];
+    return QColor(palette.value(QStringLiteral("bg"))).lightness() >= 170;
+}
+
+QString Theme::wallpaperResourcePath(const QString &themeName) const
+{
+    return isLightTheme(themeName)
+        ? QStringLiteral(":/images/wallpaper-white.png")
+        : QStringLiteral(":/images/wallpaper-dark.png");
+}
+
 // ── palette definitions ──────────────────────────────────────────────
 
 const QHash<QString, Palette> &Theme::palettes()

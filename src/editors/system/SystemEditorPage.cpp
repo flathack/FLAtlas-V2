@@ -241,7 +241,7 @@ void SystemEditorPage::setupUi()
     m_mapScene = new MapScene(this);
     m_mapView = new SystemMapView(this);
     m_mapView->setMapScene(m_mapScene);
-    m_mapView->setBackgroundPixmap(QPixmap(QStringLiteral(":/images/star-background.png")),
+    m_mapView->setBackgroundPixmap(QPixmap(flatlas::core::Theme::instance().wallpaperResourcePath()),
                                    palette().color(QPalette::Base));
     loadDisplayFilterSettings();
     m_mapView->setDisplayFilterSettings(m_displayFilterSettings);
@@ -314,7 +314,6 @@ void SystemEditorPage::connectSignals()
 void SystemEditorPage::applyThemeStyling()
 {
     const QPalette pal = palette();
-    const bool lightTheme = pal.color(QPalette::Base).lightness() >= 170;
     const QColor dim = pal.color(QPalette::PlaceholderText);
     const QColor title = pal.color(QPalette::Text);
     const QColor border = pal.color(QPalette::Mid);
@@ -340,7 +339,7 @@ void SystemEditorPage::applyThemeStyling()
     }
     refreshSidebarVisibilityState();
     if (m_mapView) {
-        m_mapView->setBackgroundPixmap(lightTheme ? QPixmap() : QPixmap(QStringLiteral(":/images/star-background.png")),
+        m_mapView->setBackgroundPixmap(QPixmap(flatlas::core::Theme::instance().wallpaperResourcePath()),
                                        pal.color(QPalette::Base));
         m_mapView->applyTheme();
     }

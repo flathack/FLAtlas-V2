@@ -18,6 +18,8 @@ public:
 
     QStringList availableThemes() const;
     QString currentTheme() const;
+    bool isLightTheme(const QString &themeName = QString()) const;
+    QString wallpaperResourcePath(const QString &themeName = QString()) const;
     void apply(const QString &themeName);
 
 signals:

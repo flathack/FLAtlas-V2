@@ -1,5 +1,6 @@
 #include "SystemMapView.h"
 #include "MapScene.h"
+#include "core/Theme.h"
 #include "items/SolarObjectItem.h"
 #include "items/ZoneItem2D.h"
 #include <QWheelEvent>
@@ -79,6 +80,7 @@ void SystemMapView::applyTheme()
     const QColor base = pal.color(QPalette::Base);
     const QColor text = pal.color(QPalette::Text);
     m_overlayTextColor = text;
+    m_backgroundPixmap = QPixmap(flatlas::core::Theme::instance().wallpaperResourcePath());
     if (base.lightness() >= 170) {
         m_backgroundColor = QColor(236, 241, 247);
         m_backgroundDarkenAlpha = !m_backgroundPixmap.isNull() ? 110 : 0;
@@ -261,7 +263,12 @@ void SystemMapView::drawBackground(QPainter *painter, const QRectF &rect)
     const QRect viewportRect = viewport()->rect();
     painter->fillRect(viewportRect, m_backgroundColor);
     if (!m_backgroundPixmap.isNull()) {
-        painter->drawTiledPixmap(viewportRect, m_backgroundPixmap);
+        const QPixmap scaled = m_backgroundPixmap.scaled(viewportRect.size(),
+                                                         Qt::KeepAspectRatioByExpanding,
+                                                         Qt::SmoothTransformation);
+        const QPoint topLeft((viewportRect.width() - scaled.width()) / 2,
+                             (viewportRect.height() - scaled.height()) / 2);
+        painter->drawPixmap(topLeft, scaled);
         if (m_backgroundDarkenAlpha > 0)
             painter->fillRect(viewportRect, QColor(0, 0, 0, m_backgroundDarkenAlpha));
     }

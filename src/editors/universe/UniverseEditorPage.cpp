@@ -212,7 +212,12 @@ protected:
         const QRect viewportRect = viewport()->rect();
         painter->fillRect(viewportRect, m_backgroundColor);
         if (!m_backgroundPixmap.isNull()) {
-            painter->drawTiledPixmap(viewportRect, m_backgroundPixmap);
+            const QPixmap scaled = m_backgroundPixmap.scaled(viewportRect.size(),
+                                                             Qt::KeepAspectRatioByExpanding,
+                                                             Qt::SmoothTransformation);
+            const QPoint topLeft((viewportRect.width() - scaled.width()) / 2,
+                                 (viewportRect.height() - scaled.height()) / 2);
+            painter->drawPixmap(topLeft, scaled);
             if (m_backgroundDarkenAlpha > 0)
                 painter->fillRect(viewportRect, QColor(0, 0, 0, m_backgroundDarkenAlpha));
         }
@@ -370,7 +375,7 @@ void UniverseEditorPage::setupUi()
     // Map (right panel)
     m_mapScene = new QGraphicsScene(this);
     auto *mapView = new UniverseMapView(m_mapScene, this);
-    mapView->setBackgroundPixmap(QPixmap(QStringLiteral(":/images/star-background.png")),
+    mapView->setBackgroundPixmap(QPixmap(flatlas::core::Theme::instance().wallpaperResourcePath()),
                                  palette().color(QPalette::Base));
     mapView->onNodeDoubleClicked = [this](const QString &nickname) {
         onMapItemDoubleClicked(nickname);
@@ -1132,9 +1137,8 @@ void UniverseEditorPage::applySector(const QString &sectorKey)
 
 void UniverseEditorPage::applyThemeStyling()
 {
-    const bool lightTheme = palette().color(QPalette::Base).lightness() >= 170;
     if (auto *mapView = dynamic_cast<UniverseMapView *>(m_mapView)) {
-        mapView->setBackgroundPixmap(lightTheme ? QPixmap() : QPixmap(QStringLiteral(":/images/star-background.png")),
+        mapView->setBackgroundPixmap(QPixmap(flatlas::core::Theme::instance().wallpaperResourcePath()),
                                      palette().color(QPalette::Base));
     }
 
