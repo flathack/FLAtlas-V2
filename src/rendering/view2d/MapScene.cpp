@@ -17,14 +17,32 @@
 
 namespace {
 
-constexpr double kFreelancerNavCellWorld = 30000.0;
-constexpr int kFreelancerNavCellsPerAxis = 8;
+constexpr double kFreelancerNavCellWorld = 30000.0;   // NavMap cell size at NavMapScale = 1.36
+constexpr int    kFreelancerNavCellsPerAxis = 8;
+constexpr double kFreelancerReferenceNavMapScale = 1.36; // vanilla default
 constexpr int kLoadProgressYieldInterval = 12;
+
+// Grid half-extent in FL world units for a given NavMapScale.
+//
+// The 8x8 NavMap grid is an in-game navigation aid whose cell size depends
+// on NavMapScale. At the vanilla reference value 1.36 a cell is 30'000 FL
+// units, so the half-extent is 4 * 30'000 = 120'000.
+// For any other NavMapScale the cell scales inversely:
+//     cell       = 30'000 * (1.36 / navMapScale)
+//     halfExtent = 4 * cell = 163'200 / navMapScale
+// A NavMapScale of 2.0 therefore shrinks the grid to a cell size of 20'400
+// and a half-extent of 81'600 FL units, which is what Freelancer itself
+// draws on its in-game map.
+double halfExtentWorldForScale(double navMapScale)
+{
+    const double scale = navMapScale > 0.0 ? navMapScale : kFreelancerReferenceNavMapScale;
+    const double referenceHalfExtent = kFreelancerNavCellWorld * (kFreelancerNavCellsPerAxis / 2.0);
+    return referenceHalfExtent * (kFreelancerReferenceNavMapScale / scale);
+}
 
 double referenceHalfExtentWorld(const flatlas::domain::SystemDocument *doc)
 {
-    const double navMapScale = (doc && doc->navMapScale() > 0.0) ? doc->navMapScale() : 1.0;
-    return (kFreelancerNavCellWorld * (kFreelancerNavCellsPerAxis / 2.0)) / navMapScale;
+    return halfExtentWorldForScale(doc ? doc->navMapScale() : 0.0);
 }
 
 QString itemNickname(QGraphicsItem *item)

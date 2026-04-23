@@ -57,6 +57,7 @@
 #include <QQuaternion>
 
 #include <algorithm>
+#include <cmath>
 
 using namespace flatlas::domain;
 using namespace flatlas::rendering;
@@ -429,7 +430,6 @@ void SystemEditorPage::setupToolBar()
         if (m_mapScene)
             m_mapScene->setGridVisible(checked);
     });
-
 }
 
 void SystemEditorPage::connectSignals()

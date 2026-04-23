@@ -56,7 +56,12 @@ signals:
 private:
     QString m_name;
     QString m_filePath;
-    double m_navMapScale = 1.0;
+    // Freelancer's NavMapScale default: 1.36. Vanilla system .ini files that
+    // omit the value rely on the universe.ini NavMapScale; if that lookup
+    // fails for any reason, the correct fallback is still the Freelancer
+    // default, not 1.0 (which would produce a NavMap grid that is too large
+    // and push objects visually toward the edge).
+    double m_navMapScale = 1.36;
     bool m_dirty = false;
     QVector<std::shared_ptr<SolarObject>> m_objects;
     QVector<std::shared_ptr<ZoneItem>> m_zones;

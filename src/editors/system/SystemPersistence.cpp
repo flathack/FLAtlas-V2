@@ -212,9 +212,25 @@ static void applyUniverseNavMapScale(SystemDocument *doc, const QString &filePat
     if (universeDoc.isEmpty())
         return;
 
-    const QString normalizedSystemPath =
-        flatlas::core::PathUtils::normalizePath(systemInfo.absoluteFilePath()).toLower();
+    // Build a robust identity for the system being loaded:
+    //  1) a canonical (collapsed-`..`, on-disk casing) absolute path,
+    //  2) the filename stem (e.g. "li01") as a fallback when the explicit
+    //     nickname cannot be established — vanilla system .ini files often
+    //     lack a `nickname = ` entry in [SystemInfo], which previously caused
+    //     universe.ini’s NavMapScale to silently fall back to the default
+    //     value and mis-render the 8x8 NavMap grid (default 1.0 instead of
+    //     the actual 1.36 vanilla scale).
+    auto canonicalize = [](const QString &path) {
+        if (path.isEmpty())
+            return QString();
+        const QString canonical = QFileInfo(path).canonicalFilePath();
+        const QString effective = canonical.isEmpty() ? QFileInfo(path).absoluteFilePath() : canonical;
+        return flatlas::core::PathUtils::normalizePath(effective).toLower();
+    };
+
+    const QString canonicalSystemPath = canonicalize(systemInfo.absoluteFilePath());
     const QString systemNickname = doc->name().trimmed();
+    const QString systemFileStem = systemInfo.completeBaseName(); // e.g. "Li01"
 
     for (const IniSection &section : universeDoc) {
         if (section.name.compare(QStringLiteral("system"), Qt::CaseInsensitive) != 0)
@@ -227,14 +243,29 @@ static void applyUniverseNavMapScale(SystemDocument *doc, const QString &filePat
             if (resolvedPath.isEmpty())
                 resolvedPath = QDir(universeDir).absoluteFilePath(relativeFile);
 
-            const QString normalizedResolved =
-                flatlas::core::PathUtils::normalizePath(QFileInfo(resolvedPath).absoluteFilePath()).toLower();
-            matches = !normalizedResolved.isEmpty() && normalizedResolved == normalizedSystemPath;
+            const QString canonicalResolved = canonicalize(resolvedPath);
+            matches = !canonicalResolved.isEmpty()
+                      && !canonicalSystemPath.isEmpty()
+                      && canonicalResolved == canonicalSystemPath;
+
+            // Also try matching by the file's basename (stem). This is the
+            // most forgiving identifier and robust against any residual path
+            // normalisation issues across mods/installations.
+            if (!matches) {
+                const QString relStem = QFileInfo(relativeFile).completeBaseName();
+                if (!relStem.isEmpty() && !systemFileStem.isEmpty())
+                    matches = relStem.compare(systemFileStem, Qt::CaseInsensitive) == 0;
+            }
         }
 
-        if (!matches && !systemNickname.isEmpty()) {
+        if (!matches) {
             const QString nickname = section.value(QStringLiteral("nickname")).trimmed();
-            matches = nickname.compare(systemNickname, Qt::CaseInsensitive) == 0;
+            if (!nickname.isEmpty()) {
+                if (!systemNickname.isEmpty() && nickname.compare(systemNickname, Qt::CaseInsensitive) == 0)
+                    matches = true;
+                else if (!systemFileStem.isEmpty() && nickname.compare(systemFileStem, Qt::CaseInsensitive) == 0)
+                    matches = true;
+            }
         }
 
         if (!matches)
@@ -295,9 +326,13 @@ std::unique_ptr<SystemDocument> SystemPersistence::load(const QString &filePath)
     }
 
     s_extras[doc.get()] = extras;
-    applyUniverseNavMapScale(doc.get(), filePath);
+    // Ensure the document has a usable name BEFORE looking up NavMapScale in
+    // universe.ini — vanilla system .ini files frequently omit `nickname` in
+    // [SystemInfo], and without a name the universe lookup would otherwise
+    // silently miss and leave NavMapScale at the default.
     if (doc->name().trimmed().isEmpty())
         doc->setName(QFileInfo(filePath).completeBaseName());
+    applyUniverseNavMapScale(doc.get(), filePath);
     doc->setDirty(false);
     return doc;
 }

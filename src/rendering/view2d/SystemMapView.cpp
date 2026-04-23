@@ -23,6 +23,24 @@ namespace flatlas::rendering {
 
 namespace {
 
+// Matches the reference Universe-Viewer (flathack.github.io/docs/universe-viewer.html):
+// an 880 px 8x8 grid is rendered inside a 1000 px canvas, i.e. 60 px (= 6 %)
+// breathing space on every side. Without this padding, objects that legitimately
+// sit at the edge of the NavMap (e.g. Jump Gates around ±80 000 FL units in Li01)
+// end up glued to the viewport edge. The NavMapScale math itself is already
+// correct — only the fitted target rect has to be expanded by the same ratio.
+constexpr double kNavMapFitPaddingFactor = 1000.0 / 880.0; // ≈ 1.1364
+
+QRectF withNavMapPadding(const QRectF &gridRect)
+{
+    if (gridRect.isNull() || gridRect.width() <= 0.0 || gridRect.height() <= 0.0)
+        return gridRect;
+    const QPointF c = gridRect.center();
+    const qreal w = gridRect.width()  * kNavMapFitPaddingFactor;
+    const qreal h = gridRect.height() * kNavMapFitPaddingFactor;
+    return QRectF(c.x() - w / 2.0, c.y() - h / 2.0, w, h);
+}
+
 double fitScaleForView(const QGraphicsView *view, const QRectF &targetRect)
 {
     if (!view)
@@ -128,18 +146,23 @@ void SystemMapView::zoomToFit()
     if (targetRect.isNull() || targetRect.width() <= 0.0 || targetRect.height() <= 0.0)
         return;
 
+    // Fit the NavMap grid with the same breathing space as the reference
+    // universe-viewer so objects at the NavMap edge do not cling to the
+    // viewport border.
+    const QRectF paddedRect = withNavMapPadding(targetRect);
+
     const auto previousAnchor = transformationAnchor();
     const auto previousResizeAnchor = resizeAnchor();
     setTransformationAnchor(QGraphicsView::AnchorViewCenter);
     setResizeAnchor(QGraphicsView::AnchorViewCenter);
 
     resetTransform();
-    fitInView(targetRect, Qt::KeepAspectRatio);
-    centerOn(targetRect.center());
+    fitInView(paddedRect, Qt::KeepAspectRatio);
+    centerOn(paddedRect.center());
 
     setTransformationAnchor(previousAnchor);
     setResizeAnchor(previousResizeAnchor);
-    m_minZoomScale = fitScaleForView(this, targetRect);
+    m_minZoomScale = fitScaleForView(this, paddedRect);
     updateItemDetailForScale();
     if (--m_pendingInitialFitPasses <= 0) {
         m_pendingInitialFit = false;
@@ -310,15 +333,24 @@ void SystemMapView::drawForeground(QPainter *painter, const QRectF &rect)
 
     const double cellWidth = sceneRect.width() / 8.0;
     const double cellHeight = sceneRect.height() / 8.0;
-    const int bottomMargin = 22;
-    const int leftMargin = 20;
+
+    // Anchor the A-H / 1-8 labels to the actual grid edges (converted through
+    // the current view transform) instead of the viewport edges. This matches
+    // the reference universe-viewer where labels sit INSIDE the padding zone
+    // around the grid; anchoring to the viewport edge visually compresses the
+    // padding and makes objects at the grid edge appear closer to the border
+    // than in the reference.
+    const QPoint gridBottomLeftView = mapFromScene(QPointF(sceneRect.left(), sceneRect.bottom()));
+    const QPoint gridTopLeftView    = mapFromScene(QPointF(sceneRect.left(), sceneRect.top()));
+    const int columnLabelY = gridBottomLeftView.y() + fm.ascent() + 6; // just below grid
+    const int rowLabelX    = gridTopLeftView.x() - 10;                 // just left of grid
 
     for (int i = 0; i < 8; ++i) {
         const double sceneX = sceneRect.left() + (cellWidth * (static_cast<double>(i) + 0.5));
         const QPoint viewPoint = mapFromScene(QPointF(sceneX, sceneRect.bottom()));
         const QString label(QChar(static_cast<char>('A' + i)));
         painter->drawText(viewPoint.x() - (fm.horizontalAdvance(label) / 2),
-                          viewport()->height() - bottomMargin,
+                          columnLabelY,
                           label);
     }
 
@@ -326,7 +358,7 @@ void SystemMapView::drawForeground(QPainter *painter, const QRectF &rect)
         const double sceneY = sceneRect.top() + (cellHeight * (static_cast<double>(i) + 0.5));
         const QPoint viewPoint = mapFromScene(QPointF(sceneRect.left(), sceneY));
         const QString label = QString::number(i + 1);
-        painter->drawText(leftMargin - fm.horizontalAdvance(label),
+        painter->drawText(rowLabelX - fm.horizontalAdvance(label),
                           viewPoint.y() + (fm.height() / 3),
                           label);
     }
@@ -386,7 +418,7 @@ void SystemMapView::resizeEvent(QResizeEvent *event)
         if (targetRect.isNull() || targetRect.width() <= 0.0 || targetRect.height() <= 0.0)
             targetRect = scene()->itemsBoundingRect();
         if (!targetRect.isNull() && targetRect.width() > 0.0 && targetRect.height() > 0.0)
-            m_minZoomScale = fitScaleForView(this, targetRect);
+            m_minZoomScale = fitScaleForView(this, withNavMapPadding(targetRect));
     }
     applyInitialFitIfNeeded();
 }
