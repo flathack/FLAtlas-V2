@@ -514,8 +514,16 @@ void SolarObjectItem::applyRotationFromObject(const flatlas::domain::SolarObject
 
 void SolarObjectItem::syncLabelRotation()
 {
+    // Labels must always be rendered horizontally and fully readable,
+    // regardless of the parent's orientation. The label already has
+    // QGraphicsItem::ItemIgnoresTransformations set, which causes it to
+    // ignore inherited transformations (including the parent's rotation).
+    // Forcing the label's own rotation to 0 guarantees a horizontal
+    // baseline even if external code were to change it; the label's
+    // offset position relative to the parent is still honoured, so it
+    // continues to track the object cleanly.
     if (m_labelItem)
-        m_labelItem->setRotation(-rotation());
+        m_labelItem->setRotation(0.0);
 }
 
 void SolarObjectItem::ensureHoverAnimation()
