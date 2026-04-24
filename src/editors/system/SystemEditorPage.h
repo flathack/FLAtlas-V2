@@ -16,6 +16,7 @@ struct CreateFieldZoneResult;
 struct CreateExclusionZoneResult;
 struct CreateSimpleZoneRequest;
 struct CreatePatrolZoneRequest;
+struct CreateBuoyRequest;
 struct ExclusionShellSettings;
 }
 class QToolBar;
@@ -173,6 +174,10 @@ private:
     void updatePatrolZonePlacementPreview(const QPointF &currentScenePos);
     void finalizePatrolZonePlacement(const QPointF &endScenePos);
     void cancelPatrolZonePlacement();
+    void beginBuoyPlacement(const CreateBuoyRequest &request);
+    void updateBuoyPlacementPreview(const QPointF &currentScenePos);
+    void finalizeBuoyPlacement(const QPointF &scenePos);
+    void cancelBuoyPlacement();
     void beginExclusionZonePlacement(const CreateExclusionZoneResult &request);
     void updateExclusionZonePlacementPreview(const QPointF &currentScenePos);
     void finalizeExclusionZonePlacement(const QPointF &edgeScenePos);
@@ -295,6 +300,13 @@ private:
     int m_pendingPatrolZoneStep = 0;
     QGraphicsLineItem *m_patrolZonePlacementPreview = nullptr;
     QGraphicsPolygonItem *m_patrolZoneWidthPreview = nullptr;
+    std::unique_ptr<CreateBuoyRequest> m_pendingBuoyRequest;
+    bool m_pendingBuoyHasAnchor = false;
+    QPointF m_pendingBuoyAnchorScenePos;
+    int m_pendingBuoyStep = 0;
+    QGraphicsLineItem *m_buoyLinePreview = nullptr;
+    QGraphicsEllipseItem *m_buoyCirclePreview = nullptr;
+    QVector<QGraphicsEllipseItem *> m_buoyMarkerPreviews;
     std::unique_ptr<CreateExclusionZoneResult> m_pendingExclusionZoneRequest;
     bool m_pendingExclusionZoneHasCenter = false;
     QPointF m_pendingExclusionZoneCenterScenePos;

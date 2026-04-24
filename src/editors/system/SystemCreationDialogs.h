@@ -4,6 +4,7 @@
 #include <QHash>
 #include <QString>
 #include <QStringList>
+#include <QVector>
 
 class QCheckBox;
 class QComboBox;
@@ -50,6 +51,18 @@ struct CreatePatrolZoneRequest {
     int encounterLevel = 6;
     double encounterChance = 0.29;
     bool missionEligible = true;
+};
+
+struct CreateBuoyRequest {
+    enum class Mode {
+        Line,
+        Circle,
+    };
+
+    QString archetype = QStringLiteral("nav_buoy");
+    Mode mode = Mode::Line;
+    int count = 8;
+    int spacingMeters = 3000;
 };
 
 struct CreateLightSourceRequest {
@@ -147,6 +160,25 @@ private:
     QSpinBox *m_encounterLevelSpin = nullptr;
     QDoubleSpinBox *m_encounterChanceSpin = nullptr;
     QCheckBox *m_missionEligibleCheck = nullptr;
+};
+
+class CreateBuoyDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit CreateBuoyDialog(QWidget *parent = nullptr);
+
+    CreateBuoyRequest result() const;
+
+private slots:
+    void updateModeUi();
+
+private:
+    QComboBox *m_typeCombo = nullptr;
+    QComboBox *m_modeCombo = nullptr;
+    QSpinBox *m_countSpin = nullptr;
+    QLabel *m_spacingLabel = nullptr;
+    QSpinBox *m_spacingSpin = nullptr;
+    QLabel *m_modeHintLabel = nullptr;
 };
 
 class CreateLightSourceDialog : public QDialog {

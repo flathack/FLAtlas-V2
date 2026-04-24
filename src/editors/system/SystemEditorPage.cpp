@@ -411,6 +411,54 @@ QString suggestIndexedNickname(const QString &prefix, const QStringList &existin
     }
 }
 
+QString buoyNicknameSystemToken(const QString &systemFilePath)
+{
+    QString token = QFileInfo(systemFilePath).completeBaseName().trimmed();
+    if (token.isEmpty())
+        token = QStringLiteral("System");
+    token = token.toLower();
+    if (!token.isEmpty())
+        token[0] = token.at(0).toUpper();
+    return token;
+}
+
+QString nextIndexedNickname(const QString &prefix, QSet<QString> *usedNicknames, int width = 3)
+{
+    if (!usedNicknames)
+        return QStringLiteral("%1001").arg(prefix);
+
+    int number = 1;
+    while (true) {
+        const QString candidate = QStringLiteral("%1%2").arg(prefix).arg(number, width, 10, QLatin1Char('0'));
+        const QString key = candidate.toLower();
+        if (!usedNicknames->contains(key)) {
+            usedNicknames->insert(key);
+            return candidate;
+        }
+        ++number;
+    }
+}
+
+int buoyIdsNameForArchetype(const QString &archetype)
+{
+    const QString normalized = archetype.trimmed().toLower();
+    if (normalized == QLatin1String("nav_buoy"))
+        return 261162;
+    if (normalized == QLatin1String("hazard_buoy"))
+        return 261163;
+    return 0;
+}
+
+int buoyIdsInfoForArchetype(const QString &archetype)
+{
+    const QString normalized = archetype.trimmed().toLower();
+    if (normalized == QLatin1String("nav_buoy"))
+        return 66147;
+    if (normalized == QLatin1String("hazard_buoy"))
+        return 66144;
+    return 0;
+}
+
 QStringList collectEncounterNicknames(flatlas::domain::SystemDocument *document, const QString &gameRoot)
 {
     QStringList values;
@@ -1691,7 +1739,8 @@ void SystemEditorPage::onAddObject()
             type = SolarObject::Planet;
         else if (archetypeLower.contains(QLatin1String("satellite")))
             type = SolarObject::Satellite;
-        else if (archetypeLower.contains(QLatin1String("waypoint")))
+        else if (archetypeLower.contains(QLatin1String("waypoint"))
+                 || archetypeLower.contains(QLatin1String("buoy")))
             type = SolarObject::Waypoint;
         else if (archetypeLower.contains(QLatin1String("weapons_platform")))
             type = SolarObject::Weapons_Platform;
@@ -3038,6 +3087,38 @@ bool SystemEditorPage::eventFilter(QObject *watched, QEvent *event)
         }
     }
 
+    if (m_pendingBuoyRequest && m_mapView && watched == m_mapView->viewport()) {
+        switch (event->type()) {
+        case QEvent::MouseMove: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            updateBuoyPlacementPreview(m_mapView->mapToScene(mouseEvent->pos()));
+            return true;
+        }
+        case QEvent::MouseButtonPress: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (mouseEvent->button() == Qt::RightButton || mouseEvent->button() == Qt::MiddleButton) {
+                cancelBuoyPlacement();
+                return true;
+            }
+            if (mouseEvent->button() == Qt::LeftButton && m_pendingBuoyHasAnchor) {
+                finalizeBuoyPlacement(m_mapView->mapToScene(mouseEvent->pos()));
+                return true;
+            }
+            break;
+        }
+        case QEvent::KeyPress: {
+            auto *keyEvent = static_cast<QKeyEvent *>(event);
+            if (keyEvent->key() == Qt::Key_Escape) {
+                cancelBuoyPlacement();
+                return true;
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
     return QWidget::eventFilter(watched, event);
 }
 
@@ -3622,7 +3703,29 @@ void SystemEditorPage::onCreatePlanet()
 
 void SystemEditorPage::onCreateBuoy()
 {
-    createQuickObject(SolarObject::Waypoint, QStringLiteral("new_buoy"), QStringLiteral("space_arch_buoy"));
+    if (!m_document || !m_mapView || !m_mapScene || m_mapView->isPlacementModeActive())
+        return;
+
+    CreateBuoyDialog dialog(this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const CreateBuoyRequest request = dialog.result();
+    const int minimumCount = request.mode == CreateBuoyRequest::Mode::Line ? 2 : 3;
+    if (request.count < minimumCount) {
+        QMessageBox::warning(this, tr("Bojen erstellen"),
+                             request.mode == CreateBuoyRequest::Mode::Line
+                                 ? tr("Es muessen mindestens zwei Bojen erstellt werden.")
+                                 : tr("Es muessen mindestens drei Bojen fuer einen Kreis erstellt werden."));
+        return;
+    }
+    if (request.mode == CreateBuoyRequest::Mode::Line && request.spacingMeters < 100) {
+        QMessageBox::warning(this, tr("Bojen erstellen"),
+                             tr("Der Abstand zwischen Bojen ist ungueltig."));
+        return;
+    }
+
+    beginBuoyPlacement(request);
 }
 
 void SystemEditorPage::onCreateWeaponPlatform()
@@ -4057,6 +4160,136 @@ void SystemEditorPage::beginPatrolZonePlacement(const CreatePatrolZoneRequest &r
     m_mapView->setPlacementMode(true,
                                 tr("1. Klick Startpunkt fuer '%1'. 2. Klick Endpunkt. 3. Klick Breite. 4. Klick speichert.")
                                     .arg(request.nickname));
+}
+
+void SystemEditorPage::beginBuoyPlacement(const CreateBuoyRequest &request)
+{
+    cancelBuoyPlacement();
+    m_pendingBuoyRequest = std::make_unique<CreateBuoyRequest>(request);
+    m_pendingBuoyHasAnchor = false;
+    m_pendingBuoyAnchorScenePos = QPointF();
+    m_pendingBuoyStep = 1;
+
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [this, placementGuard](const QPointF &scenePos) {
+        if (!m_pendingBuoyRequest || !m_mapView)
+            return;
+        m_pendingBuoyHasAnchor = true;
+        m_pendingBuoyAnchorScenePos = scenePos;
+        m_pendingBuoyStep = 2;
+        m_mapView->viewport()->installEventFilter(this);
+        m_mapView->viewport()->setMouseTracking(true);
+        updateBuoyPlacementPreview(scenePos);
+        m_mapView->setPlacementMode(true,
+                                    m_pendingBuoyRequest->mode == CreateBuoyRequest::Mode::Line
+                                        ? tr("2. Klick bestimmt die Richtung fuer das Bojenmuster. [Esc] oder Rechtsklick bricht ab.")
+                                        : tr("2. Klick bestimmt den Radius fuer das Bojenmuster. [Esc] oder Rechtsklick bricht ab."));
+        placementGuard->deleteLater();
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [this, placementGuard]() {
+        cancelBuoyPlacement();
+        placementGuard->deleteLater();
+    });
+
+    m_mapView->setPlacementMode(true,
+                                request.mode == CreateBuoyRequest::Mode::Line
+                                    ? tr("1. Klick setzt den Startpunkt des Bojenmusters.")
+                                    : tr("1. Klick setzt den Mittelpunkt des Bojenkreises."));
+}
+
+void SystemEditorPage::updateBuoyPlacementPreview(const QPointF &currentScenePos)
+{
+    if (!m_pendingBuoyRequest || !m_pendingBuoyHasAnchor || !m_mapScene)
+        return;
+
+    QVector<QPointF> previewPositions;
+    const auto mode = m_pendingBuoyRequest->mode;
+    const int count = std::max(m_pendingBuoyRequest->count,
+                               mode == CreateBuoyRequest::Mode::Line ? 2 : 3);
+
+    if (mode == CreateBuoyRequest::Mode::Line) {
+        if (!m_buoyLinePreview) {
+            const QColor stroke(120, 200, 255, 220);
+            m_buoyLinePreview = new QGraphicsLineItem();
+            m_buoyLinePreview->setPen(QPen(stroke, 2.0, Qt::DashLine));
+            m_buoyLinePreview->setZValue(9998.0);
+            m_mapScene->addItem(m_buoyLinePreview);
+        }
+
+        const QLineF directionLine(m_pendingBuoyAnchorScenePos, currentScenePos);
+        const qreal directionLength = directionLine.length();
+        if (directionLength > 0.001) {
+            const qreal spacingScene =
+                std::max<qreal>(static_cast<qreal>(m_pendingBuoyRequest->spacingMeters) / 100.0, 1.0);
+            const QPointF unit((currentScenePos.x() - m_pendingBuoyAnchorScenePos.x()) / directionLength,
+                               (currentScenePos.y() - m_pendingBuoyAnchorScenePos.y()) / directionLength);
+            const QPointF lineEnd = m_pendingBuoyAnchorScenePos
+                                    + QPointF(unit.x() * spacingScene * (count - 1),
+                                              unit.y() * spacingScene * (count - 1));
+            m_buoyLinePreview->setLine(QLineF(m_pendingBuoyAnchorScenePos, lineEnd));
+            previewPositions.reserve(count);
+            for (int index = 0; index < count; ++index) {
+                previewPositions.append(m_pendingBuoyAnchorScenePos
+                                        + QPointF(unit.x() * spacingScene * index,
+                                                  unit.y() * spacingScene * index));
+            }
+        } else {
+            m_buoyLinePreview->setLine(QLineF(m_pendingBuoyAnchorScenePos, currentScenePos));
+        }
+        if (m_buoyCirclePreview)
+            m_buoyCirclePreview->setVisible(false);
+    } else {
+        if (!m_buoyCirclePreview) {
+            const QColor stroke(120, 200, 255, 220);
+            const QColor fill(120, 200, 255, 22);
+            m_buoyCirclePreview = new QGraphicsEllipseItem();
+            m_buoyCirclePreview->setPen(QPen(stroke, 2.0, Qt::DashLine));
+            m_buoyCirclePreview->setBrush(fill);
+            m_buoyCirclePreview->setZValue(9998.0);
+            m_mapScene->addItem(m_buoyCirclePreview);
+        }
+
+        const qreal radius = std::max<qreal>(QLineF(m_pendingBuoyAnchorScenePos, currentScenePos).length(), 1.0);
+        m_buoyCirclePreview->setVisible(true);
+        m_buoyCirclePreview->setRect(m_pendingBuoyAnchorScenePos.x() - radius,
+                                     m_pendingBuoyAnchorScenePos.y() - radius,
+                                     radius * 2.0,
+                                     radius * 2.0);
+        previewPositions.reserve(count);
+        for (int index = 0; index < count; ++index) {
+            const double angle = (2.0 * M_PI * static_cast<double>(index)) / static_cast<double>(count);
+            previewPositions.append(QPointF(m_pendingBuoyAnchorScenePos.x() + std::cos(angle) * radius,
+                                            m_pendingBuoyAnchorScenePos.y() + std::sin(angle) * radius));
+        }
+        if (m_buoyLinePreview)
+            m_buoyLinePreview->setVisible(false);
+    }
+
+    while (m_buoyMarkerPreviews.size() < previewPositions.size()) {
+        auto *marker = new QGraphicsEllipseItem();
+        marker->setPen(QPen(QColor(120, 200, 255, 230), 1.5));
+        marker->setBrush(QColor(120, 200, 255, 80));
+        marker->setZValue(10000.0);
+        m_mapScene->addItem(marker);
+        m_buoyMarkerPreviews.append(marker);
+    }
+
+    constexpr qreal kMarkerRadius = 4.0;
+    for (int index = 0; index < m_buoyMarkerPreviews.size(); ++index) {
+        auto *marker = m_buoyMarkerPreviews[index];
+        if (index < previewPositions.size()) {
+            const QPointF pos = previewPositions[index];
+            marker->setRect(pos.x() - kMarkerRadius,
+                            pos.y() - kMarkerRadius,
+                            kMarkerRadius * 2.0,
+                            kMarkerRadius * 2.0);
+            marker->setVisible(true);
+        } else {
+            marker->setVisible(false);
+        }
+    }
 }
 
 void SystemEditorPage::updateFieldZonePlacementPreview(const QPointF &currentScenePos)
@@ -4628,6 +4861,121 @@ void SystemEditorPage::finalizePatrolZonePlacement(const QPointF &endScenePos)
     cancelPatrolZonePlacement();
 }
 
+void SystemEditorPage::finalizeBuoyPlacement(const QPointF &scenePos)
+{
+    if (!m_document || !m_pendingBuoyRequest || !m_pendingBuoyHasAnchor)
+        return;
+
+    const QString archetype = m_pendingBuoyRequest->archetype.trimmed().toLower();
+    if (archetype.isEmpty()) {
+        QMessageBox::warning(this, tr("Bojen erstellen"),
+                             tr("Es wurde kein gueltiger Bojentyp ausgewaehlt."));
+        cancelBuoyPlacement();
+        return;
+    }
+
+    QVector<QPointF> positionsScene;
+    const int count = std::max(m_pendingBuoyRequest->count,
+                               m_pendingBuoyRequest->mode == CreateBuoyRequest::Mode::Line ? 2 : 3);
+    if (m_pendingBuoyRequest->mode == CreateBuoyRequest::Mode::Line) {
+        const QLineF directionLine(m_pendingBuoyAnchorScenePos, scenePos);
+        const qreal directionLength = directionLine.length();
+        if (directionLength <= 0.001) {
+            QMessageBox::warning(this, tr("Bojen erstellen"),
+                                 tr("Die Richtung fuer die Bojenlinie ist ungueltig."));
+            m_mapView->setPlacementMode(true,
+                                        tr("2. Klick bestimmt die Richtung fuer das Bojenmuster. [Esc] oder Rechtsklick bricht ab."));
+            return;
+        }
+
+        const qreal spacingScene =
+            std::max<qreal>(static_cast<qreal>(m_pendingBuoyRequest->spacingMeters) / 100.0, 1.0);
+        const QPointF unit((scenePos.x() - m_pendingBuoyAnchorScenePos.x()) / directionLength,
+                           (scenePos.y() - m_pendingBuoyAnchorScenePos.y()) / directionLength);
+        positionsScene.reserve(count);
+        for (int index = 0; index < count; ++index) {
+            positionsScene.append(m_pendingBuoyAnchorScenePos
+                                  + QPointF(unit.x() * spacingScene * index,
+                                            unit.y() * spacingScene * index));
+        }
+    } else {
+        const qreal radius = QLineF(m_pendingBuoyAnchorScenePos, scenePos).length();
+        if (radius <= 0.001) {
+            QMessageBox::warning(this, tr("Bojen erstellen"),
+                                 tr("Der Radius fuer den Bojenkreis ist ungueltig."));
+            m_mapView->setPlacementMode(true,
+                                        tr("2. Klick bestimmt den Radius fuer das Bojenmuster. [Esc] oder Rechtsklick bricht ab."));
+            return;
+        }
+
+        positionsScene.reserve(count);
+        for (int index = 0; index < count; ++index) {
+            const double angle = (2.0 * M_PI * static_cast<double>(index)) / static_cast<double>(count);
+            positionsScene.append(QPointF(m_pendingBuoyAnchorScenePos.x() + std::cos(angle) * radius,
+                                          m_pendingBuoyAnchorScenePos.y() + std::sin(angle) * radius));
+        }
+    }
+
+    QStringList existingNicknames;
+    existingNicknames.reserve(m_document->objects().size());
+    for (const auto &obj : m_document->objects()) {
+        if (obj)
+            existingNicknames.append(obj->nickname());
+    }
+    QSet<QString> usedNicknames;
+    for (const QString &nickname : std::as_const(existingNicknames))
+        usedNicknames.insert(nickname.toLower());
+
+    const QString prefix = QStringLiteral("%1_%2_")
+                               .arg(buoyNicknameSystemToken(m_document->filePath()))
+                               .arg(archetype);
+    const int idsName = buoyIdsNameForArchetype(archetype);
+    const int idsInfo = buoyIdsInfoForArchetype(archetype);
+
+    auto *stack = flatlas::core::UndoManager::instance().stack();
+    stack->beginMacro(tr("Create Buoys"));
+
+    QStringList createdNicknames;
+    createdNicknames.reserve(positionsScene.size());
+    for (const QPointF &scenePoint : std::as_const(positionsScene)) {
+        const QPointF worldXZ = MapScene::qtToFl(scenePoint.x(), scenePoint.y());
+        auto obj = std::make_shared<SolarObject>();
+        const QString nickname = nextIndexedNickname(prefix, &usedNicknames);
+        obj->setNickname(nickname);
+        obj->setType(SolarObject::Waypoint);
+        obj->setArchetype(archetype);
+        obj->setPosition(QVector3D(static_cast<float>(worldXZ.x()), 0.0f, static_cast<float>(worldXZ.y())));
+        if (idsName > 0)
+            obj->setIdsName(idsName);
+        if (idsInfo > 0)
+            obj->setIdsInfo(idsInfo);
+
+        QVector<QPair<QString, QString>> rawEntries{
+            {QStringLiteral("nickname"), nickname},
+            {QStringLiteral("pos"),
+             QStringLiteral("%1, 0, %2").arg(worldXZ.x(), 0, 'f', 0).arg(worldXZ.y(), 0, 'f', 0)},
+            {QStringLiteral("archetype"), archetype},
+        };
+        if (idsName > 0)
+            rawEntries.append({QStringLiteral("ids_name"), QString::number(idsName)});
+        if (idsInfo > 0)
+            rawEntries.append({QStringLiteral("ids_info"), QString::number(idsInfo)});
+        obj->setRawEntries(rawEntries);
+
+        stack->push(new AddObjectCommand(m_document.get(), obj, tr("Create Buoys")));
+        createdNicknames.append(nickname);
+    }
+    stack->endMacro();
+
+    refreshObjectList();
+    m_selectedNicknames = createdNicknames;
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+    updateIniEditorForSelection();
+    cancelBuoyPlacement();
+}
+
 void SystemEditorPage::cancelFieldZonePlacement()
 {
     clearFieldZonePlacementPreview();
@@ -4682,6 +5030,35 @@ void SystemEditorPage::cancelPatrolZonePlacement()
     m_pendingPatrolZoneEndScenePos = QPointF();
     m_pendingPatrolZoneHalfWidthScene = 0.0;
     m_pendingPatrolZoneStep = 0;
+}
+
+void SystemEditorPage::cancelBuoyPlacement()
+{
+    if (m_buoyLinePreview && m_mapScene) {
+        m_mapScene->removeItem(m_buoyLinePreview);
+        delete m_buoyLinePreview;
+        m_buoyLinePreview = nullptr;
+    }
+    if (m_buoyCirclePreview && m_mapScene) {
+        m_mapScene->removeItem(m_buoyCirclePreview);
+        delete m_buoyCirclePreview;
+        m_buoyCirclePreview = nullptr;
+    }
+    for (QGraphicsEllipseItem *marker : std::as_const(m_buoyMarkerPreviews)) {
+        if (marker && m_mapScene)
+            m_mapScene->removeItem(marker);
+        delete marker;
+    }
+    m_buoyMarkerPreviews.clear();
+    if (m_mapView && m_mapView->viewport()) {
+        m_mapView->setPlacementMode(false);
+        m_mapView->viewport()->removeEventFilter(this);
+        m_mapView->viewport()->setToolTip(QString());
+    }
+    m_pendingBuoyRequest.reset();
+    m_pendingBuoyHasAnchor = false;
+    m_pendingBuoyAnchorScenePos = QPointF();
+    m_pendingBuoyStep = 0;
 }
 
 void SystemEditorPage::cancelExclusionZonePlacement()

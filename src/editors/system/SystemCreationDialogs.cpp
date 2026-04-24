@@ -427,6 +427,74 @@ CreateSimpleZoneRequest CreateSimpleZoneDialog::result() const
     return value;
 }
 
+CreateBuoyDialog::CreateBuoyDialog(QWidget *parent)
+    : QDialog(parent)
+{
+    setWindowTitle(tr("Bojen erstellen"));
+    setMinimumWidth(440);
+
+    auto *layout = new QFormLayout(this);
+
+    m_typeCombo = new QComboBox(this);
+    m_typeCombo->addItem(QStringLiteral("nav_buoy"), QStringLiteral("nav_buoy"));
+    m_typeCombo->addItem(QStringLiteral("hazard_buoy"), QStringLiteral("hazard_buoy"));
+    layout->addRow(tr("Typ:"), m_typeCombo);
+
+    m_modeCombo = new QComboBox(this);
+    m_modeCombo->addItem(tr("Linie"), QVariant::fromValue(static_cast<int>(CreateBuoyRequest::Mode::Line)));
+    m_modeCombo->addItem(tr("Kreis"), QVariant::fromValue(static_cast<int>(CreateBuoyRequest::Mode::Circle)));
+    layout->addRow(tr("Muster:"), m_modeCombo);
+
+    m_countSpin = new QSpinBox(this);
+    m_countSpin->setRange(2, 128);
+    m_countSpin->setValue(8);
+    layout->addRow(tr("Anzahl:"), m_countSpin);
+
+    m_spacingLabel = new QLabel(tr("Abstand (m):"), this);
+    m_spacingSpin = new QSpinBox(this);
+    m_spacingSpin->setRange(100, 100000);
+    m_spacingSpin->setSingleStep(100);
+    m_spacingSpin->setValue(3000);
+    layout->addRow(m_spacingLabel, m_spacingSpin);
+
+    m_modeHintLabel = new QLabel(this);
+    m_modeHintLabel->setWordWrap(true);
+    m_modeHintLabel->setFrameStyle(QFrame::NoFrame);
+    layout->addRow(QString(), m_modeHintLabel);
+
+    connect(m_modeCombo, &QComboBox::currentIndexChanged, this, &CreateBuoyDialog::updateModeUi);
+    updateModeUi();
+
+    layout->addRow(createDialogButtons(this));
+}
+
+void CreateBuoyDialog::updateModeUi()
+{
+    const auto mode = static_cast<CreateBuoyRequest::Mode>(
+        m_modeCombo->currentData().toInt());
+    const bool lineMode = mode == CreateBuoyRequest::Mode::Line;
+    m_countSpin->setMinimum(lineMode ? 2 : 3);
+    if (m_countSpin->value() < m_countSpin->minimum())
+        m_countSpin->setValue(m_countSpin->minimum());
+    m_spacingLabel->setVisible(lineMode);
+    m_spacingSpin->setVisible(lineMode);
+    m_modeHintLabel->setText(lineMode
+                                 ? tr("1. Klick setzt den Startpunkt. 2. Klick bestimmt die Richtung. "
+                                      "Die Bojen werden mit dem eingestellten Abstand in einer geraden Linie platziert.")
+                                 : tr("1. Klick setzt den Mittelpunkt. 2. Klick bestimmt den Radius. "
+                                      "Die Bojen werden gleichmaessig auf dem Kreis verteilt."));
+}
+
+CreateBuoyRequest CreateBuoyDialog::result() const
+{
+    CreateBuoyRequest value;
+    value.archetype = m_typeCombo->currentData().toString().trimmed();
+    value.mode = static_cast<CreateBuoyRequest::Mode>(m_modeCombo->currentData().toInt());
+    value.count = m_countSpin->value();
+    value.spacingMeters = m_spacingSpin->value();
+    return value;
+}
+
 CreatePatrolZoneDialog::CreatePatrolZoneDialog(const QString &suggestedNickname,
                                                const QStringList &encounters,
                                                const QStringList &factions,
