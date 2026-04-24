@@ -170,7 +170,8 @@ static SolarObject::Type detectObjectType(const IniSection &sec)
         return SolarObject::Planet;
     if (archetype.contains(QLatin1String("satellite")))
         return SolarObject::Satellite;
-    if (archetype.contains(QLatin1String("waypoint")))
+    if (archetype.contains(QLatin1String("waypoint"))
+        || archetype.contains(QLatin1String("buoy")))
         return SolarObject::Waypoint;
     if (archetype.contains(QLatin1String("weapons_platform")))
         return SolarObject::Weapons_Platform;
