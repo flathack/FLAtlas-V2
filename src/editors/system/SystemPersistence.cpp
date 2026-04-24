@@ -986,11 +986,23 @@ IniDocument SystemPersistence::extraSections(const SystemDocument *doc)
     return s_extras.value(doc);
 }
 
+IniSection SystemPersistence::systemInfoSection(const SystemDocument *doc)
+{
+    return s_systemInfoSections.value(doc);
+}
+
 void SystemPersistence::setExtraSections(const SystemDocument *doc, const IniDocument &extras)
 {
     if (!doc)
         return;
     s_extras.insert(doc, extras);
+}
+
+void SystemPersistence::setSystemInfoSection(const SystemDocument *doc, const IniSection &section)
+{
+    if (!doc)
+        return;
+    s_systemInfoSections.insert(doc, section);
 }
 
 void SystemPersistence::clearExtras(const SystemDocument *doc)

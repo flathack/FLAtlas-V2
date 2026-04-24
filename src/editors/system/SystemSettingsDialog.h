@@ -1,12 +1,14 @@
 #pragma once
 
+#include "SystemSettingsService.h"
+
 #include <QDialog>
 
 class QCheckBox;
-class QDoubleSpinBox;
+class QComboBox;
+class QLabel;
 class QLineEdit;
-
-namespace flatlas::domain { class SystemDocument; }
+class QPushButton;
 
 namespace flatlas::editors {
 
@@ -14,17 +16,34 @@ class SystemSettingsDialog : public QDialog
 {
     Q_OBJECT
 public:
-    explicit SystemSettingsDialog(const flatlas::domain::SystemDocument *document,
+    explicit SystemSettingsDialog(const SystemSettingsState &current,
+                                  const SystemSettingsOptions &options,
                                   bool hasNonStandardSectionOrder,
                                   QWidget *parent = nullptr);
 
-    QString systemNickname() const;
-    double navMapScale() const;
+    SystemSettingsState result() const;
     bool shouldNormalizeSectionOrder() const;
 
+public slots:
+    void accept() override;
+
 private:
-    QLineEdit *m_nicknameEdit = nullptr;
-    QDoubleSpinBox *m_navMapScaleSpin = nullptr;
+    void pickColor(QLineEdit *edit);
+
+    QString m_systemNickname;
+    QLabel *m_systemLabel = nullptr;
+    QComboBox *m_musicSpaceCombo = nullptr;
+    QComboBox *m_musicDangerCombo = nullptr;
+    QComboBox *m_musicBattleCombo = nullptr;
+    QLineEdit *m_spaceColorEdit = nullptr;
+    QPushButton *m_spaceColorButton = nullptr;
+    QComboBox *m_localFactionCombo = nullptr;
+    QLineEdit *m_ambientColorEdit = nullptr;
+    QPushButton *m_ambientColorButton = nullptr;
+    QComboBox *m_dustCombo = nullptr;
+    QComboBox *m_backgroundBasicCombo = nullptr;
+    QComboBox *m_backgroundComplexCombo = nullptr;
+    QComboBox *m_backgroundNebulaeCombo = nullptr;
     QCheckBox *m_normalizeSectionsCheck = nullptr;
 };
 

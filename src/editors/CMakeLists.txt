@@ -3,6 +3,7 @@ add_library(flatlas_editors STATIC
     system/SystemEditorPage.h system/SystemEditorPage.cpp
     system/SystemDisplayFilterDialog.h system/SystemDisplayFilterDialog.cpp
     system/SystemSettingsDialog.h system/SystemSettingsDialog.cpp
+    system/SystemSettingsService.h system/SystemSettingsService.cpp
     system/SystemPersistence.h system/SystemPersistence.cpp
     system/SystemCreationWizard.h system/SystemCreationWizard.cpp
     system/SystemUndoCommands.h

@@ -30,6 +30,7 @@ flatlas_add_test(test_Logger      test_Logger.cpp      flatlas_core)
 flatlas_add_test(test_SystemPersistence test_SystemPersistence.cpp flatlas_editors)
 flatlas_add_test(test_ExclusionZoneUtils test_ExclusionZoneUtils.cpp flatlas_editors)
 flatlas_add_test(test_TradeLaneEditService test_TradeLaneEditService.cpp flatlas_editors)
+flatlas_add_test(test_SystemSettingsService test_SystemSettingsService.cpp flatlas_editors)
 
 # Phase 6 INI editor tests
 flatlas_add_test(test_IniSyntaxHighlighter test_IniSyntaxHighlighter.cpp flatlas_editors Qt6::Widgets)

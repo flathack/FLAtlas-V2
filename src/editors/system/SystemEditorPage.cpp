@@ -4,6 +4,7 @@
 #include "SystemDisplayFilterDialog.h"
 #include "SystemPersistence.h"
 #include "SystemSettingsDialog.h"
+#include "SystemSettingsService.h"
 #include "SystemUndoCommands.h"
 #include "CreateObjectDialog.h"
 #include "SystemCreationDialogs.h"
@@ -3441,23 +3442,45 @@ void SystemEditorPage::openSystemSettingsDialog()
     if (!m_document)
         return;
 
-    SystemSettingsDialog dialog(m_document.get(),
+    const bool hadDirtyStateBefore = m_document->isDirty();
+    const SystemSettingsState currentSettings = SystemSettingsService::load(m_document.get());
+    const SystemSettingsOptions options = SystemSettingsService::loadOptions(
+        flatlas::core::EditingContext::instance().primaryGamePath());
+
+    SystemSettingsDialog dialog(currentSettings,
+                                options,
                                 SystemPersistence::hasNonStandardSectionOrder(m_document.get()),
                                 this);
     if (dialog.exec() != QDialog::Accepted)
         return;
 
-    const QString trimmedName = dialog.systemNickname().trimmed();
-    if (!trimmedName.isEmpty() && trimmedName != m_document->name()) {
-        m_document->setName(trimmedName);
-        m_document->setDirty(true);
-        refreshTitle();
+    const SystemSettingsState editedSettings = dialog.result();
+    const bool settingsChanged = editedSettings.musicSpace != currentSettings.musicSpace
+        || editedSettings.musicDanger != currentSettings.musicDanger
+        || editedSettings.musicBattle != currentSettings.musicBattle
+        || editedSettings.spaceColor != currentSettings.spaceColor
+        || editedSettings.localFaction != SystemSettingsService::factionDisplayForNickname(currentSettings.localFaction,
+                                                                                           options.factionDisplayOptions)
+        || editedSettings.ambientColor != currentSettings.ambientColor
+        || editedSettings.dust != currentSettings.dust
+        || editedSettings.backgroundBasicStars != currentSettings.backgroundBasicStars
+        || editedSettings.backgroundComplexStars != currentSettings.backgroundComplexStars
+        || editedSettings.backgroundNebulae != currentSettings.backgroundNebulae;
+
+    if (dialog.shouldNormalizeSectionOrder() && (hadDirtyStateBefore || settingsChanged)) {
+        QMessageBox::warning(this, tr("System-Einstellungen"),
+                             tr("Die Section-Reihenfolge kann nur ohne ungespeicherte Aenderungen standardisiert werden.\n"
+                                "Bitte speichere oder verwerfe zuerst bestehende Aenderungen und starte die Standardisierung danach separat."));
+        return;
     }
 
-    if (!qFuzzyCompare(static_cast<float>(dialog.navMapScale() + 1.0),
-                       static_cast<float>(m_document->navMapScale() + 1.0))) {
-        m_document->setNavMapScale(dialog.navMapScale());
-        m_document->setDirty(true);
+    QString errorMessage;
+    if (settingsChanged && !SystemSettingsService::apply(m_document.get(), editedSettings, &errorMessage)) {
+        QMessageBox::warning(this, tr("System-Einstellungen"),
+                             errorMessage.trimmed().isEmpty()
+                                 ? tr("Die System-Einstellungen konnten nicht uebernommen werden.")
+                                 : errorMessage);
+        return;
     }
 
     if (dialog.shouldNormalizeSectionOrder()) {
