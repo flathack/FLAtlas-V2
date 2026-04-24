@@ -43,6 +43,7 @@ private slots:
     void onNpcItemChanged(QTableWidgetItem *item);
     void addNpc();
     void removeSelectedNpc();
+    void activateRoomFromTable();
 
 private:
     void populateRooms(const QVector<BaseRoomState> &rooms);
@@ -53,12 +54,17 @@ private:
     void populateSceneCombo(int row, const QString &roomName, const QString &currentScene);
     void refreshPreview();
     void refreshRoomPreview();
-    void activateSelectedRoom();
     void applyTemplateSelection();
     void applyArchetypeDefaults();
     int selectedRoomRow() const;
     QString selectedRoomName() const;
+    int activeRoomRow() const;
+    QString activeRoomName() const;
+    int findRoomRowByName(const QString &roomName) const;
+    void setSelectedRoom(const QString &roomName);
+    void setActiveRoom(const QString &roomName);
     void updateRoomSelectionUi();
+    void updateRoomActivationUi();
 
     BaseEditState m_initialState;
     QHash<QString, QString> m_textOverrides;
@@ -88,8 +94,8 @@ private:
     QPushButton *m_removeRoomButton = nullptr;
     QPushButton *m_addNpcButton = nullptr;
     QPushButton *m_removeNpcButton = nullptr;
-    QPushButton *m_activateRoomButton = nullptr;
     QLabel *m_selectedRoomLabel = nullptr;
+    QLabel *m_activeRoomLabel = nullptr;
     flatlas::rendering::ModelViewport3D *m_preview = nullptr;
     QLabel *m_previewFallback = nullptr;
     QStackedLayout *m_previewStack = nullptr;
@@ -99,6 +105,8 @@ private:
     QString m_lastSuggestedLoadout;
     QString m_lastSuggestedIdsInfo;
     QHash<QString, BaseArchetypeDefaults> m_archetypeDefaultsCache;
+    QString m_selectedRoomKey;
+    QString m_activeRoomKey;
 };
 
 } // namespace flatlas::editors

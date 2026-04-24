@@ -13,6 +13,7 @@
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QDirIterator>
+#include <QFile>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QFrame>
@@ -126,6 +127,16 @@ QString comboStoredValue(const QComboBox *combo)
     const QString text = combo->currentText().trimmed();
     const int separator = text.indexOf(QStringLiteral(" - "));
     return separator >= 0 ? text.left(separator).trimmed() : text;
+}
+
+QString comboDataOrText(const QComboBox *combo)
+{
+    if (!combo)
+        return {};
+    const QString dataValue = combo->currentData().toString().trimmed();
+    if (!dataValue.isEmpty())
+        return dataValue;
+    return combo->currentText().trimmed();
 }
 
 QString normalizedPathKey(const QString &value)
@@ -250,6 +261,55 @@ QString resolveBaseRoomPreviewModelPath(const QString &roomName, const QString &
     return {};
 }
 
+QString roomKeyFromRoomTemplateFile(const QString &fileName)
+{
+    const QString stem = QFileInfo(fileName).completeBaseName().trimmed().toLower();
+    for (const QString &roomKey : {QStringLiteral("shipdealer"),
+                                   QStringLiteral("cityscape"),
+                                   QStringLiteral("equipment"),
+                                   QStringLiteral("trader"),
+                                   QStringLiteral("bar"),
+                                   QStringLiteral("deck")}) {
+        if (stem.endsWith(QStringLiteral("_") + roomKey))
+            return roomKey;
+    }
+    return {};
+}
+
+QString extractRoomScenePath(const QString &content)
+{
+    bool inRoomInfo = false;
+    for (const QString &rawLine : content.split(QLatin1Char('\n'))) {
+        const QString line = rawLine.trimmed();
+        if (line.isEmpty())
+            continue;
+        if (line.startsWith(QLatin1Char('[')) && line.endsWith(QLatin1Char(']'))) {
+            inRoomInfo = line.mid(1, line.size() - 2).trimmed().compare(QStringLiteral("Room_Info"), Qt::CaseInsensitive) == 0;
+            continue;
+        }
+        if (!inRoomInfo)
+            continue;
+        const int separator = line.indexOf(QLatin1Char('='));
+        if (separator < 0)
+            continue;
+        if (line.left(separator).trimmed().compare(QStringLiteral("scene"), Qt::CaseInsensitive) != 0)
+            continue;
+        const QString value = line.mid(separator + 1).trimmed();
+        const QStringList parts = value.split(QLatin1Char(','), Qt::SkipEmptyParts);
+        return parts.isEmpty() ? value : parts.constLast().trimmed();
+    }
+    return {};
+}
+
+QString roomSceneDisplayLabel(const QString &templateNickname, const QString &scenePath)
+{
+    const QString nickname = templateNickname.trimmed();
+    const QString scene = scenePath.trimmed();
+    if (nickname.isEmpty())
+        return scene;
+    return scene.isEmpty() ? nickname : QStringLiteral("%1 - %2").arg(nickname, scene);
+}
+
 int previewSidebarPreferredWidth(QWidget *dialog)
 {
     const int dialogWidth = dialog ? dialog->width() : 1240;
@@ -266,6 +326,7 @@ struct BaseDialogCatalog {
     QStringList bodies;
     QVector<QPair<QString, QString>> templateBases;
     QHash<QString, QString> archetypeModelPaths;
+    QHash<QString, QVector<QPair<QString, QString>>> roomSceneOptionsByRoom;
 };
 
 const BaseDialogCatalog &sharedBaseDialogCatalog()
@@ -426,6 +487,43 @@ const BaseDialogCatalog &sharedBaseDialogCatalog()
     std::sort(catalog.pilots.begin(), catalog.pilots.end(), [](const QString &left, const QString &right) {
         return left.compare(right, Qt::CaseInsensitive) < 0;
     });
+
+    const QString universeDir = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("UNIVERSE"));
+    if (!universeDir.isEmpty()) {
+        QHash<QString, QHash<QString, QString>> sceneLabelsByRoom;
+        QDirIterator it(universeDir, {QStringLiteral("*.ini")}, QDir::Files, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            const QString absolutePath = it.next();
+            const QFileInfo fileInfo(absolutePath);
+            if (fileInfo.dir().dirName().compare(QStringLiteral("ROOMS"), Qt::CaseInsensitive) != 0)
+                continue;
+
+            const QString roomKey = roomKeyFromRoomTemplateFile(fileInfo.fileName());
+            if (roomKey.isEmpty())
+                continue;
+
+            QFile file(absolutePath);
+            if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+                continue;
+            const QString scenePath = extractRoomScenePath(QString::fromUtf8(file.readAll()));
+            if (scenePath.trimmed().isEmpty())
+                continue;
+
+            const QString label = roomSceneDisplayLabel(fileInfo.completeBaseName(), scenePath);
+            sceneLabelsByRoom[roomKey].insert(label, scenePath.trimmed());
+        }
+
+        for (auto it = sceneLabelsByRoom.cbegin(); it != sceneLabelsByRoom.cend(); ++it) {
+            QVector<QPair<QString, QString>> options;
+            options.reserve(it.value().size());
+            for (auto labelIt = it.value().cbegin(); labelIt != it.value().cend(); ++labelIt)
+                options.append({labelIt.key(), labelIt.value()});
+            std::sort(options.begin(), options.end(), [](const auto &left, const auto &right) {
+                return left.first.compare(right.first, Qt::CaseInsensitive) < 0;
+            });
+            catalog.roomSceneOptionsByRoom.insert(it.key(), options);
+        }
+    }
 
     const QString universePath = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("UNIVERSE/universe.ini"));
     if (!universePath.isEmpty()) {
@@ -653,11 +751,12 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     templateForm->addRow(QString(), m_templateInfoLabel);
     roomsLayout->addLayout(templateForm);
 
-    m_roomTable = new QTableWidget(0, 3, roomsGroup);
-    m_roomTable->setHorizontalHeaderLabels({tr("Use"), tr("Room"), tr("Scene")});
+    m_roomTable = new QTableWidget(0, 4, roomsGroup);
+    m_roomTable->setHorizontalHeaderLabels({tr("Use"), tr("Activate"), tr("Room"), tr("Scene")});
     m_roomTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_roomTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    m_roomTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    m_roomTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    m_roomTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
     m_roomTable->verticalHeader()->setVisible(false);
     m_roomTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_roomTable->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -708,11 +807,12 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     roomPreviewHelp->setWordWrap(true);
     m_selectedRoomLabel = new QLabel(tr("Kein Raum ausgewaehlt"), roomsPreviewSidebar);
     m_selectedRoomLabel->setWordWrap(true);
-    m_activateRoomButton = new QPushButton(tr("Selected Room im 3D Viewer anzeigen"), roomsPreviewSidebar);
+    m_activeRoomLabel = new QLabel(tr("Aktiver Raum im Viewer: -"), roomsPreviewSidebar);
+    m_activeRoomLabel->setWordWrap(true);
     roomsPreviewLayout->addWidget(roomPreviewTitle);
     roomsPreviewLayout->addWidget(roomPreviewHelp);
     roomsPreviewLayout->addWidget(m_selectedRoomLabel);
-    roomsPreviewLayout->addWidget(m_activateRoomButton);
+    roomsPreviewLayout->addWidget(m_activeRoomLabel);
     roomsPreviewLayout->addWidget(createPreviewFrame(&m_roomPreview, &m_roomPreviewFallback, &m_roomPreviewStack, roomsPreviewSidebar), 1);
     m_tabs->addTab(roomsTab, tr("Rooms"));
 
@@ -728,7 +828,6 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     connect(m_npcTable, &QTableWidget::itemChanged, this, &BaseEditDialog::onNpcItemChanged);
     connect(m_addNpcButton, &QPushButton::clicked, this, &BaseEditDialog::addNpc);
     connect(m_removeNpcButton, &QPushButton::clicked, this, &BaseEditDialog::removeSelectedNpc);
-    connect(m_activateRoomButton, &QPushButton::clicked, this, &BaseEditDialog::activateSelectedRoom);
     connect(m_archetypeCombo, &QComboBox::currentTextChanged, this, [this]() {
         applyArchetypeDefaults();
         refreshPreview();
@@ -736,14 +835,14 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     connect(m_templateCombo, &QComboBox::currentTextChanged, this, [this]() { applyTemplateSelection(); });
     connect(m_copyNpcsCheck, &QCheckBox::toggled, this, [this]() { applyTemplateSelection(); });
 
+    m_selectedRoomKey = m_roomStates.value(0).roomName.trimmed();
+    m_activeRoomKey = !state.startRoom.trimmed().isEmpty() ? state.startRoom.trimmed() : m_selectedRoomKey;
     populateRooms(m_roomStates);
     refreshStartRooms();
     if (!state.startRoom.trimmed().isEmpty())
         m_startRoomCombo->setCurrentText(state.startRoom.trimmed());
-    if (m_roomTable->rowCount() > 0) {
-        m_roomTable->selectRow(0);
-        populateNpcTable(0);
-    }
+    setSelectedRoom(m_selectedRoomKey);
+    setActiveRoom(m_activeRoomKey);
     m_lastSuggestedLoadout = state.loadout.trimmed();
     m_lastSuggestedIdsInfo = state.infocardXml.trimmed();
     if (state.editMode) {
@@ -758,6 +857,7 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
 
 void BaseEditDialog::populateRooms(const QVector<BaseRoomState> &rooms)
 {
+    const QString previousSelected = m_selectedRoomKey;
     m_roomTable->blockSignals(true);
     m_roomTable->setRowCount(0);
     for (const BaseRoomState &room : rooms) {
@@ -769,11 +869,23 @@ void BaseEditDialog::populateRooms(const QVector<BaseRoomState> &rooms)
         enabledItem->setCheckState(room.enabled ? Qt::Checked : Qt::Unchecked);
         m_roomTable->setItem(row, 0, enabledItem);
 
+        auto *activateButton = new QPushButton(tr("Activate"), m_roomTable);
+        activateButton->setProperty("roomRow", row);
+        connect(activateButton, &QPushButton::clicked, this, &BaseEditDialog::activateRoomFromTable);
+        m_roomTable->setCellWidget(row, 1, activateButton);
+
         auto *roomItem = new QTableWidgetItem(room.roomName);
-        m_roomTable->setItem(row, 1, roomItem);
+        m_roomTable->setItem(row, 2, roomItem);
         populateSceneCombo(row, room.roomName, room.scenePath);
     }
     m_roomTable->blockSignals(false);
+
+    const int selectedRow = findRoomRowByName(previousSelected);
+    if (selectedRow >= 0) {
+        QSignalBlocker selectionBlocker(m_roomTable->selectionModel());
+        m_roomTable->selectRow(selectedRow);
+    }
+    updateRoomActivationUi();
 }
 
 BaseRoomState BaseEditDialog::roomFromRow(int row) const
@@ -781,10 +893,10 @@ BaseRoomState BaseEditDialog::roomFromRow(int row) const
     BaseRoomState room;
     if (const auto *enabledItem = m_roomTable->item(row, 0))
         room.enabled = enabledItem->checkState() == Qt::Checked;
-    if (const auto *roomItem = m_roomTable->item(row, 1))
+    if (const auto *roomItem = m_roomTable->item(row, 2))
         room.roomName = roomItem->text().trimmed();
-    if (auto *sceneCombo = qobject_cast<QComboBox *>(m_roomTable->cellWidget(row, 2)))
-        room.scenePath = sceneCombo->currentText().trimmed();
+    if (auto *sceneCombo = qobject_cast<QComboBox *>(m_roomTable->cellWidget(row, 3)))
+        room.scenePath = comboDataOrText(sceneCombo);
     return room;
 }
 
@@ -847,36 +959,45 @@ void BaseEditDialog::addRoom()
     if (!ok || roomName.isEmpty())
         return;
 
-    const int row = m_roomTable->rowCount();
     BaseRoomState room;
     room.enabled = true;
     room.roomName = roomName;
     m_roomStates.append(room);
+    m_selectedRoomKey = roomName;
     populateRooms(m_roomStates);
-    m_roomTable->selectRow(row);
-    populateNpcTable(row);
+    setSelectedRoom(roomName);
     refreshStartRooms();
 }
 
 void BaseEditDialog::removeSelectedRoom()
 {
-    const int row = m_roomTable->currentRow();
+    const int row = selectedRoomRow();
     if (row < 0)
         return;
 
+    const QString removedRoom = m_roomStates.at(row).roomName.trimmed();
+    QString replacementSelection;
+    if (row + 1 < m_roomStates.size())
+        replacementSelection = m_roomStates.at(row + 1).roomName.trimmed();
+    else if (row > 0)
+        replacementSelection = m_roomStates.at(row - 1).roomName.trimmed();
+
     m_roomStates.removeAt(row);
+    if (normalizedKey(m_selectedRoomKey) == normalizedKey(removedRoom))
+        m_selectedRoomKey = replacementSelection;
+    if (normalizedKey(m_activeRoomKey) == normalizedKey(removedRoom))
+        m_activeRoomKey = replacementSelection;
     populateRooms(m_roomStates);
-    if (row < m_roomTable->rowCount())
-        m_roomTable->selectRow(row);
-    else if (m_roomTable->rowCount() > 0)
-        m_roomTable->selectRow(m_roomTable->rowCount() - 1);
-    populateNpcTable(m_roomTable->currentRow());
+    setSelectedRoom(m_selectedRoomKey);
     refreshStartRooms();
 }
 
 void BaseEditDialog::onRoomSelectionChanged()
 {
-    populateNpcTable(m_roomTable->currentRow());
+    const int row = m_roomTable->currentRow();
+    if (row >= 0 && row < m_roomStates.size())
+        m_selectedRoomKey = m_roomStates.at(row).roomName.trimmed();
+    populateNpcTable(row);
     updateRoomSelectionUi();
     refreshRoomPreview();
 }
@@ -891,19 +1012,51 @@ void BaseEditDialog::onRoomItemChanged(QTableWidgetItem *item)
         return;
 
     BaseRoomState updated = m_roomStates.at(row);
+    const QString previousRoomName = updated.roomName.trimmed();
     const BaseRoomState visibleState = roomFromRow(row);
     updated.enabled = visibleState.enabled;
     updated.roomName = visibleState.roomName;
     updated.scenePath = visibleState.scenePath;
     m_roomStates[row] = updated;
-    if (item->column() == 1)
+    if (normalizedKey(m_selectedRoomKey) == normalizedKey(previousRoomName))
+        m_selectedRoomKey = updated.roomName.trimmed();
+    if (normalizedKey(m_activeRoomKey) == normalizedKey(previousRoomName))
+        m_activeRoomKey = updated.roomName.trimmed();
+    if (item->column() == 2)
         populateSceneCombo(row, m_roomStates[row].roomName, m_roomStates[row].scenePath);
     refreshStartRooms();
     if (row == m_roomTable->currentRow())
         populateNpcTable(row);
     updateRoomSelectionUi();
+    updateRoomActivationUi();
     refreshRoomPreview();
 }
+void BaseEditDialog::activateRoomFromTable()
+{
+    auto *button = qobject_cast<QPushButton *>(sender());
+    if (!button)
+        return;
+    bool ok = false;
+    const int row = button->property("roomRow").toInt(&ok);
+    if (!ok || row < 0 || row >= m_roomStates.size())
+        return;
+
+    const BaseRoomState room = roomFromRow(row);
+    const QString modelPath = resolveBaseRoomPreviewModelPath(room.roomName,
+                                                              room.scenePath,
+                                                              flatlas::core::EditingContext::instance().primaryGamePath());
+    if (modelPath.isEmpty() || !QFileInfo::exists(modelPath)) {
+        QMessageBox::warning(this,
+                             tr("Room aktivieren"),
+                             tr("Fuer %1 konnte kein darstellbares Interior-Modell gefunden werden.")
+                                 .arg(room.roomName.trimmed().isEmpty() ? tr("den ausgewaehlten Raum") : room.roomName.trimmed()));
+        return;
+    }
+
+    setActiveRoom(room.roomName);
+    refreshRoomPreview();
+}
+
 
 void BaseEditDialog::onNpcItemChanged(QTableWidgetItem *item)
 {
@@ -1012,40 +1165,44 @@ QStringList BaseEditDialog::roleChoicesForRoom(const QString &roomName) const
 
 void BaseEditDialog::populateSceneCombo(int row, const QString &roomName, const QString &currentScene)
 {
+    const BaseDialogCatalog &catalog = sharedBaseDialogCatalog();
     auto *sceneCombo = new QComboBox(m_roomTable);
-    sceneCombo->setEditable(true);
+    sceneCombo->setEditable(false);
 
-    QStringList options;
-    const QString room = roomName.trimmed().toLower();
-    if (room == QStringLiteral("deck"))
-        options << QStringLiteral("Scripts\\Bases\\Li_08_Deck_ambi_int_01.thn");
-    else if (room == QStringLiteral("bar"))
-        options << QStringLiteral("Scripts\\Bases\\Li_09_bar_ambi_int_s020x.thn");
-    else if (room == QStringLiteral("trader"))
-        options << QStringLiteral("Scripts\\Bases\\Li_01_Trader_ambi_int_01.thn");
-    else if (room == QStringLiteral("equipment"))
-        options << QStringLiteral("Scripts\\Bases\\Li_01_equipment_ambi_int_01.thn");
-    else if (room == QStringLiteral("shipdealer"))
-        options << QStringLiteral("Scripts\\Bases\\Li_01_shipdealer_ambi_int_01.thn");
-    else if (room == QStringLiteral("cityscape"))
-        options << QStringLiteral("Scripts\\Bases\\Li_01_cityscape_ambi_day_01.thn");
+    const QString roomKey = roomPreviewKind(roomName);
+    const auto options = catalog.roomSceneOptionsByRoom.value(roomKey);
+    for (const auto &option : options)
+        sceneCombo->addItem(option.first, option.second);
 
-    if (!currentScene.trimmed().isEmpty() && !options.contains(currentScene.trimmed(), Qt::CaseInsensitive))
-        options << currentScene.trimmed();
-    sceneCombo->addItems(options);
-    configureContainsCompleter(sceneCombo);
-    if (!currentScene.trimmed().isEmpty())
-        sceneCombo->setCurrentText(currentScene.trimmed());
+    if (!currentScene.trimmed().isEmpty()) {
+        bool found = false;
+        for (int index = 0; index < sceneCombo->count(); ++index) {
+            if (sceneCombo->itemData(index).toString().compare(currentScene.trimmed(), Qt::CaseInsensitive) == 0) {
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            sceneCombo->addItem(roomSceneDisplayLabel(tr("Aktueller Eintrag"), currentScene.trimmed()), currentScene.trimmed());
+    }
+    if (!currentScene.trimmed().isEmpty()) {
+        for (int index = 0; index < sceneCombo->count(); ++index) {
+            if (sceneCombo->itemData(index).toString().compare(currentScene.trimmed(), Qt::CaseInsensitive) == 0) {
+                sceneCombo->setCurrentIndex(index);
+                break;
+            }
+        }
+    }
 
     connect(sceneCombo, &QComboBox::currentTextChanged, this, [this, row]() {
         if (row >= 0 && row < m_roomStates.size()) {
-            if (auto *combo = qobject_cast<QComboBox *>(m_roomTable->cellWidget(row, 2)))
-                m_roomStates[row].scenePath = combo->currentText().trimmed();
+            if (auto *combo = qobject_cast<QComboBox *>(m_roomTable->cellWidget(row, 3)))
+                m_roomStates[row].scenePath = comboDataOrText(combo);
         }
         if (row == selectedRoomRow())
             refreshRoomPreview();
     });
-    m_roomTable->setCellWidget(row, 2, sceneCombo);
+    m_roomTable->setCellWidget(row, 3, sceneCombo);
 }
 
 void BaseEditDialog::refreshPreview()
@@ -1084,15 +1241,69 @@ void BaseEditDialog::refreshPreview()
 
 int BaseEditDialog::selectedRoomRow() const
 {
-    return m_roomTable ? m_roomTable->currentRow() : -1;
+    return findRoomRowByName(m_selectedRoomKey);
 }
 
 QString BaseEditDialog::selectedRoomName() const
 {
     const int row = selectedRoomRow();
-    if (row < 0 || row >= m_roomStates.size())
-        return {};
-    return m_roomStates.at(row).roomName.trimmed();
+    return row >= 0 && row < m_roomStates.size() ? m_roomStates.at(row).roomName.trimmed() : QString();
+}
+
+int BaseEditDialog::activeRoomRow() const
+{
+    return findRoomRowByName(m_activeRoomKey);
+}
+
+QString BaseEditDialog::activeRoomName() const
+{
+    const int row = activeRoomRow();
+    return row >= 0 && row < m_roomStates.size() ? m_roomStates.at(row).roomName.trimmed() : QString();
+}
+
+int BaseEditDialog::findRoomRowByName(const QString &roomName) const
+{
+    const QString target = normalizedKey(roomName);
+    if (target.isEmpty())
+        return -1;
+    for (int row = 0; row < m_roomStates.size(); ++row) {
+        if (normalizedKey(m_roomStates.at(row).roomName) == target)
+            return row;
+    }
+    return -1;
+}
+
+void BaseEditDialog::setSelectedRoom(const QString &roomName)
+{
+    const int row = findRoomRowByName(roomName);
+    if (row < 0 || !m_roomTable || !m_roomTable->selectionModel()) {
+        populateNpcTable(-1);
+        updateRoomSelectionUi();
+        refreshRoomPreview();
+        return;
+    }
+
+    m_selectedRoomKey = m_roomStates.at(row).roomName.trimmed();
+    {
+        QSignalBlocker selectionBlocker(m_roomTable->selectionModel());
+        m_roomTable->selectRow(row);
+    }
+    populateNpcTable(row);
+    updateRoomSelectionUi();
+    refreshRoomPreview();
+}
+
+void BaseEditDialog::setActiveRoom(const QString &roomName)
+{
+    const int row = findRoomRowByName(roomName);
+    if (row < 0) {
+        m_activeRoomKey.clear();
+        updateRoomActivationUi();
+        return;
+    }
+
+    m_activeRoomKey = m_roomStates.at(row).roomName.trimmed();
+    updateRoomActivationUi();
 }
 
 void BaseEditDialog::updateRoomSelectionUi()
@@ -1103,8 +1314,27 @@ void BaseEditDialog::updateRoomSelectionUi()
                                          ? tr("Kein Raum ausgewaehlt")
                                          : tr("Ausgewaehlter Raum: %1").arg(roomName));
     }
-    if (m_activateRoomButton)
-        m_activateRoomButton->setEnabled(!roomName.isEmpty());
+    if (m_activeRoomLabel)
+        m_activeRoomLabel->setText(tr("Aktiver Raum im Viewer: %1").arg(activeRoomName().isEmpty() ? QStringLiteral("-") : activeRoomName()));
+}
+
+void BaseEditDialog::updateRoomActivationUi()
+{
+    const QString activeKey = normalizedKey(m_activeRoomKey);
+    for (int row = 0; row < m_roomTable->rowCount(); ++row) {
+        const QString roomName = m_roomStates.value(row).roomName.trimmed();
+        const bool isActive = !activeKey.isEmpty() && normalizedKey(roomName) == activeKey;
+        if (auto *button = qobject_cast<QPushButton *>(m_roomTable->cellWidget(row, 1))) {
+            button->setProperty("roomRow", row);
+            button->setText(isActive ? tr("Active") : tr("Activate"));
+        }
+        if (auto *roomItem = m_roomTable->item(row, 2)) {
+            QFont font = roomItem->font();
+            font.setBold(isActive);
+            roomItem->setFont(font);
+        }
+    }
+    updateRoomSelectionUi();
 }
 
 void BaseEditDialog::refreshRoomPreview()
@@ -1118,9 +1348,9 @@ void BaseEditDialog::refreshRoomPreview()
         m_roomPreview->clearModel();
     };
 
-    const int row = selectedRoomRow();
+    const int row = activeRoomRow();
     if (row < 0 || row >= m_roomStates.size()) {
-        showFallback(tr("Waehle einen Raum, um die Room-Vorschau zu laden."));
+        showFallback(tr("Aktiviere einen Raum, um die Room-Vorschau zu laden."));
         return;
     }
 
@@ -1149,34 +1379,13 @@ void BaseEditDialog::refreshRoomPreview()
     m_roomPreviewStack->setCurrentWidget(m_roomPreview);
 }
 
-void BaseEditDialog::activateSelectedRoom()
-{
-    const int row = selectedRoomRow();
-    if (row < 0 || row >= m_roomStates.size()) {
-        QMessageBox::warning(this, tr("Room aktivieren"), tr("Waehle zuerst einen Raum aus."));
-        return;
-    }
-
-    const BaseRoomState room = m_roomStates.at(row);
-    const QString modelPath = resolveBaseRoomPreviewModelPath(room.roomName,
-                                                              room.scenePath,
-                                                              flatlas::core::EditingContext::instance().primaryGamePath());
-    if (modelPath.isEmpty() || !QFileInfo::exists(modelPath)) {
-        QMessageBox::warning(this,
-                             tr("Room aktivieren"),
-                             tr("Fuer %1 konnte kein darstellbares Interior-Modell gefunden werden.")
-                                 .arg(room.roomName.trimmed().isEmpty() ? tr("den ausgewaehlten Raum") : room.roomName.trimmed()));
-        return;
-    }
-
-    emit roomActivationRequested(room.roomName.trimmed(), modelPath);
-}
-
 void BaseEditDialog::applyTemplateSelection()
 {
     if (m_initialState.editMode || !m_templateCombo)
         return;
 
+    const QString previousSelected = m_selectedRoomKey;
+    const QString previousActive = m_activeRoomKey;
     const QString templateBase = comboStoredValue(m_templateCombo);
     if (templateBase.isEmpty()) {
         m_roomStates = BaseEditService::defaultRoomsForArchetype(m_archetypeCombo ? m_archetypeCombo->currentText().trimmed()
@@ -1228,23 +1437,24 @@ void BaseEditDialog::applyTemplateSelection()
     populateRooms(m_roomStates);
     refreshStartRooms();
 
-    int preferredRow = -1;
-    for (int row = 0; row < m_roomStates.size(); ++row) {
-        if (m_roomStates.at(row).enabled) {
-            preferredRow = row;
-            break;
+    m_selectedRoomKey = findRoomRowByName(previousSelected) >= 0 ? previousSelected : QString();
+    m_activeRoomKey = findRoomRowByName(previousActive) >= 0 ? previousActive : QString();
+
+    if (m_selectedRoomKey.isEmpty()) {
+        for (const BaseRoomState &room : m_roomStates) {
+            if (room.enabled && !room.roomName.trimmed().isEmpty()) {
+                m_selectedRoomKey = room.roomName.trimmed();
+                break;
+            }
         }
     }
-    if (preferredRow < 0 && !m_roomStates.isEmpty())
-        preferredRow = 0;
-    if (preferredRow >= 0) {
-        m_roomTable->selectRow(preferredRow);
-        populateNpcTable(preferredRow);
-    } else {
-        populateNpcTable(-1);
-    }
-    updateRoomSelectionUi();
-    refreshRoomPreview();
+    if (m_selectedRoomKey.isEmpty() && !m_roomStates.isEmpty())
+        m_selectedRoomKey = m_roomStates.constFirst().roomName.trimmed();
+    if (m_activeRoomKey.isEmpty())
+        m_activeRoomKey = m_selectedRoomKey;
+
+    setSelectedRoom(m_selectedRoomKey);
+    setActiveRoom(m_activeRoomKey);
 }
 
 void BaseEditDialog::applyArchetypeDefaults()
