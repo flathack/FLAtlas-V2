@@ -459,6 +459,20 @@ int buoyIdsInfoForArchetype(const QString &archetype)
     return 0;
 }
 
+int derivedBuoyCountForLine(qreal lineLengthScene, int spacingMeters)
+{
+    const qreal spacingScene = std::max<qreal>(static_cast<qreal>(spacingMeters) / 100.0, 1.0);
+    return std::max(2, qRound(lineLengthScene / spacingScene) + 1);
+}
+
+double derivedBuoySpacingMetersForLine(qreal lineLengthScene, int count)
+{
+    if (count <= 1)
+        return 0.0;
+    const double lineLengthMeters = static_cast<double>(lineLengthScene) * 100.0;
+    return std::max(lineLengthMeters / static_cast<double>(count - 1), 1.0);
+}
+
 QStringList collectEncounterNicknames(flatlas::domain::SystemDocument *document, const QString &gameRoot)
 {
     QStringList values;
@@ -3719,7 +3733,9 @@ void SystemEditorPage::onCreateBuoy()
                                  : tr("Es muessen mindestens drei Bojen fuer einen Kreis erstellt werden."));
         return;
     }
-    if (request.mode == CreateBuoyRequest::Mode::Line && request.spacingMeters < 100) {
+    if (request.mode == CreateBuoyRequest::Mode::Line
+        && request.lineConstraint == CreateBuoyRequest::LineConstraint::FixedSpacing
+        && request.spacingMeters < 100) {
         QMessageBox::warning(this, tr("Bojen erstellen"),
                              tr("Der Abstand zwischen Bojen ist ungueltig."));
         return;
@@ -4195,7 +4211,9 @@ void SystemEditorPage::beginBuoyPlacement(const CreateBuoyRequest &request)
 
     m_mapView->setPlacementMode(true,
                                 request.mode == CreateBuoyRequest::Mode::Line
-                                    ? tr("1. Klick setzt den Startpunkt des Bojenmusters.")
+                                    ? (request.lineConstraint == CreateBuoyRequest::LineConstraint::FixedCount
+                                           ? tr("1. Klick setzt den Startpunkt. Linienmodus: feste Anzahl, Abstand wird waehrend der Platzierung berechnet.")
+                                           : tr("1. Klick setzt den Startpunkt. Linienmodus: fester Abstand, Anzahl wird waehrend der Platzierung berechnet."))
                                     : tr("1. Klick setzt den Mittelpunkt des Bojenkreises."));
 }
 
@@ -4221,20 +4239,40 @@ void SystemEditorPage::updateBuoyPlacementPreview(const QPointF &currentScenePos
         const QLineF directionLine(m_pendingBuoyAnchorScenePos, currentScenePos);
         const qreal directionLength = directionLine.length();
         if (directionLength > 0.001) {
-            const qreal spacingScene =
-                std::max<qreal>(static_cast<qreal>(m_pendingBuoyRequest->spacingMeters) / 100.0, 1.0);
+            int countForPreview = std::max(m_pendingBuoyRequest->count, 2);
+            qreal spacingScene = std::max<qreal>(static_cast<qreal>(m_pendingBuoyRequest->spacingMeters) / 100.0, 1.0);
+            double derivedSpacingMeters = 0.0;
+            if (m_pendingBuoyRequest->lineConstraint == CreateBuoyRequest::LineConstraint::FixedCount) {
+                derivedSpacingMeters = derivedBuoySpacingMetersForLine(directionLength, countForPreview);
+                spacingScene = std::max<qreal>(directionLength / std::max(countForPreview - 1, 1), 1.0);
+            } else {
+                countForPreview = derivedBuoyCountForLine(directionLength, m_pendingBuoyRequest->spacingMeters);
+            }
             const QPointF unit((currentScenePos.x() - m_pendingBuoyAnchorScenePos.x()) / directionLength,
                                (currentScenePos.y() - m_pendingBuoyAnchorScenePos.y()) / directionLength);
             const QPointF lineEnd = m_pendingBuoyAnchorScenePos
-                                    + QPointF(unit.x() * spacingScene * (count - 1),
-                                              unit.y() * spacingScene * (count - 1));
+                                    + QPointF(unit.x() * spacingScene * (countForPreview - 1),
+                                              unit.y() * spacingScene * (countForPreview - 1));
             m_buoyLinePreview->setLine(QLineF(m_pendingBuoyAnchorScenePos, lineEnd));
-            previewPositions.reserve(count);
-            for (int index = 0; index < count; ++index) {
+            previewPositions.reserve(countForPreview);
+            for (int index = 0; index < countForPreview; ++index) {
                 previewPositions.append(m_pendingBuoyAnchorScenePos
                                         + QPointF(unit.x() * spacingScene * index,
                                                   unit.y() * spacingScene * index));
             }
+            const QString helpText =
+                m_pendingBuoyRequest->lineConstraint == CreateBuoyRequest::LineConstraint::FixedCount
+                    ? tr("2. Klick bestaetigt die Linie. Feste Anzahl: %1, berechneter Abstand: %2 m. [Esc] oder Rechtsklick bricht ab.")
+                          .arg(countForPreview)
+                          .arg(QString::number(derivedSpacingMeters, 'f', 0))
+                    : tr("2. Klick bestaetigt die Linie. Fester Abstand: %1 m, berechnete Anzahl: %2. [Esc] oder Rechtsklick bricht ab.")
+                          .arg(m_pendingBuoyRequest->spacingMeters)
+                          .arg(countForPreview);
+            m_mapView->setPlacementMode(true, helpText);
+            emit selectionStatusChanged(
+                m_pendingBuoyRequest->lineConstraint == CreateBuoyRequest::LineConstraint::FixedCount
+                    ? tr("Bojenlinie: %1 Bojen, Abstand %2 m").arg(countForPreview).arg(QString::number(derivedSpacingMeters, 'f', 0))
+                    : tr("Bojenlinie: Abstand %1 m, %2 Bojen").arg(m_pendingBuoyRequest->spacingMeters).arg(countForPreview));
         } else {
             m_buoyLinePreview->setLine(QLineF(m_pendingBuoyAnchorScenePos, currentScenePos));
         }
@@ -4888,12 +4926,17 @@ void SystemEditorPage::finalizeBuoyPlacement(const QPointF &scenePos)
             return;
         }
 
-        const qreal spacingScene =
-            std::max<qreal>(static_cast<qreal>(m_pendingBuoyRequest->spacingMeters) / 100.0, 1.0);
+        int finalCount = std::max(m_pendingBuoyRequest->count, 2);
+        qreal spacingScene = std::max<qreal>(static_cast<qreal>(m_pendingBuoyRequest->spacingMeters) / 100.0, 1.0);
+        if (m_pendingBuoyRequest->lineConstraint == CreateBuoyRequest::LineConstraint::FixedCount) {
+            spacingScene = std::max<qreal>(directionLength / std::max(finalCount - 1, 1), 1.0);
+        } else {
+            finalCount = derivedBuoyCountForLine(directionLength, m_pendingBuoyRequest->spacingMeters);
+        }
         const QPointF unit((scenePos.x() - m_pendingBuoyAnchorScenePos.x()) / directionLength,
                            (scenePos.y() - m_pendingBuoyAnchorScenePos.y()) / directionLength);
-        positionsScene.reserve(count);
-        for (int index = 0; index < count; ++index) {
+        positionsScene.reserve(finalCount);
+        for (int index = 0; index < finalCount; ++index) {
             positionsScene.append(m_pendingBuoyAnchorScenePos
                                   + QPointF(unit.x() * spacingScene * index,
                                             unit.y() * spacingScene * index));

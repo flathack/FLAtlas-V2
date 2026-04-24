@@ -58,9 +58,14 @@ struct CreateBuoyRequest {
         Line,
         Circle,
     };
+    enum class LineConstraint {
+        FixedCount,
+        FixedSpacing,
+    };
 
     QString archetype = QStringLiteral("nav_buoy");
     Mode mode = Mode::Line;
+    LineConstraint lineConstraint = LineConstraint::FixedCount;
     int count = 8;
     int spacingMeters = 3000;
 };
@@ -171,13 +176,17 @@ public:
 
 private slots:
     void updateModeUi();
+    void updateLineConstraintUi();
 
 private:
     QComboBox *m_typeCombo = nullptr;
     QComboBox *m_modeCombo = nullptr;
+    QComboBox *m_lineConstraintCombo = nullptr;
     QSpinBox *m_countSpin = nullptr;
+    QLabel *m_countDerivedLabel = nullptr;
     QLabel *m_spacingLabel = nullptr;
     QSpinBox *m_spacingSpin = nullptr;
+    QLabel *m_spacingDerivedLabel = nullptr;
     QLabel *m_modeHintLabel = nullptr;
 };
 

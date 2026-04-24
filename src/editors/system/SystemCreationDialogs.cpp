@@ -445,10 +445,20 @@ CreateBuoyDialog::CreateBuoyDialog(QWidget *parent)
     m_modeCombo->addItem(tr("Kreis"), QVariant::fromValue(static_cast<int>(CreateBuoyRequest::Mode::Circle)));
     layout->addRow(tr("Muster:"), m_modeCombo);
 
+    m_lineConstraintCombo = new QComboBox(this);
+    m_lineConstraintCombo->addItem(tr("Feste Anzahl"),
+                                   QVariant::fromValue(static_cast<int>(CreateBuoyRequest::LineConstraint::FixedCount)));
+    m_lineConstraintCombo->addItem(tr("Fester Abstand"),
+                                   QVariant::fromValue(static_cast<int>(CreateBuoyRequest::LineConstraint::FixedSpacing)));
+    layout->addRow(tr("Linienmodus:"), m_lineConstraintCombo);
+
     m_countSpin = new QSpinBox(this);
     m_countSpin->setRange(2, 128);
     m_countSpin->setValue(8);
     layout->addRow(tr("Anzahl:"), m_countSpin);
+    m_countDerivedLabel = new QLabel(tr("Wird waehrend der Platzierung berechnet."), this);
+    m_countDerivedLabel->setWordWrap(true);
+    layout->addRow(QString(), m_countDerivedLabel);
 
     m_spacingLabel = new QLabel(tr("Abstand (m):"), this);
     m_spacingSpin = new QSpinBox(this);
@@ -456,6 +466,9 @@ CreateBuoyDialog::CreateBuoyDialog(QWidget *parent)
     m_spacingSpin->setSingleStep(100);
     m_spacingSpin->setValue(3000);
     layout->addRow(m_spacingLabel, m_spacingSpin);
+    m_spacingDerivedLabel = new QLabel(tr("Wird waehrend der Platzierung berechnet."), this);
+    m_spacingDerivedLabel->setWordWrap(true);
+    layout->addRow(QString(), m_spacingDerivedLabel);
 
     m_modeHintLabel = new QLabel(this);
     m_modeHintLabel->setWordWrap(true);
@@ -463,6 +476,7 @@ CreateBuoyDialog::CreateBuoyDialog(QWidget *parent)
     layout->addRow(QString(), m_modeHintLabel);
 
     connect(m_modeCombo, &QComboBox::currentIndexChanged, this, &CreateBuoyDialog::updateModeUi);
+    connect(m_lineConstraintCombo, &QComboBox::currentIndexChanged, this, &CreateBuoyDialog::updateLineConstraintUi);
     updateModeUi();
 
     layout->addRow(createDialogButtons(this));
@@ -473,16 +487,49 @@ void CreateBuoyDialog::updateModeUi()
     const auto mode = static_cast<CreateBuoyRequest::Mode>(
         m_modeCombo->currentData().toInt());
     const bool lineMode = mode == CreateBuoyRequest::Mode::Line;
+    m_lineConstraintCombo->setVisible(lineMode);
     m_countSpin->setMinimum(lineMode ? 2 : 3);
     if (m_countSpin->value() < m_countSpin->minimum())
         m_countSpin->setValue(m_countSpin->minimum());
-    m_spacingLabel->setVisible(lineMode);
-    m_spacingSpin->setVisible(lineMode);
-    m_modeHintLabel->setText(lineMode
-                                 ? tr("1. Klick setzt den Startpunkt. 2. Klick bestimmt die Richtung. "
-                                      "Die Bojen werden mit dem eingestellten Abstand in einer geraden Linie platziert.")
-                                 : tr("1. Klick setzt den Mittelpunkt. 2. Klick bestimmt den Radius. "
-                                      "Die Bojen werden gleichmaessig auf dem Kreis verteilt."));
+    if (!lineMode) {
+        m_countSpin->setEnabled(true);
+        m_countDerivedLabel->setVisible(false);
+        m_spacingLabel->setVisible(false);
+        m_spacingSpin->setVisible(false);
+        m_spacingDerivedLabel->setVisible(false);
+        m_modeHintLabel->setText(tr("1. Klick setzt den Mittelpunkt. 2. Klick bestimmt den Radius. "
+                                    "Die Bojen werden gleichmaessig auf dem Kreis verteilt."));
+        return;
+    }
+
+    updateLineConstraintUi();
+}
+
+void CreateBuoyDialog::updateLineConstraintUi()
+{
+    const auto mode = static_cast<CreateBuoyRequest::Mode>(
+        m_modeCombo->currentData().toInt());
+    if (mode != CreateBuoyRequest::Mode::Line)
+        return;
+
+    const auto constraint = static_cast<CreateBuoyRequest::LineConstraint>(
+        m_lineConstraintCombo->currentData().toInt());
+    const bool fixedCount = constraint == CreateBuoyRequest::LineConstraint::FixedCount;
+
+    m_countSpin->setEnabled(fixedCount);
+    m_countDerivedLabel->setVisible(!fixedCount);
+    m_spacingLabel->setVisible(true);
+    m_spacingSpin->setVisible(!fixedCount);
+    m_spacingSpin->setEnabled(!fixedCount);
+    m_spacingDerivedLabel->setVisible(fixedCount);
+
+    m_countDerivedLabel->setText(tr("Die Anzahl wird waehrend der Platzierung aus Linienlaenge und Abstand berechnet."));
+    m_spacingDerivedLabel->setText(tr("Der Abstand wird waehrend der Platzierung aus Linienlaenge und Anzahl berechnet."));
+    m_modeHintLabel->setText(fixedCount
+                                 ? tr("Linienmodus: feste Anzahl. 1. Klick setzt den Startpunkt. 2. Klick bestimmt die Richtung. "
+                                      "Der Abstand zwischen den Bojen wird aus der gezeichneten Linienlaenge berechnet.")
+                                 : tr("Linienmodus: fester Abstand. 1. Klick setzt den Startpunkt. 2. Klick bestimmt die Richtung. "
+                                      "Die Anzahl der Bojen wird aus Linienlaenge und Abstand berechnet."));
 }
 
 CreateBuoyRequest CreateBuoyDialog::result() const
@@ -490,6 +537,7 @@ CreateBuoyRequest CreateBuoyDialog::result() const
     CreateBuoyRequest value;
     value.archetype = m_typeCombo->currentData().toString().trimmed();
     value.mode = static_cast<CreateBuoyRequest::Mode>(m_modeCombo->currentData().toInt());
+    value.lineConstraint = static_cast<CreateBuoyRequest::LineConstraint>(m_lineConstraintCombo->currentData().toInt());
     value.count = m_countSpin->value();
     value.spacingMeters = m_spacingSpin->value();
     return value;
