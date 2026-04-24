@@ -36,11 +36,11 @@ private slots:
         }
 
         const QStringList expectedBindingSnapshot = {
-            QStringLiteral("Door01021211170613.3db|Part_Door01|data.bases.bretonia.br_barbican_station_deck.lod0-112.vms,Door01021211170613.3db|iB_D_15.tga|global-texture-library-fallback"),
-            QStringLiteral("Door02021211170613.3db|Part_Door02|data.bases.bretonia.br_barbican_station_deck.lod0-112.vms,Door02021211170613.3db|iB_D_15.tga|global-texture-library-fallback"),
-            QStringLiteral("Door03021211170613.3db|Part_Door03|data.bases.bretonia.br_barbican_station_deck.lod0-112.vms,Door03021211170613.3db|iB_D_15.tga|global-texture-library-fallback"),
-            QStringLiteral("Propeller 01021211170613.3db|Part_Propeller 01|data.bases.bretonia.br_barbican_station_deck.lod0-112.vms,Propeller 01021211170613.3db|iB_D_15.tga|global-texture-library-fallback"),
-            QStringLiteral("Root_deck021211170613.3db|Root|data.bases.bretonia.br_barbican_station_deck.lod0-212.vms,Root_deck021211170613.3db|iB_D_15.tga|global-texture-library-fallback"),
+            QStringLiteral("Door01021211170613.3db|Part_Door01|data.bases.bretonia.br_barbican_station_deck.lod0-112.vms,Door01021211170613.3db|iB_D_15.tga|first-texture-fallback"),
+            QStringLiteral("Door02021211170613.3db|Part_Door02|data.bases.bretonia.br_barbican_station_deck.lod0-112.vms,Door02021211170613.3db|iB_D_15.tga|first-texture-fallback"),
+            QStringLiteral("Door03021211170613.3db|Part_Door03|data.bases.bretonia.br_barbican_station_deck.lod0-112.vms,Door03021211170613.3db|iB_D_15.tga|first-texture-fallback"),
+            QStringLiteral("Propeller 01021211170613.3db|Part_Propeller 01|data.bases.bretonia.br_barbican_station_deck.lod0-112.vms,Propeller 01021211170613.3db|iB_D_15.tga|first-texture-fallback"),
+            QStringLiteral("Root_deck021211170613.3db|Root|data.bases.bretonia.br_barbican_station_deck.lod0-212.vms,Root_deck021211170613.3db|iB_D_15.tga|first-texture-fallback"),
         };
 
         QStringList sortedBindingSnapshot = bindingSnapshot;

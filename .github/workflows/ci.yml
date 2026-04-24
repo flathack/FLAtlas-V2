@@ -23,14 +23,18 @@ jobs:
           target: 'desktop'
           arch: 'win64_mingw'
           modules: 'qt3d'
+          tools: 'tools_mingw,qt.tools.win64_mingw1310'
           cache: true
 
       - name: Configure CMake
+        env:
+          CC: gcc
+          CXX: g++
         run: >
           cmake -B build
           -G "MinGW Makefiles"
           -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
+          -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}"
 
       - name: Build
         run: cmake --build build --parallel

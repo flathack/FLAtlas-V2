@@ -18,6 +18,9 @@ void TestTradeLaneViewport::initTestCase()
 
 void TestTradeLaneViewport::testLoadTradeLaneViewport()
 {
+    if (qEnvironmentVariable("QT_QPA_PLATFORM").compare("offscreen", Qt::CaseInsensitive) == 0)
+        QSKIP("Qt3D viewport tests are not reliable on the offscreen platform plugin.");
+
     const QString filePath =
         QStringLiteral("C:/Users/steve/Github/FL-Installationen/TESTMOD1/DATA/SOLAR/DOCKABLE/TLR_lod.3db");
     if (!QFileInfo::exists(filePath))

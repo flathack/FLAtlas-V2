@@ -1,4 +1,5 @@
 #include <QtTest>
+
 #include "rendering/preview/ModelCache.h"
 
 using namespace flatlas::rendering;
@@ -6,6 +7,15 @@ using namespace flatlas::infrastructure;
 
 class TestModelCache : public QObject {
     Q_OBJECT
+private:
+    static DecodedModel makeModel(const QString &name, const QString &sourcePath = {})
+    {
+        DecodedModel model;
+        model.sourcePath = sourcePath;
+        model.rootNode.name = name;
+        return model;
+    }
+
 private slots:
     void init()
     {
@@ -15,47 +25,48 @@ private slots:
 
     void emptyCache()
     {
-        QVERIFY(!ModelCache::instance().contains("test.cmp"));
+        QVERIFY(!ModelCache::instance().contains(QStringLiteral("test.cmp")));
         QCOMPARE(ModelCache::instance().size(), 0);
     }
 
     void insertAndContains()
     {
-        ModelNode node;
-        node.name = "test";
-        ModelCache::instance().insert("test.cmp", node);
-        QVERIFY(ModelCache::instance().contains("test.cmp"));
+        ModelCache::instance().insert(QStringLiteral("test.cmp"),
+                                      makeModel(QStringLiteral("test"), QStringLiteral("test")));
+        QVERIFY(ModelCache::instance().contains(QStringLiteral("test.cmp")));
         QCOMPARE(ModelCache::instance().size(), 1);
     }
 
     void getReturnsInserted()
     {
-        ModelNode node;
-        node.name = "mymodel";
-        ModelCache::instance().insert("model.3db", node);
+        ModelCache::instance().insert(QStringLiteral("model.3db"),
+                                      makeModel(QStringLiteral("mymodel"),
+                                                QStringLiteral("mymodel.3db")));
 
-        auto retrieved = ModelCache::instance().get("model.3db");
-        QCOMPARE(retrieved.name, QStringLiteral("mymodel"));
+        const auto retrieved = ModelCache::instance().get(QStringLiteral("model.3db"));
+        QCOMPARE(retrieved.rootNode.name, QStringLiteral("mymodel"));
+        QCOMPARE(retrieved.sourcePath, QStringLiteral("mymodel.3db"));
     }
 
     void getReturnsEmptyForMissing()
     {
-        auto retrieved = ModelCache::instance().get("nonexistent.cmp");
-        QVERIFY(retrieved.name.isEmpty());
-        QVERIFY(retrieved.meshes.isEmpty());
+        const auto retrieved = ModelCache::instance().get(QStringLiteral("nonexistent.cmp"));
+        QVERIFY(retrieved.sourcePath.isEmpty());
+        QVERIFY(retrieved.rootNode.name.isEmpty());
+        QVERIFY(retrieved.rootNode.meshes.isEmpty());
+        QVERIFY(retrieved.rootNode.children.isEmpty());
     }
 
     void clearEmptiesCache()
     {
-        ModelNode node;
-        node.name = "test";
-        ModelCache::instance().insert("a.cmp", node);
-        ModelCache::instance().insert("b.cmp", node);
+        const DecodedModel model = makeModel(QStringLiteral("test"));
+        ModelCache::instance().insert(QStringLiteral("a.cmp"), model);
+        ModelCache::instance().insert(QStringLiteral("b.cmp"), model);
         QCOMPARE(ModelCache::instance().size(), 2);
 
         ModelCache::instance().clear();
         QCOMPARE(ModelCache::instance().size(), 0);
-        QVERIFY(!ModelCache::instance().contains("a.cmp"));
+        QVERIFY(!ModelCache::instance().contains(QStringLiteral("a.cmp")));
     }
 
     void lruEviction()
@@ -63,61 +74,53 @@ private slots:
         ModelCache::instance().setMaxSize(3);
 
         for (int i = 0; i < 3; ++i) {
-            ModelNode node;
-            node.name = QString::number(i);
-            ModelCache::instance().insert(QString("model%1.cmp").arg(i), node);
+            ModelCache::instance().insert(QStringLiteral("model%1.cmp").arg(i),
+                                          makeModel(QString::number(i),
+                                                    QStringLiteral("model%1.cmp").arg(i)));
         }
         QCOMPARE(ModelCache::instance().size(), 3);
 
-        // Insert a 4th item → should evict model0 (oldest)
-        ModelNode newNode;
-        newNode.name = "new";
-        ModelCache::instance().insert("model3.cmp", newNode);
+        ModelCache::instance().insert(QStringLiteral("model3.cmp"),
+                                      makeModel(QStringLiteral("new"),
+                                                QStringLiteral("model3.cmp")));
 
         QCOMPARE(ModelCache::instance().size(), 3);
-        QVERIFY(!ModelCache::instance().contains("model0.cmp")); // evicted
-        QVERIFY(ModelCache::instance().contains("model1.cmp"));
-        QVERIFY(ModelCache::instance().contains("model2.cmp"));
-        QVERIFY(ModelCache::instance().contains("model3.cmp"));
+        QVERIFY(!ModelCache::instance().contains(QStringLiteral("model0.cmp")));
+        QVERIFY(ModelCache::instance().contains(QStringLiteral("model1.cmp")));
+        QVERIFY(ModelCache::instance().contains(QStringLiteral("model2.cmp")));
+        QVERIFY(ModelCache::instance().contains(QStringLiteral("model3.cmp")));
     }
 
     void lruAccessUpdatesOrder()
     {
         ModelCache::instance().setMaxSize(3);
 
-        ModelNode n;
-        n.name = "a";
-        ModelCache::instance().insert("a.cmp", n);
-        n.name = "b";
-        ModelCache::instance().insert("b.cmp", n);
-        n.name = "c";
-        ModelCache::instance().insert("c.cmp", n);
+        ModelCache::instance().insert(QStringLiteral("a.cmp"), makeModel(QStringLiteral("a")));
+        ModelCache::instance().insert(QStringLiteral("b.cmp"), makeModel(QStringLiteral("b")));
+        ModelCache::instance().insert(QStringLiteral("c.cmp"), makeModel(QStringLiteral("c")));
 
-        // Access "a" to move it to most recent
-        ModelCache::instance().get("a.cmp");
+        ModelCache::instance().get(QStringLiteral("a.cmp"));
+        ModelCache::instance().insert(QStringLiteral("d.cmp"), makeModel(QStringLiteral("d")));
 
-        // Insert new item → should evict "b" (now oldest), not "a"
-        n.name = "d";
-        ModelCache::instance().insert("d.cmp", n);
-
-        QVERIFY(ModelCache::instance().contains("a.cmp"));
-        QVERIFY(!ModelCache::instance().contains("b.cmp")); // evicted
-        QVERIFY(ModelCache::instance().contains("c.cmp"));
-        QVERIFY(ModelCache::instance().contains("d.cmp"));
+        QVERIFY(ModelCache::instance().contains(QStringLiteral("a.cmp")));
+        QVERIFY(!ModelCache::instance().contains(QStringLiteral("b.cmp")));
+        QVERIFY(ModelCache::instance().contains(QStringLiteral("c.cmp")));
+        QVERIFY(ModelCache::instance().contains(QStringLiteral("d.cmp")));
     }
 
     void updateExistingEntry()
     {
-        ModelNode n;
-        n.name = "v1";
-        ModelCache::instance().insert("model.cmp", n);
-
-        n.name = "v2";
-        ModelCache::instance().insert("model.cmp", n);
+        ModelCache::instance().insert(QStringLiteral("model.cmp"),
+                                      makeModel(QStringLiteral("v1"),
+                                                QStringLiteral("model-v1.cmp")));
+        ModelCache::instance().insert(QStringLiteral("model.cmp"),
+                                      makeModel(QStringLiteral("v2"),
+                                                QStringLiteral("model-v2.cmp")));
 
         QCOMPARE(ModelCache::instance().size(), 1);
-        auto retrieved = ModelCache::instance().get("model.cmp");
-        QCOMPARE(retrieved.name, QStringLiteral("v2"));
+        const auto retrieved = ModelCache::instance().get(QStringLiteral("model.cmp"));
+        QCOMPARE(retrieved.rootNode.name, QStringLiteral("v2"));
+        QCOMPARE(retrieved.sourcePath, QStringLiteral("model-v2.cmp"));
     }
 };
 

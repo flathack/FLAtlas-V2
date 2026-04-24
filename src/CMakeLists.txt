@@ -24,7 +24,7 @@ add_subdirectory(ui)
 add_subdirectory(tools)
 
 # --- Hauptanwendung ---
-add_executable(FLAtlas WIN32
+add_executable(FLAtlas
     main.cpp
     app/Application.h
     app/Application.cpp
@@ -51,6 +51,10 @@ target_link_libraries(FLAtlas PRIVATE
 target_include_directories(FLAtlas PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+if (WIN32 AND NOT MINGW)
+    set_target_properties(FLAtlas PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
 
 add_executable(flatlas_model_screenshot_exporter
     tools/model_screenshot_export_main.cpp

@@ -32,10 +32,10 @@ void TestIdsEditorPage::testImportCsv()
         QFile f(csvPath);
         QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
         QTextStream out(&f);
-        out << "id;string\n"
-            << "100;System Alpha\n"
-            << "200;Base Beta\n"
-            << "300;Planet Gamma\n";
+        out << "id;type;dll;text\n"
+            << "100;string;resources.dll;System Alpha\n"
+            << "200;string;resources.dll;Base Beta\n"
+            << "300;string;resources.dll;Planet Gamma\n";
     }
 
     IdsEditorPage page;
