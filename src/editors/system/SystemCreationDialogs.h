@@ -409,6 +409,10 @@ class ObjectRingDialog : public QDialog {
     Q_OBJECT
 public:
     explicit ObjectRingDialog(const QString &objectLabel,
+                              const QString &hostArchetype,
+                              bool showHostRadiusSphere,
+                              double hostRadius,
+                              bool hostRadiusSphereIsSun,
                               const RingEditOptions &options,
                               const RingEditState &initialState,
                               QWidget *parent = nullptr);
@@ -420,8 +424,14 @@ protected:
 
 private slots:
     void syncEnabledState();
+    void schedulePreviewRefresh();
+    void refreshPreview();
 
 private:
+    QString m_hostArchetype;
+    bool m_showHostRadiusSphere = false;
+    double m_hostRadius = 0.0;
+    bool m_hostRadiusSphereIsSun = false;
     QCheckBox *m_enabledCheck = nullptr;
     QComboBox *m_ringIniCombo = nullptr;
     QLineEdit *m_zoneNicknameEdit = nullptr;
@@ -431,6 +441,11 @@ private:
     QDoubleSpinBox *m_rotateXSpin = nullptr;
     QDoubleSpinBox *m_rotateYSpin = nullptr;
     QDoubleSpinBox *m_rotateZSpin = nullptr;
+    flatlas::rendering::ModelViewport3D *m_preview = nullptr;
+    QLabel *m_previewFallback = nullptr;
+    QStackedLayout *m_previewStack = nullptr;
+    QLabel *m_previewStatusLabel = nullptr;
+    QTimer *m_previewRefreshTimer = nullptr;
 };
 
 class CreateSurpriseDialog : public QDialog {

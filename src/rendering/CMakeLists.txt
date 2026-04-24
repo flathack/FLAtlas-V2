@@ -11,6 +11,7 @@ add_library(flatlas_rendering STATIC
     view3d/OrbitCamera.h view3d/OrbitCamera.cpp
     view3d/ModelGeometryBuilder.h view3d/ModelGeometryBuilder.cpp
     view3d/ModelViewport3D.h view3d/ModelViewport3D.cpp
+    view3d/RingPreviewSceneBuilder.h view3d/RingPreviewSceneBuilder.cpp
     view3d/SelectionManager.h view3d/SelectionManager.cpp
     view3d/SkyRenderer.h view3d/SkyRenderer.cpp
     view3d/MaterialFactory.h view3d/MaterialFactory.cpp

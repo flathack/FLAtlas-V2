@@ -5,6 +5,7 @@
 #include "infrastructure/freelancer/IdsStringTable.h"
 #include "infrastructure/parser/IniParser.h"
 #include "infrastructure/parser/XmlInfocard.h"
+#include "rendering/view3d/RingPreviewSceneBuilder.h"
 #include "rendering/view3d/ModelViewport3D.h"
 
 #include <QCheckBox>
@@ -1429,13 +1430,21 @@ CreatePlanetRequest CreatePlanetDialog::result() const
 }
 
 ObjectRingDialog::ObjectRingDialog(const QString &objectLabel,
+                                   const QString &hostArchetype,
+                                   bool showHostRadiusSphere,
+                                   double hostRadius,
+                                   bool hostRadiusSphereIsSun,
                                    const RingEditOptions &options,
                                    const RingEditState &initialState,
                                    QWidget *parent)
     : QDialog(parent)
+    , m_hostArchetype(hostArchetype.trimmed())
+    , m_showHostRadiusSphere(showHostRadiusSphere)
+    , m_hostRadius(hostRadius)
+    , m_hostRadiusSphereIsSun(hostRadiusSphereIsSun)
 {
     setWindowTitle(tr("Ring konfigurieren"));
-    setMinimumWidth(560);
+    resize(1120, 760);
 
     auto *layout = new QVBoxLayout(this);
 
@@ -1444,8 +1453,16 @@ ObjectRingDialog::ObjectRingDialog(const QString &objectLabel,
     header->setStyleSheet(QStringLiteral("font-weight:600; font-size:11pt;"));
     layout->addWidget(header);
 
+    auto *contentRow = new QHBoxLayout();
+    layout->addLayout(contentRow, 1);
+
+    auto *controls = new QWidget(this);
+    auto *controlsLayout = new QVBoxLayout(controls);
+    controlsLayout->setContentsMargins(0, 0, 0, 0);
+
     auto *form = new QFormLayout();
     form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    controlsLayout->addLayout(form);
 
     m_enabledCheck = new QCheckBox(tr("Ring aktiv"), this);
     m_enabledCheck->setChecked(initialState.enabled);
@@ -1494,17 +1511,45 @@ ObjectRingDialog::ObjectRingDialog(const QString &objectLabel,
     m_rotateZSpin->setValue(initialState.rotateZ);
     form->addRow(tr("Rotate Z:"), m_rotateZSpin);
 
-    layout->addLayout(form);
-
     auto *helpLabel = new QLabel(
         tr("Freelancer speichert Objekt-Ringe ueber den 'ring'-Eintrag am Host sowie eine verknuepfte Zone mit 'shape = RING'. Dieser Dialog aktualisiert beide Seiten gemeinsam."),
         this);
     helpLabel->setWordWrap(true);
     helpLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
-    layout->addWidget(helpLabel);
+    controlsLayout->addWidget(helpLabel);
+    controlsLayout->addStretch(1);
+    contentRow->addWidget(controls, 0);
+
+    auto *previewColumn = new QWidget(this);
+    auto *previewColumnLayout = new QVBoxLayout(previewColumn);
+    previewColumnLayout->setContentsMargins(0, 0, 0, 0);
+    previewColumnLayout->setSpacing(6);
+    previewColumnLayout->addWidget(createPreviewFrame(&m_preview, &m_previewFallback, &m_previewStack, previewColumn), 1);
+
+    m_previewStatusLabel = new QLabel(previewColumn);
+    m_previewStatusLabel->setWordWrap(true);
+    m_previewStatusLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    previewColumnLayout->addWidget(m_previewStatusLabel);
+    contentRow->addWidget(previewColumn, 1);
+
+    m_previewRefreshTimer = new QTimer(this);
+    m_previewRefreshTimer->setSingleShot(true);
+    m_previewRefreshTimer->setInterval(180);
+    connect(m_previewRefreshTimer, &QTimer::timeout, this, &ObjectRingDialog::refreshPreview);
 
     connect(m_enabledCheck, &QCheckBox::toggled, this, &ObjectRingDialog::syncEnabledState);
+    connect(m_enabledCheck, &QCheckBox::toggled, this, &ObjectRingDialog::schedulePreviewRefresh);
+    connect(m_ringIniCombo, &QComboBox::currentTextChanged, this, &ObjectRingDialog::schedulePreviewRefresh);
+    connect(m_zoneNicknameEdit, &QLineEdit::textChanged, this, &ObjectRingDialog::schedulePreviewRefresh);
+    connect(m_outerRadiusSpin, &QDoubleSpinBox::valueChanged, this, &ObjectRingDialog::schedulePreviewRefresh);
+    connect(m_innerRadiusSpin, &QDoubleSpinBox::valueChanged, this, &ObjectRingDialog::schedulePreviewRefresh);
+    connect(m_thicknessSpin, &QDoubleSpinBox::valueChanged, this, &ObjectRingDialog::schedulePreviewRefresh);
+    connect(m_rotateXSpin, &QDoubleSpinBox::valueChanged, this, &ObjectRingDialog::schedulePreviewRefresh);
+    connect(m_rotateYSpin, &QDoubleSpinBox::valueChanged, this, &ObjectRingDialog::schedulePreviewRefresh);
+    connect(m_rotateZSpin, &QDoubleSpinBox::valueChanged, this, &ObjectRingDialog::schedulePreviewRefresh);
+
     syncEnabledState();
+    refreshPreview();
 
     layout->addWidget(createDialogButtons(this, tr("Anwenden")));
 }
@@ -1525,6 +1570,10 @@ void ObjectRingDialog::accept()
             QMessageBox::warning(this, tr("Ring konfigurieren"), tr("Inner radius muss kleiner als Outer radius sein."));
             return;
         }
+        if (request.thickness <= 0.0) {
+            QMessageBox::warning(this, tr("Ring konfigurieren"), tr("Thickness muss groesser als 0 sein."));
+            return;
+        }
     }
     QDialog::accept();
 }
@@ -1543,6 +1592,76 @@ void ObjectRingDialog::syncEnabledState()
         if (widget)
             widget->setEnabled(enabled);
     }
+}
+
+void ObjectRingDialog::schedulePreviewRefresh()
+{
+    if (!m_previewRefreshTimer) {
+        refreshPreview();
+        return;
+    }
+    m_previewRefreshTimer->start();
+}
+
+void ObjectRingDialog::refreshPreview()
+{
+    if (!m_preview || !m_previewFallback || !m_previewStack || !m_previewStatusLabel)
+        return;
+
+    const SharedCreationCatalog &catalog = sharedCreationCatalog();
+    const QString hostModelPath = catalog.archetypeModelPaths.value(normalizedKey(m_hostArchetype));
+
+    flatlas::rendering::RingPreviewSceneRequest request;
+    request.gameRoot = primaryGamePath();
+    request.hostModelPath = hostModelPath;
+    request.ringPreset = m_ringIniCombo ? m_ringIniCombo->currentText().trimmed() : QString();
+    request.hostRadius = m_hostRadius;
+    request.showHostRadiusSphere = m_showHostRadiusSphere;
+    request.hostRadiusSphereIsSun = m_hostRadiusSphereIsSun;
+    request.innerRadius = m_innerRadiusSpin ? m_innerRadiusSpin->value() : 0.0;
+    request.outerRadius = m_outerRadiusSpin ? m_outerRadiusSpin->value() : 0.0;
+    request.thickness = m_thicknessSpin ? m_thicknessSpin->value() : 0.0;
+    request.rotationEuler = QVector3D(static_cast<float>(m_rotateXSpin ? m_rotateXSpin->value() : 0.0),
+                                      static_cast<float>(m_rotateYSpin ? m_rotateYSpin->value() : 0.0),
+                                      static_cast<float>(m_rotateZSpin ? m_rotateZSpin->value() : 0.0));
+
+    const flatlas::rendering::OrbitCameraState previousCamera = m_preview->cameraState();
+    const flatlas::rendering::RingPreviewSceneResult scene = flatlas::rendering::RingPreviewSceneBuilder::build(request);
+
+    if (!scene.hasRenderableScene) {
+        m_preview->clearModel();
+        m_previewFallback->setText(scene.statusMessage.trimmed().isEmpty()
+                                       ? tr("Keine Ring-Vorschau verfuegbar.")
+                                       : scene.statusMessage);
+        m_previewStack->setCurrentWidget(m_previewFallback);
+        m_previewStatusLabel->setText(m_previewFallback->text());
+        return;
+    }
+
+    QString errorMessage;
+    if (!m_preview->loadModelNode(scene.sceneRoot, &errorMessage)) {
+        m_previewFallback->setText(tr("Die 3D-Vorschau konnte nicht aufgebaut werden: %1")
+                                       .arg(errorMessage.trimmed().isEmpty() ? tr("unbekannter Fehler") : errorMessage));
+        m_previewStack->setCurrentWidget(m_previewFallback);
+        m_previewStatusLabel->setText(m_previewFallback->text());
+        return;
+    }
+
+    if (previousCamera.valid)
+        m_preview->setCameraState(previousCamera);
+
+    m_previewStack->setCurrentWidget(m_preview);
+
+    QStringList statusParts;
+    if (!scene.statusMessage.trimmed().isEmpty())
+        statusParts.append(scene.statusMessage.trimmed());
+    else
+        statusParts.append(tr("Aenderungen an Rotation, Inner/Outer Radius und Thickness werden live angezeigt."));
+    if (!scene.hasHostModel)
+        statusParts.append(tr("Das Host-Objekt konnte nicht geladen werden; die Vorschau zeigt nur den Ring."));
+    if (!scene.geometryInputsValid)
+        statusParts.append(tr("Bis zu gueltigen Ringabmessungen bleibt die Vorschau im sicheren Fallback-Zustand."));
+    m_previewStatusLabel->setText(statusParts.join(QLatin1Char('\n')));
 }
 
 RingEditRequest ObjectRingDialog::result() const

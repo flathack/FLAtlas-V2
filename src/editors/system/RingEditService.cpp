@@ -238,14 +238,12 @@ RingEditOptions RingEditService::loadOptions(const QString &gameRoot)
 
 bool RingEditService::canHostRing(const SolarObject &object)
 {
-    if (hasRing(object))
-        return true;
-    if (object.type() == SolarObject::Planet || object.type() == SolarObject::Sun)
-        return true;
-    const QString archetype = object.archetype().trimmed();
-    return archetype.contains(QStringLiteral("planet"), Qt::CaseInsensitive)
-        || archetype.contains(QStringLiteral("sun"), Qt::CaseInsensitive)
-        || archetype.contains(QStringLiteral("star"), Qt::CaseInsensitive);
+    return !object.nickname().trimmed().isEmpty();
+}
+
+int RingEditService::resolvedHostRadius(const SolarObject &object, const QString &gameRoot)
+{
+    return resolvedSolarRadius(object, gameRoot);
 }
 
 bool RingEditService::hasRing(const SolarObject &object)

@@ -33,6 +33,8 @@ public:
     static RingEditOptions loadOptions(const QString &gameRoot);
 
     static bool canHostRing(const flatlas::domain::SolarObject &object);
+    static int resolvedHostRadius(const flatlas::domain::SolarObject &object,
+                                  const QString &gameRoot = QString());
     static bool hasRing(const flatlas::domain::SolarObject &object);
     static QString linkedZoneNickname(const flatlas::domain::SolarObject &object);
     static QString linkedRingIniPath(const flatlas::domain::SolarObject &object);

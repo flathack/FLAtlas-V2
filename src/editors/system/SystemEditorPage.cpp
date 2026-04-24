@@ -6395,7 +6395,20 @@ bool SystemEditorPage::openRingDialogForHost(SolarObject *hostObject, bool force
     if (forceEnableForCreate && !RingEditService::hasRing(*hostObject))
         initialState.enabled = true;
 
-    ObjectRingDialog dialog(hostObject->nickname(), options, initialState, this);
+    const bool showHostRadiusSphere = hostObject->type() == SolarObject::Planet || hostObject->type() == SolarObject::Sun;
+    const bool hostRadiusSphereIsSun = hostObject->type() == SolarObject::Sun;
+    const double hostRadius = showHostRadiusSphere
+        ? static_cast<double>(RingEditService::resolvedHostRadius(*hostObject, gameRoot))
+        : 0.0;
+
+    ObjectRingDialog dialog(hostObject->nickname(),
+                            hostObject->archetype(),
+                            showHostRadiusSphere,
+                            hostRadius,
+                            hostRadiusSphereIsSun,
+                            options,
+                            initialState,
+                            this);
     if (dialog.exec() != QDialog::Accepted)
         return false;
 

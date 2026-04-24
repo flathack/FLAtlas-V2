@@ -20,6 +20,7 @@ class TestRingEditService : public QObject
 
 private slots:
     void loadsRingPresetsFromGameRoot();
+    void allowsAnyObjectTypeToHostRing();
     void createsAndRemovesLinkedRingZone();
 };
 
@@ -39,6 +40,16 @@ void TestRingEditService::loadsRingPresetsFromGameRoot()
 
     const RingEditOptions options = RingEditService::loadOptions(dir.path());
     QVERIFY(options.ringPresets.contains(QStringLiteral("solar\\rings\\sub\\custom_ring.ini")));
+}
+
+void TestRingEditService::allowsAnyObjectTypeToHostRing()
+{
+    SolarObject station;
+    station.setNickname(QStringLiteral("Li01_station_01"));
+    station.setType(SolarObject::Station);
+    station.setArchetype(QStringLiteral("space_station01"));
+
+    QVERIFY(RingEditService::canHostRing(station));
 }
 
 void TestRingEditService::createsAndRemovesLinkedRingZone()
