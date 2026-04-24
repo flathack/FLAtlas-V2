@@ -17,6 +17,7 @@ struct CreateExclusionZoneResult;
 struct CreateSimpleZoneRequest;
 struct CreatePatrolZoneRequest;
 struct CreateBuoyRequest;
+struct CreateTradeLaneRequest;
 struct ExclusionShellSettings;
 }
 class QToolBar;
@@ -178,6 +179,10 @@ private:
     void updateBuoyPlacementPreview(const QPointF &currentScenePos);
     void finalizeBuoyPlacement(const QPointF &scenePos);
     void cancelBuoyPlacement();
+    void beginTradeLanePlacement();
+    void updateTradeLanePlacementPreview(const QPointF &currentScenePos);
+    void finalizeTradeLanePlacement(const QPointF &endScenePos);
+    void cancelTradeLanePlacement();
     void beginExclusionZonePlacement(const CreateExclusionZoneResult &request);
     void updateExclusionZonePlacementPreview(const QPointF &currentScenePos);
     void finalizeExclusionZonePlacement(const QPointF &edgeScenePos);
@@ -307,6 +312,9 @@ private:
     QGraphicsLineItem *m_buoyLinePreview = nullptr;
     QGraphicsEllipseItem *m_buoyCirclePreview = nullptr;
     QVector<QGraphicsEllipseItem *> m_buoyMarkerPreviews;
+    bool m_pendingTradeLaneHasStart = false;
+    QPointF m_pendingTradeLaneStartScenePos;
+    QGraphicsLineItem *m_tradeLanePlacementPreview = nullptr;
     std::unique_ptr<CreateExclusionZoneResult> m_pendingExclusionZoneRequest;
     bool m_pendingExclusionZoneHasCenter = false;
     QPointF m_pendingExclusionZoneCenterScenePos;

@@ -70,6 +70,19 @@ struct CreateBuoyRequest {
     int spacingMeters = 3000;
 };
 
+struct CreateTradeLaneRequest {
+    int ringCount = 2;
+    int spacingMeters = 7500;
+    int startNumber = 1;
+    QString loadout;
+    QString reputationDisplay;
+    int difficultyLevel = 1;
+    QString pilot = QStringLiteral("pilot_solar_easiest");
+    QString routeName;
+    QString startSpaceName;
+    QString endSpaceName;
+};
+
 struct CreateLightSourceRequest {
     QString nickname;
     QString type;
@@ -188,6 +201,40 @@ private:
     QSpinBox *m_spacingSpin = nullptr;
     QLabel *m_spacingDerivedLabel = nullptr;
     QLabel *m_modeHintLabel = nullptr;
+};
+
+class CreateTradeLaneDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit CreateTradeLaneDialog(const QString &systemNickname,
+                                   int startNumber,
+                                   int ringCount,
+                                   double distanceMeters,
+                                   const QStringList &loadouts,
+                                   const QStringList &factions,
+                                   const QStringList &pilots,
+                                   QWidget *parent = nullptr);
+
+    CreateTradeLaneRequest result() const;
+
+private slots:
+    void updateDerivedSpacing();
+    void updateCountFromSpacing(int spacingMeters);
+
+private:
+    double m_distanceMeters = 0.0;
+    QSpinBox *m_countSpin = nullptr;
+    QSpinBox *m_spacingSpin = nullptr;
+    QSpinBox *m_startNumberSpin = nullptr;
+    QComboBox *m_loadoutCombo = nullptr;
+    QComboBox *m_reputationCombo = nullptr;
+    QSpinBox *m_difficultySpin = nullptr;
+    QComboBox *m_pilotCombo = nullptr;
+    QLineEdit *m_routeNameEdit = nullptr;
+    QLineEdit *m_startSpaceNameEdit = nullptr;
+    QLineEdit *m_endSpaceNameEdit = nullptr;
+    QLabel *m_spacingInfoLabel = nullptr;
+    bool m_updatingSpacing = false;
 };
 
 class CreateLightSourceDialog : public QDialog {

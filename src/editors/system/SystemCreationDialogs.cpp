@@ -543,6 +543,148 @@ CreateBuoyRequest CreateBuoyDialog::result() const
     return value;
 }
 
+CreateTradeLaneDialog::CreateTradeLaneDialog(const QString &systemNickname,
+                                             int startNumber,
+                                             int ringCount,
+                                             double distanceMeters,
+                                             const QStringList &loadouts,
+                                             const QStringList &factions,
+                                             const QStringList &pilots,
+                                             QWidget *parent)
+    : QDialog(parent)
+    , m_distanceMeters(std::max(distanceMeters, 0.0))
+{
+    setWindowTitle(tr("Trade Lane erstellen"));
+    setMinimumWidth(480);
+
+    auto *layout = new QVBoxLayout(this);
+    auto *form = new QFormLayout();
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+
+    m_countSpin = new QSpinBox(this);
+    m_countSpin->setRange(2, 200);
+    m_countSpin->setValue(std::max(ringCount, 2));
+    form->addRow(tr("Ring-Anzahl:"), m_countSpin);
+
+    m_spacingSpin = new QSpinBox(this);
+    m_spacingSpin->setRange(500, 50000);
+    m_spacingSpin->setSingleStep(500);
+    m_spacingSpin->setSuffix(tr(" m"));
+    m_spacingSpin->setValue(7500);
+    form->addRow(tr("Abstand:"), m_spacingSpin);
+
+    m_spacingInfoLabel = new QLabel(this);
+    m_spacingInfoLabel->setWordWrap(true);
+    m_spacingInfoLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    form->addRow(QString(), m_spacingInfoLabel);
+
+    m_startNumberSpin = new QSpinBox(this);
+    m_startNumberSpin->setRange(1, 99999);
+    m_startNumberSpin->setValue(std::max(startNumber, 1));
+    form->addRow(tr("Startnummer:"), m_startNumberSpin);
+
+    QStringList loadoutValues = loadouts;
+    loadoutValues.removeDuplicates();
+    if (loadoutValues.isEmpty()) {
+        loadoutValues = {
+            QStringLiteral("trade_lane_ring_li_01"),
+            QStringLiteral("trade_lane_ring_br_01"),
+            QStringLiteral("trade_lane_ring_ku_01"),
+        };
+    }
+    m_loadoutCombo = createEditableCombo(loadoutValues, this);
+    if (m_loadoutCombo->count() > 0)
+        m_loadoutCombo->setCurrentIndex(0);
+    form->addRow(tr("Loadout:"), m_loadoutCombo);
+
+    m_reputationCombo = createEditableCombo(factions, this);
+    form->addRow(tr("Reputation:"), m_reputationCombo);
+
+    m_difficultySpin = new QSpinBox(this);
+    m_difficultySpin->setRange(1, 7);
+    m_difficultySpin->setValue(1);
+    form->addRow(tr("difficulty_level:"), m_difficultySpin);
+
+    m_pilotCombo = createEditableCombo(pilots, this);
+    const int easiestIndex =
+        m_pilotCombo->findText(QStringLiteral("pilot_solar_easiest"), Qt::MatchFixedString);
+    m_pilotCombo->setCurrentIndex(easiestIndex >= 0 ? easiestIndex : 0);
+    form->addRow(tr("Pilot:"), m_pilotCombo);
+
+    m_routeNameEdit = new QLineEdit(this);
+    m_routeNameEdit->setPlaceholderText(tr("Anzeigename der Route (optional)"));
+    form->addRow(tr("Route / ids_name:"), m_routeNameEdit);
+
+    m_startSpaceNameEdit = new QLineEdit(this);
+    m_startSpaceNameEdit->setPlaceholderText(tr("Name am ersten Ring (optional)"));
+    form->addRow(tr("Start tradelane_space_name:"), m_startSpaceNameEdit);
+
+    m_endSpaceNameEdit = new QLineEdit(this);
+    m_endSpaceNameEdit->setPlaceholderText(tr("Name am letzten Ring (optional)"));
+    form->addRow(tr("Ende tradelane_space_name:"), m_endSpaceNameEdit);
+
+    layout->addLayout(form);
+
+    auto *infoLabel = new QLabel(
+        tr("System: %1\nNicknames: %1_Trade_Lane_Ring_N")
+            .arg(systemNickname.trimmed().isEmpty() ? QStringLiteral("System") : systemNickname),
+        this);
+    infoLabel->setWordWrap(true);
+    infoLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    layout->addWidget(infoLabel);
+
+    layout->addWidget(createDialogButtons(this));
+
+    connect(m_countSpin, &QSpinBox::valueChanged, this, &CreateTradeLaneDialog::updateDerivedSpacing);
+    connect(m_spacingSpin, &QSpinBox::valueChanged, this, &CreateTradeLaneDialog::updateCountFromSpacing);
+
+    updateDerivedSpacing();
+}
+
+void CreateTradeLaneDialog::updateDerivedSpacing()
+{
+    if (!m_countSpin || !m_spacingInfoLabel)
+        return;
+
+    const int ringCount = std::max(m_countSpin->value(), 2);
+    const double spacingMeters =
+        ringCount > 1 ? m_distanceMeters / static_cast<double>(ringCount - 1) : m_distanceMeters;
+    m_spacingInfoLabel->setText(
+        tr("Gemessene Lane-Laenge: %1 m. Bei %2 Ringen ergibt das ca. %3 m Abstand.")
+            .arg(QString::number(m_distanceMeters, 'f', 0))
+            .arg(ringCount)
+            .arg(QString::number(spacingMeters, 'f', 0)));
+}
+
+void CreateTradeLaneDialog::updateCountFromSpacing(int spacingMeters)
+{
+    if (m_updatingSpacing || !m_countSpin)
+        return;
+
+    const int safeSpacing = std::max(spacingMeters, 1);
+    const int ringCount = std::max(2, qRound(m_distanceMeters / static_cast<double>(safeSpacing)) + 1);
+    m_updatingSpacing = true;
+    m_countSpin->setValue(ringCount);
+    m_updatingSpacing = false;
+    updateDerivedSpacing();
+}
+
+CreateTradeLaneRequest CreateTradeLaneDialog::result() const
+{
+    CreateTradeLaneRequest value;
+    value.ringCount = m_countSpin ? m_countSpin->value() : 2;
+    value.spacingMeters = m_spacingSpin ? m_spacingSpin->value() : 7500;
+    value.startNumber = m_startNumberSpin ? m_startNumberSpin->value() : 1;
+    value.loadout = m_loadoutCombo ? m_loadoutCombo->currentText().trimmed() : QString();
+    value.reputationDisplay = m_reputationCombo ? m_reputationCombo->currentText().trimmed() : QString();
+    value.difficultyLevel = m_difficultySpin ? m_difficultySpin->value() : 1;
+    value.pilot = m_pilotCombo ? m_pilotCombo->currentText().trimmed() : QString();
+    value.routeName = m_routeNameEdit ? m_routeNameEdit->text().trimmed() : QString();
+    value.startSpaceName = m_startSpaceNameEdit ? m_startSpaceNameEdit->text().trimmed() : QString();
+    value.endSpaceName = m_endSpaceNameEdit ? m_endSpaceNameEdit->text().trimmed() : QString();
+    return value;
+}
+
 CreatePatrolZoneDialog::CreatePatrolZoneDialog(const QString &suggestedNickname,
                                                const QStringList &encounters,
                                                const QStringList &factions,

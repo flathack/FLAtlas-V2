@@ -473,6 +473,76 @@ double derivedBuoySpacingMetersForLine(qreal lineLengthScene, int count)
     return std::max(lineLengthMeters / static_cast<double>(count - 1), 1.0);
 }
 
+int nextTradeLaneRingNumber(flatlas::domain::SystemDocument *document, const QString &systemNickname)
+{
+    if (!document)
+        return 1;
+
+    const QString prefix = QStringLiteral("%1_Trade_Lane_Ring_").arg(systemNickname).toLower();
+    int maxNumber = 0;
+    for (const auto &obj : document->objects()) {
+        if (!obj)
+            continue;
+        const QString nickname = obj->nickname().trimmed();
+        if (!nickname.toLower().startsWith(prefix))
+            continue;
+        bool ok = false;
+        const int number = nickname.mid(prefix.size()).toInt(&ok);
+        if (ok)
+            maxNumber = std::max(maxNumber, number);
+    }
+    return maxNumber + 1;
+}
+
+double tradeLaneYawDegrees(const QPointF &startScenePos, const QPointF &endScenePos)
+{
+    const double dx = static_cast<double>(endScenePos.x() - startScenePos.x());
+    const double dz = static_cast<double>(endScenePos.y() - startScenePos.y());
+    double angleDeg = qRadiansToDegrees(std::atan2(dx, dz)) + 180.0;
+    if (angleDeg > 180.0)
+        angleDeg -= 360.0;
+    return angleDeg;
+}
+
+bool resolveIdsStringInput(const QString &gameRoot,
+                           const QString &rawValue,
+                           int *outId,
+                           QString *errorMessage)
+{
+    if (!outId)
+        return false;
+
+    const QString trimmed = rawValue.trimmed();
+    if (trimmed.isEmpty() || trimmed == QLatin1String("0")) {
+        *outId = 0;
+        return true;
+    }
+
+    bool ok = false;
+    const int numericValue = trimmed.toInt(&ok);
+    if (ok && numericValue >= 0) {
+        *outId = numericValue;
+        return true;
+    }
+
+    const auto dataset = flatlas::infrastructure::IdsDataService::loadFromGameRoot(gameRoot);
+    const QString targetDll = flatlas::infrastructure::IdsDataService::defaultCreationDllName(dataset);
+    QString idsError;
+    int newGlobalId = 0;
+    if (!flatlas::infrastructure::IdsDataService::writeStringEntry(
+            dataset, targetDll, 0, trimmed, &newGlobalId, &idsError)) {
+        if (errorMessage) {
+            *errorMessage = idsError.trimmed().isEmpty()
+                ? QObject::tr("Der IDS-Text konnte nicht geschrieben werden.")
+                : idsError;
+        }
+        return false;
+    }
+
+    *outId = newGlobalId;
+    return true;
+}
+
 QStringList collectEncounterNicknames(flatlas::domain::SystemDocument *document, const QString &gameRoot)
 {
     QStringList values;
@@ -3133,6 +3203,38 @@ bool SystemEditorPage::eventFilter(QObject *watched, QEvent *event)
         }
     }
 
+    if (m_pendingTradeLaneHasStart && m_mapView && watched == m_mapView->viewport()) {
+        switch (event->type()) {
+        case QEvent::MouseMove: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            updateTradeLanePlacementPreview(m_mapView->mapToScene(mouseEvent->pos()));
+            return true;
+        }
+        case QEvent::MouseButtonPress: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (mouseEvent->button() == Qt::RightButton || mouseEvent->button() == Qt::MiddleButton) {
+                cancelTradeLanePlacement();
+                return true;
+            }
+            if (mouseEvent->button() == Qt::LeftButton) {
+                finalizeTradeLanePlacement(m_mapView->mapToScene(mouseEvent->pos()));
+                return true;
+            }
+            break;
+        }
+        case QEvent::KeyPress: {
+            auto *keyEvent = static_cast<QKeyEvent *>(event);
+            if (keyEvent->key() == Qt::Key_Escape) {
+                cancelTradeLanePlacement();
+                return true;
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
     return QWidget::eventFilter(watched, event);
 }
 
@@ -3860,7 +3962,10 @@ void SystemEditorPage::onCreateDepot()
 
 void SystemEditorPage::onCreateTradeLane()
 {
-    createQuickObject(SolarObject::TradeLane, QStringLiteral("new_tradelane"), QStringLiteral("trade_lane_ring"));
+    if (!m_document || !m_mapView || !m_mapScene || m_mapView->isPlacementModeActive())
+        return;
+
+    beginTradeLanePlacement();
 }
 
 void SystemEditorPage::onCreateBase()
@@ -4328,6 +4433,52 @@ void SystemEditorPage::updateBuoyPlacementPreview(const QPointF &currentScenePos
             marker->setVisible(false);
         }
     }
+}
+
+void SystemEditorPage::beginTradeLanePlacement()
+{
+    cancelTradeLanePlacement();
+    m_pendingTradeLaneHasStart = false;
+    m_pendingTradeLaneStartScenePos = QPointF();
+
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [this, placementGuard](const QPointF &scenePos) {
+        if (!m_mapView)
+            return;
+        m_pendingTradeLaneHasStart = true;
+        m_pendingTradeLaneStartScenePos = scenePos;
+        m_mapView->viewport()->installEventFilter(this);
+        m_mapView->viewport()->setMouseTracking(true);
+        updateTradeLanePlacementPreview(scenePos);
+        m_mapView->setPlacementMode(
+            true,
+            tr("2. Klick setzt das Ende der Trade Lane. Die Ring-Kette wird danach konfiguriert. [Esc] oder Rechtsklick bricht ab."));
+        placementGuard->deleteLater();
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [this, placementGuard]() {
+        cancelTradeLanePlacement();
+        placementGuard->deleteLater();
+    });
+
+    m_mapView->setPlacementMode(true, tr("1. Klick setzt den Startpunkt der Trade Lane."));
+}
+
+void SystemEditorPage::updateTradeLanePlacementPreview(const QPointF &currentScenePos)
+{
+    if (!m_pendingTradeLaneHasStart || !m_mapScene)
+        return;
+
+    if (!m_tradeLanePlacementPreview) {
+        const QColor stroke(120, 190, 255, 230);
+        m_tradeLanePlacementPreview = new QGraphicsLineItem();
+        m_tradeLanePlacementPreview->setPen(QPen(stroke, 2.0, Qt::DashLine));
+        m_tradeLanePlacementPreview->setZValue(9998.0);
+        m_mapScene->addItem(m_tradeLanePlacementPreview);
+    }
+
+    m_tradeLanePlacementPreview->setLine(QLineF(m_pendingTradeLaneStartScenePos, currentScenePos));
 }
 
 void SystemEditorPage::updateFieldZonePlacementPreview(const QPointF &currentScenePos)
@@ -5019,6 +5170,162 @@ void SystemEditorPage::finalizeBuoyPlacement(const QPointF &scenePos)
     cancelBuoyPlacement();
 }
 
+void SystemEditorPage::finalizeTradeLanePlacement(const QPointF &endScenePos)
+{
+    if (!m_document || !m_pendingTradeLaneHasStart || !m_mapView)
+        return;
+
+    const QLineF laneLine(m_pendingTradeLaneStartScenePos, endScenePos);
+    const qreal laneLengthScene = laneLine.length();
+    if (laneLengthScene <= 0.001) {
+        QMessageBox::warning(this, tr("Trade Lane erstellen"),
+                             tr("Start- und Endpunkt der Trade Lane sind ungueltig."));
+        m_mapView->setPlacementMode(true,
+                                    tr("2. Klick setzt das Ende der Trade Lane. [Esc] oder Rechtsklick bricht ab."));
+        return;
+    }
+
+    if (m_tradeLanePlacementPreview && m_mapScene)
+        m_tradeLanePlacementPreview->setLine(laneLine);
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    const QString systemNickname = QFileInfo(m_document->filePath()).completeBaseName();
+    CreateTradeLaneDialog dialog(systemNickname,
+                                 nextTradeLaneRingNumber(m_document.get(), systemNickname),
+                                 std::max(2, qRound((laneLengthScene * 100.0) / 7500.0) + 1),
+                                 laneLengthScene * 100.0,
+                                 loadLoadoutsMatching(gameRoot, {QStringLiteral("trade_lane_ring")}),
+                                 loadFactionDisplays(gameRoot),
+                                 loadPilotNicknames(gameRoot),
+                                 this);
+    if (dialog.exec() != QDialog::Accepted) {
+        cancelTradeLanePlacement();
+        return;
+    }
+
+    const CreateTradeLaneRequest request = dialog.result();
+    if (request.ringCount < 2) {
+        QMessageBox::warning(this, tr("Trade Lane erstellen"),
+                             tr("Es muessen mindestens zwei Trade-Lane-Ringe erstellt werden."));
+        cancelTradeLanePlacement();
+        return;
+    }
+    if (request.loadout.trimmed().isEmpty()) {
+        QMessageBox::warning(this, tr("Trade Lane erstellen"),
+                             tr("Bitte waehle ein gueltiges Loadout fuer die Trade Lane."));
+        cancelTradeLanePlacement();
+        return;
+    }
+
+    QSet<QString> usedNicknames;
+    for (const auto &obj : m_document->objects()) {
+        if (obj)
+            usedNicknames.insert(obj->nickname().trimmed().toLower());
+    }
+
+    QStringList plannedNicknames;
+    plannedNicknames.reserve(request.ringCount);
+    for (int index = 0; index < request.ringCount; ++index) {
+        const QString nickname =
+            QStringLiteral("%1_Trade_Lane_Ring_%2").arg(systemNickname).arg(request.startNumber + index);
+        const QString key = nickname.trimmed().toLower();
+        if (usedNicknames.contains(key)) {
+            QMessageBox::warning(this, tr("Trade Lane erstellen"),
+                                 tr("Der Ring-Nickname '%1' existiert bereits. Bitte waehle eine andere Startnummer.")
+                                     .arg(nickname));
+            cancelTradeLanePlacement();
+            return;
+        }
+        usedNicknames.insert(key);
+        plannedNicknames.append(nickname);
+    }
+
+    int routeIdsName = 0;
+    int startSpaceNameId = 0;
+    int endSpaceNameId = 0;
+    QString idsError;
+    if (!resolveIdsStringInput(gameRoot, request.routeName, &routeIdsName, &idsError)
+        || !resolveIdsStringInput(gameRoot, request.startSpaceName, &startSpaceNameId, &idsError)
+        || !resolveIdsStringInput(gameRoot, request.endSpaceName, &endSpaceNameId, &idsError)) {
+        QMessageBox::warning(this, tr("Trade Lane erstellen"),
+                             idsError.trimmed().isEmpty()
+                                 ? tr("Die IDS-Texte fuer die Trade Lane konnten nicht geschrieben werden.")
+                                 : tr("Die IDS-Texte fuer die Trade Lane konnten nicht geschrieben werden:\n%1")
+                                       .arg(idsError));
+        cancelTradeLanePlacement();
+        return;
+    }
+
+    const QString reputation = factionNicknameFromDisplay(request.reputationDisplay);
+    const double yawDegrees = tradeLaneYawDegrees(m_pendingTradeLaneStartScenePos, endScenePos);
+
+    auto *stack = flatlas::core::UndoManager::instance().stack();
+    stack->beginMacro(tr("Trade Lane erstellen"));
+
+    QStringList createdNicknames;
+    createdNicknames.reserve(request.ringCount);
+    for (int index = 0; index < request.ringCount; ++index) {
+        const double t = request.ringCount <= 1
+            ? 0.0
+            : static_cast<double>(index) / static_cast<double>(request.ringCount - 1);
+        const QPointF scenePos(
+            m_pendingTradeLaneStartScenePos.x()
+                + (endScenePos.x() - m_pendingTradeLaneStartScenePos.x()) * t,
+            m_pendingTradeLaneStartScenePos.y()
+                + (endScenePos.y() - m_pendingTradeLaneStartScenePos.y()) * t);
+        const QPointF worldXZ = MapScene::qtToFl(scenePos.x(), scenePos.y());
+
+        auto obj = std::make_shared<SolarObject>();
+        const QString nickname = plannedNicknames[index];
+        obj->setNickname(nickname);
+        obj->setType(SolarObject::TradeLane);
+        obj->setArchetype(QStringLiteral("Trade_Lane_Ring"));
+        obj->setPosition(QVector3D(static_cast<float>(worldXZ.x()), 0.0f, static_cast<float>(worldXZ.y())));
+        obj->setRotation(QVector3D(0.0f, static_cast<float>(yawDegrees), 0.0f));
+        obj->setIdsInfo(66170);
+        obj->setLoadout(request.loadout);
+        if (routeIdsName > 0)
+            obj->setIdsName(routeIdsName);
+
+        QVector<QPair<QString, QString>> entries{
+            {QStringLiteral("nickname"), nickname},
+            {QStringLiteral("pos"), QStringLiteral("%1, 0, %2").arg(worldXZ.x(), 0, 'f', 0).arg(worldXZ.y(), 0, 'f', 0)},
+            {QStringLiteral("rotate"), QStringLiteral("0, %1, 0").arg(yawDegrees, 0, 'f', 0)},
+            {QStringLiteral("archetype"), QStringLiteral("Trade_Lane_Ring")},
+            {QStringLiteral("ids_name"), QString::number(routeIdsName)},
+        };
+        if (index > 0)
+            entries.append({QStringLiteral("prev_ring"), plannedNicknames[index - 1]});
+        if (index < request.ringCount - 1)
+            entries.append({QStringLiteral("next_ring"), plannedNicknames[index + 1]});
+        entries.append({QStringLiteral("ids_info"), QStringLiteral("66170")});
+        if (!reputation.isEmpty())
+            entries.append({QStringLiteral("reputation"), reputation});
+        if (index == 0 && startSpaceNameId > 0)
+            entries.append({QStringLiteral("tradelane_space_name"), QString::number(startSpaceNameId)});
+        else if (index == request.ringCount - 1 && endSpaceNameId > 0)
+            entries.append({QStringLiteral("tradelane_space_name"), QString::number(endSpaceNameId)});
+        entries.append({QStringLiteral("behavior"), QStringLiteral("NOTHING")});
+        entries.append({QStringLiteral("difficulty_level"), QString::number(request.difficultyLevel)});
+        entries.append({QStringLiteral("loadout"), request.loadout});
+        if (!request.pilot.trimmed().isEmpty())
+            entries.append({QStringLiteral("pilot"), request.pilot.trimmed()});
+        obj->setRawEntries(entries);
+
+        stack->push(new AddObjectCommand(m_document.get(), obj, tr("Create Trade Lane")));
+        createdNicknames.append(nickname);
+    }
+    stack->endMacro();
+
+    refreshObjectList();
+    m_selectedNicknames = createdNicknames;
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+    updateIniEditorForSelection();
+    cancelTradeLanePlacement();
+}
+
 void SystemEditorPage::cancelFieldZonePlacement()
 {
     clearFieldZonePlacementPreview();
@@ -5102,6 +5409,22 @@ void SystemEditorPage::cancelBuoyPlacement()
     m_pendingBuoyHasAnchor = false;
     m_pendingBuoyAnchorScenePos = QPointF();
     m_pendingBuoyStep = 0;
+}
+
+void SystemEditorPage::cancelTradeLanePlacement()
+{
+    if (m_tradeLanePlacementPreview && m_mapScene) {
+        m_mapScene->removeItem(m_tradeLanePlacementPreview);
+        delete m_tradeLanePlacementPreview;
+        m_tradeLanePlacementPreview = nullptr;
+    }
+    if (m_mapView && m_mapView->viewport()) {
+        m_mapView->setPlacementMode(false);
+        m_mapView->viewport()->removeEventFilter(this);
+        m_mapView->viewport()->setToolTip(QString());
+    }
+    m_pendingTradeLaneHasStart = false;
+    m_pendingTradeLaneStartScenePos = QPointF();
 }
 
 void SystemEditorPage::cancelExclusionZonePlacement()
