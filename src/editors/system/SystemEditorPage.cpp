@@ -3040,17 +3040,24 @@ void SystemEditorPage::onItemsMoved(const QHash<QString, QPointF> &oldPositions,
     auto *stack = flatlas::core::UndoManager::instance().stack();
     stack->beginMacro(tr("Move Selection"));
     bool movedAnything = false;
+    const QStringList expandedNicknames = expandMoveNicknames(oldPositions.keys() + newPositions.keys());
 
     for (const auto &obj : m_document->objects()) {
-        if (!oldPositions.contains(obj->nickname()) || !newPositions.contains(obj->nickname()))
+        if (!expandedNicknames.contains(obj->nickname()))
             continue;
-        const QPointF oldFl = MapScene::qtToFl(oldPositions.value(obj->nickname()).x(), oldPositions.value(obj->nickname()).y());
-        const QPointF newFl = MapScene::qtToFl(newPositions.value(obj->nickname()).x(), newPositions.value(obj->nickname()).y());
-        const double startY = m_liveMoveStartWorld.contains(obj->nickname())
-                                  ? m_liveMoveStartWorld.value(obj->nickname()).y()
-                                  : obj->position().y();
-        const QVector3D oldPos(oldFl.x(), startY, oldFl.y());
-        const QVector3D newPos(newFl.x(), startY + verticalOffsetMeters, newFl.y());
+        QVector3D oldPos = m_liveMoveStartWorld.value(obj->nickname(), obj->position());
+        QVector3D newPos = m_liveMoveCurrentWorld.value(obj->nickname(), oldPos);
+        if (!m_liveMoveCurrentWorld.contains(obj->nickname())
+            && oldPositions.contains(obj->nickname())
+            && newPositions.contains(obj->nickname())) {
+            const QPointF oldFl = MapScene::qtToFl(oldPositions.value(obj->nickname()).x(), oldPositions.value(obj->nickname()).y());
+            const QPointF newFl = MapScene::qtToFl(newPositions.value(obj->nickname()).x(), newPositions.value(obj->nickname()).y());
+            const double startY = m_liveMoveStartWorld.contains(obj->nickname())
+                                      ? m_liveMoveStartWorld.value(obj->nickname()).y()
+                                      : obj->position().y();
+            oldPos = QVector3D(oldFl.x(), startY, oldFl.y());
+            newPos = QVector3D(newFl.x(), startY + verticalOffsetMeters, newFl.y());
+        }
         if (qFuzzyCompare(oldPos.x() + 1.0, newPos.x() + 1.0)
             && qFuzzyCompare(oldPos.y() + 1.0, newPos.y() + 1.0)
             && qFuzzyCompare(oldPos.z() + 1.0, newPos.z() + 1.0))
@@ -3060,15 +3067,21 @@ void SystemEditorPage::onItemsMoved(const QHash<QString, QPointF> &oldPositions,
     }
 
     for (const auto &zone : m_document->zones()) {
-        if (!oldPositions.contains(zone->nickname()) || !newPositions.contains(zone->nickname()))
+        if (!expandedNicknames.contains(zone->nickname()))
             continue;
-        const QPointF oldFl = MapScene::qtToFl(oldPositions.value(zone->nickname()).x(), oldPositions.value(zone->nickname()).y());
-        const QPointF newFl = MapScene::qtToFl(newPositions.value(zone->nickname()).x(), newPositions.value(zone->nickname()).y());
-        const double startY = m_liveMoveStartWorld.contains(zone->nickname())
-                                  ? m_liveMoveStartWorld.value(zone->nickname()).y()
-                                  : zone->position().y();
-        const QVector3D oldPos(oldFl.x(), startY, oldFl.y());
-        const QVector3D newPos(newFl.x(), startY + verticalOffsetMeters, newFl.y());
+        QVector3D oldPos = m_liveMoveStartWorld.value(zone->nickname(), zone->position());
+        QVector3D newPos = m_liveMoveCurrentWorld.value(zone->nickname(), oldPos);
+        if (!m_liveMoveCurrentWorld.contains(zone->nickname())
+            && oldPositions.contains(zone->nickname())
+            && newPositions.contains(zone->nickname())) {
+            const QPointF oldFl = MapScene::qtToFl(oldPositions.value(zone->nickname()).x(), oldPositions.value(zone->nickname()).y());
+            const QPointF newFl = MapScene::qtToFl(newPositions.value(zone->nickname()).x(), newPositions.value(zone->nickname()).y());
+            const double startY = m_liveMoveStartWorld.contains(zone->nickname())
+                                      ? m_liveMoveStartWorld.value(zone->nickname()).y()
+                                      : zone->position().y();
+            oldPos = QVector3D(oldFl.x(), startY, oldFl.y());
+            newPos = QVector3D(newFl.x(), startY + verticalOffsetMeters, newFl.y());
+        }
         if (qFuzzyCompare(oldPos.x() + 1.0, newPos.x() + 1.0)
             && qFuzzyCompare(oldPos.y() + 1.0, newPos.y() + 1.0)
             && qFuzzyCompare(oldPos.z() + 1.0, newPos.z() + 1.0))
@@ -3112,6 +3125,21 @@ void SystemEditorPage::onItemsMoveStarted(const QHash<QString, QPointF> &startSc
             }
         }
     }
+
+    const QStringList expandedNicknames = expandMoveNicknames(startScenePositions.keys());
+    for (const QString &nickname : expandedNicknames) {
+        if (m_liveMoveStartWorld.contains(nickname))
+            continue;
+        if (SolarObject *obj = findObjectByNickname(nickname)) {
+            m_liveMoveStartWorld.insert(nickname, obj->position());
+            m_liveMoveCurrentWorld.insert(nickname, obj->position());
+            continue;
+        }
+        if (ZoneItem *zone = findZoneByNickname(nickname)) {
+            m_liveMoveStartWorld.insert(nickname, zone->position());
+            m_liveMoveCurrentWorld.insert(nickname, zone->position());
+        }
+    }
 }
 
 void SystemEditorPage::onItemsMoving(const QHash<QString, QPointF> &currentScenePositions,
@@ -3119,16 +3147,29 @@ void SystemEditorPage::onItemsMoving(const QHash<QString, QPointF> &currentScene
 {
     if (!m_document || !m_liveMoveActive)
         return;
+
+    QHash<QString, QVector3D> rootDeltas;
     for (auto it = currentScenePositions.constBegin(); it != currentScenePositions.constEnd(); ++it) {
         const QString &nickname = it.key();
         if (!m_liveMoveStartWorld.contains(nickname))
             continue;
         const QPointF fl = MapScene::qtToFl(it.value().x(), it.value().y());
         const double startY = m_liveMoveStartWorld.value(nickname).y();
-        m_liveMoveCurrentWorld.insert(nickname,
-                                      QVector3D(static_cast<float>(fl.x()),
-                                                static_cast<float>(startY + verticalOffsetMeters),
-                                                static_cast<float>(fl.y())));
+        const QVector3D newPos(static_cast<float>(fl.x()),
+                               static_cast<float>(startY + verticalOffsetMeters),
+                               static_cast<float>(fl.y()));
+        m_liveMoveCurrentWorld.insert(nickname, newPos);
+        if (findObjectByNickname(nickname))
+            rootDeltas.insert(normalizeObjectNicknameToGroupRoot(nickname), newPos - m_liveMoveStartWorld.value(nickname));
+    }
+
+    for (auto it = rootDeltas.constBegin(); it != rootDeltas.constEnd(); ++it) {
+        const QStringList linkedNicknames = expandMoveNicknames({it.key()});
+        for (const QString &nickname : linkedNicknames) {
+            if (!m_liveMoveStartWorld.contains(nickname) || currentScenePositions.contains(nickname))
+                continue;
+            m_liveMoveCurrentWorld.insert(nickname, m_liveMoveStartWorld.value(nickname) + it.value());
+        }
     }
     // Refresh the ini editor so "pos = ..." reflects the live position.
     updateIniEditorForSelection();
@@ -6135,6 +6176,34 @@ QStringList SystemEditorPage::expandSelectionNicknamesForScene(const QStringList
     return expanded;
 }
 
+QStringList SystemEditorPage::expandMoveNicknames(const QStringList &nicknames) const
+{
+    QStringList expanded;
+    for (const QString &nickname : nicknames) {
+        SolarObject *object = findObjectByNickname(nickname);
+        if (object) {
+            const QString rootNickname = normalizeObjectNicknameToGroupRoot(nickname);
+            const QStringList groupNicknames = objectGroupNicknames(rootNickname);
+            expanded.append(groupNicknames);
+            for (const QString &groupNickname : groupNicknames) {
+                SolarObject *groupObject = findObjectByNickname(groupNickname);
+                if (!groupObject || !isPlanetLikeObject(*groupObject))
+                    continue;
+
+                const QString deathZoneNickname = QStringLiteral("Zone_%1_death").arg(groupObject->nickname());
+                if (findZoneByNickname(deathZoneNickname))
+                    expanded.append(deathZoneNickname);
+            }
+            continue;
+        }
+
+        if (findZoneByNickname(nickname) || findLightSourceSectionIndexByNickname(nickname) >= 0)
+            expanded.append(nickname);
+    }
+    expanded.removeDuplicates();
+    return expanded;
+}
+
 void SystemEditorPage::syncLightSourcesInScene()
 {
     if (!m_mapScene) {
@@ -6190,6 +6259,13 @@ QStringList SystemEditorPage::objectGroupNicknames(const QString &rootNickname) 
         }
     }
     return ordered;
+}
+
+bool SystemEditorPage::isPlanetLikeObject(const SolarObject &obj) const
+{
+    if (obj.type() == SolarObject::Planet)
+        return true;
+    return obj.archetype().contains(QStringLiteral("planet"), Qt::CaseInsensitive);
 }
 
 bool SystemEditorPage::isChildObject(const SolarObject &obj) const

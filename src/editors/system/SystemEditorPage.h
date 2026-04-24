@@ -90,7 +90,9 @@ private:
     QString normalizeObjectNicknameToGroupRoot(const QString &nickname) const;
     QStringList normalizeSelectionNicknames(const QStringList &nicknames) const;
     QStringList expandSelectionNicknamesForScene(const QStringList &nicknames) const;
+    QStringList expandMoveNicknames(const QStringList &nicknames) const;
     QStringList objectGroupNicknames(const QString &rootNickname) const;
+    bool isPlanetLikeObject(const flatlas::domain::SolarObject &obj) const;
     bool isChildObject(const flatlas::domain::SolarObject &obj) const;
     bool hasSingleObjectGroupSelection() const;
     void open3DPreviewForSelection();
