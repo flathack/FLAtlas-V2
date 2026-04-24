@@ -29,6 +29,7 @@ public:
     void setSourceSystem(const flatlas::domain::SystemInfo &system,
                          flatlas::domain::SystemDocument *document);
     void setSystems(const QVector<flatlas::domain::SystemInfo> &systems);
+    void setUniverseConnections(const QVector<flatlas::domain::JumpConnection> &connections);
     void setJumpHoleArchetypes(const QStringList &archetypes);
     void setGateLoadouts(const QStringList &loadouts);
     void setFactions(const QStringList &factions);
@@ -61,6 +62,7 @@ private:
     flatlas::domain::SystemInfo currentDestinationSystem() const;
 
     QVector<flatlas::domain::SystemInfo> m_systems;
+    QVector<flatlas::domain::JumpConnection> m_universeConnections;
     flatlas::domain::SystemInfo m_sourceSystem;
     flatlas::domain::SystemDocument *m_sourceDocument = nullptr;
     std::unique_ptr<flatlas::domain::SystemDocument> m_destinationDocument;

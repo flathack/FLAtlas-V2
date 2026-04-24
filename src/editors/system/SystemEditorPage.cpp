@@ -280,26 +280,36 @@ QStringList loadPilotNicknames(const QString &gameRoot)
     return values;
 }
 
-QVector<flatlas::domain::SystemInfo> loadUniverseSystemsForEditor(const QString &gameRoot)
+std::unique_ptr<flatlas::domain::UniverseData> loadUniverseForEditor(const QString &gameRoot)
 {
-    QVector<flatlas::domain::SystemInfo> systems;
     const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
     const QString universeIni = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("UNIVERSE/universe.ini"));
     if (universeIni.isEmpty())
-        return systems;
+        return {};
 
-    const auto universe = flatlas::editors::UniverseSerializer::load(universeIni);
+    auto universe = flatlas::editors::UniverseSerializer::load(universeIni);
     if (!universe)
-        return systems;
+        return {};
 
     const QString universeDir = QFileInfo(universeIni).absolutePath();
-    for (auto system : universe->systems) {
+    for (auto &system : universe->systems) {
         QString absoluteFilePath = flatlas::core::PathUtils::ciResolvePath(universeDir, system.filePath);
         if (absoluteFilePath.isEmpty())
             absoluteFilePath = QDir(universeDir).absoluteFilePath(system.filePath);
         system.filePath = absoluteFilePath;
-        systems.append(system);
     }
+
+    return universe;
+}
+
+QVector<flatlas::domain::SystemInfo> loadUniverseSystemsForEditor(const QString &gameRoot)
+{
+    QVector<flatlas::domain::SystemInfo> systems;
+    const auto universe = loadUniverseForEditor(gameRoot);
+    if (!universe)
+        return systems;
+
+    systems = universe->systems;
 
     std::sort(systems.begin(), systems.end(), [](const flatlas::domain::SystemInfo &lhs,
                                                  const flatlas::domain::SystemInfo &rhs) {
@@ -3536,12 +3546,13 @@ void SystemEditorPage::onCreateJumpConnection()
     }
 
     const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
-    const auto systems = loadUniverseSystemsForEditor(gameRoot);
-    if (systems.isEmpty()) {
+    const auto universe = loadUniverseForEditor(gameRoot);
+    if (!universe || universe->systems.isEmpty()) {
         QMessageBox::warning(this, tr("Jump-Verbindung erstellen"),
                              tr("Es konnten keine gueltigen Systeme aus universe.ini geladen werden."));
         return;
     }
+    const auto systems = universe->systems;
 
     flatlas::domain::SystemInfo sourceSystem;
     sourceSystem.nickname = m_document->name().trimmed();
@@ -3551,6 +3562,7 @@ void SystemEditorPage::onCreateJumpConnection()
     JumpConnectionDialog dialog(this);
     dialog.setSourceSystem(sourceSystem, m_document.get());
     dialog.setSystems(systems);
+    dialog.setUniverseConnections(universe->connections);
     dialog.setJumpHoleArchetypes(loadSolarArchetypesMatching(gameRoot, {QStringLiteral("jumphole"),
                                                                        QStringLiteral("jump_hole")}));
     dialog.setGateLoadouts(loadLoadoutsMatching(gameRoot, {QStringLiteral("jumpgate")}));

@@ -20,13 +20,17 @@
 #include <QLineEdit>
 #include <QPen>
 #include <QPushButton>
+#include <QHash>
 #include <QRegularExpression>
 #include <QSpinBox>
+#include <QTimer>
 #include <QVBoxLayout>
 
 namespace flatlas::editors {
 
 namespace {
+
+constexpr qreal kUniverseGridSpacing = 120.0;
 
 QString alphaSuffix(int index)
 {
@@ -90,8 +94,6 @@ void JumpConnectionDialog::setupUi()
     m_destinationObjectEdit = new QLineEdit(topGroup);
     topLayout->addRow(tr("Zielobjekt:"), m_destinationObjectEdit);
 
-    root->addWidget(topGroup);
-
     auto *gateGroup = new QGroupBox(tr("Gate-Parameter"));
     auto *gateLayout = new QFormLayout(gateGroup);
     m_behaviorEdit = new QLineEdit(QStringLiteral("NOTHING"), gateGroup);
@@ -112,7 +114,10 @@ void JumpConnectionDialog::setupUi()
     m_pilotCombo = new QComboBox(gateGroup);
     gateLayout->addRow(tr("Pilot:"), m_pilotCombo);
 
-    root->addWidget(gateGroup);
+    auto *topRow = new QHBoxLayout();
+    topRow->addWidget(topGroup, 3);
+    topRow->addWidget(gateGroup, 2);
+    root->addLayout(topRow);
 
     auto *mapsLayout = new QGridLayout();
     auto *sourceLabel = new QLabel(tr("Quelle platzieren"));
@@ -179,13 +184,23 @@ void JumpConnectionDialog::setupUi()
         const QPointF world = flatlas::rendering::MapScene::qtToFl(scenePos.x(), scenePos.y());
         m_sourcePosition = QVector3D(static_cast<float>(world.x()), 0.0f, static_cast<float>(world.y()));
         placeMarker(m_sourceScene, m_sourceMarker, m_sourcePosition);
+        m_sourceView->setPlacementMode(true, tr("Klicke auf die Quellkarte, um die Jump-Verbindung zu platzieren."));
         updateStatus();
     });
     connect(m_destinationView, &flatlas::rendering::SystemMapView::placementClicked, this, [this](const QPointF &scenePos) {
         const QPointF world = flatlas::rendering::MapScene::qtToFl(scenePos.x(), scenePos.y());
         m_destinationPosition = QVector3D(static_cast<float>(world.x()), 0.0f, static_cast<float>(world.y()));
         placeMarker(m_destinationScene, m_destinationMarker, m_destinationPosition);
+        m_destinationView->setPlacementMode(true, tr("Klicke auf die Zielkarte, um das Gegenobjekt zu platzieren."));
         updateStatus();
+    });
+    connect(m_sourceView, &flatlas::rendering::SystemMapView::placementCanceled, this, [this]() {
+        if (m_sourceView)
+            m_sourceView->setPlacementMode(true, tr("Klicke auf die Quellkarte, um die Jump-Verbindung zu platzieren."));
+    });
+    connect(m_destinationView, &flatlas::rendering::SystemMapView::placementCanceled, this, [this]() {
+        if (m_destinationView)
+            m_destinationView->setPlacementMode(true, tr("Klicke auf die Zielkarte, um das Gegenobjekt zu platzieren."));
     });
 
     m_sourceView->setPlacementMode(true, tr("Klicke auf die Quellkarte, um die Jump-Verbindung zu platzieren."));
@@ -203,6 +218,14 @@ void JumpConnectionDialog::setSourceSystem(const flatlas::domain::SystemInfo &sy
     if (m_sourceScene && document) {
         m_sourceScene->loadDocument(document);
         m_sourceView->scheduleInitialFit();
+        QTimer::singleShot(0, m_sourceView, [this]() {
+            if (m_sourceView)
+                m_sourceView->zoomToFit();
+        });
+        QTimer::singleShot(40, m_sourceView, [this]() {
+            if (m_sourceView)
+                m_sourceView->zoomToFit();
+        });
     }
     refreshUniversePreview();
     refreshNicknameSuggestions();
@@ -221,6 +244,12 @@ void JumpConnectionDialog::setSystems(const QVector<flatlas::domain::SystemInfo>
         m_destinationSystemCombo->setCurrentIndex(sourceIndex);
     refreshUniversePreview();
     refreshDestinationSystem();
+}
+
+void JumpConnectionDialog::setUniverseConnections(const QVector<flatlas::domain::JumpConnection> &connections)
+{
+    m_universeConnections = connections;
+    refreshUniversePreview();
 }
 
 void JumpConnectionDialog::setJumpHoleArchetypes(const QStringList &archetypes)
@@ -329,12 +358,20 @@ void JumpConnectionDialog::refreshDestinationSystem()
         if (m_sourceDocument) {
             m_destinationScene->loadDocument(m_sourceDocument);
             m_destinationView->scheduleInitialFit();
+            QTimer::singleShot(0, m_destinationView, [this]() {
+                if (m_destinationView)
+                    m_destinationView->zoomToFit();
+            });
         }
     } else {
         m_destinationDocument = flatlas::editors::SystemPersistence::load(system.filePath);
         if (m_destinationDocument) {
             m_destinationScene->loadDocument(m_destinationDocument.get());
             m_destinationView->scheduleInitialFit();
+            QTimer::singleShot(0, m_destinationView, [this]() {
+                if (m_destinationView)
+                    m_destinationView->zoomToFit();
+            });
         } else {
             m_destinationScene->clear();
         }
@@ -438,57 +475,104 @@ void JumpConnectionDialog::refreshNicknameSuggestions()
 
 void JumpConnectionDialog::refreshUniversePreview()
 {
-    if (!m_universeScene)
+    if (!m_universeScene || !m_universeView)
         return;
 
     m_universeScene->clear();
     m_universeConnectionLine = nullptr;
 
-    if (m_systems.isEmpty() || m_sourceSystem.nickname.trimmed().isEmpty())
+    if (m_systems.isEmpty())
         return;
 
     QHash<QString, QPointF> scenePositions;
-    QRectF bounds;
-    bool firstPoint = true;
     for (const auto &system : m_systems) {
-        const QPointF pos(system.position.x() * 0.03, -system.position.z() * 0.03);
-        scenePositions.insert(system.nickname.toUpper(), pos);
-        if (firstPoint) {
-            bounds = QRectF(pos, QSizeF(1.0, 1.0));
-            firstPoint = false;
-        } else {
-            bounds = bounds.united(QRectF(pos, QSizeF(1.0, 1.0)));
-        }
+        const QPointF pos(system.position.x() * kUniverseGridSpacing,
+                          system.position.z() * kUniverseGridSpacing);
+        scenePositions.insert(system.nickname.trimmed().toUpper(), pos);
+    }
 
-        const bool isSource = system.nickname.compare(m_sourceSystem.nickname, Qt::CaseInsensitive) == 0;
-        const bool isTarget = system.nickname.compare(currentDestinationSystem().nickname, Qt::CaseInsensitive) == 0;
-        const QColor color = isSource ? QColor(59, 130, 246) : (isTarget ? QColor(245, 158, 11) : QColor(120, 130, 150));
-        auto *dot = m_universeScene->addEllipse(pos.x() - 4.0, pos.y() - 4.0, 8.0, 8.0,
-                                                QPen(color.darker(130), 1.0), QBrush(color));
-        dot->setZValue(2.0);
+    auto drawConnection = [this, &scenePositions](const QString &fromSystem,
+                                                  const QString &toSystem,
+                                                  const QPen &pen,
+                                                  qreal zValue) {
+        const QString fromKey = fromSystem.trimmed().toUpper();
+        const QString toKey = toSystem.trimmed().toUpper();
+        if (!scenePositions.contains(fromKey) || !scenePositions.contains(toKey))
+            return;
+
+        const QPointF fromPos = scenePositions.value(fromKey);
+        const QPointF toPos = scenePositions.value(toKey);
+        if (QLineF(fromPos, toPos).length() <= 0.001)
+            return;
+
+        auto *line = m_universeScene->addLine(QLineF(fromPos, toPos), pen);
+        if (line)
+            line->setZValue(zValue);
+    };
+
+    for (const auto &conn : m_universeConnections) {
+        QColor color(95, 105, 120, 150);
+        if (conn.kind.compare(QStringLiteral("gate"), Qt::CaseInsensitive) == 0)
+            color = QColor(90, 140, 220, 150);
+        else if (conn.kind.compare(QStringLiteral("hole"), Qt::CaseInsensitive) == 0)
+            color = QColor(110, 190, 205, 150);
+        drawConnection(conn.fromSystem, conn.toSystem, QPen(color, 1.5, Qt::SolidLine, Qt::RoundCap), 0.0);
+    }
+
+    const QString sourceNickname = m_sourceSystem.nickname.trimmed();
+    const QString targetNickname = currentDestinationSystem().nickname.trimmed();
+
+    for (const auto &system : m_systems) {
+        const QPointF pos(system.position.x() * kUniverseGridSpacing,
+                          system.position.z() * kUniverseGridSpacing);
+        const bool isSource = !sourceNickname.isEmpty()
+                              && system.nickname.compare(sourceNickname, Qt::CaseInsensitive) == 0;
+        const bool isTarget = !targetNickname.isEmpty()
+                              && system.nickname.compare(targetNickname, Qt::CaseInsensitive) == 0;
+        const QColor color = isSource ? QColor(59, 130, 246)
+                                      : (isTarget ? QColor(245, 158, 11) : QColor(120, 130, 150));
+        auto *dot = m_universeScene->addEllipse(pos.x() - 6.0,
+                                                pos.y() - 6.0,
+                                                12.0,
+                                                12.0,
+                                                QPen(color.darker(140), 1.5),
+                                                QBrush(color));
+        dot->setZValue(3.0);
 
         const QString labelText = system.displayName.trimmed().isEmpty() ? system.nickname : system.displayName;
         auto *label = m_universeScene->addSimpleText(QStringLiteral("%1 (%2)").arg(labelText, system.nickname));
         label->setBrush(QBrush(isSource || isTarget ? QColor(220, 225, 235) : QColor(160, 170, 185)));
-        label->setPos(pos + QPointF(8.0, -10.0));
+        label->setPos(pos + QPointF(10.0, -12.0));
         label->setZValue(2.0);
     }
 
-    const QPointF sourcePos = scenePositions.value(m_sourceSystem.nickname.toUpper());
-    const QPointF targetPos = scenePositions.value(currentDestinationSystem().nickname.toUpper());
-    if (!sourcePos.isNull() || !targetPos.isNull()) {
-        m_universeConnectionLine = m_universeScene->addLine(QLineF(sourcePos, targetPos),
-                                                            QPen(QColor(255, 214, 10), 2.0));
-        if (m_universeConnectionLine)
-            m_universeConnectionLine->setZValue(1.0);
+    const QString sourceKey = sourceNickname.toUpper();
+    const QString targetKey = targetNickname.toUpper();
+    if (!sourceNickname.isEmpty()
+        && !targetNickname.isEmpty()
+        && scenePositions.contains(sourceKey)
+        && scenePositions.contains(targetKey)) {
+        const QPointF sourcePos = scenePositions.value(sourceKey);
+        const QPointF targetPos = scenePositions.value(targetKey);
+        if (QLineF(sourcePos, targetPos).length() > 0.001) {
+            m_universeConnectionLine = m_universeScene->addLine(
+                QLineF(sourcePos, targetPos),
+                QPen(QColor(255, 214, 10), 2.5, Qt::SolidLine, Qt::RoundCap));
+            if (m_universeConnectionLine)
+                m_universeConnectionLine->setZValue(1.0);
+        }
     }
 
-    if (!bounds.isNull()) {
-        bounds.adjust(-60.0, -40.0, 60.0, 40.0);
-        m_universeScene->setSceneRect(bounds);
+    QRectF bounds = m_universeScene->itemsBoundingRect();
+    if (bounds.isNull() || !bounds.isValid())
+        bounds = QRectF(-100.0, -100.0, 200.0, 200.0);
+    bounds.adjust(-40.0, -30.0, 40.0, 30.0);
+    m_universeScene->setSceneRect(bounds);
+    m_universeView->fitInView(bounds, Qt::KeepAspectRatio);
+    QTimer::singleShot(0, m_universeView, [this, bounds]() {
         if (m_universeView)
             m_universeView->fitInView(bounds, Qt::KeepAspectRatio);
-    }
+    });
 }
 
 flatlas::domain::SystemInfo JumpConnectionDialog::currentDestinationSystem() const
