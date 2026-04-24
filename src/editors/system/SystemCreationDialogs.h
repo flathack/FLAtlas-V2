@@ -83,6 +83,22 @@ struct CreateTradeLaneRequest {
     QString endSpaceName;
 };
 
+struct EditTradeLaneRequest {
+    double startX = 0.0;
+    double startZ = 0.0;
+    double endX = 0.0;
+    double endZ = 0.0;
+    int ringCount = 2;
+    QString archetype = QStringLiteral("Trade_Lane_Ring");
+    QString loadout;
+    QString reputationDisplay;
+    int difficultyLevel = 1;
+    QString pilot = QStringLiteral("pilot_solar_easiest");
+    QString routeName;
+    QString startSpaceName;
+    QString endSpaceName;
+};
+
 struct CreateLightSourceRequest {
     QString nickname;
     QString type;
@@ -234,6 +250,46 @@ private:
     QLineEdit *m_startSpaceNameEdit = nullptr;
     QLineEdit *m_endSpaceNameEdit = nullptr;
     QLabel *m_spacingInfoLabel = nullptr;
+    bool m_updatingSpacing = false;
+};
+
+class EditTradeLaneDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit EditTradeLaneDialog(const QString &laneSummary,
+                                 const QStringList &archetypes,
+                                 const QStringList &loadouts,
+                                 const QStringList &factions,
+                                 const QStringList &pilots,
+                                 const EditTradeLaneRequest &initial,
+                                 QWidget *parent = nullptr);
+
+    EditTradeLaneRequest result() const;
+    bool deleteRequested() const;
+
+private slots:
+    void updateDerivedSpacing();
+    void updateCountFromSpacing(int spacingMeters);
+
+private:
+    double currentLaneLengthMeters() const;
+
+    QDoubleSpinBox *m_startXSpin = nullptr;
+    QDoubleSpinBox *m_startZSpin = nullptr;
+    QDoubleSpinBox *m_endXSpin = nullptr;
+    QDoubleSpinBox *m_endZSpin = nullptr;
+    QSpinBox *m_countSpin = nullptr;
+    QSpinBox *m_spacingSpin = nullptr;
+    QComboBox *m_archetypeCombo = nullptr;
+    QComboBox *m_loadoutCombo = nullptr;
+    QComboBox *m_reputationCombo = nullptr;
+    QSpinBox *m_difficultySpin = nullptr;
+    QComboBox *m_pilotCombo = nullptr;
+    QLineEdit *m_routeNameEdit = nullptr;
+    QLineEdit *m_startSpaceNameEdit = nullptr;
+    QLineEdit *m_endSpaceNameEdit = nullptr;
+    QLabel *m_spacingInfoLabel = nullptr;
+    bool m_deleteRequested = false;
     bool m_updatingSpacing = false;
 };
 

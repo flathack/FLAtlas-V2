@@ -11,6 +11,7 @@
 #include "CreateExclusionZoneDialog.h"
 #include "ExclusionZoneUtils.h"
 #include "JumpConnectionService.h"
+#include "TradeLaneEditService.h"
 #include "editors/jump/JumpConnectionDialog.h"
 #include "editors/universe/UniverseSerializer.h"
 #include "core/Theme.h"
@@ -75,6 +76,7 @@
 #include <QKeyEvent>
 #include <QPen>
 #include <QRegularExpression>
+#include <QFile>
 #include <QtMath>
 
 #include <QQuaternion>
@@ -221,6 +223,36 @@ QStringList loadFactionDisplays(const QString &gameRoot)
     IdsStringTable ids;
     if (!exeDir.isEmpty())
         ids.loadFromFreelancerDir(exeDir);
+
+    const IniDocument doc = IniParser::parseFile(initialWorldPath);
+    QSet<QString> seen;
+    for (const IniSection &section : doc) {
+        if (section.name.compare(QStringLiteral("Group"), Qt::CaseInsensitive) != 0)
+            continue;
+        const QString nickname = section.value(QStringLiteral("nickname")).trimmed();
+        if (nickname.isEmpty())
+            continue;
+        const QString key = nickname.toLower();
+        if (seen.contains(key))
+            continue;
+        seen.insert(key);
+        bool ok = false;
+        const int idsName = section.value(QStringLiteral("ids_name")).trimmed().toInt(&ok);
+        const QString ingameName = ok && idsName > 0 ? ids.getString(idsName).trimmed() : QString();
+        values.append(ingameName.isEmpty() ? nickname : QStringLiteral("%1 - %2").arg(nickname, ingameName));
+    }
+    std::sort(values.begin(), values.end(), [](const QString &a, const QString &b) {
+        return a.compare(b, Qt::CaseInsensitive) < 0;
+    });
+    return values;
+}
+
+QStringList loadFactionDisplaysWithIds(const QString &gameRoot, const IdsStringTable &ids)
+{
+    QStringList values;
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
+    const QString initialWorldPath =
+        flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("initialworld.ini"));
 
     const IniDocument doc = IniParser::parseFile(initialWorldPath);
     QSet<QString> seen;
@@ -506,6 +538,8 @@ double tradeLaneYawDegrees(const QPointF &startScenePos, const QPointF &endScene
 
 bool resolveIdsStringInput(const QString &gameRoot,
                            const QString &rawValue,
+                           int currentGlobalId,
+                           const QString &currentText,
                            int *outId,
                            QString *errorMessage)
 {
@@ -525,12 +559,28 @@ bool resolveIdsStringInput(const QString &gameRoot,
         return true;
     }
 
+    if (currentGlobalId > 0 && trimmed == currentText.trimmed()) {
+        *outId = currentGlobalId;
+        return true;
+    }
+
     const auto dataset = flatlas::infrastructure::IdsDataService::loadFromGameRoot(gameRoot);
     const QString targetDll = flatlas::infrastructure::IdsDataService::defaultCreationDllName(dataset);
+    int rewriteId = 0;
+    if (currentGlobalId > 0) {
+        const auto it = std::find_if(dataset.entries.cbegin(), dataset.entries.cend(),
+                                     [currentGlobalId](const flatlas::infrastructure::IdsEntryRecord &entry) {
+                                         return entry.globalId == currentGlobalId;
+                                     });
+        if (it != dataset.entries.cend() && it->editable
+            && it->dllName.compare(targetDll, Qt::CaseInsensitive) == 0) {
+            rewriteId = currentGlobalId;
+        }
+    }
     QString idsError;
     int newGlobalId = 0;
     if (!flatlas::infrastructure::IdsDataService::writeStringEntry(
-            dataset, targetDll, 0, trimmed, &newGlobalId, &idsError)) {
+            dataset, targetDll, rewriteId, trimmed, &newGlobalId, &idsError)) {
         if (errorMessage) {
             *errorMessage = idsError.trimmed().isEmpty()
                 ? QObject::tr("Der IDS-Text konnte nicht geschrieben werden.")
@@ -541,6 +591,45 @@ bool resolveIdsStringInput(const QString &gameRoot,
 
     *outId = newGlobalId;
     return true;
+}
+
+QString idsDisplayTextFromTable(const IdsStringTable &ids, int globalId)
+{
+    return globalId > 0 ? ids.getString(globalId).trimmed() : QString();
+}
+
+struct TradeLaneDialogCatalog {
+    QString gameRoot;
+    QStringList archetypes;
+    QStringList loadouts;
+    QStringList factions;
+    QStringList pilots;
+    QSet<QString> factionDisplays;
+    IdsStringTable ids;
+};
+
+const TradeLaneDialogCatalog &tradeLaneDialogCatalog(const QString &gameRoot)
+{
+    static QString cachedGameRoot;
+    static TradeLaneDialogCatalog cachedCatalog;
+
+    if (cachedGameRoot == gameRoot)
+        return cachedCatalog;
+
+    cachedGameRoot = gameRoot;
+    cachedCatalog = {};
+    cachedCatalog.gameRoot = gameRoot;
+
+    const QString exeDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("EXE"));
+    if (!exeDir.isEmpty())
+        cachedCatalog.ids.loadFromFreelancerDir(exeDir);
+
+    cachedCatalog.archetypes = loadSolarArchetypesMatching(gameRoot, {QStringLiteral("trade_lane_ring")});
+    cachedCatalog.loadouts = loadLoadoutsMatching(gameRoot, {QStringLiteral("trade_lane_ring")});
+    cachedCatalog.factions = loadFactionDisplaysWithIds(gameRoot, cachedCatalog.ids);
+    cachedCatalog.pilots = loadPilotNicknames(gameRoot);
+    cachedCatalog.factionDisplays = QSet<QString>(cachedCatalog.factions.cbegin(), cachedCatalog.factions.cend());
+    return cachedCatalog;
 }
 
 QStringList collectEncounterNicknames(flatlas::domain::SystemDocument *document, const QString &gameRoot)
@@ -1524,9 +1613,7 @@ void SystemEditorPage::setupRightSidebar()
     editingLayout->setSpacing(4);
 
     m_editTradelaneButton = makeSidebarButton(tr("Tradelane"), editingGroup);
-    connect(m_editTradelaneButton, &QPushButton::clicked, this, [this]() {
-        showNotYetPorted(tr("Tradelane bearbeiten"), QStringLiteral("FLAtlas/fl_editor/main_window.py::_edit_tradelane"));
-    });
+    connect(m_editTradelaneButton, &QPushButton::clicked, this, &SystemEditorPage::onEditTradeLane);
     editingLayout->addWidget(m_editTradelaneButton);
 
     m_editZonePopulationButton = makeSidebarButton(tr("Zone Population"), editingGroup);
@@ -3968,6 +4055,180 @@ void SystemEditorPage::onCreateTradeLane()
     beginTradeLanePlacement();
 }
 
+void SystemEditorPage::onEditTradeLane()
+{
+    if (!m_document)
+        return;
+
+    QString laneError;
+    const auto chainOpt = TradeLaneEditService::detectChain(*m_document, primarySelectedNickname(), &laneError);
+    if (!chainOpt.has_value()) {
+        QMessageBox::warning(this,
+                             tr("Trade Lane bearbeiten"),
+                             laneError.trimmed().isEmpty()
+                                 ? tr("Die ausgewaehlte Trade Lane konnte nicht erkannt werden.")
+                                 : laneError);
+        return;
+    }
+
+    const TradeLaneChain chain = *chainOpt;
+    m_selectedNicknames = TradeLaneEditService::memberNicknames(chain);
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    const auto &dialogCatalog = tradeLaneDialogCatalog(gameRoot);
+    EditTradeLaneRequest initial;
+    initial.startX = chain.startPosition.x();
+    initial.startZ = chain.startPosition.z();
+    initial.endX = chain.endPosition.x();
+    initial.endZ = chain.endPosition.z();
+    initial.ringCount = chain.rings.size();
+    initial.archetype = chain.archetype;
+    initial.loadout = chain.loadout;
+    initial.reputationDisplay = chain.reputation;
+    initial.difficultyLevel = chain.difficultyLevel;
+    initial.pilot = chain.pilot;
+    initial.routeName = idsDisplayTextFromTable(dialogCatalog.ids, chain.routeIdsName);
+    initial.startSpaceName = idsDisplayTextFromTable(dialogCatalog.ids, chain.startSpaceNameId);
+    initial.endSpaceName = idsDisplayTextFromTable(dialogCatalog.ids, chain.endSpaceNameId);
+
+    const QString reputationDisplay = initial.reputationDisplay.isEmpty()
+        ? QString()
+        : dialogCatalog.factionDisplays.contains(initial.reputationDisplay)
+            ? initial.reputationDisplay
+            : QStringLiteral("%1 - %2").arg(initial.reputationDisplay, initial.reputationDisplay);
+    initial.reputationDisplay = reputationDisplay;
+
+    const QString laneSummary = tr("Lane: %1 -> %2\nRinge: %3")
+        .arg(chain.rings.first()->nickname(), chain.rings.last()->nickname())
+        .arg(chain.rings.size());
+    EditTradeLaneDialog dialog(laneSummary,
+                               dialogCatalog.archetypes,
+                               dialogCatalog.loadouts,
+                               dialogCatalog.factions,
+                               dialogCatalog.pilots,
+                               initial,
+                               this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    if (dialog.deleteRequested()) {
+        const auto answer = QMessageBox::question(
+            this,
+            tr("Trade Lane loeschen"),
+            tr("Soll die komplette Trade Lane mit %1 Ringen wirklich geloescht werden?")
+                .arg(chain.rings.size()),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::No);
+        if (answer != QMessageBox::Yes)
+            return;
+
+        auto *stack = flatlas::core::UndoManager::instance().stack();
+        stack->beginMacro(tr("Trade Lane loeschen"));
+        for (const auto &ring : chain.rings)
+            stack->push(new RemoveObjectCommand(m_document.get(), ring, tr("Remove Trade Lane Ring")));
+        stack->endMacro();
+
+        refreshObjectList();
+        m_selectedNicknames.clear();
+        syncTreeSelectionFromNicknames(m_selectedNicknames);
+        syncSceneSelectionFromNicknames(m_selectedNicknames);
+        updateSelectionSummary();
+        updateIniEditorForSelection();
+        return;
+    }
+
+    const EditTradeLaneRequest edited = dialog.result();
+    TradeLaneEditRequest request;
+    request.systemNickname = chain.systemNickname.trimmed().isEmpty()
+        ? QFileInfo(m_document->filePath()).completeBaseName()
+        : chain.systemNickname;
+    request.startNumber = chain.startNumber;
+    request.startPosition = QVector3D(static_cast<float>(edited.startX), 0.0f, static_cast<float>(edited.startZ));
+    request.endPosition = QVector3D(static_cast<float>(edited.endX), 0.0f, static_cast<float>(edited.endZ));
+    request.ringCount = edited.ringCount;
+    request.archetype = edited.archetype.trimmed();
+    request.loadout = edited.loadout.trimmed();
+    request.reputation = factionNicknameFromDisplay(edited.reputationDisplay);
+    request.behavior = chain.behavior;
+    request.pilot = edited.pilot.trimmed();
+    request.difficultyLevel = edited.difficultyLevel;
+    request.idsInfo = chain.idsInfo;
+
+    QString idsError;
+    if (!resolveIdsStringInput(gameRoot,
+                               edited.routeName,
+                               chain.routeIdsName,
+                               initial.routeName,
+                               &request.routeIdsName,
+                               &idsError)
+        || !resolveIdsStringInput(gameRoot,
+                                  edited.startSpaceName,
+                                  chain.startSpaceNameId,
+                                  initial.startSpaceName,
+                                  &request.startSpaceNameId,
+                                  &idsError)
+        || !resolveIdsStringInput(gameRoot,
+                                  edited.endSpaceName,
+                                  chain.endSpaceNameId,
+                                  initial.endSpaceName,
+                                  &request.endSpaceNameId,
+                                  &idsError)) {
+        QMessageBox::warning(this,
+                             tr("Trade Lane bearbeiten"),
+                             idsError.trimmed().isEmpty()
+                                 ? tr("Die IDS-Texte der Trade Lane konnten nicht aktualisiert werden.")
+                                 : idsError);
+        return;
+    }
+
+    QSet<QString> occupiedNicknames;
+    QSet<QString> laneMembers;
+    for (const QString &nickname : m_selectedNicknames)
+        laneMembers.insert(nickname.trimmed().toLower());
+    for (const auto &obj : m_document->objects()) {
+        if (!obj)
+            continue;
+        const QString key = obj->nickname().trimmed().toLower();
+        if (!laneMembers.contains(key))
+            occupiedNicknames.insert(key);
+    }
+
+    QVector<std::shared_ptr<SolarObject>> replacementObjects;
+    QString rebuildError;
+    if (!TradeLaneEditService::buildReplacementObjects(chain,
+                                                       request,
+                                                       occupiedNicknames,
+                                                       &replacementObjects,
+                                                       &rebuildError)) {
+        QMessageBox::warning(this,
+                             tr("Trade Lane bearbeiten"),
+                             rebuildError.trimmed().isEmpty()
+                                 ? tr("Die Trade Lane konnte nicht neu aufgebaut werden.")
+                                 : rebuildError);
+        return;
+    }
+
+    auto *stack = flatlas::core::UndoManager::instance().stack();
+    stack->beginMacro(tr("Trade Lane bearbeiten"));
+    for (const auto &ring : chain.rings)
+        stack->push(new RemoveObjectCommand(m_document.get(), ring, tr("Remove Trade Lane Ring")));
+    for (const auto &ring : replacementObjects)
+        stack->push(new AddObjectCommand(m_document.get(), ring, tr("Add Trade Lane Ring")));
+    stack->endMacro();
+
+    refreshObjectList();
+    m_selectedNicknames.clear();
+    for (const auto &ring : replacementObjects)
+        m_selectedNicknames.append(ring->nickname());
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+    updateIniEditorForSelection();
+}
+
 void SystemEditorPage::onCreateBase()
 {
     createQuickObject(SolarObject::Station, QStringLiteral("new_base"), QStringLiteral("station"));
@@ -5244,9 +5505,9 @@ void SystemEditorPage::finalizeTradeLanePlacement(const QPointF &endScenePos)
     int startSpaceNameId = 0;
     int endSpaceNameId = 0;
     QString idsError;
-    if (!resolveIdsStringInput(gameRoot, request.routeName, &routeIdsName, &idsError)
-        || !resolveIdsStringInput(gameRoot, request.startSpaceName, &startSpaceNameId, &idsError)
-        || !resolveIdsStringInput(gameRoot, request.endSpaceName, &endSpaceNameId, &idsError)) {
+    if (!resolveIdsStringInput(gameRoot, request.routeName, 0, QString(), &routeIdsName, &idsError)
+        || !resolveIdsStringInput(gameRoot, request.startSpaceName, 0, QString(), &startSpaceNameId, &idsError)
+        || !resolveIdsStringInput(gameRoot, request.endSpaceName, 0, QString(), &endSpaceNameId, &idsError)) {
         QMessageBox::warning(this, tr("Trade Lane erstellen"),
                              idsError.trimmed().isEmpty()
                                  ? tr("Die IDS-Texte fuer die Trade Lane konnten nicht geschrieben werden.")

@@ -361,13 +361,23 @@ void populateFixedVisitCombo(QComboBox *combo)
     combo->setEnabled(false);
 }
 
-QDialogButtonBox *createDialogButtons(QDialog *dialog)
+QDialogButtonBox *createDialogButtons(QDialog *dialog, const QString &acceptText = QObject::tr("Erstellen"))
 {
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog);
-    buttons->button(QDialogButtonBox::Ok)->setText(QObject::tr("Erstellen"));
+    buttons->button(QDialogButtonBox::Ok)->setText(acceptText);
     QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, &QDialog::accept);
     QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
     return buttons;
+}
+
+QDoubleSpinBox *createCoordinateSpinBox(double value, QWidget *parent)
+{
+    auto *spin = new QDoubleSpinBox(parent);
+    spin->setRange(-10000000.0, 10000000.0);
+    spin->setDecimals(0);
+    spin->setSingleStep(1000.0);
+    spin->setValue(value);
+    return spin;
 }
 
 QComboBox *createEditableCombo(const QStringList &values, QWidget *parent)
@@ -683,6 +693,175 @@ CreateTradeLaneRequest CreateTradeLaneDialog::result() const
     value.startSpaceName = m_startSpaceNameEdit ? m_startSpaceNameEdit->text().trimmed() : QString();
     value.endSpaceName = m_endSpaceNameEdit ? m_endSpaceNameEdit->text().trimmed() : QString();
     return value;
+}
+
+EditTradeLaneDialog::EditTradeLaneDialog(const QString &laneSummary,
+                                         const QStringList &archetypes,
+                                         const QStringList &loadouts,
+                                         const QStringList &factions,
+                                         const QStringList &pilots,
+                                         const EditTradeLaneRequest &initial,
+                                         QWidget *parent)
+    : QDialog(parent)
+{
+    setWindowTitle(tr("Trade Lane bearbeiten"));
+    setMinimumWidth(560);
+
+    auto *layout = new QVBoxLayout(this);
+
+    auto *summaryLabel = new QLabel(laneSummary, this);
+    summaryLabel->setWordWrap(true);
+    summaryLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    layout->addWidget(summaryLabel);
+
+    auto *form = new QFormLayout();
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+
+    m_startXSpin = createCoordinateSpinBox(initial.startX, this);
+    form->addRow(tr("Start X:"), m_startXSpin);
+    m_startZSpin = createCoordinateSpinBox(initial.startZ, this);
+    form->addRow(tr("Start Z:"), m_startZSpin);
+    m_endXSpin = createCoordinateSpinBox(initial.endX, this);
+    form->addRow(tr("Ende X:"), m_endXSpin);
+    m_endZSpin = createCoordinateSpinBox(initial.endZ, this);
+    form->addRow(tr("Ende Z:"), m_endZSpin);
+
+    m_countSpin = new QSpinBox(this);
+    m_countSpin->setRange(2, 200);
+    m_countSpin->setValue(std::max(initial.ringCount, 2));
+    form->addRow(tr("Ring-Anzahl:"), m_countSpin);
+
+    m_spacingSpin = new QSpinBox(this);
+    m_spacingSpin->setRange(500, 50000);
+    m_spacingSpin->setSingleStep(500);
+    m_spacingSpin->setSuffix(tr(" m"));
+    m_spacingSpin->setValue(7500);
+    form->addRow(tr("Abstand:"), m_spacingSpin);
+
+    m_spacingInfoLabel = new QLabel(this);
+    m_spacingInfoLabel->setWordWrap(true);
+    m_spacingInfoLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    form->addRow(QString(), m_spacingInfoLabel);
+
+    m_archetypeCombo = createEditableCombo(archetypes, this);
+    m_archetypeCombo->setCurrentText(initial.archetype.trimmed());
+    form->addRow(tr("Archetype:"), m_archetypeCombo);
+
+    m_loadoutCombo = createEditableCombo(loadouts, this);
+    m_loadoutCombo->setCurrentText(initial.loadout.trimmed());
+    form->addRow(tr("Loadout:"), m_loadoutCombo);
+
+    m_reputationCombo = createEditableCombo(factions, this);
+    m_reputationCombo->setCurrentText(initial.reputationDisplay.trimmed());
+    form->addRow(tr("Reputation:"), m_reputationCombo);
+
+    m_difficultySpin = new QSpinBox(this);
+    m_difficultySpin->setRange(1, 7);
+    m_difficultySpin->setValue(std::max(initial.difficultyLevel, 1));
+    form->addRow(tr("difficulty_level:"), m_difficultySpin);
+
+    m_pilotCombo = createEditableCombo(pilots, this);
+    m_pilotCombo->setCurrentText(initial.pilot.trimmed());
+    form->addRow(tr("Pilot:"), m_pilotCombo);
+
+    m_routeNameEdit = new QLineEdit(initial.routeName.trimmed(), this);
+    form->addRow(tr("Route / ids_name:"), m_routeNameEdit);
+
+    m_startSpaceNameEdit = new QLineEdit(initial.startSpaceName.trimmed(), this);
+    form->addRow(tr("Start tradelane_space_name:"), m_startSpaceNameEdit);
+
+    m_endSpaceNameEdit = new QLineEdit(initial.endSpaceName.trimmed(), this);
+    form->addRow(tr("Ende tradelane_space_name:"), m_endSpaceNameEdit);
+
+    layout->addLayout(form);
+
+    auto *hintLabel = new QLabel(
+        tr("Lane-weite Felder werden auf die komplette Ring-Kette angewendet. "
+           "tradelane_space_name bleibt auf Start- und Endring beschraenkt."),
+        this);
+    hintLabel->setWordWrap(true);
+    hintLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    layout->addWidget(hintLabel);
+
+    auto *buttons = createDialogButtons(this, tr("Anwenden"));
+    auto *deleteButton = buttons->addButton(tr("Trade Lane loeschen"), QDialogButtonBox::DestructiveRole);
+    QObject::connect(deleteButton, &QPushButton::clicked, this, [this]() {
+        m_deleteRequested = true;
+        accept();
+    });
+    layout->addWidget(buttons);
+
+    connect(m_countSpin, &QSpinBox::valueChanged, this, &EditTradeLaneDialog::updateDerivedSpacing);
+    connect(m_spacingSpin, &QSpinBox::valueChanged, this, &EditTradeLaneDialog::updateCountFromSpacing);
+    connect(m_startXSpin, &QDoubleSpinBox::valueChanged, this, &EditTradeLaneDialog::updateDerivedSpacing);
+    connect(m_startZSpin, &QDoubleSpinBox::valueChanged, this, &EditTradeLaneDialog::updateDerivedSpacing);
+    connect(m_endXSpin, &QDoubleSpinBox::valueChanged, this, &EditTradeLaneDialog::updateDerivedSpacing);
+    connect(m_endZSpin, &QDoubleSpinBox::valueChanged, this, &EditTradeLaneDialog::updateDerivedSpacing);
+
+    updateDerivedSpacing();
+}
+
+double EditTradeLaneDialog::currentLaneLengthMeters() const
+{
+    if (!m_startXSpin || !m_startZSpin || !m_endXSpin || !m_endZSpin)
+        return 0.0;
+    const double dx = m_endXSpin->value() - m_startXSpin->value();
+    const double dz = m_endZSpin->value() - m_startZSpin->value();
+    return std::hypot(dx, dz);
+}
+
+void EditTradeLaneDialog::updateDerivedSpacing()
+{
+    if (!m_countSpin || !m_spacingInfoLabel)
+        return;
+
+    const double lengthMeters = currentLaneLengthMeters();
+    const int ringCount = std::max(m_countSpin->value(), 2);
+    const double spacingMeters = ringCount > 1
+        ? lengthMeters / static_cast<double>(ringCount - 1)
+        : lengthMeters;
+    m_spacingInfoLabel->setText(
+        tr("Lane-Laenge: %1 m. Bei %2 Ringen ergibt das ca. %3 m Abstand.")
+            .arg(QString::number(lengthMeters, 'f', 0))
+            .arg(ringCount)
+            .arg(QString::number(spacingMeters, 'f', 0)));
+}
+
+void EditTradeLaneDialog::updateCountFromSpacing(int spacingMeters)
+{
+    if (m_updatingSpacing || !m_countSpin)
+        return;
+
+    const int safeSpacing = std::max(spacingMeters, 1);
+    const int ringCount = std::max(2, qRound(currentLaneLengthMeters() / static_cast<double>(safeSpacing)) + 1);
+    m_updatingSpacing = true;
+    m_countSpin->setValue(ringCount);
+    m_updatingSpacing = false;
+    updateDerivedSpacing();
+}
+
+EditTradeLaneRequest EditTradeLaneDialog::result() const
+{
+    EditTradeLaneRequest value;
+    value.startX = m_startXSpin ? m_startXSpin->value() : 0.0;
+    value.startZ = m_startZSpin ? m_startZSpin->value() : 0.0;
+    value.endX = m_endXSpin ? m_endXSpin->value() : 0.0;
+    value.endZ = m_endZSpin ? m_endZSpin->value() : 0.0;
+    value.ringCount = m_countSpin ? m_countSpin->value() : 2;
+    value.archetype = m_archetypeCombo ? m_archetypeCombo->currentText().trimmed() : QString();
+    value.loadout = m_loadoutCombo ? m_loadoutCombo->currentText().trimmed() : QString();
+    value.reputationDisplay = m_reputationCombo ? m_reputationCombo->currentText().trimmed() : QString();
+    value.difficultyLevel = m_difficultySpin ? m_difficultySpin->value() : 1;
+    value.pilot = m_pilotCombo ? m_pilotCombo->currentText().trimmed() : QString();
+    value.routeName = m_routeNameEdit ? m_routeNameEdit->text().trimmed() : QString();
+    value.startSpaceName = m_startSpaceNameEdit ? m_startSpaceNameEdit->text().trimmed() : QString();
+    value.endSpaceName = m_endSpaceNameEdit ? m_endSpaceNameEdit->text().trimmed() : QString();
+    return value;
+}
+
+bool EditTradeLaneDialog::deleteRequested() const
+{
+    return m_deleteRequested;
 }
 
 CreatePatrolZoneDialog::CreatePatrolZoneDialog(const QString &suggestedNickname,

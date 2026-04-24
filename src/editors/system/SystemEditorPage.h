@@ -18,6 +18,7 @@ struct CreateSimpleZoneRequest;
 struct CreatePatrolZoneRequest;
 struct CreateBuoyRequest;
 struct CreateTradeLaneRequest;
+struct EditTradeLaneRequest;
 struct ExclusionShellSettings;
 }
 class QToolBar;
@@ -129,6 +130,7 @@ private:
     void onCreateWeaponPlatform();
     void onCreateDepot();
     void onCreateTradeLane();
+    void onEditTradeLane();
     void onCreateBase();
     void onCreateDockingRing();
     void onCreateAsteroidNebulaZone();
