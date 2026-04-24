@@ -95,6 +95,7 @@ private:
     QStringList objectGroupNicknames(const QString &rootNickname) const;
     bool isPlanetLikeObject(const flatlas::domain::SolarObject &obj) const;
     bool isChildObject(const flatlas::domain::SolarObject &obj) const;
+    flatlas::domain::SolarObject *findBaseHostForSelection() const;
     flatlas::domain::SolarObject *findRingHostForSelection() const;
     flatlas::domain::SolarObject *findRingHostAtScenePos(const QPointF &scenePos) const;
     bool openRingDialogForHost(flatlas::domain::SolarObject *hostObject, bool forceEnableForCreate);
@@ -220,6 +221,7 @@ private:
     void removeLinkedFieldSectionsForNicknames(const QStringList &zoneNicknames);
     bool writePendingGeneratedZoneFiles(QString *errorMessage);
     bool writePendingTextFiles(QString *errorMessage);
+    void stagePendingTextWrite(const QString &absolutePath, const QString &content);
     void syncLightSourcesInScene();
     int findLightSourceSectionIndexByNickname(const QString &nickname) const;
     QStringList lightSourceNicknames() const;

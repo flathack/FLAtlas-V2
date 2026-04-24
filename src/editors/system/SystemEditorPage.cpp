@@ -5,6 +5,8 @@
 #include "SystemPersistence.h"
 #include "SystemSettingsDialog.h"
 #include "SystemSettingsService.h"
+#include "BaseEditDialog.h"
+#include "BaseEditService.h"
 #include "PlanetCreationService.h"
 #include "RingEditService.h"
 #include "SystemUndoCommands.h"
@@ -68,6 +70,7 @@
 #include <QDesktopServices>
 #include <QFont>
 #include <QPalette>
+#include <QSaveFile>
 #include <QDir>
 #include <QDirIterator>
 #include <QSignalBlocker>
@@ -1668,7 +1671,65 @@ void SystemEditorPage::setupRightSidebar()
 
     m_editBaseButton = makeSidebarButton(tr("Base"), editingGroup);
     connect(m_editBaseButton, &QPushButton::clicked, this, [this]() {
-        showNotYetPorted(tr("Base bearbeiten"), QStringLiteral("FLAtlas/fl_editor/main_window.py::_edit_base"));
+        if (!m_document)
+            return;
+
+        SolarObject *hostObject = findBaseHostForSelection();
+        if (!hostObject) {
+            QMessageBox::information(this,
+                                     tr("Base bearbeiten"),
+                                     tr("Bitte waehle ein Objekt mit verknuepfter Base aus."));
+            return;
+        }
+
+        QHash<QString, QString> overrides;
+        for (auto it = m_pendingTextFileWrites.constBegin(); it != m_pendingTextFileWrites.constEnd(); ++it)
+            overrides.insert(it.key(), it.value().content);
+
+        BaseEditState state;
+        QString errorMessage;
+        if (!BaseEditService::loadState(*m_document,
+                                        *hostObject,
+                                        flatlas::core::EditingContext::instance().primaryGamePath(),
+                                        overrides,
+                                        &state,
+                                        &errorMessage)) {
+            QMessageBox::warning(this,
+                                 tr("Base bearbeiten"),
+                                 errorMessage.trimmed().isEmpty()
+                                     ? tr("Die Base-Daten konnten nicht geladen werden.")
+                                     : errorMessage);
+            return;
+        }
+
+        BaseEditDialog dialog(state, overrides, this);
+        if (dialog.exec() != QDialog::Accepted)
+            return;
+
+        BaseApplyResult applyResult;
+        if (!BaseEditService::applyEdit(*hostObject,
+                                        dialog.state(),
+                                        flatlas::core::EditingContext::instance().primaryGamePath(),
+                                        overrides,
+                                        &applyResult,
+                                        &errorMessage)) {
+            QMessageBox::warning(this,
+                                 tr("Base bearbeiten"),
+                                 errorMessage.trimmed().isEmpty()
+                                     ? tr("Die Base konnte nicht aktualisiert werden.")
+                                     : errorMessage);
+            return;
+        }
+
+        for (const BaseStagedWrite &write : applyResult.stagedWrites)
+            stagePendingTextWrite(write.absolutePath, write.content);
+
+        m_document->setDirty(true);
+        refreshObjectList();
+        syncTreeSelectionFromNicknames({hostObject->nickname()});
+        syncSceneSelectionFromNicknames({hostObject->nickname()});
+        updateSelectionSummary();
+        updateIniEditorForSelection();
     });
     editingLayout->addWidget(m_editBaseButton);
 
@@ -2957,9 +3018,9 @@ void SystemEditorPage::updateSidebarButtons()
                                              && selectedZone
                                              && isFieldZone(*selectedZone));
     if (m_editBaseButton)
-        m_editBaseButton->setEnabled(hasSingleSelection && isObject && objectType == SolarObject::Station);
+        m_editBaseButton->setEnabled(hasSingleSelection && findBaseHostForSelection() != nullptr);
     if (m_baseBuilderButton)
-        m_baseBuilderButton->setEnabled(hasSingleSelection && isObject && objectType == SolarObject::Station);
+        m_baseBuilderButton->setEnabled(hasSingleSelection && findBaseHostForSelection() != nullptr);
     if (m_saveFileButton)
         m_saveFileButton->setEnabled(m_document != nullptr);
     if (m_objectJumpButton)
@@ -4545,7 +4606,66 @@ void SystemEditorPage::onEditTradeLane()
 
 void SystemEditorPage::onCreateBase()
 {
-    createQuickObject(SolarObject::Station, QStringLiteral("new_base"), QStringLiteral("station"));
+    if (!m_document || !m_mapView || !m_mapScene || m_mapView->isPlacementModeActive())
+        return;
+
+    QString errorMessage;
+    BaseEditState initialState = BaseEditService::makeCreateState(*m_document,
+                                                                  flatlas::core::EditingContext::instance().primaryGamePath(),
+                                                                  &errorMessage);
+    if (!errorMessage.trimmed().isEmpty()) {
+        QMessageBox::warning(this, tr("Base erstellen"), errorMessage);
+        return;
+    }
+
+    QHash<QString, QString> overrides;
+    for (auto it = m_pendingTextFileWrites.constBegin(); it != m_pendingTextFileWrites.constEnd(); ++it)
+        overrides.insert(it.key(), it.value().content);
+
+    BaseEditDialog dialog(initialState, overrides, this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const BaseEditState requestState = dialog.state();
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [this, placementGuard, requestState](const QPointF &scenePos) {
+        placementGuard->deleteLater();
+        QString errorMessage;
+        BaseApplyResult applyResult;
+        QHash<QString, QString> overrides;
+        for (auto it = m_pendingTextFileWrites.constBegin(); it != m_pendingTextFileWrites.constEnd(); ++it)
+            overrides.insert(it.key(), it.value().content);
+        if (!BaseEditService::applyCreate(requestState,
+                                          scenePos,
+                                          flatlas::core::EditingContext::instance().primaryGamePath(),
+                                          overrides,
+                                          &applyResult,
+                                          &errorMessage)) {
+            QMessageBox::warning(this,
+                                 tr("Base erstellen"),
+                                 errorMessage.trimmed().isEmpty()
+                                     ? tr("Die Base konnte nicht erstellt werden.")
+                                     : errorMessage);
+            return;
+        }
+
+        for (const BaseStagedWrite &write : applyResult.stagedWrites)
+            stagePendingTextWrite(write.absolutePath, write.content);
+
+        auto *cmd = new AddObjectCommand(m_document.get(), applyResult.createdObject, tr("Create Base"));
+        flatlas::core::UndoManager::instance().push(cmd);
+        m_selectedNicknames = {applyResult.createdObject->nickname()};
+        refreshObjectList();
+        syncTreeSelectionFromNicknames(m_selectedNicknames);
+        syncSceneSelectionFromNicknames(m_selectedNicknames);
+        updateSelectionSummary();
+        updateIniEditorForSelection();
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [placementGuard]() { placementGuard->deleteLater(); });
+    m_mapView->setPlacementMode(true,
+                                tr("Klicke auf die Map, um die neue Base zu platzieren."));
 }
 
 void SystemEditorPage::onCreateDockingRing()
@@ -6088,7 +6208,7 @@ bool SystemEditorPage::writePendingGeneratedZoneFiles(QString *errorMessage)
             continue;
 
         QDir().mkpath(QFileInfo(fileData.absolutePath).absolutePath());
-        QFile file(fileData.absolutePath);
+        QSaveFile file(fileData.absolutePath);
         if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
             if (errorMessage) {
                 *errorMessage = tr("Die generierte Referenzdatei konnte nicht geschrieben werden:\n%1")
@@ -6097,6 +6217,13 @@ bool SystemEditorPage::writePendingGeneratedZoneFiles(QString *errorMessage)
             return false;
         }
         file.write(fileData.content.toUtf8());
+        if (!file.commit()) {
+            if (errorMessage) {
+                *errorMessage = tr("Die generierte Referenzdatei konnte nicht geschrieben werden:\n%1")
+                                    .arg(fileData.absolutePath);
+            }
+            return false;
+        }
     }
     return true;
 }
@@ -6108,16 +6235,28 @@ bool SystemEditorPage::writePendingTextFiles(QString *errorMessage)
         if (fileData.absolutePath.trimmed().isEmpty())
             continue;
         QDir().mkpath(QFileInfo(fileData.absolutePath).absolutePath());
-        QFile file(fileData.absolutePath);
+        QSaveFile file(fileData.absolutePath);
         if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
             if (errorMessage)
-                *errorMessage = tr("Die verknüpfte Feld-INI konnte nicht geschrieben werden:\n%1")
+                *errorMessage = tr("Die verknuepfte Datei konnte nicht geschrieben werden:\n%1")
                                     .arg(fileData.absolutePath);
             return false;
         }
         file.write(fileData.content.toUtf8());
+        if (!file.commit()) {
+            if (errorMessage)
+                *errorMessage = tr("Die verknuepfte Datei konnte nicht geschrieben werden:\n%1")
+                                    .arg(fileData.absolutePath);
+            return false;
+        }
     }
     return true;
+}
+
+void SystemEditorPage::stagePendingTextWrite(const QString &absolutePath, const QString &content)
+{
+    const QString key = QDir::cleanPath(absolutePath).toLower();
+    m_pendingTextFileWrites.insert(key, PendingTextFileWrite{absolutePath, content});
 }
 
 SolarObject *SystemEditorPage::findObjectByNickname(const QString &nickname) const
@@ -6140,6 +6279,17 @@ ZoneItem *SystemEditorPage::findZoneByNickname(const QString &nickname) const
             return zone.get();
     }
     return nullptr;
+}
+
+SolarObject *SystemEditorPage::findBaseHostForSelection() const
+{
+    if (!m_document || m_selectedNicknames.size() != 1)
+        return nullptr;
+
+    SolarObject *object = findObjectByNickname(primarySelectedNickname());
+    if (!object)
+        return nullptr;
+    return BaseEditService::objectHasBase(*object) ? object : nullptr;
 }
 
 int SystemEditorPage::findLightSourceSectionIndexByNickname(const QString &nickname) const

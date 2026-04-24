@@ -1,6 +1,8 @@
 # flatlas_editors – Alle Editor-Pages
 add_library(flatlas_editors STATIC
     system/SystemEditorPage.h system/SystemEditorPage.cpp
+    system/BaseEditService.h system/BaseEditService.cpp
+    system/BaseEditDialog.h system/BaseEditDialog.cpp
     system/SystemDisplayFilterDialog.h system/SystemDisplayFilterDialog.cpp
     system/SystemSettingsDialog.h system/SystemSettingsDialog.cpp
     system/SystemSettingsService.h system/SystemSettingsService.cpp
