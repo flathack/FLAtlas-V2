@@ -57,6 +57,29 @@ QString itemNickname(QGraphicsItem *item)
     return {};
 }
 
+QString rawEntryValue(const flatlas::domain::SolarObject &obj, const QString &key)
+{
+    const auto entries = obj.rawEntries();
+    for (int index = entries.size() - 1; index >= 0; --index) {
+        if (entries[index].first.compare(key, Qt::CaseInsensitive) == 0)
+            return entries[index].second.trimmed();
+    }
+    return {};
+}
+
+bool isTradeLaneObject(const std::shared_ptr<flatlas::domain::SolarObject> &obj)
+{
+    if (!obj)
+        return false;
+    if (obj->type() == flatlas::domain::SolarObject::TradeLane)
+        return true;
+
+    const QString archetype = obj->archetype().trimmed().toLower();
+    return archetype.contains(QLatin1String("trade_lane_ring"))
+        || !rawEntryValue(*obj, QStringLiteral("prev_ring")).isEmpty()
+        || !rawEntryValue(*obj, QStringLiteral("next_ring")).isEmpty();
+}
+
 }
 
 namespace flatlas::rendering {
@@ -76,6 +99,7 @@ MapScene::MapScene(QObject *parent)
     connect(this, &QGraphicsScene::selectionChanged, this, [this]() {
         const auto sel = selectedItems();
         if (sel.isEmpty()) {
+            clearTradeLaneSelectionOverlay();
             emit selectionCleared();
             emit selectionNicknamesChanged({});
             return;
@@ -88,6 +112,7 @@ MapScene::MapScene(QObject *parent)
                 nicknames.append(nickname);
         }
         nicknames.removeDuplicates();
+        updateTradeLaneSelectionOverlay(nicknames);
         emit selectionNicknamesChanged(nicknames);
         if (!nicknames.isEmpty())
             emit objectSelected(nicknames.first());
@@ -166,6 +191,7 @@ void MapScene::loadDocument(flatlas::domain::SystemDocument *doc,
 
 void MapScene::clear()
 {
+    clearTradeLaneSelectionOverlay();
     if (m_document) {
         disconnect(m_document, nullptr, this, nullptr);
         m_document = nullptr;
@@ -245,12 +271,14 @@ void MapScene::selectNicknames(const QStringList &nicknames)
     blocker.unblock();
 
     if (selectedSet.isEmpty()) {
+        clearTradeLaneSelectionOverlay();
         emit selectionCleared();
         emit selectionNicknamesChanged({});
         return;
     }
 
     const QStringList currentSelection = selectedNicknames();
+    updateTradeLaneSelectionOverlay(currentSelection);
     emit selectionNicknamesChanged(currentSelection);
     if (!currentSelection.isEmpty())
         emit objectSelected(currentSelection.first());
@@ -320,6 +348,80 @@ void MapScene::addLightSource(const LightSourceVisual &lightSource)
     item->setPos(flToQt(lightSource.position.x(), lightSource.position.z()));
     item->setData(0, lightSource.nickname);
     addItem(item);
+}
+
+void MapScene::clearTradeLaneSelectionOverlay()
+{
+    for (TradelaneItem *item : std::as_const(m_tradeLaneSelectionOverlay)) {
+        if (!item)
+            continue;
+        removeItem(item);
+        delete item;
+    }
+    m_tradeLaneSelectionOverlay.clear();
+}
+
+void MapScene::updateTradeLaneSelectionOverlay(const QStringList &nicknames)
+{
+    clearTradeLaneSelectionOverlay();
+    if (!m_document || nicknames.size() < 2)
+        return;
+
+    QSet<QString> selectedKeys;
+    for (const QString &nickname : nicknames)
+        selectedKeys.insert(nickname.trimmed().toLower());
+
+    QHash<QString, std::shared_ptr<flatlas::domain::SolarObject>> tradeLaneObjects;
+    for (const auto &obj : m_document->objects()) {
+        if (!isTradeLaneObject(obj))
+            continue;
+        const QString key = obj->nickname().trimmed().toLower();
+        if (selectedKeys.contains(key))
+            tradeLaneObjects.insert(key, obj);
+    }
+    if (tradeLaneObjects.size() < 2)
+        return;
+
+    std::shared_ptr<flatlas::domain::SolarObject> head;
+    for (auto it = tradeLaneObjects.cbegin(); it != tradeLaneObjects.cend(); ++it) {
+        const QString prevKey = rawEntryValue(*it.value(), QStringLiteral("prev_ring")).toLower();
+        if (prevKey.isEmpty() || !tradeLaneObjects.contains(prevKey)) {
+            head = it.value();
+            break;
+        }
+    }
+    if (!head)
+        head = tradeLaneObjects.cbegin().value();
+
+    QVector<std::shared_ptr<flatlas::domain::SolarObject>> ordered;
+    QSet<QString> seen;
+    auto current = head;
+    while (current) {
+        const QString currentKey = current->nickname().trimmed().toLower();
+        if (seen.contains(currentKey))
+            break;
+        seen.insert(currentKey);
+        ordered.append(current);
+
+        const QString nextKey = rawEntryValue(*current, QStringLiteral("next_ring")).toLower();
+        if (nextKey.isEmpty() || !tradeLaneObjects.contains(nextKey))
+            break;
+        current = tradeLaneObjects.value(nextKey);
+    }
+    if (ordered.size() < 2)
+        return;
+
+    for (int index = 0; index < ordered.size() - 1; ++index) {
+        const QPointF start = flToQt(ordered[index]->position().x(), ordered[index]->position().z());
+        const QPointF end = flToQt(ordered[index + 1]->position().x(), ordered[index + 1]->position().z());
+        auto *item = new TradelaneItem(
+            QStringLiteral("%1 -> %2").arg(ordered[index]->nickname(), ordered[index + 1]->nickname()),
+            start,
+            end);
+        item->setHighlighted(true);
+        addItem(item);
+        m_tradeLaneSelectionOverlay.append(item);
+    }
 }
 
 void MapScene::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObject> &obj)

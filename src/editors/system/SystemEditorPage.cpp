@@ -598,6 +598,40 @@ QString idsDisplayTextFromTable(const IdsStringTable &ids, int globalId)
     return globalId > 0 ? ids.getString(globalId).trimmed() : QString();
 }
 
+std::shared_ptr<SolarObject> cloneSolarObject(const std::shared_ptr<SolarObject> &source)
+{
+    if (!source)
+        return {};
+
+    auto clone = std::make_shared<SolarObject>();
+    clone->setNickname(source->nickname());
+    clone->setArchetype(source->archetype());
+    clone->setPosition(source->position());
+    clone->setRotation(source->rotation());
+    clone->setType(source->type());
+    clone->setBase(source->base());
+    clone->setDockWith(source->dockWith());
+    clone->setGotoTarget(source->gotoTarget());
+    clone->setLoadout(source->loadout());
+    clone->setComment(source->comment());
+    clone->setIdsName(source->idsName());
+    clone->setIdsInfo(source->idsInfo());
+    clone->setRawEntries(source->rawEntries());
+    return clone;
+}
+
+QVector<QPair<QString, QString>> removeRawEntriesByKey(const QVector<QPair<QString, QString>> &entries,
+                                                       const QString &key)
+{
+    QVector<QPair<QString, QString>> filtered;
+    filtered.reserve(entries.size());
+    for (const auto &entry : entries) {
+        if (entry.first.compare(key, Qt::CaseInsensitive) != 0)
+            filtered.append(entry);
+    }
+    return filtered;
+}
+
 struct TradeLaneDialogCatalog {
     QString gameRoot;
     QStringList archetypes;
@@ -4060,18 +4094,57 @@ void SystemEditorPage::onEditTradeLane()
     if (!m_document)
         return;
 
-    QString laneError;
-    const auto chainOpt = TradeLaneEditService::detectChain(*m_document, primarySelectedNickname(), &laneError);
-    if (!chainOpt.has_value()) {
+    const TradeLaneChainDetection detection = TradeLaneEditService::inspectChain(*m_document, primarySelectedNickname());
+    if (!detection.chain.has_value()) {
         QMessageBox::warning(this,
                              tr("Trade Lane bearbeiten"),
-                             laneError.trimmed().isEmpty()
+                             detection.errorMessage.trimmed().isEmpty()
                                  ? tr("Die ausgewaehlte Trade Lane konnte nicht erkannt werden.")
-                                 : laneError);
+                                 : detection.errorMessage);
         return;
     }
 
-    const TradeLaneChain chain = *chainOpt;
+    if (detection.issue == TradeLaneChainIssue::MissingPrevRing
+        || detection.issue == TradeLaneChainIssue::MissingNextRing) {
+        const QString brokenKey = detection.issue == TradeLaneChainIssue::MissingPrevRing
+            ? QStringLiteral("prev_ring")
+            : QStringLiteral("next_ring");
+        const int answer = QMessageBox::question(
+            this,
+            tr("Trade Lane reparieren"),
+            tr("Die Trade Lane referenziert einen fehlenden Ring '%1'.\n\n"
+               "Soll der defekte %2-Verweis automatisch entfernt werden, damit die vorhandene Kette bearbeitet werden kann?")
+                .arg(detection.referencedNickname, brokenKey),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::Yes);
+        if (answer != QMessageBox::Yes)
+            return;
+
+        auto repairedRing = cloneSolarObject(detection.boundaryRing);
+        if (!repairedRing) {
+            QMessageBox::warning(this,
+                                 tr("Trade Lane reparieren"),
+                                 tr("Der defekte Ring konnte nicht fuer die Reparatur vorbereitet werden."));
+            return;
+        }
+        repairedRing->setRawEntries(removeRawEntriesByKey(repairedRing->rawEntries(), brokenKey));
+
+        auto *stack = flatlas::core::UndoManager::instance().stack();
+        stack->beginMacro(tr("Trade Lane reparieren"));
+        stack->push(new RemoveObjectCommand(m_document.get(), detection.boundaryRing, tr("Remove Broken Trade Lane Ring")));
+        stack->push(new AddObjectCommand(m_document.get(), repairedRing, tr("Add Repaired Trade Lane Ring")));
+        stack->endMacro();
+
+        refreshObjectList();
+        m_selectedNicknames = {repairedRing->nickname()};
+        syncTreeSelectionFromNicknames(m_selectedNicknames);
+        syncSceneSelectionFromNicknames(m_selectedNicknames);
+        updateSelectionSummary();
+        onEditTradeLane();
+        return;
+    }
+
+    const TradeLaneChain chain = *detection.chain;
     m_selectedNicknames = TradeLaneEditService::memberNicknames(chain);
     syncTreeSelectionFromNicknames(m_selectedNicknames);
     syncSceneSelectionFromNicknames(m_selectedNicknames);

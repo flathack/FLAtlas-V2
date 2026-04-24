@@ -55,6 +55,7 @@ class TestTradeLaneEditService : public QObject {
     Q_OBJECT
 private slots:
     void detectsOrderedChain();
+    void detectsRepairableMissingRing();
     void rebuildsLaneConsistently();
 };
 
@@ -101,6 +102,43 @@ void TestTradeLaneEditService::detectsOrderedChain()
              QStringList({QStringLiteral("Rh05_Trade_Lane_Ring_1"),
                           QStringLiteral("Rh05_Trade_Lane_Ring_2"),
                           QStringLiteral("Rh05_Trade_Lane_Ring_3")}));
+}
+
+void TestTradeLaneEditService::detectsRepairableMissingRing()
+{
+    SystemDocument document;
+    document.setFilePath(QStringLiteral("C:/Tmp/Hi01.ini"));
+    document.addObject(makeRing(QStringLiteral("Hi01_Trade_Lane_Ring_5"),
+                                QVector3D(0.0f, 0.0f, 0.0f),
+                                QString(),
+                                QStringLiteral("Hi01_Trade_Lane_Ring_6"),
+                                QStringLiteral("trade_lane_ring_li_01"),
+                                456,
+                                2001));
+    document.addObject(makeRing(QStringLiteral("Hi01_Trade_Lane_Ring_6"),
+                                QVector3D(5000.0f, 0.0f, 0.0f),
+                                QStringLiteral("Hi01_Trade_Lane_Ring_5"),
+                                QStringLiteral("Hi01_Trade_Lane_Ring_7"),
+                                QStringLiteral("trade_lane_ring_li_01"),
+                                456));
+    document.addObject(makeRing(QStringLiteral("Hi01_Trade_Lane_Ring_7"),
+                                QVector3D(10000.0f, 0.0f, 0.0f),
+                                QStringLiteral("Hi01_Trade_Lane_Ring_6"),
+                                QStringLiteral("Hi01_Trade_Lane_Ring_8"),
+                                QStringLiteral("trade_lane_ring_li_01"),
+                                456,
+                                2002));
+
+    const TradeLaneChainDetection detection = TradeLaneEditService::inspectChain(
+        document,
+        QStringLiteral("Hi01_Trade_Lane_Ring_6"));
+
+    QVERIFY(detection.chain.has_value());
+    QCOMPARE(detection.issue, TradeLaneChainIssue::MissingNextRing);
+    QCOMPARE(detection.referencedNickname, QStringLiteral("hi01_trade_lane_ring_8"));
+    QVERIFY(detection.boundaryRing);
+    QCOMPARE(detection.boundaryRing->nickname(), QStringLiteral("Hi01_Trade_Lane_Ring_7"));
+    QCOMPARE(detection.chain->rings.size(), 3);
 }
 
 void TestTradeLaneEditService::rebuildsLaneConsistently()

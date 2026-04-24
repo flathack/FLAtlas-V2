@@ -15,6 +15,7 @@ namespace flatlas::rendering {
 
 class SolarObjectItem;
 class ZoneItem2D;
+class TradelaneItem;
 
 class MapScene : public QGraphicsScene {
     Q_OBJECT
@@ -54,10 +55,13 @@ private:
     void addSolarObject(const std::shared_ptr<flatlas::domain::SolarObject> &obj);
     void addZone(const std::shared_ptr<flatlas::domain::ZoneItem> &zone);
     void addLightSource(const LightSourceVisual &lightSource);
+    void clearTradeLaneSelectionOverlay();
+    void updateTradeLaneSelectionOverlay(const QStringList &nicknames);
 
     flatlas::domain::SystemDocument *m_document = nullptr;
     bool m_gridVisible = true;
     bool m_moveEnabled = false;
+    QVector<TradelaneItem *> m_tradeLaneSelectionOverlay;
     static constexpr double kScale = 0.01; // Freelancer coords → scene coords
 };
 

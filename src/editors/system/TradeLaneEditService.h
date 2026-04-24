@@ -16,6 +16,16 @@ class SystemDocument;
 
 namespace flatlas::editors {
 
+enum class TradeLaneChainIssue {
+    None,
+    NotTradeLane,
+    MissingPrevRing,
+    MissingNextRing,
+    CyclicPrevLink,
+    CyclicNextLink,
+    TooFewRings,
+};
+
 struct TradeLaneChain {
     QVector<std::shared_ptr<flatlas::domain::SolarObject>> rings;
     QString systemNickname;
@@ -32,6 +42,14 @@ struct TradeLaneChain {
     int idsInfo = 66170;
     QVector3D startPosition;
     QVector3D endPosition;
+};
+
+struct TradeLaneChainDetection {
+    std::optional<TradeLaneChain> chain;
+    TradeLaneChainIssue issue = TradeLaneChainIssue::None;
+    QString referencedNickname;
+    std::shared_ptr<flatlas::domain::SolarObject> boundaryRing;
+    QString errorMessage;
 };
 
 struct TradeLaneEditRequest {
@@ -54,6 +72,9 @@ struct TradeLaneEditRequest {
 
 class TradeLaneEditService {
 public:
+    static TradeLaneChainDetection inspectChain(const flatlas::domain::SystemDocument &document,
+                                                const QString &selectedNickname);
+
     static std::optional<TradeLaneChain> detectChain(const flatlas::domain::SystemDocument &document,
                                                      const QString &selectedNickname,
                                                      QString *errorMessage = nullptr);

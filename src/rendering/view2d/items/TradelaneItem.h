@@ -14,6 +14,7 @@ public:
                            QGraphicsItem *parent = nullptr);
 
     QString nickname() const { return m_nickname; }
+    void setHighlighted(bool highlighted);
 
 private:
     QString m_nickname;

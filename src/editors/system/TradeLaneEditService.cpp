@@ -163,16 +163,17 @@ QVector<QPair<QString, QString>> buildRawEntries(const QVector<QPair<QString, QS
 
 } // namespace
 
-std::optional<TradeLaneChain> TradeLaneEditService::detectChain(const flatlas::domain::SystemDocument &document,
-                                                                const QString &selectedNickname,
-                                                                QString *errorMessage)
+TradeLaneChainDetection TradeLaneEditService::inspectChain(const flatlas::domain::SystemDocument &document,
+                                                           const QString &selectedNickname)
 {
+    TradeLaneChainDetection detection;
+
     const QString selectedKey = selectedNickname.trimmed().toLower();
     const auto lanes = tradeLaneMap(document);
     if (!lanes.contains(selectedKey)) {
-        if (errorMessage)
-            *errorMessage = QObject::tr("Das ausgewaehlte Objekt gehoert zu keiner Trade Lane.");
-        return std::nullopt;
+        detection.issue = TradeLaneChainIssue::NotTradeLane;
+        detection.errorMessage = QObject::tr("Das ausgewaehlte Objekt gehoert zu keiner Trade Lane.");
+        return detection;
     }
 
     auto current = lanes.value(selectedKey);
@@ -180,14 +181,21 @@ std::optional<TradeLaneChain> TradeLaneEditService::detectChain(const flatlas::d
     while (current) {
         const QString currentKey = current->nickname().trimmed().toLower();
         if (walked.contains(currentKey)) {
-            if (errorMessage)
-                *errorMessage = QObject::tr("Die Trade Lane enthaelt eine zyklische prev_ring-Verkettung.");
-            return std::nullopt;
+            detection.issue = TradeLaneChainIssue::CyclicPrevLink;
+            detection.errorMessage = QObject::tr("Die Trade Lane enthaelt eine zyklische prev_ring-Verkettung.");
+            return detection;
         }
         walked.insert(currentKey);
         const QString prevKey = rawEntryValue(*current, QStringLiteral("prev_ring")).toLower();
-        if (prevKey.isEmpty() || !lanes.contains(prevKey))
+        if (prevKey.isEmpty())
             break;
+        if (!lanes.contains(prevKey)) {
+            detection.issue = TradeLaneChainIssue::MissingPrevRing;
+            detection.referencedNickname = prevKey;
+            detection.boundaryRing = current;
+            detection.errorMessage = QObject::tr("Die Trade Lane referenziert einen fehlenden Ring '%1'.").arg(prevKey);
+            break;
+        }
         current = lanes.value(prevKey);
     }
 
@@ -196,9 +204,9 @@ std::optional<TradeLaneChain> TradeLaneEditService::detectChain(const flatlas::d
     while (current) {
         const QString currentKey = current->nickname().trimmed().toLower();
         if (seen.contains(currentKey)) {
-            if (errorMessage)
-                *errorMessage = QObject::tr("Die Trade Lane enthaelt eine zyklische next_ring-Verkettung.");
-            return std::nullopt;
+            detection.issue = TradeLaneChainIssue::CyclicNextLink;
+            detection.errorMessage = QObject::tr("Die Trade Lane enthaelt eine zyklische next_ring-Verkettung.");
+            return detection;
         }
         seen.insert(currentKey);
         chain.rings.append(current);
@@ -207,17 +215,21 @@ std::optional<TradeLaneChain> TradeLaneEditService::detectChain(const flatlas::d
         if (nextKey.isEmpty())
             break;
         if (!lanes.contains(nextKey)) {
-            if (errorMessage)
-                *errorMessage = QObject::tr("Die Trade Lane referenziert einen fehlenden Ring '%1'.").arg(nextKey);
-            return std::nullopt;
+            if (detection.issue == TradeLaneChainIssue::None) {
+                detection.issue = TradeLaneChainIssue::MissingNextRing;
+                detection.referencedNickname = nextKey;
+                detection.boundaryRing = current;
+                detection.errorMessage = QObject::tr("Die Trade Lane referenziert einen fehlenden Ring '%1'.").arg(nextKey);
+            }
+            break;
         }
         current = lanes.value(nextKey);
     }
 
     if (chain.rings.size() < 2) {
-        if (errorMessage)
-            *errorMessage = QObject::tr("Eine Trade Lane muss aus mindestens zwei Ringen bestehen.");
-        return std::nullopt;
+        detection.issue = TradeLaneChainIssue::TooFewRings;
+        detection.errorMessage = QObject::tr("Eine Trade Lane muss aus mindestens zwei Ringen bestehen.");
+        return detection;
     }
 
     QString parsedSystemNickname;
@@ -263,7 +275,22 @@ std::optional<TradeLaneChain> TradeLaneEditService::detectChain(const flatlas::d
         }
     }
 
-    return chain;
+    detection.chain = chain;
+    return detection;
+}
+
+std::optional<TradeLaneChain> TradeLaneEditService::detectChain(const flatlas::domain::SystemDocument &document,
+                                                                const QString &selectedNickname,
+                                                                QString *errorMessage)
+{
+    const TradeLaneChainDetection detection = inspectChain(document, selectedNickname);
+    if (!detection.chain.has_value() || detection.issue != TradeLaneChainIssue::None) {
+        if (errorMessage)
+            *errorMessage = detection.errorMessage;
+        return std::nullopt;
+    }
+
+    return detection.chain;
 }
 
 QStringList TradeLaneEditService::memberNicknames(const TradeLaneChain &chain)
