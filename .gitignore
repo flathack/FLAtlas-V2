@@ -1,5 +1,6 @@
 # Build
 build/
+build-mingw-ci/
 cmake-build-*/
 out/
 
