@@ -61,6 +61,7 @@ private:
     QPixmap m_topViewIcon;
     qreal m_baseRadius = 0.0;
     qreal m_currentRadius = 0.0;
+    qreal m_atmosphereRadius = 0.0;
     qreal m_hoverProgress = 0.0;
     bool m_objectVisibleByFilter = true;
     bool m_labelVisibleByFilter = true;

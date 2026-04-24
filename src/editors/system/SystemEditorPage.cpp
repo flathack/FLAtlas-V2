@@ -6265,6 +6265,8 @@ bool SystemEditorPage::isPlanetLikeObject(const SolarObject &obj) const
 {
     if (obj.type() == SolarObject::Planet)
         return true;
+    if (obj.type() == SolarObject::Sun)
+        return true;
     return obj.archetype().contains(QStringLiteral("planet"), Qt::CaseInsensitive);
 }
 

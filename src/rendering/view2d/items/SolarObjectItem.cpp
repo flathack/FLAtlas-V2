@@ -52,6 +52,16 @@ QString normalizedKey(const QString &value)
     return normalized;
 }
 
+QString rawEntryValue(const flatlas::domain::SolarObject &obj, const QString &key)
+{
+    const auto entries = obj.rawEntries();
+    for (int index = entries.size() - 1; index >= 0; --index) {
+        if (entries[index].first.compare(key, Qt::CaseInsensitive) == 0)
+            return entries[index].second.trimmed();
+    }
+    return {};
+}
+
 bool archetypeContainsAny(const QString &archetype, std::initializer_list<const char *> parts)
 {
     const QString lowered = archetype.trimmed().toLower();
@@ -576,6 +586,15 @@ void SolarObjectItem::updateFromObject(const flatlas::domain::SolarObject &obj)
     m_topViewIcon = appearance.pixmap;
     m_baseRadius = radiusForObject(obj, appearance.modelRadius);
     m_currentRadius = displayRadiusForCurrentStyle();
+    m_atmosphereRadius = 0.0;
+    if (obj.type() == flatlas::domain::SolarObject::Sun
+        || m_archetype.contains(QStringLiteral("sun"), Qt::CaseInsensitive)
+        || m_archetype.contains(QStringLiteral("star"), Qt::CaseInsensitive)) {
+        bool ok = false;
+        const qreal atmosphereRange = rawEntryValue(obj, QStringLiteral("atmosphere_range")).toDouble(&ok);
+        if (ok && atmosphereRange > 0.0)
+            m_atmosphereRadius = atmosphereRange * kPositionScale;
+    }
     setRect(-m_currentRadius, -m_currentRadius, 2 * m_currentRadius, 2 * m_currentRadius);
     applyRotationFromObject(obj);
     setToolTip(m_archetype.isEmpty() ? m_nickname : QStringLiteral("%1\n%2").arg(m_nickname, m_archetype));
@@ -639,7 +658,13 @@ void SolarObjectItem::applyDisplayFilter(const SystemDisplayFilterSettings &sett
 
 QRectF SolarObjectItem::boundingRect() const
 {
-    const QRectF rect = QGraphicsEllipseItem::boundingRect();
+    QRectF rect = QGraphicsEllipseItem::boundingRect();
+    if (m_atmosphereRadius > rect.width() * 0.5) {
+        rect = QRectF(-m_atmosphereRadius,
+                      -m_atmosphereRadius,
+                      m_atmosphereRadius * 2.0,
+                      m_atmosphereRadius * 2.0);
+    }
     const qreal extraPadding = isSelected() ? kSelectionGlowPadding : kHoverOutlinePadding;
     return rect.adjusted(-extraPadding, -extraPadding, extraPadding, extraPadding);
 }
@@ -649,6 +674,20 @@ void SolarObjectItem::paint(QPainter *painter,
                             QWidget *widget)
 {
     const QRectF ellipseRect = rect();
+
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing, true);
+    if (m_atmosphereRadius > 0.0) {
+        QPen atmospherePen(QColor(255, 214, 64, 190), 1.1);
+        atmospherePen.setCosmetic(true);
+        painter->setPen(atmospherePen);
+        painter->setBrush(Qt::NoBrush);
+        painter->drawEllipse(QRectF(-m_atmosphereRadius,
+                                    -m_atmosphereRadius,
+                                    m_atmosphereRadius * 2.0,
+                                    m_atmosphereRadius * 2.0));
+    }
+    painter->restore();
 
     if (!m_topViewIcon.isNull()) {
         painter->save();
