@@ -19,6 +19,7 @@ struct CreatePatrolZoneRequest;
 struct CreateBuoyRequest;
 struct CreateTradeLaneRequest;
 struct EditTradeLaneRequest;
+struct RingEditRequest;
 struct ExclusionShellSettings;
 }
 class QToolBar;
@@ -94,6 +95,9 @@ private:
     QStringList objectGroupNicknames(const QString &rootNickname) const;
     bool isPlanetLikeObject(const flatlas::domain::SolarObject &obj) const;
     bool isChildObject(const flatlas::domain::SolarObject &obj) const;
+    flatlas::domain::SolarObject *findRingHostForSelection() const;
+    flatlas::domain::SolarObject *findRingHostAtScenePos(const QPointF &scenePos) const;
+    bool openRingDialogForHost(flatlas::domain::SolarObject *hostObject, bool forceEnableForCreate);
     bool hasSingleObjectGroupSelection() const;
     void open3DPreviewForSelection();
     void setupUi();
@@ -133,6 +137,8 @@ private:
     void onCreateDepot();
     void onCreateTradeLane();
     void onEditTradeLane();
+    void onCreateRing();
+    void onEditRing();
     void onCreateBase();
     void onCreateDockingRing();
     void onCreateAsteroidNebulaZone();

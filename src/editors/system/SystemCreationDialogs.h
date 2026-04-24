@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PlanetCreationService.h"
+#include "RingEditService.h"
 
 #include <QDialog>
 #include <QHash>
@@ -130,6 +131,18 @@ struct CreatePlanetRequest {
     int deathZoneRadius = 1100;
     int deathZoneDamage = 2000000;
     int atmosphereRange = 1200;
+};
+
+struct RingEditRequest {
+    bool enabled = true;
+    QString ringIni;
+    QString zoneNickname;
+    double outerRadius = 3000.0;
+    double innerRadius = 1500.0;
+    double thickness = 500.0;
+    double rotateX = 0.0;
+    double rotateY = 0.0;
+    double rotateZ = 0.0;
 };
 
 struct CreateSurpriseRequest {
@@ -390,6 +403,34 @@ private:
     QLabel *m_infocardStateLabel = nullptr;
     QTextEdit *m_infoCardEdit = nullptr;
     QPushButton *m_resetInfocardButton = nullptr;
+};
+
+class ObjectRingDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit ObjectRingDialog(const QString &objectLabel,
+                              const RingEditOptions &options,
+                              const RingEditState &initialState,
+                              QWidget *parent = nullptr);
+
+    RingEditRequest result() const;
+
+protected:
+    void accept() override;
+
+private slots:
+    void syncEnabledState();
+
+private:
+    QCheckBox *m_enabledCheck = nullptr;
+    QComboBox *m_ringIniCombo = nullptr;
+    QLineEdit *m_zoneNicknameEdit = nullptr;
+    QDoubleSpinBox *m_outerRadiusSpin = nullptr;
+    QDoubleSpinBox *m_innerRadiusSpin = nullptr;
+    QDoubleSpinBox *m_thicknessSpin = nullptr;
+    QDoubleSpinBox *m_rotateXSpin = nullptr;
+    QDoubleSpinBox *m_rotateYSpin = nullptr;
+    QDoubleSpinBox *m_rotateZSpin = nullptr;
 };
 
 class CreateSurpriseDialog : public QDialog {

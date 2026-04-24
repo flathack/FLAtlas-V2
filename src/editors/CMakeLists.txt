@@ -5,6 +5,7 @@ add_library(flatlas_editors STATIC
     system/SystemSettingsDialog.h system/SystemSettingsDialog.cpp
     system/SystemSettingsService.h system/SystemSettingsService.cpp
     system/PlanetCreationService.h system/PlanetCreationService.cpp
+    system/RingEditService.h system/RingEditService.cpp
     system/SystemPersistence.h system/SystemPersistence.cpp
     system/SystemCreationWizard.h system/SystemCreationWizard.cpp
     system/SystemUndoCommands.h

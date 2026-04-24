@@ -6,6 +6,7 @@
 #include "SystemSettingsDialog.h"
 #include "SystemSettingsService.h"
 #include "PlanetCreationService.h"
+#include "RingEditService.h"
 #include "SystemUndoCommands.h"
 #include "CreateObjectDialog.h"
 #include "SystemCreationDialogs.h"
@@ -1637,9 +1638,7 @@ void SystemEditorPage::setupRightSidebar()
     creationLayout->addWidget(m_createDockingRingButton);
 
     m_createRingButton = makeSidebarButton(tr("Ring"), creationGroup);
-    connect(m_createRingButton, &QPushButton::clicked, this, [this]() {
-        showNotYetPorted(tr("Ring"), QStringLiteral("FLAtlas/fl_editor/main_window.py::_start_ring_attach"));
-    });
+    connect(m_createRingButton, &QPushButton::clicked, this, &SystemEditorPage::onCreateRing);
     creationLayout->addWidget(m_createRingButton);
     creationLayout->addStretch(1);
 
@@ -1659,9 +1658,7 @@ void SystemEditorPage::setupRightSidebar()
     editingLayout->addWidget(m_editZonePopulationButton);
 
     m_editRingButton = makeSidebarButton(tr("Ring"), editingGroup);
-    connect(m_editRingButton, &QPushButton::clicked, this, [this]() {
-        showNotYetPorted(tr("Ring bearbeiten"), QStringLiteral("FLAtlas/fl_editor/main_window.py::_open_ring_manager_dialog"));
-    });
+    connect(m_editRingButton, &QPushButton::clicked, this, &SystemEditorPage::onEditRing);
     editingLayout->addWidget(m_editRingButton);
 
     m_addExclusionZoneButton = makeSidebarButton(tr("Exclusion Zone hinzufügen..."), editingGroup);
@@ -2941,8 +2938,20 @@ void SystemEditorPage::updateSidebarButtons()
         m_deleteSidebarButton->setEnabled(!m_selectedNicknames.isEmpty());
     if (m_editZonePopulationButton)
         m_editZonePopulationButton->setEnabled(hasSingleSelection && isZone);
-    if (m_editRingButton)
-        m_editRingButton->setEnabled(hasSingleSelection && isObject && (objectType == SolarObject::Planet || objectType == SolarObject::DockingRing));
+    if (m_editRingButton) {
+        SolarObject *ringHost = nullptr;
+        if (hasSingleSelection) {
+            if (isObject) {
+                if (SolarObject *obj = findObjectByNickname(selectedNickname)) {
+                    if (RingEditService::hasRing(*obj))
+                        ringHost = obj;
+                }
+            } else if (isZone && selectedZone) {
+                ringHost = RingEditService::findHostForZone(m_document.get(), selectedZone->nickname());
+            }
+        }
+        m_editRingButton->setEnabled(ringHost != nullptr);
+    }
     if (m_addExclusionZoneButton)
         m_addExclusionZoneButton->setEnabled(hasSingleSelection && isZone
                                              && selectedZone
@@ -4273,6 +4282,52 @@ void SystemEditorPage::onCreateTradeLane()
         return;
 
     beginTradeLanePlacement();
+}
+
+void SystemEditorPage::onCreateRing()
+{
+    if (!m_document || !m_mapView || !m_mapScene || m_mapView->isPlacementModeActive())
+        return;
+
+    if (SolarObject *selectedHost = findRingHostForSelection()) {
+        openRingDialogForHost(selectedHost, true);
+        return;
+    }
+
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [this, placementGuard](const QPointF &scenePos) {
+        SolarObject *hostObject = findRingHostAtScenePos(scenePos);
+        placementGuard->deleteLater();
+        if (!hostObject) {
+            QMessageBox::information(this,
+                                     tr("Ring erstellen"),
+                                     tr("Bitte klicke auf einen Planeten oder eine Sonne, um einen Ring anzuhaengen."));
+            onCreateRing();
+            return;
+        }
+        openRingDialogForHost(hostObject, true);
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [placementGuard]() { placementGuard->deleteLater(); });
+    m_mapView->setPlacementMode(true,
+                                tr("Klicke auf einen Planeten oder eine Sonne, um den Ring-Host auszuwaehlen."));
+}
+
+void SystemEditorPage::onEditRing()
+{
+    if (!m_document)
+        return;
+
+    SolarObject *hostObject = findRingHostForSelection();
+    if (!hostObject || !RingEditService::hasRing(*hostObject)) {
+        QMessageBox::information(this,
+                                 tr("Ring bearbeiten"),
+                                 tr("Bitte waehle ein Objekt mit vorhandenem Ring oder direkt die Ring-Zone aus."));
+        return;
+    }
+
+    openRingDialogForHost(hostObject, false);
 }
 
 void SystemEditorPage::onEditTradeLane()
@@ -6193,12 +6248,37 @@ QStringList SystemEditorPage::expandMoveNicknames(const QStringList &nicknames) 
                 const QString deathZoneNickname = QStringLiteral("Zone_%1_death").arg(groupObject->nickname());
                 if (findZoneByNickname(deathZoneNickname))
                     expanded.append(deathZoneNickname);
+
+                const QString ringZoneNickname = RingEditService::linkedZoneNickname(*groupObject);
+                if (!ringZoneNickname.isEmpty() && findZoneByNickname(ringZoneNickname))
+                    expanded.append(ringZoneNickname);
             }
             continue;
         }
 
-        if (findZoneByNickname(nickname) || findLightSourceSectionIndexByNickname(nickname) >= 0)
+        if (ZoneItem *zone = findZoneByNickname(nickname)) {
+            expanded.append(zone->nickname());
+            if (SolarObject *hostObject = RingEditService::findHostForZone(m_document.get(), zone->nickname())) {
+                const QString rootNickname = normalizeObjectNicknameToGroupRoot(hostObject->nickname());
+                const QStringList groupNicknames = objectGroupNicknames(rootNickname);
+                expanded.append(groupNicknames);
+                for (const QString &groupNickname : groupNicknames) {
+                    SolarObject *groupObject = findObjectByNickname(groupNickname);
+                    if (!groupObject || !isPlanetLikeObject(*groupObject))
+                        continue;
+
+                    const QString deathZoneNickname = QStringLiteral("Zone_%1_death").arg(groupObject->nickname());
+                    if (findZoneByNickname(deathZoneNickname))
+                        expanded.append(deathZoneNickname);
+
+                    const QString ringZoneNickname = RingEditService::linkedZoneNickname(*groupObject);
+                    if (!ringZoneNickname.isEmpty() && findZoneByNickname(ringZoneNickname))
+                        expanded.append(ringZoneNickname);
+                }
+            }
+        } else if (findLightSourceSectionIndexByNickname(nickname) >= 0) {
             expanded.append(nickname);
+        }
     }
     expanded.removeDuplicates();
     return expanded;
@@ -6268,6 +6348,86 @@ bool SystemEditorPage::isPlanetLikeObject(const SolarObject &obj) const
     if (obj.type() == SolarObject::Sun)
         return true;
     return obj.archetype().contains(QStringLiteral("planet"), Qt::CaseInsensitive);
+}
+
+SolarObject *SystemEditorPage::findRingHostForSelection() const
+{
+    if (!m_document || m_selectedNicknames.size() != 1)
+        return nullptr;
+
+    const QString selectedNickname = m_selectedNicknames.first();
+    if (SolarObject *selectedObject = findObjectByNickname(selectedNickname)) {
+        if (RingEditService::canHostRing(*selectedObject))
+            return selectedObject;
+    }
+
+    if (ZoneItem *selectedZone = findZoneByNickname(selectedNickname))
+        return RingEditService::findHostForZone(m_document.get(), selectedZone->nickname());
+
+    return nullptr;
+}
+
+SolarObject *SystemEditorPage::findRingHostAtScenePos(const QPointF &scenePos) const
+{
+    if (!m_mapScene)
+        return nullptr;
+
+    const auto sceneItems = m_mapScene->items(scenePos);
+    for (QGraphicsItem *item : sceneItems) {
+        auto *solarItem = dynamic_cast<flatlas::rendering::SolarObjectItem *>(item);
+        if (!solarItem)
+            continue;
+        SolarObject *hostObject = findObjectByNickname(solarItem->nickname());
+        if (hostObject && RingEditService::canHostRing(*hostObject))
+            return hostObject;
+    }
+    return nullptr;
+}
+
+bool SystemEditorPage::openRingDialogForHost(SolarObject *hostObject, bool forceEnableForCreate)
+{
+    if (!m_document || !hostObject)
+        return false;
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    const RingEditOptions options = RingEditService::loadOptions(gameRoot);
+    RingEditState initialState = RingEditService::loadState(m_document.get(), *hostObject, gameRoot);
+    if (forceEnableForCreate && !RingEditService::hasRing(*hostObject))
+        initialState.enabled = true;
+
+    ObjectRingDialog dialog(hostObject->nickname(), options, initialState, this);
+    if (dialog.exec() != QDialog::Accepted)
+        return false;
+
+    const RingEditRequest request = dialog.result();
+    RingEditState newState;
+    newState.enabled = request.enabled;
+    newState.ringIni = request.ringIni;
+    newState.zoneNickname = request.zoneNickname;
+    newState.outerRadius = request.outerRadius;
+    newState.innerRadius = request.innerRadius;
+    newState.thickness = request.thickness;
+    newState.rotateX = request.rotateX;
+    newState.rotateY = request.rotateY;
+    newState.rotateZ = request.rotateZ;
+    newState.sortValue = initialState.sortValue;
+
+    QString errorMessage;
+    if (!RingEditService::apply(m_document.get(), hostObject, newState, &errorMessage)) {
+        QMessageBox::warning(this,
+                             newState.enabled ? tr("Ring erstellen") : tr("Ring entfernen"),
+                             errorMessage.trimmed().isEmpty() ? tr("Der Ring konnte nicht gespeichert werden.") : errorMessage);
+        return false;
+    }
+
+    m_document->setDirty(true);
+    refreshObjectList();
+    m_selectedNicknames = {hostObject->nickname()};
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+    updateIniEditorForSelection();
+    return true;
 }
 
 bool SystemEditorPage::isChildObject(const SolarObject &obj) const

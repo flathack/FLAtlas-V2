@@ -1428,6 +1428,138 @@ CreatePlanetRequest CreatePlanetDialog::result() const
     return value;
 }
 
+ObjectRingDialog::ObjectRingDialog(const QString &objectLabel,
+                                   const RingEditOptions &options,
+                                   const RingEditState &initialState,
+                                   QWidget *parent)
+    : QDialog(parent)
+{
+    setWindowTitle(tr("Ring konfigurieren"));
+    setMinimumWidth(560);
+
+    auto *layout = new QVBoxLayout(this);
+
+    auto *header = new QLabel(tr("Host-Objekt: %1").arg(objectLabel), this);
+    header->setWordWrap(true);
+    header->setStyleSheet(QStringLiteral("font-weight:600; font-size:11pt;"));
+    layout->addWidget(header);
+
+    auto *form = new QFormLayout();
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+
+    m_enabledCheck = new QCheckBox(tr("Ring aktiv"), this);
+    m_enabledCheck->setChecked(initialState.enabled);
+    form->addRow(m_enabledCheck);
+
+    m_ringIniCombo = createEditableCombo(options.ringPresets, this);
+    m_ringIniCombo->setCurrentText(initialState.ringIni);
+    form->addRow(tr("Ring preset:"), m_ringIniCombo);
+
+    m_zoneNicknameEdit = new QLineEdit(initialState.zoneNickname, this);
+    form->addRow(tr("Zone nickname:"), m_zoneNicknameEdit);
+
+    m_outerRadiusSpin = new QDoubleSpinBox(this);
+    m_outerRadiusSpin->setRange(1.0, 9999999.0);
+    m_outerRadiusSpin->setDecimals(2);
+    m_outerRadiusSpin->setValue(initialState.outerRadius);
+    form->addRow(tr("Outer radius:"), m_outerRadiusSpin);
+
+    m_innerRadiusSpin = new QDoubleSpinBox(this);
+    m_innerRadiusSpin->setRange(1.0, 9999999.0);
+    m_innerRadiusSpin->setDecimals(2);
+    m_innerRadiusSpin->setValue(initialState.innerRadius);
+    form->addRow(tr("Inner radius:"), m_innerRadiusSpin);
+
+    m_thicknessSpin = new QDoubleSpinBox(this);
+    m_thicknessSpin->setRange(1.0, 9999999.0);
+    m_thicknessSpin->setDecimals(2);
+    m_thicknessSpin->setValue(initialState.thickness);
+    form->addRow(tr("Thickness:"), m_thicknessSpin);
+
+    m_rotateXSpin = new QDoubleSpinBox(this);
+    m_rotateXSpin->setRange(-360.0, 360.0);
+    m_rotateXSpin->setDecimals(2);
+    m_rotateXSpin->setValue(initialState.rotateX);
+    form->addRow(tr("Rotate X:"), m_rotateXSpin);
+
+    m_rotateYSpin = new QDoubleSpinBox(this);
+    m_rotateYSpin->setRange(-360.0, 360.0);
+    m_rotateYSpin->setDecimals(2);
+    m_rotateYSpin->setValue(initialState.rotateY);
+    form->addRow(tr("Rotate Y:"), m_rotateYSpin);
+
+    m_rotateZSpin = new QDoubleSpinBox(this);
+    m_rotateZSpin->setRange(-360.0, 360.0);
+    m_rotateZSpin->setDecimals(2);
+    m_rotateZSpin->setValue(initialState.rotateZ);
+    form->addRow(tr("Rotate Z:"), m_rotateZSpin);
+
+    layout->addLayout(form);
+
+    auto *helpLabel = new QLabel(
+        tr("Freelancer speichert Objekt-Ringe ueber den 'ring'-Eintrag am Host sowie eine verknuepfte Zone mit 'shape = RING'. Dieser Dialog aktualisiert beide Seiten gemeinsam."),
+        this);
+    helpLabel->setWordWrap(true);
+    helpLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    layout->addWidget(helpLabel);
+
+    connect(m_enabledCheck, &QCheckBox::toggled, this, &ObjectRingDialog::syncEnabledState);
+    syncEnabledState();
+
+    layout->addWidget(createDialogButtons(this, tr("Anwenden")));
+}
+
+void ObjectRingDialog::accept()
+{
+    const RingEditRequest request = result();
+    if (request.enabled) {
+        if (request.ringIni.isEmpty()) {
+            QMessageBox::warning(this, tr("Ring konfigurieren"), tr("Bitte ein Ring-Preset angeben."));
+            return;
+        }
+        if (!RingEditService::isValidZoneNickname(request.zoneNickname)) {
+            QMessageBox::warning(this, tr("Ring konfigurieren"), tr("Bitte einen gueltigen Zone-Nickname angeben."));
+            return;
+        }
+        if (request.innerRadius >= request.outerRadius) {
+            QMessageBox::warning(this, tr("Ring konfigurieren"), tr("Inner radius muss kleiner als Outer radius sein."));
+            return;
+        }
+    }
+    QDialog::accept();
+}
+
+void ObjectRingDialog::syncEnabledState()
+{
+    const bool enabled = m_enabledCheck && m_enabledCheck->isChecked();
+    for (QWidget *widget : {static_cast<QWidget *>(m_ringIniCombo),
+                            static_cast<QWidget *>(m_zoneNicknameEdit),
+                            static_cast<QWidget *>(m_outerRadiusSpin),
+                            static_cast<QWidget *>(m_innerRadiusSpin),
+                            static_cast<QWidget *>(m_thicknessSpin),
+                            static_cast<QWidget *>(m_rotateXSpin),
+                            static_cast<QWidget *>(m_rotateYSpin),
+                            static_cast<QWidget *>(m_rotateZSpin)}) {
+        if (widget)
+            widget->setEnabled(enabled);
+    }
+}
+
+RingEditRequest ObjectRingDialog::result() const
+{
+    RingEditRequest value;
+    value.enabled = m_enabledCheck && m_enabledCheck->isChecked();
+    value.ringIni = m_ringIniCombo ? m_ringIniCombo->currentText().trimmed() : QString();
+    value.zoneNickname = m_zoneNicknameEdit ? m_zoneNicknameEdit->text().trimmed() : QString();
+    value.outerRadius = m_outerRadiusSpin ? m_outerRadiusSpin->value() : 0.0;
+    value.innerRadius = m_innerRadiusSpin ? m_innerRadiusSpin->value() : 0.0;
+    value.thickness = m_thicknessSpin ? m_thicknessSpin->value() : 0.0;
+    value.rotateX = m_rotateXSpin ? m_rotateXSpin->value() : 0.0;
+    value.rotateY = m_rotateYSpin ? m_rotateYSpin->value() : 0.0;
+    value.rotateZ = m_rotateZSpin ? m_rotateZSpin->value() : 0.0;
+    return value;
+}
+
 CreateSurpriseDialog::CreateSurpriseDialog(const QString &suggestedNickname,
                                            const QStringList &archetypes,
                                            const QStringList &loadouts,

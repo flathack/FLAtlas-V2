@@ -235,9 +235,13 @@ void ZoneItem2D::updateFromZone(const flatlas::domain::ZoneItem &zone)
         break;
 
     case flatlas::domain::ZoneItem::Ellipsoid:
-    case flatlas::domain::ZoneItem::Ring:
         halfWidth = sx;
         halfHeight = sz;
+        break;
+
+    case flatlas::domain::ZoneItem::Ring:
+        halfWidth = sx;
+        halfHeight = sx;
         break;
 
     case flatlas::domain::ZoneItem::Box:

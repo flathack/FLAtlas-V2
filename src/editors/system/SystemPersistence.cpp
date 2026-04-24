@@ -861,7 +861,15 @@ IniSection SystemPersistence::serializeZoneSection(const ZoneItem &zone)
     setOptionalIntEntry(sec.entries, QStringLiteral("damage"), zone.damage());
     setOptionalFloatEntry(sec.entries, QStringLiteral("interference"), zone.interference());
     setOptionalFloatEntry(sec.entries, QStringLiteral("drag_modifier"), zone.dragScale());
-    setOptionalIntEntry(sec.entries, QStringLiteral("sort"), zone.sortKey());
+    const int sortIndex = findEntryIndex(sec.entries, QStringLiteral("sort"));
+    if (zone.sortKey() != 0) {
+        setOptionalIntEntry(sec.entries, QStringLiteral("sort"), zone.sortKey());
+    } else if (sortIndex >= 0) {
+        bool okInt = false;
+        sec.entries[sortIndex].second.trimmed().toInt(&okInt);
+        if (okInt || sec.entries[sortIndex].second.trimmed().isEmpty())
+            removeEntry(sec.entries, QStringLiteral("sort"));
+    }
 
     return sec;
 }
