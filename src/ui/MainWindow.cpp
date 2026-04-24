@@ -1070,10 +1070,16 @@ void MainWindow::openNewsRumorEditor()
 
 void MainWindow::openModelViewer()
 {
+    if (ensureModelViewerPage())
+        statusBar()->showMessage(tr("3D Model Viewer opened"), 3000);
+}
+
+flatlas::rendering::ModelViewerPage *MainWindow::ensureModelViewerPage()
+{
     for (int i = 0; i < m_centerTabs->count(); ++i) {
         if (qobject_cast<flatlas::rendering::ModelViewerPage *>(m_centerTabs->widget(i))) {
             m_centerTabs->setCurrentIndex(i);
-            return;
+            return qobject_cast<flatlas::rendering::ModelViewerPage *>(m_centerTabs->widget(i));
         }
     }
 
@@ -1081,7 +1087,7 @@ void MainWindow::openModelViewer()
         auto *page = new flatlas::rendering::ModelViewerPage(this);
         const int idx = m_centerTabs->addTab(page, tr("3D Model Viewer"));
         m_centerTabs->setCurrentIndex(idx);
-        statusBar()->showMessage(tr("3D Model Viewer opened"), 3000);
+        return page;
     } catch (const std::exception &ex) {
         QMessageBox::critical(this,
                               tr("3D Model Viewer"),
@@ -1092,4 +1098,16 @@ void MainWindow::openModelViewer()
                               tr("3D Model Viewer"),
                               tr("The 3D Model Viewer could not be opened due to an unexpected initialization error."));
     }
+    return nullptr;
+}
+
+bool MainWindow::showModelInViewer(const QString &modelPath, const QString &displayLabel)
+{
+    auto *page = ensureModelViewerPage();
+    if (!page)
+        return false;
+    const bool scheduled = page->loadModelPath(modelPath, displayLabel);
+    if (scheduled)
+        statusBar()->showMessage(displayLabel.trimmed().isEmpty() ? tr("3D model loaded") : displayLabel.trimmed(), 3000);
+    return scheduled;
 }

@@ -12,6 +12,7 @@ class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
 class QStackedLayout;
+class QTabWidget;
 class QTableWidget;
 class QTableWidgetItem;
 
@@ -29,6 +30,9 @@ public:
                             QWidget *parent = nullptr);
 
     BaseEditState state() const;
+
+signals:
+    void roomActivationRequested(const QString &roomName, const QString &modelPath);
 
 private slots:
     void refreshStartRooms();
@@ -48,12 +52,18 @@ private:
     QStringList roleChoicesForRoom(const QString &roomName) const;
     void populateSceneCombo(int row, const QString &roomName, const QString &currentScene);
     void refreshPreview();
+    void refreshRoomPreview();
+    void activateSelectedRoom();
     void applyTemplateSelection();
     void applyArchetypeDefaults();
+    int selectedRoomRow() const;
+    QString selectedRoomName() const;
+    void updateRoomSelectionUi();
 
     BaseEditState m_initialState;
     QHash<QString, QString> m_textOverrides;
     QVector<BaseRoomState> m_roomStates;
+    QTabWidget *m_tabs = nullptr;
     QLineEdit *m_objectNicknameEdit = nullptr;
     QLineEdit *m_baseNicknameEdit = nullptr;
     QComboBox *m_archetypeCombo = nullptr;
@@ -78,9 +88,14 @@ private:
     QPushButton *m_removeRoomButton = nullptr;
     QPushButton *m_addNpcButton = nullptr;
     QPushButton *m_removeNpcButton = nullptr;
+    QPushButton *m_activateRoomButton = nullptr;
+    QLabel *m_selectedRoomLabel = nullptr;
     flatlas::rendering::ModelViewport3D *m_preview = nullptr;
     QLabel *m_previewFallback = nullptr;
     QStackedLayout *m_previewStack = nullptr;
+    flatlas::rendering::ModelViewport3D *m_roomPreview = nullptr;
+    QLabel *m_roomPreviewFallback = nullptr;
+    QStackedLayout *m_roomPreviewStack = nullptr;
     QString m_lastSuggestedLoadout;
     QString m_lastSuggestedIdsInfo;
     QHash<QString, BaseArchetypeDefaults> m_archetypeDefaultsCache;

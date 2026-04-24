@@ -12,6 +12,7 @@
 #include <QCompleter>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
+#include <QDirIterator>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QFrame>
@@ -21,12 +22,14 @@
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSet>
 #include <QSplitter>
 #include <QStackedLayout>
+#include <QTabWidget>
 #include <QTimer>
 #include <QStringListModel>
 #include <QTableWidget>
@@ -123,6 +126,128 @@ QString comboStoredValue(const QComboBox *combo)
     const QString text = combo->currentText().trimmed();
     const int separator = text.indexOf(QStringLiteral(" - "));
     return separator >= 0 ? text.left(separator).trimmed() : text;
+}
+
+QString normalizedPathKey(const QString &value)
+{
+    return QDir::fromNativeSeparators(value.trimmed()).toLower();
+}
+
+QString roomPreviewKind(const QString &roomName)
+{
+    const QString room = normalizedKey(roomName);
+    if (room == QStringLiteral("equip"))
+        return QStringLiteral("equipment");
+    if (room == QStringLiteral("ship_dealer") || room == QStringLiteral("ship-dealer"))
+        return QStringLiteral("shipdealer");
+    return room;
+}
+
+QStringList roomPreviewFamiliesForPrefix(const QString &scenePrefix)
+{
+    const QString prefix = normalizedKey(scenePrefix);
+    if (prefix == QStringLiteral("li"))
+        return {QStringLiteral("li")};
+    if (prefix == QStringLiteral("rh"))
+        return {QStringLiteral("rh")};
+    if (prefix == QStringLiteral("ku"))
+        return {QStringLiteral("ku")};
+    if (prefix == QStringLiteral("br"))
+        return {QStringLiteral("br")};
+    if (prefix == QStringLiteral("bw"))
+        return {QStringLiteral("bw"), QStringLiteral("cv"), QStringLiteral("li"), QStringLiteral("br"), QStringLiteral("ku"), QStringLiteral("rh")};
+    if (prefix == QStringLiteral("cv"))
+        return {QStringLiteral("cv"), QStringLiteral("bw"), QStringLiteral("li"), QStringLiteral("br"), QStringLiteral("ku"), QStringLiteral("rh")};
+    if (prefix == QStringLiteral("hi"))
+        return {QStringLiteral("hi"), QStringLiteral("co"), QStringLiteral("bw"), QStringLiteral("cv"), QStringLiteral("li"), QStringLiteral("br"), QStringLiteral("ku"), QStringLiteral("rh")};
+    if (prefix == QStringLiteral("co"))
+        return {QStringLiteral("co"), QStringLiteral("hi"), QStringLiteral("bw"), QStringLiteral("cv"), QStringLiteral("li"), QStringLiteral("br"), QStringLiteral("ku"), QStringLiteral("rh")};
+    if (prefix == QStringLiteral("pl"))
+        return {QStringLiteral("bw"), QStringLiteral("br"), QStringLiteral("li"), QStringLiteral("ku"), QStringLiteral("rh")};
+    if (prefix == QStringLiteral("st"))
+        return {QStringLiteral("li"), QStringLiteral("rh"), QStringLiteral("br"), QStringLiteral("ku"), QStringLiteral("bw")};
+    return {prefix, QStringLiteral("li"), QStringLiteral("rh"), QStringLiteral("br"), QStringLiteral("ku"), QStringLiteral("bw"), QStringLiteral("cv")};
+}
+
+QString resolveBaseRoomPreviewModelPath(const QString &roomName, const QString &scenePath, const QString &gamePath)
+{
+    static QHash<QString, QString> cache;
+
+    const QString roomKind = roomPreviewKind(roomName);
+    const QString sceneKey = normalizedPathKey(scenePath);
+    if (roomKind.isEmpty() || sceneKey.isEmpty() || gamePath.trimmed().isEmpty())
+        return {};
+
+    const QString cacheKey = normalizedKey(gamePath) + QLatin1Char('|') + roomKind + QLatin1Char('|') + sceneKey;
+    if (cache.contains(cacheKey))
+        return cache.value(cacheKey);
+
+    const QHash<QString, QHash<QString, QString>> previewCandidates = {
+        {QStringLiteral("li"), {{QStringLiteral("deck"), QStringLiteral("DATA/BASES/LIBERTY/li_rockefeller_station_deck.cmp")},
+                                 {QStringLiteral("bar"), QStringLiteral("DATA/BASES/LIBERTY/li_manhattan_bar.cmp")},
+                                 {QStringLiteral("trader"), QStringLiteral("DATA/BASES/LIBERTY/li_manhattan_trader.cmp")},
+                                 {QStringLiteral("equipment"), QStringLiteral("DATA/BASES/LIBERTY/li_manhattan_equip.cmp")},
+                                 {QStringLiteral("shipdealer"), QStringLiteral("DATA/BASES/LIBERTY/li_manhattan_shipdealer.cmp")}}},
+        {QStringLiteral("rh"), {{QStringLiteral("deck"), QStringLiteral("DATA/BASES/RHEINLAND/rh_starke_station_deck.cmp")},
+                                 {QStringLiteral("bar"), QStringLiteral("DATA/BASES/RHEINLAND/rh_berlin_bar.cmp")},
+                                 {QStringLiteral("trader"), QStringLiteral("DATA/BASES/RHEINLAND/rh_berlin_trader.cmp")},
+                                 {QStringLiteral("equipment"), QStringLiteral("DATA/BASES/RHEINLAND/rh_berlin_equip.cmp")},
+                                 {QStringLiteral("shipdealer"), QStringLiteral("DATA/BASES/RHEINLAND/rh_bizmark_shipdealer.cmp")}}},
+        {QStringLiteral("ku"), {{QStringLiteral("deck"), QStringLiteral("DATA/BASES/KUSARI/ku_harajuku_station_deck.cmp")},
+                                 {QStringLiteral("bar"), QStringLiteral("DATA/BASES/KUSARI/ku_hokkaido_bar.cmp")},
+                                 {QStringLiteral("trader"), QStringLiteral("DATA/BASES/KUSARI/ku_hokkaido_trader.cmp")},
+                                 {QStringLiteral("equipment"), QStringLiteral("DATA/BASES/KUSARI/ku_hokkaido_equip.cmp")},
+                                 {QStringLiteral("shipdealer"), QStringLiteral("DATA/BASES/KUSARI/ku_hokkaido_shipdealer.cmp")}}},
+        {QStringLiteral("br"), {{QStringLiteral("deck"), QStringLiteral("DATA/BASES/BRETONIA/br_barbican_station_deck.cmp")},
+                                 {QStringLiteral("bar"), QStringLiteral("DATA/BASES/BRETONIA/br_avalon_bar.cmp")},
+                                 {QStringLiteral("trader"), QStringLiteral("DATA/BASES/BRETONIA/br_avalon_trader.cmp")},
+                                 {QStringLiteral("equipment"), QStringLiteral("DATA/BASES/BRETONIA/br_avalon_equip.cmp")},
+                                 {QStringLiteral("shipdealer"), QStringLiteral("DATA/BASES/BRETONIA/br_avalon_shipdealer.cmp")}}},
+        {QStringLiteral("bw"), {{QStringLiteral("deck"), QStringLiteral("DATA/BASES/GENERIC/bw_spruage_deck.cmp")},
+                                 {QStringLiteral("bar"), QStringLiteral("DATA/INTERFACE/BASESIDE/bar.3db")},
+                                 {QStringLiteral("trader"), QStringLiteral("DATA/BASES/LIBERTY/li_manhattan_trader.cmp")},
+                                 {QStringLiteral("equipment"), QStringLiteral("DATA/BASES/LIBERTY/li_manhattan_equip.cmp")},
+                                 {QStringLiteral("shipdealer"), QStringLiteral("DATA/BASES/BRETONIA/br_avalon_shipdealer.cmp")}}},
+        {QStringLiteral("cv"), {{QStringLiteral("bar"), QStringLiteral("DATA/BASES/GENERIC/cv_space_base_bar.cmp")}}},
+        {QStringLiteral("hi"), {{QStringLiteral("bar"), QStringLiteral("DATA/BASES/PIRATE/hi_havana_bar.cmp")},
+                                 {QStringLiteral("equipment"), QStringLiteral("DATA/BASES/PIRATE/hi_havana_equip.cmp")}}},
+        {QStringLiteral("co"), {{QStringLiteral("bar"), QStringLiteral("DATA/BASES/PIRATE/co_curacao_bar.cmp")},
+                                 {QStringLiteral("equipment"), QStringLiteral("DATA/BASES/PIRATE/co_curacao_equip.cmp")}}},
+    };
+
+    const QString sceneStem = QFileInfo(scenePath).completeBaseName().toLower();
+    const QString scenePrefix = sceneStem.contains(QLatin1Char('_')) ? sceneStem.section(QLatin1Char('_'), 0, 0) : QString();
+    for (const QString &family : roomPreviewFamiliesForPrefix(scenePrefix)) {
+        const QString relativeModelPath = previewCandidates.value(family).value(roomKind);
+        if (relativeModelPath.isEmpty())
+            continue;
+        const QString resolved = flatlas::core::PathUtils::ciResolvePath(gamePath, relativeModelPath);
+        if (!resolved.isEmpty() && QFileInfo::exists(resolved)) {
+            cache.insert(cacheKey, resolved);
+            return resolved;
+        }
+    }
+
+    const QHash<QString, QString> fallbackPatterns = {
+        {QStringLiteral("deck"), QStringLiteral("*_deck.cmp")},
+        {QStringLiteral("bar"), QStringLiteral("*_bar.cmp")},
+        {QStringLiteral("trader"), QStringLiteral("*_trader.cmp")},
+        {QStringLiteral("equipment"), QStringLiteral("*_equip.cmp")},
+        {QStringLiteral("shipdealer"), QStringLiteral("*_shipdealer.cmp")},
+    };
+    const QString basesDir = flatlas::core::PathUtils::ciResolvePath(gamePath, QStringLiteral("DATA/BASES"));
+    const QString pattern = fallbackPatterns.value(roomKind);
+    if (!basesDir.isEmpty() && !pattern.isEmpty()) {
+        QDirIterator it(basesDir, {pattern}, QDir::Files, QDirIterator::Subdirectories);
+        if (it.hasNext()) {
+            const QString candidate = it.next();
+            cache.insert(cacheKey, candidate);
+            return candidate;
+        }
+    }
+
+    cache.insert(cacheKey, QString());
+    return {};
 }
 
 int previewSidebarPreferredWidth(QWidget *dialog)
@@ -382,37 +507,46 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
 
     const BaseDialogCatalog &catalog = sharedBaseDialogCatalog();
 
-    auto *root = new QHBoxLayout(this);
-    auto *splitter = new QSplitter(Qt::Horizontal, this);
-    splitter->setChildrenCollapsible(false);
-    root->addWidget(splitter, 1);
+    auto *root = new QVBoxLayout(this);
+    root->setContentsMargins(12, 12, 12, 12);
+    root->setSpacing(12);
 
-    auto *scroll = new QScrollArea(splitter);
-    scroll->setWidgetResizable(true);
-    auto *content = new QWidget(scroll);
-    auto *contentLayout = new QVBoxLayout(content);
+    m_tabs = new QTabWidget(this);
+    root->addWidget(m_tabs, 1);
+
+    auto *generalTab = new QWidget(m_tabs);
+    auto *generalSplitter = new QSplitter(Qt::Horizontal, generalTab);
+    generalSplitter->setChildrenCollapsible(false);
+    auto *generalTabLayout = new QVBoxLayout(generalTab);
+    generalTabLayout->setContentsMargins(0, 0, 0, 0);
+    generalTabLayout->addWidget(generalSplitter, 1);
+
+    auto *generalScroll = new QScrollArea(generalSplitter);
+    generalScroll->setWidgetResizable(true);
+    auto *generalContent = new QWidget(generalScroll);
+    auto *contentLayout = new QVBoxLayout(generalContent);
     contentLayout->setContentsMargins(12, 12, 12, 12);
     contentLayout->setSpacing(12);
-    scroll->setWidget(content);
-    splitter->addWidget(scroll);
+    generalScroll->setWidget(generalContent);
+    generalSplitter->addWidget(generalScroll);
 
-    auto *previewSidebar = new QWidget(splitter);
-    auto *previewSidebarLayout = new QVBoxLayout(previewSidebar);
-    previewSidebarLayout->setContentsMargins(12, 12, 12, 12);
-    previewSidebarLayout->setSpacing(8);
-    splitter->addWidget(previewSidebar);
-    splitter->setStretchFactor(0, 7);
-    splitter->setStretchFactor(1, 5);
-    previewSidebar->setMinimumWidth(320);
-    previewSidebar->setMaximumWidth(420);
-    QTimer::singleShot(0, this, [this, splitter, previewSidebar]() {
+    auto *generalPreviewSidebar = new QWidget(generalSplitter);
+    auto *generalPreviewLayout = new QVBoxLayout(generalPreviewSidebar);
+    generalPreviewLayout->setContentsMargins(12, 12, 12, 12);
+    generalPreviewLayout->setSpacing(8);
+    generalSplitter->addWidget(generalPreviewSidebar);
+    generalSplitter->setStretchFactor(0, 7);
+    generalSplitter->setStretchFactor(1, 5);
+    generalPreviewSidebar->setMinimumWidth(320);
+    generalPreviewSidebar->setMaximumWidth(420);
+    QTimer::singleShot(0, this, [this, generalSplitter, generalPreviewSidebar]() {
         const int previewWidth = previewSidebarPreferredWidth(this);
-        previewSidebar->setMinimumWidth(previewWidth);
-        previewSidebar->setMaximumWidth(previewWidth);
-        splitter->setSizes({std::max(720, width() - previewWidth - 48), previewWidth});
+        generalPreviewSidebar->setMinimumWidth(previewWidth);
+        generalPreviewSidebar->setMaximumWidth(previewWidth);
+        generalSplitter->setSizes({std::max(720, width() - previewWidth - 48), previewWidth});
     });
 
-    auto *baseGroup = new QGroupBox(tr("Base"), content);
+    auto *baseGroup = new QGroupBox(tr("Base"), generalContent);
     auto *baseForm = new QFormLayout(baseGroup);
     m_baseNicknameEdit = new QLineEdit(state.baseNickname, baseGroup);
     m_objectNicknameEdit = new QLineEdit(state.objectNickname, baseGroup);
@@ -426,7 +560,7 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     baseForm->addRow(tr("Name:"), m_displayNameEdit);
     contentLayout->addWidget(baseGroup);
 
-    auto *objectGroup = new QGroupBox(tr("Space-Objekt"), content);
+    auto *objectGroup = new QGroupBox(tr("Space-Objekt"), generalContent);
     auto *objectForm = new QFormLayout(objectGroup);
     m_archetypeCombo = createEditableCombo(catalog.archetypes, state.archetype, objectGroup);
     m_loadoutCombo = createEditableCombo(catalog.loadouts, state.loadout, objectGroup);
@@ -450,7 +584,60 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     objectForm->addRow(costumeGroup);
     contentLayout->addWidget(objectGroup);
 
-    auto *roomsGroup = new QGroupBox(tr("Raeume"), content);
+    auto *universeGroup = new QGroupBox(tr("Universe"), generalContent);
+    auto *universeForm = new QFormLayout(universeGroup);
+    m_bgcsEdit = new QLineEdit(state.bgcsBaseRunBy, universeGroup);
+    universeForm->addRow(tr("BGCS_base_run_by:"), m_bgcsEdit);
+    contentLayout->addWidget(universeGroup);
+
+    auto *infocardGroup = new QGroupBox(tr("ids_info"), generalContent);
+    auto *infocardLayout = new QVBoxLayout(infocardGroup);
+    m_infocardEdit = new QPlainTextEdit(infocardGroup);
+    m_infocardEdit->setPlainText(state.infocardXml);
+    m_infocardEdit->setPlaceholderText(tr("ids_info Text"));
+    infocardLayout->addWidget(m_infocardEdit);
+    contentLayout->addWidget(infocardGroup);
+    contentLayout->addStretch(1);
+
+    auto *generalPreviewTitle = new QLabel(tr("3D Preview"), generalPreviewSidebar);
+    generalPreviewTitle->setStyleSheet(QStringLiteral("font-weight:600;"));
+    auto *generalPreviewHelp = new QLabel(tr("Die Vorschau zeigt den aktuell gewaehlten Base-Archetype."), generalPreviewSidebar);
+    generalPreviewHelp->setWordWrap(true);
+    generalPreviewLayout->addWidget(generalPreviewTitle);
+    generalPreviewLayout->addWidget(generalPreviewHelp);
+    generalPreviewLayout->addWidget(createPreviewFrame(&m_preview, &m_previewFallback, &m_previewStack, generalPreviewSidebar), 1);
+    m_tabs->addTab(generalTab, tr("General"));
+
+    auto *roomsTab = new QWidget(m_tabs);
+    auto *roomsSplitter = new QSplitter(Qt::Horizontal, roomsTab);
+    roomsSplitter->setChildrenCollapsible(false);
+    auto *roomsTabLayout = new QVBoxLayout(roomsTab);
+    roomsTabLayout->setContentsMargins(0, 0, 0, 0);
+    roomsTabLayout->addWidget(roomsSplitter, 1);
+
+    auto *roomsContent = new QWidget(roomsSplitter);
+    auto *roomsContentLayout = new QVBoxLayout(roomsContent);
+    roomsContentLayout->setContentsMargins(12, 12, 12, 12);
+    roomsContentLayout->setSpacing(12);
+    roomsSplitter->addWidget(roomsContent);
+
+    auto *roomsPreviewSidebar = new QWidget(roomsSplitter);
+    auto *roomsPreviewLayout = new QVBoxLayout(roomsPreviewSidebar);
+    roomsPreviewLayout->setContentsMargins(12, 12, 12, 12);
+    roomsPreviewLayout->setSpacing(8);
+    roomsSplitter->addWidget(roomsPreviewSidebar);
+    roomsSplitter->setStretchFactor(0, 7);
+    roomsSplitter->setStretchFactor(1, 5);
+    roomsPreviewSidebar->setMinimumWidth(320);
+    roomsPreviewSidebar->setMaximumWidth(420);
+    QTimer::singleShot(0, this, [this, roomsSplitter, roomsPreviewSidebar]() {
+        const int previewWidth = previewSidebarPreferredWidth(this);
+        roomsPreviewSidebar->setMinimumWidth(previewWidth);
+        roomsPreviewSidebar->setMaximumWidth(previewWidth);
+        roomsSplitter->setSizes({std::max(720, width() - previewWidth - 48), previewWidth});
+    });
+
+    auto *roomsGroup = new QGroupBox(tr("Rooms"), roomsContent);
     auto *roomsLayout = new QVBoxLayout(roomsGroup);
     auto *templateForm = new QFormLayout();
     m_templateCombo = createMappedEditableCombo(catalog.templateBases, QString(), roomsGroup);
@@ -513,33 +700,24 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     roomsMetaForm->addRow(tr("Start-Raum"), m_startRoomCombo);
     roomsMetaForm->addRow(tr("Price Variance"), m_priceVarianceSpin);
     roomsLayout->addLayout(roomsMetaForm);
-    contentLayout->addWidget(roomsGroup);
+    roomsContentLayout->addWidget(roomsGroup, 1);
 
-    auto *universeGroup = new QGroupBox(tr("Universe"), content);
-    auto *universeForm = new QFormLayout(universeGroup);
-    m_bgcsEdit = new QLineEdit(state.bgcsBaseRunBy, universeGroup);
-    universeForm->addRow(tr("BGCS_base_run_by:"), m_bgcsEdit);
-    contentLayout->addWidget(universeGroup);
+    auto *roomPreviewTitle = new QLabel(tr("Room Preview"), roomsPreviewSidebar);
+    roomPreviewTitle->setStyleSheet(QStringLiteral("font-weight:600;"));
+    auto *roomPreviewHelp = new QLabel(tr("Die Vorschau zeigt den aktuell ausgewaehlten Raum. Falls kein Modell aufloesbar ist, bleibt die Room-Bearbeitung unveraendert moeglich."), roomsPreviewSidebar);
+    roomPreviewHelp->setWordWrap(true);
+    m_selectedRoomLabel = new QLabel(tr("Kein Raum ausgewaehlt"), roomsPreviewSidebar);
+    m_selectedRoomLabel->setWordWrap(true);
+    m_activateRoomButton = new QPushButton(tr("Selected Room im 3D Viewer anzeigen"), roomsPreviewSidebar);
+    roomsPreviewLayout->addWidget(roomPreviewTitle);
+    roomsPreviewLayout->addWidget(roomPreviewHelp);
+    roomsPreviewLayout->addWidget(m_selectedRoomLabel);
+    roomsPreviewLayout->addWidget(m_activateRoomButton);
+    roomsPreviewLayout->addWidget(createPreviewFrame(&m_roomPreview, &m_roomPreviewFallback, &m_roomPreviewStack, roomsPreviewSidebar), 1);
+    m_tabs->addTab(roomsTab, tr("Rooms"));
 
-    auto *infocardGroup = new QGroupBox(tr("ids_info"), content);
-    auto *infocardLayout = new QVBoxLayout(infocardGroup);
-    m_infocardEdit = new QPlainTextEdit(infocardGroup);
-    m_infocardEdit->setPlainText(state.infocardXml);
-    m_infocardEdit->setPlaceholderText(tr("ids_info Text"));
-    infocardLayout->addWidget(m_infocardEdit);
-    contentLayout->addWidget(infocardGroup);
-
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, content);
-    contentLayout->addWidget(buttons);
-    contentLayout->addStretch(1);
-
-    auto *previewTitle = new QLabel(tr("3D Preview"), previewSidebar);
-    previewTitle->setStyleSheet(QStringLiteral("font-weight:600;"));
-    auto *previewHelp = new QLabel(tr("Die Vorschau folgt dem aktuell gewaehlten Archetype."), previewSidebar);
-    previewHelp->setWordWrap(true);
-    previewSidebarLayout->addWidget(previewTitle);
-    previewSidebarLayout->addWidget(previewHelp);
-    previewSidebarLayout->addWidget(createPreviewFrame(&m_preview, &m_previewFallback, &m_previewStack, previewSidebar), 1);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+    root->addWidget(buttons);
 
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
@@ -550,6 +728,7 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     connect(m_npcTable, &QTableWidget::itemChanged, this, &BaseEditDialog::onNpcItemChanged);
     connect(m_addNpcButton, &QPushButton::clicked, this, &BaseEditDialog::addNpc);
     connect(m_removeNpcButton, &QPushButton::clicked, this, &BaseEditDialog::removeSelectedNpc);
+    connect(m_activateRoomButton, &QPushButton::clicked, this, &BaseEditDialog::activateSelectedRoom);
     connect(m_archetypeCombo, &QComboBox::currentTextChanged, this, [this]() {
         applyArchetypeDefaults();
         refreshPreview();
@@ -573,6 +752,8 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
         m_randomNpcAppearanceCheck->setEnabled(false);
     }
     refreshPreview();
+    updateRoomSelectionUi();
+    refreshRoomPreview();
 }
 
 void BaseEditDialog::populateRooms(const QVector<BaseRoomState> &rooms)
@@ -696,6 +877,8 @@ void BaseEditDialog::removeSelectedRoom()
 void BaseEditDialog::onRoomSelectionChanged()
 {
     populateNpcTable(m_roomTable->currentRow());
+    updateRoomSelectionUi();
+    refreshRoomPreview();
 }
 
 void BaseEditDialog::onRoomItemChanged(QTableWidgetItem *item)
@@ -718,6 +901,8 @@ void BaseEditDialog::onRoomItemChanged(QTableWidgetItem *item)
     refreshStartRooms();
     if (row == m_roomTable->currentRow())
         populateNpcTable(row);
+    updateRoomSelectionUi();
+    refreshRoomPreview();
 }
 
 void BaseEditDialog::onNpcItemChanged(QTableWidgetItem *item)
@@ -853,8 +1038,12 @@ void BaseEditDialog::populateSceneCombo(int row, const QString &roomName, const 
         sceneCombo->setCurrentText(currentScene.trimmed());
 
     connect(sceneCombo, &QComboBox::currentTextChanged, this, [this, row]() {
-        if (row >= 0 && row < m_roomStates.size())
-            m_roomStates[row].scenePath = qobject_cast<QComboBox *>(m_roomTable->cellWidget(row, 2))->currentText().trimmed();
+        if (row >= 0 && row < m_roomStates.size()) {
+            if (auto *combo = qobject_cast<QComboBox *>(m_roomTable->cellWidget(row, 2)))
+                m_roomStates[row].scenePath = combo->currentText().trimmed();
+        }
+        if (row == selectedRoomRow())
+            refreshRoomPreview();
     });
     m_roomTable->setCellWidget(row, 2, sceneCombo);
 }
@@ -891,6 +1080,96 @@ void BaseEditDialog::refreshPreview()
     }
 
     m_previewStack->setCurrentWidget(m_preview);
+}
+
+int BaseEditDialog::selectedRoomRow() const
+{
+    return m_roomTable ? m_roomTable->currentRow() : -1;
+}
+
+QString BaseEditDialog::selectedRoomName() const
+{
+    const int row = selectedRoomRow();
+    if (row < 0 || row >= m_roomStates.size())
+        return {};
+    return m_roomStates.at(row).roomName.trimmed();
+}
+
+void BaseEditDialog::updateRoomSelectionUi()
+{
+    const QString roomName = selectedRoomName();
+    if (m_selectedRoomLabel) {
+        m_selectedRoomLabel->setText(roomName.isEmpty()
+                                         ? tr("Kein Raum ausgewaehlt")
+                                         : tr("Ausgewaehlter Raum: %1").arg(roomName));
+    }
+    if (m_activateRoomButton)
+        m_activateRoomButton->setEnabled(!roomName.isEmpty());
+}
+
+void BaseEditDialog::refreshRoomPreview()
+{
+    if (!m_roomPreview || !m_roomPreviewFallback || !m_roomPreviewStack)
+        return;
+
+    auto showFallback = [&](const QString &message) {
+        m_roomPreviewFallback->setText(message);
+        m_roomPreviewStack->setCurrentWidget(m_roomPreviewFallback);
+        m_roomPreview->clearModel();
+    };
+
+    const int row = selectedRoomRow();
+    if (row < 0 || row >= m_roomStates.size()) {
+        showFallback(tr("Waehle einen Raum, um die Room-Vorschau zu laden."));
+        return;
+    }
+
+    const BaseRoomState room = m_roomStates.at(row);
+    if (room.scenePath.trimmed().isEmpty()) {
+        showFallback(tr("Der ausgewaehlte Raum hat keinen Scene-Pfad."));
+        return;
+    }
+
+    const QString modelPath = resolveBaseRoomPreviewModelPath(room.roomName,
+                                                              room.scenePath,
+                                                              flatlas::core::EditingContext::instance().primaryGamePath());
+    if (modelPath.isEmpty() || !QFileInfo::exists(modelPath)) {
+        showFallback(tr("Fuer %1 konnte kein Interior-Modell aufgeloest werden.")
+                         .arg(room.roomName.trimmed().isEmpty() ? tr("diesen Raum") : room.roomName.trimmed()));
+        return;
+    }
+
+    QString errorMessage;
+    if (!m_roomPreview->loadModelFile(modelPath, &errorMessage)) {
+        showFallback(tr("Room-Modell konnte nicht geladen werden: %1")
+                         .arg(errorMessage.isEmpty() ? tr("unbekannter Fehler") : errorMessage));
+        return;
+    }
+
+    m_roomPreviewStack->setCurrentWidget(m_roomPreview);
+}
+
+void BaseEditDialog::activateSelectedRoom()
+{
+    const int row = selectedRoomRow();
+    if (row < 0 || row >= m_roomStates.size()) {
+        QMessageBox::warning(this, tr("Room aktivieren"), tr("Waehle zuerst einen Raum aus."));
+        return;
+    }
+
+    const BaseRoomState room = m_roomStates.at(row);
+    const QString modelPath = resolveBaseRoomPreviewModelPath(room.roomName,
+                                                              room.scenePath,
+                                                              flatlas::core::EditingContext::instance().primaryGamePath());
+    if (modelPath.isEmpty() || !QFileInfo::exists(modelPath)) {
+        QMessageBox::warning(this,
+                             tr("Room aktivieren"),
+                             tr("Fuer %1 konnte kein darstellbares Interior-Modell gefunden werden.")
+                                 .arg(room.roomName.trimmed().isEmpty() ? tr("den ausgewaehlten Raum") : room.roomName.trimmed()));
+        return;
+    }
+
+    emit roomActivationRequested(room.roomName.trimmed(), modelPath);
 }
 
 void BaseEditDialog::applyTemplateSelection()
@@ -964,6 +1243,8 @@ void BaseEditDialog::applyTemplateSelection()
     } else {
         populateNpcTable(-1);
     }
+    updateRoomSelectionUi();
+    refreshRoomPreview();
 }
 
 void BaseEditDialog::applyArchetypeDefaults()

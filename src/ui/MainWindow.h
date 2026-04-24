@@ -27,6 +27,7 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
+    bool showModelInViewer(const QString &modelPath, const QString &displayLabel = QString());
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -63,6 +64,7 @@ private:
     void launchFreelancerFromContext();
     flatlas::editors::SystemEditorPage *currentSystemEditor() const;
     static QString formatSystemTabTitle(const QString &editorTitle, const QString &ingameName);
+    flatlas::rendering::ModelViewerPage *ensureModelViewerPage();
 
     QSplitter *m_mainSplitter = nullptr;
     flatlas::ui::CenterTabWidget *m_centerTabs = nullptr;
