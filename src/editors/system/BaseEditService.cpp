@@ -684,19 +684,80 @@ QVector<QPair<QString, QString>> navHotspots(const QStringList &rooms, const QSt
     return result;
 }
 
+QString canonicalNavRoom(const QString &roomName)
+{
+    const QString canonical = canonicalRoomName(roomName);
+    const QString key = normalizeKey(canonical);
+    if (key == QStringLiteral("deck")
+        || key == QStringLiteral("bar")
+        || key == QStringLiteral("trader")
+        || key == QStringLiteral("equipment")
+        || key == QStringLiteral("shipdealer")
+        || key == QStringLiteral("cityscape")) {
+        return canonical;
+    }
+    return {};
+}
+
+QString hotspotNameForRoom(const QString &roomName)
+{
+    const QString key = normalizeKey(roomName);
+    if (key == QStringLiteral("bar"))
+        return QStringLiteral("IDS_HOTSPOT_BAR");
+    if (key == QStringLiteral("trader"))
+        return QStringLiteral("IDS_HOTSPOT_COMMODITYTRADER_ROOM");
+    if (key == QStringLiteral("equipment"))
+        return QStringLiteral("IDS_HOTSPOT_EQUIPMENTDEALER_ROOM");
+    if (key == QStringLiteral("shipdealer"))
+        return QStringLiteral("IDS_HOTSPOT_SHIPDEALER_ROOM");
+    if (key == QStringLiteral("cityscape"))
+        return QStringLiteral("IDS_HOTSPOT_CITYSCAPE");
+    if (key == QStringLiteral("deck"))
+        return QStringLiteral("IDS_HOTSPOT_DECK");
+    return QStringLiteral("IDS_HOTSPOT_EXIT");
+}
+
+QStringList orderedNavigationTargets(const QString &roomName,
+                                     const QStringList &allRooms,
+                                     const QString &startRoom,
+                                     const QHash<QString, QStringList> &existingBlocksByTarget)
+{
+    QStringList targets;
+    auto appendTarget = [&targets](const QString &target) {
+        const QString canonical = canonicalNavRoom(target);
+        if (!canonical.isEmpty() && !targets.contains(canonical, Qt::CaseInsensitive))
+            targets.append(canonical);
+    };
+
+    const QString canonicalRoom = canonicalNavRoom(roomName);
+    const QString launchTarget = normalizeKey(canonicalRoom) == QStringLiteral("deck")
+            || normalizeKey(canonicalRoom) == QStringLiteral("cityscape")
+        ? canonicalRoom
+        : canonicalNavRoom(startRoom);
+    appendTarget(launchTarget);
+    appendTarget(QStringLiteral("Bar"));
+    appendTarget(QStringLiteral("Trader"));
+    appendTarget(QStringLiteral("Equipment"));
+    appendTarget(QStringLiteral("ShipDealer"));
+    for (const QString &room : allRooms)
+        appendTarget(room);
+    for (auto it = existingBlocksByTarget.constBegin(); it != existingBlocksByTarget.constEnd(); ++it)
+        appendTarget(it.key());
+    return targets;
+}
+
 QString normalizeRoomNavigation(const QString &content,
                                 const QString &roomName,
                                 const QStringList &allRooms,
                                 const QString &startRoom)
 {
-    Q_UNUSED(roomName);
     QString normalizedContent = content;
     normalizedContent.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
     normalizedContent.replace(QLatin1Char('\r'), QLatin1Char('\n'));
     QStringList lines = normalizedContent.split(QLatin1Char('\n'));
     QStringList result;
     int insertIndex = -1;
-    const QSet<QString> validTargets = QSet<QString>(allRooms.cbegin(), allRooms.cend());
+    QHash<QString, QStringList> existingBlocksByTarget;
     int index = 0;
     while (index < lines.size()) {
         if (lines.at(index).trimmed().compare(QStringLiteral("[Hotspot]"), Qt::CaseInsensitive) == 0) {
@@ -705,8 +766,9 @@ QString normalizeRoomNavigation(const QString &content,
             while (index < lines.size() && !lines.at(index).trimmed().startsWith(QLatin1Char('[')))
                 block.append(lines.at(index++));
 
-            bool isExitDoor = false;
+            QString behavior;
             QString roomSwitch;
+            QString virtualRoom;
             for (const QString &line : block) {
                 const QString trimmed = line.trimmed();
                 const int eq = trimmed.indexOf(QLatin1Char('='));
@@ -714,14 +776,21 @@ QString normalizeRoomNavigation(const QString &content,
                     continue;
                 const QString key = trimmed.left(eq).trimmed().toLower();
                 const QString value = trimmed.mid(eq + 1).trimmed();
-                if (key == QStringLiteral("behavior") && value.compare(QStringLiteral("ExitDoor"), Qt::CaseInsensitive) == 0)
-                    isExitDoor = true;
-                if (key == QStringLiteral("room_switch"))
+                if (key == QStringLiteral("behavior"))
+                    behavior = value;
+                else if (key == QStringLiteral("room_switch"))
                     roomSwitch = value;
+                else if (key == QStringLiteral("set_virtual_room") || key == QStringLiteral("virtual_room"))
+                    virtualRoom = value;
             }
 
-            if (isExitDoor && validTargets.contains(roomSwitch)) {
+            const bool navigationBehavior = behavior.compare(QStringLiteral("ExitDoor"), Qt::CaseInsensitive) == 0
+                || behavior.compare(QStringLiteral("VirtualRoom"), Qt::CaseInsensitive) == 0;
+            const QString navTarget = canonicalNavRoom(!virtualRoom.trimmed().isEmpty() ? virtualRoom : roomSwitch);
+            if (navigationBehavior && !navTarget.isEmpty()) {
                 insertIndex = result.size();
+                if (!existingBlocksByTarget.contains(navTarget))
+                    existingBlocksByTarget.insert(navTarget, block);
                 continue;
             }
             result.append(block);
@@ -738,11 +807,27 @@ QString normalizeRoomNavigation(const QString &content,
     }
 
     QStringList navLines;
-    for (const auto &entry : navHotspots(allRooms, startRoom)) {
+    const QStringList orderedTargets = orderedNavigationTargets(roomName, allRooms, startRoom, existingBlocksByTarget);
+    const QString canonicalRoom = canonicalNavRoom(roomName);
+    const QString launchTarget = normalizeKey(canonicalRoom) == QStringLiteral("deck")
+            || normalizeKey(canonicalRoom) == QStringLiteral("cityscape")
+        ? canonicalRoom
+        : canonicalNavRoom(startRoom);
+    for (const QString &target : orderedTargets) {
+        if (existingBlocksByTarget.contains(target)) {
+            navLines += existingBlocksByTarget.value(target);
+            navLines << QString();
+            continue;
+        }
+
+        const QString hotspotName = target.compare(launchTarget, Qt::CaseInsensitive) == 0
+                && target.compare(canonicalRoom, Qt::CaseInsensitive) != 0
+            ? QStringLiteral("IDS_HOTSPOT_EXIT")
+            : hotspotNameForRoom(target);
         navLines << QStringLiteral("[Hotspot]")
-                 << QStringLiteral("name = %1").arg(entry.first)
+                 << QStringLiteral("name = %1").arg(hotspotName)
                  << QStringLiteral("behavior = ExitDoor")
-                 << QStringLiteral("room_switch = %1").arg(entry.second)
+                 << QStringLiteral("room_switch = %1").arg(target)
                  << QString();
     }
 
@@ -1764,12 +1849,16 @@ bool BaseEditService::applyCreate(const BaseEditState &state,
         if (!room.enabled || room.roomName.trimmed().isEmpty())
             continue;
         const QString canonical = canonicalRoomName(room.roomName);
-        QString roomText = room.templateContent.trimmed().isEmpty()
+        const bool fromTemplate = !room.templateContent.trimmed().isEmpty();
+        QString roomText = !fromTemplate
             ? generateRoomIniText(canonical, rooms, chooseStartRoom(rooms, working.startRoom))
             : adaptTemplateRoom(room.templateContent, rooms);
         if (!room.scenePath.trimmed().isEmpty())
             roomText = overrideRoomScene(roomText, room.scenePath);
-        roomText = normalizeRoomNavigation(roomText, canonical, rooms, chooseStartRoom(rooms, working.startRoom));
+        roomText = normalizeRoomNavigation(roomText,
+                                          canonical,
+                                          rooms,
+                                          chooseStartRoom(rooms, working.startRoom));
         const QString roomPath = QDir(working.roomsDirectoryAbsolutePath)
             .absoluteFilePath(QStringLiteral("%1_%2.ini").arg(generatedBaseStem(working.baseNickname), normalizeKey(canonical)));
         outResult->stagedWrites.append({roomPath, roomText});
@@ -1827,7 +1916,8 @@ bool BaseEditService::applyEdit(SolarObject &object,
         const QString roomPath = QDir(working.roomsDirectoryAbsolutePath)
             .absoluteFilePath(QStringLiteral("%1_%2.ini").arg(generatedBaseStem(working.baseNickname), normalizeKey(canonical)));
         QString roomText = textForPath(roomPath, textOverrides);
-        if (roomText.trimmed().isEmpty())
+        const bool hadExistingText = !roomText.trimmed().isEmpty();
+        if (!hadExistingText)
             roomText = generateRoomIniText(canonical, rooms, startRoom);
         if (!room.scenePath.trimmed().isEmpty())
             roomText = overrideRoomScene(roomText, room.scenePath);

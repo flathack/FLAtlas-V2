@@ -298,20 +298,50 @@ void TestBaseEditService::createFromTemplateCopiesRoomContentAndNpcData()
                   "file = Universe\\Systems\\LI01\\BASES\\ROOMS\\li01_03_bar.ini\n\n"
                   "[Room]\n"
                   "nickname = Deck\n"
-                  "file = Universe\\Systems\\LI01\\BASES\\ROOMS\\li01_03_deck.ini\n");
+                  "file = Universe\\Systems\\LI01\\BASES\\ROOMS\\li01_03_deck.ini\n\n"
+                  "[Room]\n"
+                  "nickname = ShipDealer\n"
+                  "file = Universe\\Systems\\LI01\\BASES\\ROOMS\\li01_03_shipdealer.ini\n");
     writeTextFile(dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/BASES/ROOMS/li01_03_bar.ini",
                   "[Room_Info]\n"
                   "set_script = Scripts\\Bases\\Li_05_Bar_hardpoint_01.thn\n"
                   "scene = all, ambient, Scripts\\Bases\\Li_05_Bar_ambi_int_01.thn\n\n"
                   "[Hotspot]\n"
+                  "name = IDS_HOTSPOT_DECK\n"
+                  "behavior = ExitDoor\n"
+                  "room_switch = Deck\n\n"
+                  "[Hotspot]\n"
+                  "name = IDS_HOTSPOT_BAR\n"
+                  "behavior = ExitDoor\n"
+                  "room_switch = Bar\n\n"
+                  "[Hotspot]\n"
                   "name = IDS_HOTSPOT_COMMODITYTRADER_ROOM\n"
                   "behavior = ExitDoor\n"
                   "room_switch = Deck\n"
-                  "set_virtual_room = Trader\n");
+                  "set_virtual_room = Trader\n\n"
+                  "[Hotspot]\n"
+                  "name = IDS_HOTSPOT_EQUIPMENTDEALER_ROOM\n"
+                  "behavior = ExitDoor\n"
+                  "room_switch = Deck\n"
+                  "set_virtual_room = Equipment\n\n"
+                  "[Hotspot]\n"
+                  "name = IDS_HOTSPOT_SHIPDEALER_ROOM\n"
+                  "behavior = ExitDoor\n"
+                  "room_switch = ShipDealer\n\n"
+                  "[Hotspot]\n"
+                  "name = IDS_HOTSPOT_NEWSVENDOR\n"
+                  "behavior = NewsVendor\n\n"
+                  "[Hotspot]\n"
+                  "name = IDS_HOTSPOT_MISSIONVENDOR\n"
+                  "behavior = MissionVendor\n");
     writeTextFile(dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/BASES/ROOMS/li01_03_deck.ini",
                   "[Room_Info]\n"
                   "set_script = Scripts\\Bases\\Li_08_Deck_hardpoint_01.thn\n"
                   "scene = all, ambient, Scripts\\Bases\\Li_08_Deck_ambi_int_01.thn\n");
+    writeTextFile(dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/BASES/ROOMS/li01_03_shipdealer.ini",
+                  "[Room_Info]\n"
+                  "set_script = Scripts\\Bases\\Li_01_shipdealer_hardpoint_01.thn\n"
+                  "scene = all, ambient, Scripts\\Bases\\Li_01_shipdealer_ambi_int_01.thn\n");
     writeTextFile(dir.path() + "/DATA/MISSIONS/mbases.ini",
                   "[MBase]\n"
                   "nickname = Li01_03_Base\n"
@@ -367,10 +397,36 @@ void TestBaseEditService::createFromTemplateCopiesRoomContentAndNpcData()
         if (write.absolutePath.endsWith("_bar.ini", Qt::CaseInsensitive)) {
             sawRoomCopy = true;
             QVERIFY(write.content.contains("Li_05_Bar_hardpoint_01.thn"));
-            QVERIFY(!write.content.contains("set_virtual_room = Trader"));
-            QVERIFY(!write.content.contains("room_switch = Trader"));
-            QVERIFY(write.content.contains("room_switch = Deck"));
+            QVERIFY(write.content.contains("set_virtual_room = Trader"));
+            QVERIFY(write.content.contains("set_virtual_room = Equipment"));
+            QVERIFY(write.content.contains("room_switch = ShipDealer"));
+            QVERIFY(write.content.contains("name = IDS_HOTSPOT_NEWSVENDOR"));
+            QVERIFY(write.content.contains("name = IDS_HOTSPOT_MISSIONVENDOR"));
+            const int deckIndex = write.content.indexOf("name = IDS_HOTSPOT_DECK");
+            const int barIndex = write.content.indexOf("name = IDS_HOTSPOT_BAR");
+            const int traderIndex = write.content.indexOf("name = IDS_HOTSPOT_COMMODITYTRADER_ROOM");
+            const int equipmentIndex = write.content.indexOf("name = IDS_HOTSPOT_EQUIPMENTDEALER_ROOM");
+            const int shipDealerIndex = write.content.indexOf("name = IDS_HOTSPOT_SHIPDEALER_ROOM");
+            QVERIFY(deckIndex >= 0);
+            QVERIFY(barIndex > deckIndex);
+            QVERIFY(traderIndex > barIndex);
+            QVERIFY(equipmentIndex > traderIndex);
+            QVERIFY(shipDealerIndex > equipmentIndex);
             QVERIFY(!write.content.contains("Li01_03_Base"));
+        }
+        if (write.absolutePath.endsWith("_deck.ini", Qt::CaseInsensitive)) {
+            const int launchpadIndex = write.content.indexOf("name = IDS_HOTSPOT_DECK");
+            const int barIndex = write.content.indexOf("name = IDS_HOTSPOT_BAR");
+            const int traderIndex = write.content.indexOf("name = IDS_HOTSPOT_COMMODITYTRADER_ROOM");
+            const int equipmentIndex = write.content.indexOf("name = IDS_HOTSPOT_EQUIPMENTDEALER_ROOM");
+            const int shipDealerIndex = write.content.indexOf("name = IDS_HOTSPOT_SHIPDEALER_ROOM");
+            QVERIFY(launchpadIndex >= 0);
+            QVERIFY(barIndex > launchpadIndex);
+            QVERIFY(traderIndex > barIndex);
+            QVERIFY(equipmentIndex > traderIndex);
+            QVERIFY(shipDealerIndex > equipmentIndex);
+            QCOMPARE(write.content.count("name = IDS_HOTSPOT_DECK"), 1);
+            QCOMPARE(write.content.count("behavior = ExitDoor\nroom_switch = Deck"), 1);
         }
         if (write.absolutePath.endsWith("mbases.ini", Qt::CaseInsensitive)) {
             sawNpcCopy = true;

@@ -27,6 +27,7 @@
 #include <QSet>
 #include <QSplitter>
 #include <QStackedLayout>
+#include <QTimer>
 #include <QStringListModel>
 #include <QTableWidget>
 #include <QTableWidgetItem>
@@ -122,6 +123,12 @@ QString comboStoredValue(const QComboBox *combo)
     const QString text = combo->currentText().trimmed();
     const int separator = text.indexOf(QStringLiteral(" - "));
     return separator >= 0 ? text.left(separator).trimmed() : text;
+}
+
+int previewSidebarPreferredWidth(QWidget *dialog)
+{
+    const int dialogWidth = dialog ? dialog->width() : 1240;
+    return std::clamp(dialogWidth / 3, 320, 420);
 }
 
 struct BaseDialogCatalog {
@@ -396,6 +403,14 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     splitter->addWidget(previewSidebar);
     splitter->setStretchFactor(0, 7);
     splitter->setStretchFactor(1, 5);
+    previewSidebar->setMinimumWidth(320);
+    previewSidebar->setMaximumWidth(420);
+    QTimer::singleShot(0, this, [this, splitter, previewSidebar]() {
+        const int previewWidth = previewSidebarPreferredWidth(this);
+        previewSidebar->setMinimumWidth(previewWidth);
+        previewSidebar->setMaximumWidth(previewWidth);
+        splitter->setSizes({std::max(720, width() - previewWidth - 48), previewWidth});
+    });
 
     auto *baseGroup = new QGroupBox(tr("Base"), content);
     auto *baseForm = new QFormLayout(baseGroup);

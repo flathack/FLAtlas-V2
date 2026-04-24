@@ -807,7 +807,12 @@ IniSection SystemPersistence::serializeObjectSection(const SolarObject &obj)
     setOptionalIntEntry(sec.entries, QStringLiteral("ids_name"), obj.idsName());
     setOptionalIntEntry(sec.entries, QStringLiteral("ids_info"), obj.idsInfo());
     setOptionalVec3Entry(sec.entries, QStringLiteral("pos"), obj.position());
-    setOptionalVec3Entry(sec.entries, QStringLiteral("rotate"), obj.rotation());
+    const int rotateIndex = findEntryIndex(sec.entries, QStringLiteral("rotate"));
+    const bool preserveExplicitZeroRotate = rotateIndex >= 0
+        && obj.rotation().isNull()
+        && vec3Equals(parseVec3(sec.entries[rotateIndex].second), QVector3D());
+    if (!preserveExplicitZeroRotate)
+        setOptionalVec3Entry(sec.entries, QStringLiteral("rotate"), obj.rotation());
     setOptionalEntry(sec.entries, QStringLiteral("archetype"), obj.archetype());
     setOptionalEntry(sec.entries, QStringLiteral("base"), obj.base());
     setOptionalEntry(sec.entries, QStringLiteral("dock_with"), obj.dockWith());
