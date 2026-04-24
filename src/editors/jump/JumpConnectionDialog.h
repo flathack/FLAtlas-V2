@@ -1,17 +1,23 @@
 #pragma once
-// editors/jump/JumpConnectionDialog.h – Create/edit jump connections between systems
-//
-// Freelancer jump gates/holes are paired objects in two systems that reference
-// each other via goto = <system>, <object>.  This dialog manages both sides.
 
-#include <QDialog>
+#include "domain/SystemDocument.h"
 #include "domain/UniverseData.h"
 
+#include <QDialog>
+#include <QVector3D>
+#include <memory>
+
+namespace flatlas::rendering { class MapScene; class SystemMapView; }
+
 class QComboBox;
-class QLineEdit;
+class QGraphicsLineItem;
+class QGraphicsScene;
+class QGraphicsView;
 class QLabel;
-class QCheckBox;
-class QDialogButtonBox;
+class QLineEdit;
+class QPushButton;
+class QSpinBox;
+class QGraphicsEllipseItem;
 
 namespace flatlas::editors {
 
@@ -20,40 +26,73 @@ class JumpConnectionDialog : public QDialog {
 public:
     explicit JumpConnectionDialog(QWidget *parent = nullptr);
 
-    /// Set available systems for the combo boxes.
+    void setSourceSystem(const flatlas::domain::SystemInfo &system,
+                         flatlas::domain::SystemDocument *document);
     void setSystems(const QVector<flatlas::domain::SystemInfo> &systems);
+    void setJumpHoleArchetypes(const QStringList &archetypes);
+    void setGateLoadouts(const QStringList &loadouts);
+    void setFactions(const QStringList &factions);
+    void setPilots(const QStringList &pilots);
 
-    /// Set existing connections for duplicate validation.
-    void setExistingConnections(const QVector<flatlas::domain::JumpConnection> &conns);
-
-    /// Pre-fill the dialog for editing an existing connection.
-    void setConnection(const flatlas::domain::JumpConnection &conn);
-
-    /// Return the configured connection.
     flatlas::domain::JumpConnection connection() const;
-
-    /// Whether to auto-create the reverse side object.
-    bool createReverseSide() const;
-
-    /// Whether the user selected JumpGate (true) or JumpHole (false).
     bool isJumpGate() const;
+    QString selectedArchetype() const;
+    QString selectedLoadout() const;
+    QString selectedReputation() const;
+    QString selectedPilot() const;
+    QString behavior() const;
+    int difficultyLevel() const;
+    QVector3D sourcePosition() const;
+    QVector3D destinationPosition() const;
 
 private:
     void setupUi();
-    void validate();
-    void onSystemChanged();
+    void refreshDestinationSystem();
+    void refreshTypeUi();
+    void refreshNicknameSuggestions();
+    void refreshUniversePreview();
+    void updateStatus();
+    void placeMarker(flatlas::rendering::MapScene *scene,
+                     QGraphicsEllipseItem *&marker,
+                     const QVector3D &worldPos);
+    QPair<QString, QString> nextInnerSystemAliasPair(const QString &systemNick) const;
+    QString suggestedNickname(bool sourceSide) const;
 
-    QComboBox        *m_fromSystem    = nullptr;
-    QLineEdit        *m_fromObject    = nullptr;
-    QComboBox        *m_toSystem      = nullptr;
-    QLineEdit        *m_toObject      = nullptr;
-    QComboBox        *m_typeCombo     = nullptr;
-    QCheckBox        *m_reverseCheck  = nullptr;
-    QLabel           *m_statusLabel   = nullptr;
-    QDialogButtonBox *m_buttonBox     = nullptr;
+    flatlas::domain::SystemInfo currentDestinationSystem() const;
 
-    QVector<flatlas::domain::SystemInfo>      m_systems;
-    QVector<flatlas::domain::JumpConnection>  m_existing;
+    QVector<flatlas::domain::SystemInfo> m_systems;
+    flatlas::domain::SystemInfo m_sourceSystem;
+    flatlas::domain::SystemDocument *m_sourceDocument = nullptr;
+    std::unique_ptr<flatlas::domain::SystemDocument> m_destinationDocument;
+    QStringList m_jumpHoleArchetypes;
+    QStringList m_gateLoadouts;
+
+    QComboBox *m_typeCombo = nullptr;
+    QLabel *m_sourceSystemLabel = nullptr;
+    QComboBox *m_destinationSystemCombo = nullptr;
+    QComboBox *m_archetypeCombo = nullptr;
+    QLineEdit *m_sourceObjectEdit = nullptr;
+    QLineEdit *m_destinationObjectEdit = nullptr;
+    QLineEdit *m_behaviorEdit = nullptr;
+    QSpinBox *m_difficultySpin = nullptr;
+    QComboBox *m_loadoutCombo = nullptr;
+    QComboBox *m_factionCombo = nullptr;
+    QComboBox *m_pilotCombo = nullptr;
+    QLabel *m_statusLabel = nullptr;
+    QPushButton *m_okButton = nullptr;
+    flatlas::rendering::MapScene *m_sourceScene = nullptr;
+    flatlas::rendering::SystemMapView *m_sourceView = nullptr;
+    flatlas::rendering::MapScene *m_destinationScene = nullptr;
+    flatlas::rendering::SystemMapView *m_destinationView = nullptr;
+    QGraphicsScene *m_universeScene = nullptr;
+    QGraphicsView *m_universeView = nullptr;
+    QGraphicsEllipseItem *m_sourceMarker = nullptr;
+    QGraphicsEllipseItem *m_destinationMarker = nullptr;
+    QGraphicsLineItem *m_universeConnectionLine = nullptr;
+    QVector3D m_sourcePosition;
+    QVector3D m_destinationPosition;
+    QString m_lastSuggestedSourceNickname;
+    QString m_lastSuggestedDestinationNickname;
 };
 
 } // namespace flatlas::editors

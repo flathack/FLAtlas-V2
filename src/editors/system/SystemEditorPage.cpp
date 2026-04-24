@@ -10,6 +10,9 @@
 #include "CreateFieldZoneDialog.h"
 #include "CreateExclusionZoneDialog.h"
 #include "ExclusionZoneUtils.h"
+#include "JumpConnectionService.h"
+#include "editors/jump/JumpConnectionDialog.h"
+#include "editors/universe/UniverseSerializer.h"
 #include "core/Theme.h"
 #include "editors/ini/IniCodeEditor.h"
 #include "editors/ini/IniSyntaxHighlighter.h"
@@ -240,6 +243,71 @@ QStringList loadFactionDisplays(const QString &gameRoot)
         return a.compare(b, Qt::CaseInsensitive) < 0;
     });
     return values;
+}
+
+QStringList loadPilotNicknames(const QString &gameRoot)
+{
+    QStringList values;
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
+    const QString missionsDir = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("MISSIONS"));
+    const QStringList sources = {
+        flatlas::core::PathUtils::ciResolvePath(missionsDir, QStringLiteral("pilots_population.ini")),
+        flatlas::core::PathUtils::ciResolvePath(missionsDir, QStringLiteral("pilots_story.ini")),
+    };
+
+    QSet<QString> seen;
+    for (const QString &source : sources) {
+        if (source.isEmpty())
+            continue;
+        const IniDocument doc = IniParser::parseFile(source);
+        for (const IniSection &section : doc) {
+            if (section.name.compare(QStringLiteral("Pilot"), Qt::CaseInsensitive) != 0)
+                continue;
+            const QString nickname = section.value(QStringLiteral("nickname")).trimmed();
+            if (nickname.isEmpty()) {
+                continue;
+            }
+            const QString key = nickname.toLower();
+            if (seen.contains(key))
+                continue;
+            seen.insert(key);
+            values.append(nickname);
+        }
+    }
+    std::sort(values.begin(), values.end(), [](const QString &a, const QString &b) {
+        return a.compare(b, Qt::CaseInsensitive) < 0;
+    });
+    return values;
+}
+
+QVector<flatlas::domain::SystemInfo> loadUniverseSystemsForEditor(const QString &gameRoot)
+{
+    QVector<flatlas::domain::SystemInfo> systems;
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
+    const QString universeIni = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("UNIVERSE/universe.ini"));
+    if (universeIni.isEmpty())
+        return systems;
+
+    const auto universe = flatlas::editors::UniverseSerializer::load(universeIni);
+    if (!universe)
+        return systems;
+
+    const QString universeDir = QFileInfo(universeIni).absolutePath();
+    for (auto system : universe->systems) {
+        QString absoluteFilePath = flatlas::core::PathUtils::ciResolvePath(universeDir, system.filePath);
+        if (absoluteFilePath.isEmpty())
+            absoluteFilePath = QDir(universeDir).absoluteFilePath(system.filePath);
+        system.filePath = absoluteFilePath;
+        systems.append(system);
+    }
+
+    std::sort(systems.begin(), systems.end(), [](const flatlas::domain::SystemInfo &lhs,
+                                                 const flatlas::domain::SystemInfo &rhs) {
+        const QString left = lhs.displayName.trimmed().isEmpty() ? lhs.nickname : lhs.displayName;
+        const QString right = rhs.displayName.trimmed().isEmpty() ? rhs.nickname : rhs.displayName;
+        return left.compare(right, Qt::CaseInsensitive) < 0;
+    });
+    return systems;
 }
 
 QString factionNicknameFromDisplay(const QString &raw)
@@ -1258,9 +1326,7 @@ void SystemEditorPage::setupRightSidebar()
     creationLayout->addWidget(m_createPatrolZoneButton);
 
     m_createJumpButton = makeSidebarButton(tr("Jump"), creationGroup);
-    connect(m_createJumpButton, &QPushButton::clicked, this, [this]() {
-        showNotYetPorted(tr("Jump"), QStringLiteral("FLAtlas/fl_editor/main_window.py::_start_connection_dialog"));
-    });
+    connect(m_createJumpButton, &QPushButton::clicked, this, &SystemEditorPage::onCreateJumpConnection);
     creationLayout->addWidget(m_createJumpButton);
 
     m_createSunButton = makeSidebarButton(tr("Sonne"), creationGroup);
@@ -1711,6 +1777,72 @@ void SystemEditorPage::onDeleteSelected()
 {
     if (!m_document || m_selectedNicknames.isEmpty())
         return;
+
+    if (m_selectedNicknames.size() == 1) {
+        if (SolarObject *jumpObject = findObjectByNickname(m_selectedNicknames.first())) {
+            const bool isJumpObject = jumpObject->type() == SolarObject::JumpGate
+                                      || jumpObject->type() == SolarObject::JumpHole
+                                      || !jumpObject->gotoTarget().trimmed().isEmpty();
+            if (isJumpObject) {
+                if (!ensureSavedForCrossSystemOperation(tr("Jump-Verbindung loeschen"),
+                                                        tr("Jump-Verbindungen werden in beiden Systemdateien direkt entfernt."))) {
+                    return;
+                }
+
+                const QStringList gotoParts =
+                    jumpObject->gotoTarget().split(QLatin1Char(','), Qt::KeepEmptyParts);
+                const QString targetSystem = gotoParts.value(0).trimmed();
+                const QString targetObject = gotoParts.value(1).trimmed();
+
+                const auto systems =
+                    loadUniverseSystemsForEditor(flatlas::core::EditingContext::instance().primaryGamePath());
+                QString targetFilePath;
+                for (const auto &system : systems) {
+                    if (system.nickname.compare(targetSystem, Qt::CaseInsensitive) == 0) {
+                        targetFilePath = system.filePath;
+                        break;
+                    }
+                }
+
+                QString prompt = tr("Die Jump-Verbindung '%1' wird aus dem aktuellen System entfernt.")
+                                     .arg(jumpObject->nickname());
+                bool removeRemoteSide = false;
+                if (!targetSystem.isEmpty() && !targetObject.isEmpty()) {
+                    removeRemoteSide = true;
+                    prompt += tr("\n\nDie Gegenstelle '%1' in System '%2' wird ebenfalls entfernt, damit kein kaputter goto-Link zurueckbleibt.")
+                                  .arg(targetObject, targetSystem);
+                } else {
+                    prompt += tr("\n\nEs wurde keine vollstaendige Gegenstelle gefunden. Es wird nur die lokale Seite entfernt.");
+                }
+
+                if (QMessageBox::question(this,
+                                          tr("Jump-Verbindung loeschen"),
+                                          prompt,
+                                          QMessageBox::Yes | QMessageBox::Cancel,
+                                          QMessageBox::Cancel) != QMessageBox::Yes) {
+                    return;
+                }
+
+                JumpConnectionDeleteRequest deleteRequest;
+                deleteRequest.currentSystemFilePath = m_document->filePath();
+                deleteRequest.currentObjectNickname = jumpObject->nickname();
+                deleteRequest.destinationSystemFilePath = targetFilePath;
+                deleteRequest.destinationObjectNickname = targetObject;
+                deleteRequest.removeRemoteSide = removeRemoteSide && !targetFilePath.trimmed().isEmpty();
+
+                QString errorMessage;
+                if (!JumpConnectionService::deleteConnection(deleteRequest, &errorMessage)) {
+                    QMessageBox::warning(this, tr("Jump-Verbindung loeschen"),
+                                         errorMessage.isEmpty() ? tr("Die Jump-Verbindung konnte nicht geloescht werden.")
+                                                                : errorMessage);
+                    return;
+                }
+
+                loadFile(m_document->filePath());
+                return;
+            }
+        }
+    }
 
     QVector<std::shared_ptr<SolarObject>> objectsToRemove;
     QVector<std::shared_ptr<ZoneItem>> zonesToRemove;
@@ -2604,6 +2736,28 @@ void SystemEditorPage::jumpToSelectedFromSidebar()
     }
 }
 
+bool SystemEditorPage::ensureSavedForCrossSystemOperation(const QString &actionTitle,
+                                                          const QString &actionDescription)
+{
+    if (!m_document)
+        return false;
+    if (!m_document->isDirty())
+        return true;
+
+    const int answer = QMessageBox::question(
+        this,
+        actionTitle,
+        tr("%1\n\nDas aktuelle System hat ungespeicherte Aenderungen. Diese muessen zuerst gespeichert werden, bevor die verknuepfte Cross-System-Operation sicher ausgefuehrt werden kann.")
+            .arg(actionDescription),
+        QMessageBox::Save | QMessageBox::Cancel,
+        QMessageBox::Save);
+
+    if (answer != QMessageBox::Save)
+        return false;
+
+    return save();
+}
+
 void SystemEditorPage::onItemsMoved(const QHash<QString, QPointF> &oldPositions,
                                     const QHash<QString, QPointF> &newPositions,
                                     double verticalOffsetMeters)
@@ -3369,6 +3523,84 @@ void SystemEditorPage::onCreatePatrolZone()
         return;
 
     beginPatrolZonePlacement(request);
+}
+
+void SystemEditorPage::onCreateJumpConnection()
+{
+    if (!m_document || !m_mapView || m_mapView->isPlacementModeActive())
+        return;
+
+    if (!ensureSavedForCrossSystemOperation(tr("Jump-Verbindung erstellen"),
+                                            tr("Jump-Verbindungen bearbeiten immer beide Systemdateien direkt."))) {
+        return;
+    }
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    const auto systems = loadUniverseSystemsForEditor(gameRoot);
+    if (systems.isEmpty()) {
+        QMessageBox::warning(this, tr("Jump-Verbindung erstellen"),
+                             tr("Es konnten keine gueltigen Systeme aus universe.ini geladen werden."));
+        return;
+    }
+
+    flatlas::domain::SystemInfo sourceSystem;
+    sourceSystem.nickname = m_document->name().trimmed();
+    sourceSystem.displayName = m_document->displayName().trimmed();
+    sourceSystem.filePath = m_document->filePath();
+
+    JumpConnectionDialog dialog(this);
+    dialog.setSourceSystem(sourceSystem, m_document.get());
+    dialog.setSystems(systems);
+    dialog.setJumpHoleArchetypes(loadSolarArchetypesMatching(gameRoot, {QStringLiteral("jumphole"),
+                                                                       QStringLiteral("jump_hole")}));
+    dialog.setGateLoadouts(loadLoadoutsMatching(gameRoot, {QStringLiteral("jumpgate")}));
+    dialog.setFactions(loadFactionDisplays(gameRoot));
+    dialog.setPilots(loadPilotNicknames(gameRoot));
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const auto connection = dialog.connection();
+    JumpConnectionCreateRequest request;
+    request.sourceSystemNickname = sourceSystem.nickname;
+    request.sourceSystemDisplayName = sourceSystem.displayName.trimmed().isEmpty() ? sourceSystem.nickname : sourceSystem.displayName;
+    request.sourceSystemFilePath = sourceSystem.filePath;
+    request.destinationSystemNickname = connection.toSystem.trimmed();
+    request.sourceObjectNickname = connection.fromObject.trimmed();
+    request.destinationObjectNickname = connection.toObject.trimmed();
+    request.kind = dialog.isJumpGate() ? QStringLiteral("gate") : QStringLiteral("hole");
+    request.archetype = dialog.selectedArchetype();
+    request.sourcePosition = dialog.sourcePosition();
+    request.destinationPosition = dialog.destinationPosition();
+    request.loadout = dialog.selectedLoadout();
+    request.reputation = factionNicknameFromDisplay(dialog.selectedReputation());
+    request.pilot = dialog.selectedPilot();
+    request.behavior = dialog.behavior();
+    request.difficultyLevel = dialog.difficultyLevel();
+
+    for (const auto &system : systems) {
+        if (system.nickname.compare(request.destinationSystemNickname, Qt::CaseInsensitive) != 0)
+            continue;
+        request.destinationSystemDisplayName =
+            system.displayName.trimmed().isEmpty() ? system.nickname : system.displayName;
+        request.destinationSystemFilePath = system.filePath;
+        break;
+    }
+
+    if (request.destinationSystemFilePath.trimmed().isEmpty()) {
+        QMessageBox::warning(this, tr("Jump-Verbindung erstellen"),
+                             tr("Das Zielsystem konnte nicht aufgeloest werden."));
+        return;
+    }
+
+    QString errorMessage;
+    if (!JumpConnectionService::createConnection(request, &errorMessage)) {
+        QMessageBox::warning(this, tr("Jump-Verbindung erstellen"),
+                             errorMessage.isEmpty() ? tr("Die Jump-Verbindung konnte nicht erstellt werden.")
+                                                    : errorMessage);
+        return;
+    }
+
+    loadFile(m_document->filePath());
 }
 
 void SystemEditorPage::onCreatePlanet()

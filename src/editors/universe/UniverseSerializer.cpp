@@ -1,7 +1,9 @@
 // editors/universe/UniverseSerializer.cpp – Universe.ini Laden/Speichern (Phase 9)
 
 #include "UniverseSerializer.h"
+#include "core/EditingContext.h"
 #include "core/PathUtils.h"
+#include "infrastructure/freelancer/IdsStringTable.h"
 #include "infrastructure/parser/IniParser.h"
 #include <QFile>
 #include <QFileInfo>
@@ -46,6 +48,27 @@ static QString sectorDisplayName(const QString &sectorKey)
         return QStringLiteral("Sector %1").arg(match.captured(1));
 
     return sectorKey.trimmed();
+}
+
+static flatlas::infrastructure::IdsStringTable &sharedUniverseIds()
+{
+    static QString cachedGameRoot;
+    static flatlas::infrastructure::IdsStringTable ids;
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath().trimmed();
+    if (gameRoot.compare(cachedGameRoot, Qt::CaseInsensitive) == 0)
+        return ids;
+
+    cachedGameRoot = gameRoot;
+    ids = {};
+
+    if (gameRoot.isEmpty())
+        return ids;
+
+    const QString exeDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("EXE"));
+    const QString lookupDir = exeDir.isEmpty() ? gameRoot : exeDir;
+    ids.loadFromFreelancerDir(lookupDir);
+    return ids;
 }
 
 struct MultiUniverseParseResult {
@@ -325,8 +348,13 @@ std::unique_ptr<UniverseData> UniverseSerializer::load(const QString &filePath)
             if (!posStr.isEmpty())
                 sys.position = parsePos(posStr);
 
-            // Display name defaults to nickname
-            sys.displayName = sys.nickname;
+            const auto &ids = sharedUniverseIds();
+            QString resolvedDisplayName;
+            if (sys.idsName > 0)
+                resolvedDisplayName = ids.getString(sys.idsName).trimmed();
+            if (resolvedDisplayName.isEmpty() && sys.stridName > 0)
+                resolvedDisplayName = ids.getString(sys.stridName).trimmed();
+            sys.displayName = resolvedDisplayName.isEmpty() ? sys.nickname : resolvedDisplayName;
 
             universe->addSystem(sys);
 

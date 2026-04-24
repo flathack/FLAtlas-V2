@@ -121,6 +121,7 @@ private:
     void onCreateLightSource();
     void onCreateSurprise();
     void onCreatePatrolZone();
+    void onCreateJumpConnection();
     void onCreatePlanet();
     void onCreateBuoy();
     void onCreateWeaponPlatform();
@@ -202,6 +203,7 @@ private:
     void syncLightSourcesInScene();
     int findLightSourceSectionIndexByNickname(const QString &nickname) const;
     QStringList lightSourceNicknames() const;
+    bool ensureSavedForCrossSystemOperation(const QString &actionTitle, const QString &actionDescription);
 
     std::unique_ptr<flatlas::domain::SystemDocument> m_document;
     flatlas::rendering::MapScene *m_mapScene = nullptr;
