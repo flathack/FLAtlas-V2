@@ -5,6 +5,7 @@
 #include "SystemPersistence.h"
 #include "SystemSettingsDialog.h"
 #include "SystemSettingsService.h"
+#include "PlanetCreationService.h"
 #include "SystemUndoCommands.h"
 #include "CreateObjectDialog.h"
 #include "SystemCreationDialogs.h"
@@ -3958,7 +3959,128 @@ void SystemEditorPage::onCreateJumpConnection()
 
 void SystemEditorPage::onCreatePlanet()
 {
-    createQuickObject(SolarObject::Planet, QStringLiteral("new_planet"), QStringLiteral("planet_earthgrncld_3000"));
+    if (!m_document || !m_mapView || !m_mapScene || m_mapView->isPlacementModeActive())
+        return;
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    QStringList existingObjectNicknames;
+    for (const auto &obj : m_document->objects()) {
+        if (obj)
+            existingObjectNicknames.append(obj->nickname());
+    }
+
+    const QString systemToken = QFileInfo(m_document->filePath()).completeBaseName().toUpper();
+    const QString suggested =
+        suggestIndexedNickname(QStringLiteral("%1_planet_").arg(systemToken.isEmpty() ? QStringLiteral("SYSTEM") : systemToken),
+                               existingObjectNicknames);
+
+    const PlanetCreationCatalog catalog = PlanetCreationService::loadCatalog(m_document.get(), gameRoot);
+    CreatePlanetDialog dialog(suggested, catalog, this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const CreatePlanetRequest request = dialog.result();
+    if (request.nickname.isEmpty() || request.archetype.isEmpty() || request.ingameName.isEmpty())
+        return;
+
+    auto finalizePlacement = [this, request, gameRoot](const QPointF &scenePos) {
+        if (!m_document)
+            return;
+
+        const QString deathZoneNickname = QStringLiteral("Zone_%1_death").arg(request.nickname);
+        if (findObjectByNickname(request.nickname) || findZoneByNickname(deathZoneNickname)) {
+            QMessageBox::warning(this, tr("Planet erstellen"),
+                                 tr("Im aktuellen System existiert bereits ein Eintrag mit diesem Nickname."));
+            return;
+        }
+
+        const QPointF worldXZ = MapScene::qtToFl(scenePos.x(), scenePos.y());
+        const auto dataset = flatlas::infrastructure::IdsDataService::loadFromGameRoot(gameRoot);
+        const QString targetDll = flatlas::infrastructure::IdsDataService::defaultCreationDllName(dataset);
+
+        int assignedIdsName = 0;
+        QString idsError;
+        if (!flatlas::infrastructure::IdsDataService::writeStringEntry(
+                dataset, targetDll, 0, request.ingameName, &assignedIdsName, &idsError)) {
+            QMessageBox::warning(this, tr("Planet erstellen"),
+                                 tr("Der Planetenname konnte nicht in die IDS-Daten geschrieben werden.\n%1")
+                                     .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
+            return;
+        }
+
+        const QString infocardXml = PlanetCreationService::wrapInfocardXml(request.infoCardText);
+        int assignedIdsInfo = 0;
+        if (!flatlas::infrastructure::IdsDataService::writeInfocardEntry(
+                dataset, targetDll, 0, infocardXml, &assignedIdsInfo, &idsError)) {
+            QMessageBox::warning(this, tr("Planet erstellen"),
+                                 tr("Der Infocard-Text konnte nicht als neuer ids_info-Eintrag gespeichert werden.\n%1")
+                                     .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
+            return;
+        }
+
+        auto planet = std::make_shared<SolarObject>();
+        planet->setNickname(request.nickname);
+        planet->setType(SolarObject::Planet);
+        planet->setArchetype(request.archetype);
+        planet->setPosition(QVector3D(static_cast<float>(worldXZ.x()), 0.0f, static_cast<float>(worldXZ.y())));
+        planet->setRotation(QVector3D());
+        planet->setIdsName(assignedIdsName);
+        planet->setIdsInfo(assignedIdsInfo);
+        planet->setRawEntries({
+            {QStringLiteral("nickname"), request.nickname},
+            {QStringLiteral("pos"), QStringLiteral("%1, 0, %2").arg(worldXZ.x(), 0, 'f', 0).arg(worldXZ.y(), 0, 'f', 0)},
+            {QStringLiteral("rotate"), QStringLiteral("0, 0, 0")},
+            {QStringLiteral("archetype"), request.archetype},
+            {QStringLiteral("spin"), QStringLiteral("0, 0, 0")},
+            {QStringLiteral("atmosphere_range"), QString::number(request.atmosphereRange)},
+            {QStringLiteral("ids_name"), QString::number(assignedIdsName)},
+            {QStringLiteral("ids_info"), QString::number(assignedIdsInfo)},
+        });
+
+        auto deathZone = std::make_shared<ZoneItem>();
+        deathZone->setNickname(deathZoneNickname);
+        deathZone->setPosition(QVector3D(static_cast<float>(worldXZ.x()), 0.0f, static_cast<float>(worldXZ.y())));
+        deathZone->setRotation(QVector3D());
+        deathZone->setShape(ZoneItem::Sphere);
+        deathZone->setSize(QVector3D(static_cast<float>(request.deathZoneRadius), 0.0f, 0.0f));
+        deathZone->setDamage(request.deathZoneDamage);
+        deathZone->setSortKey(99);
+        deathZone->setRawEntries({
+            {QStringLiteral("nickname"), deathZoneNickname},
+            {QStringLiteral("pos"), QStringLiteral("%1, 0, %2").arg(worldXZ.x(), 0, 'f', 0).arg(worldXZ.y(), 0, 'f', 0)},
+            {QStringLiteral("rotate"), QStringLiteral("0, 0, 0")},
+            {QStringLiteral("shape"), QStringLiteral("SPHERE")},
+            {QStringLiteral("size"), QString::number(request.deathZoneRadius)},
+            {QStringLiteral("damage"), QString::number(request.deathZoneDamage)},
+            {QStringLiteral("sort"), QStringLiteral("99.5")},
+            {QStringLiteral("density"), QStringLiteral("0")},
+            {QStringLiteral("relief_time"), QStringLiteral("0")},
+            {QStringLiteral("ids_info"), QStringLiteral("0")},
+        });
+
+        auto *stack = flatlas::core::UndoManager::instance().stack();
+        stack->beginMacro(tr("Planet erstellen"));
+        stack->push(new AddObjectCommand(m_document.get(), planet, tr("Create Planet")));
+        stack->push(new AddZoneCommand(m_document.get(), deathZone, tr("Create Planet Death Zone")));
+        stack->endMacro();
+        refreshObjectList();
+        m_selectedNicknames = {planet->nickname()};
+        syncTreeSelectionFromNicknames(m_selectedNicknames);
+        syncSceneSelectionFromNicknames(m_selectedNicknames);
+        updateIniEditorForSelection();
+    };
+
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [placementGuard, finalizePlacement](const QPointF &scenePos) {
+        finalizePlacement(scenePos);
+        placementGuard->deleteLater();
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [placementGuard]() { placementGuard->deleteLater(); });
+    m_mapView->setPlacementMode(true,
+                                tr("Klicke auf die Map, um '%1' zu platzieren. [Esc] oder Rechtsklick bricht ab.")
+                                    .arg(request.nickname));
 }
 
 void SystemEditorPage::onCreateBuoy()

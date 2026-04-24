@@ -21,6 +21,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStackedLayout>
@@ -1220,6 +1221,210 @@ CreateSunRequest CreateSunDialog::result() const
     value.deathZoneDamage = m_deathZoneDamageSpin->value();
     value.atmosphereRange = m_atmosphereRangeSpin->value();
     value.star = m_starCombo->currentText().trimmed();
+    return value;
+}
+
+CreatePlanetDialog::CreatePlanetDialog(const QString &suggestedNickname,
+                                       const PlanetCreationCatalog &catalog,
+                                       QWidget *parent)
+    : QDialog(parent)
+    , m_catalog(catalog)
+{
+    setWindowTitle(tr("Planet erstellen"));
+    resize(760, 640);
+
+    auto *layout = new QVBoxLayout(this);
+
+    auto *form = new QFormLayout();
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+
+    m_nicknameEdit = new QLineEdit(suggestedNickname, this);
+    m_nicknameEdit->setPlaceholderText(tr("Objekt-Nickname, z.B. Li01_planet_001"));
+    form->addRow(tr("Nickname:"), m_nicknameEdit);
+
+    m_ingameNameEdit = new QLineEdit(this);
+    m_ingameNameEdit->setPlaceholderText(tr("Sichtbarer Planetenname"));
+    form->addRow(tr("Planet Name:"), m_ingameNameEdit);
+
+    QStringList archetypes = m_catalog.archetypeNicknames();
+    if (archetypes.isEmpty())
+        archetypes << QStringLiteral("planet_earthgrncld_3000");
+    m_archetypeCombo = createEditableCombo(archetypes, this);
+    if (m_archetypeCombo->count() > 0)
+        m_archetypeCombo->setCurrentIndex(0);
+    form->addRow(tr("Planet Archetype:"), m_archetypeCombo);
+
+    m_planetRadiusLabel = new QLabel(this);
+    m_planetRadiusLabel->setWordWrap(true);
+    form->addRow(tr("Planet Radius:"), m_planetRadiusLabel);
+
+    m_deathZoneRadiusSpin = new QSpinBox(this);
+    m_deathZoneRadiusSpin->setRange(1, 2000000);
+    form->addRow(tr("Death-Zone Radius:"), m_deathZoneRadiusSpin);
+
+    m_deathZoneDamageSpin = new QSpinBox(this);
+    m_deathZoneDamageSpin->setRange(1, 2000000);
+    m_deathZoneDamageSpin->setValue(2000000);
+    form->addRow(tr("Death-Zone Damage:"), m_deathZoneDamageSpin);
+
+    m_atmosphereRangeSpin = new QSpinBox(this);
+    m_atmosphereRangeSpin->setRange(0, 2000000);
+    form->addRow(tr("Atmosphere Range:"), m_atmosphereRangeSpin);
+
+    layout->addLayout(form);
+
+    auto *infoLabel = new QLabel(
+        tr("Der Infocard-Text wird archetypebasiert vorgeschlagen und beim Erstellen als neuer ids_info-Eintrag gespeichert. Bestehende Shared-Texte werden nicht ueberschrieben."),
+        this);
+    infoLabel->setWordWrap(true);
+    infoLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    layout->addWidget(infoLabel);
+
+    auto *toolbar = new QHBoxLayout();
+    m_infocardSourceLabel = new QLabel(this);
+    m_infocardSourceLabel->setWordWrap(true);
+    toolbar->addWidget(m_infocardSourceLabel, 1);
+    m_resetInfocardButton = new QPushButton(tr("Vorschlag neu laden"), this);
+    toolbar->addWidget(m_resetInfocardButton);
+    layout->addLayout(toolbar);
+
+    m_infocardStateLabel = new QLabel(this);
+    m_infocardStateLabel->setWordWrap(true);
+    m_infocardStateLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    layout->addWidget(m_infocardStateLabel);
+
+    m_infoCardEdit = new QTextEdit(this);
+    m_infoCardEdit->setMinimumHeight(220);
+    m_infoCardEdit->setPlaceholderText(tr("Infocard-Text fuer den neuen Planeten"));
+    layout->addWidget(m_infoCardEdit, 1);
+
+    connect(m_archetypeCombo, &QComboBox::currentTextChanged, this, &CreatePlanetDialog::onArchetypeChanged);
+    connect(m_infoCardEdit, &QTextEdit::textChanged, this, &CreatePlanetDialog::onInfocardEdited);
+    connect(m_resetInfocardButton, &QPushButton::clicked, this, &CreatePlanetDialog::resetInfocardSuggestion);
+
+    layout->addWidget(createDialogButtons(this));
+    applyArchetypeDefaults(m_archetypeCombo->currentText().trimmed(), true);
+}
+
+void CreatePlanetDialog::accept()
+{
+    const CreatePlanetRequest request = result();
+    if (request.nickname.isEmpty()) {
+        QMessageBox::warning(this, tr("Planet erstellen"), tr("Bitte einen Objekt-Nickname angeben."));
+        return;
+    }
+    if (!PlanetCreationService::isValidNickname(request.nickname)) {
+        QMessageBox::warning(this, tr("Planet erstellen"),
+                             tr("Der Nickname darf nur Buchstaben, Zahlen und Unterstriche enthalten."));
+        return;
+    }
+    if (request.ingameName.isEmpty()) {
+        QMessageBox::warning(this, tr("Planet erstellen"), tr("Bitte einen Planetennamen angeben."));
+        return;
+    }
+    if (request.archetype.isEmpty()) {
+        QMessageBox::warning(this, tr("Planet erstellen"), tr("Bitte einen Planet-Archetype auswaehlen."));
+        return;
+    }
+    if (request.infoCardText.isEmpty()) {
+        QMessageBox::warning(this, tr("Planet erstellen"), tr("Bitte einen Infocard-Text angeben."));
+        return;
+    }
+    if (request.planetRadius > 0 && request.deathZoneRadius < request.planetRadius) {
+        QMessageBox::warning(this, tr("Planet erstellen"),
+                             tr("Der Death-Zone-Radius darf nicht kleiner als der Planet-Radius sein."));
+        return;
+    }
+    if (request.planetRadius > 0 && request.atmosphereRange < request.planetRadius) {
+        QMessageBox::warning(this, tr("Planet erstellen"),
+                             tr("Die Atmosphaeren-Reichweite darf nicht kleiner als der Planet-Radius sein."));
+        return;
+    }
+
+    QDialog::accept();
+}
+
+void CreatePlanetDialog::onArchetypeChanged(const QString &archetype)
+{
+    applyArchetypeDefaults(archetype, false);
+}
+
+void CreatePlanetDialog::onInfocardEdited()
+{
+    if (m_updatingInfocardText || !m_infoCardEdit)
+        return;
+
+    m_infocardManuallyEdited = m_infoCardEdit->toPlainText().trimmed() != m_lastSuggestedInfocard.trimmed();
+    m_infocardStateLabel->setText(m_infocardManuallyEdited
+                                      ? tr("Manuell angepasst. Archetype-Wechsel behalten den aktuellen Text, bis du den Vorschlag explizit neu laedst.")
+                                      : tr("Der aktuelle Text folgt dem geladenen Archetype-Vorschlag."));
+}
+
+void CreatePlanetDialog::resetInfocardSuggestion()
+{
+    applyArchetypeDefaults(m_archetypeCombo ? m_archetypeCombo->currentText().trimmed() : QString(), true);
+}
+
+void CreatePlanetDialog::applyArchetypeDefaults(const QString &archetype, bool forceInfocardRefresh)
+{
+    const PlanetArchetypeOption option = m_catalog.optionForArchetype(archetype);
+    const int planetRadius = PlanetCreationService::derivePlanetRadius(archetype, m_catalog);
+
+    if (m_planetRadiusLabel) {
+        m_planetRadiusLabel->setText(planetRadius > 0
+                                         ? tr("%1 m aus solar_radius des Archetypes.").arg(planetRadius)
+                                         : tr("Kein solar_radius gefunden. Die Defaultwerte bleiben editierbar."));
+    }
+    if (m_deathZoneRadiusSpin)
+        m_deathZoneRadiusSpin->setValue(PlanetCreationService::defaultDeathZoneRadius(planetRadius));
+    if (m_atmosphereRangeSpin)
+        m_atmosphereRangeSpin->setValue(PlanetCreationService::defaultAtmosphereRange(planetRadius));
+
+    m_infocardSourceLabel->setText(option.sourceObjectNickname.trimmed().isEmpty()
+                                       ? tr("Kein archetypegleicher Planet mit Infocard gefunden. Bitte Text manuell eintragen.")
+                                       : tr("Vorschlag aus %1 (ids_info %2).").arg(
+                                             option.sourceObjectNickname,
+                                             option.sourceIdsInfo > 0 ? QString::number(option.sourceIdsInfo)
+                                                                      : tr("ohne ID")));
+
+    const QString suggestedText = option.suggestedInfocardText.trimmed();
+    const bool shouldRefreshText = forceInfocardRefresh
+        || !m_infocardManuallyEdited
+        || (m_infoCardEdit && m_infoCardEdit->toPlainText().trimmed().isEmpty())
+        || (m_infoCardEdit && m_infoCardEdit->toPlainText().trimmed() == m_lastSuggestedInfocard.trimmed());
+
+    m_lastSuggestedInfocard = suggestedText;
+    if (shouldRefreshText)
+        setInfocardText(suggestedText);
+
+    if (!m_infocardManuallyEdited || forceInfocardRefresh) {
+        m_infocardManuallyEdited = false;
+        m_infocardStateLabel->setText(suggestedText.isEmpty()
+                                          ? tr("Kein Standardtext gefunden. Der finale Text wird trotzdem als neuer ids_info-Eintrag gespeichert.")
+                                          : tr("Der aktuelle Text folgt dem geladenen Archetype-Vorschlag."));
+    }
+}
+
+void CreatePlanetDialog::setInfocardText(const QString &text)
+{
+    if (!m_infoCardEdit)
+        return;
+    m_updatingInfocardText = true;
+    m_infoCardEdit->setPlainText(text);
+    m_updatingInfocardText = false;
+}
+
+CreatePlanetRequest CreatePlanetDialog::result() const
+{
+    CreatePlanetRequest value;
+    value.nickname = m_nicknameEdit ? m_nicknameEdit->text().trimmed() : QString();
+    value.ingameName = m_ingameNameEdit ? m_ingameNameEdit->text().trimmed() : QString();
+    value.infoCardText = m_infoCardEdit ? m_infoCardEdit->toPlainText().trimmed() : QString();
+    value.archetype = m_archetypeCombo ? m_archetypeCombo->currentText().trimmed() : QString();
+    value.planetRadius = PlanetCreationService::derivePlanetRadius(value.archetype, m_catalog);
+    value.deathZoneRadius = m_deathZoneRadiusSpin ? m_deathZoneRadiusSpin->value() : 0;
+    value.deathZoneDamage = m_deathZoneDamageSpin ? m_deathZoneDamageSpin->value() : 0;
+    value.atmosphereRange = m_atmosphereRangeSpin ? m_atmosphereRangeSpin->value() : 0;
     return value;
 }
 

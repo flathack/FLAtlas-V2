@@ -1,5 +1,7 @@
 #pragma once
 
+#include "PlanetCreationService.h"
+
 #include <QDialog>
 #include <QHash>
 #include <QString>
@@ -117,6 +119,17 @@ struct CreateSunRequest {
     int deathZoneDamage = 200000;
     int atmosphereRange = 5000;
     QString star = QStringLiteral("med_white_sun");
+};
+
+struct CreatePlanetRequest {
+    QString nickname;
+    QString ingameName;
+    QString infoCardText;
+    QString archetype;
+    int planetRadius = 0;
+    int deathZoneRadius = 1100;
+    int deathZoneDamage = 2000000;
+    int atmosphereRange = 1200;
 };
 
 struct CreateSurpriseRequest {
@@ -339,6 +352,44 @@ private:
     QSpinBox *m_deathZoneDamageSpin = nullptr;
     QSpinBox *m_atmosphereRangeSpin = nullptr;
     QComboBox *m_starCombo = nullptr;
+};
+
+class CreatePlanetDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit CreatePlanetDialog(const QString &suggestedNickname,
+                                const PlanetCreationCatalog &catalog,
+                                QWidget *parent = nullptr);
+
+    CreatePlanetRequest result() const;
+
+public slots:
+    void accept() override;
+
+private slots:
+    void onArchetypeChanged(const QString &archetype);
+    void onInfocardEdited();
+    void resetInfocardSuggestion();
+
+private:
+    void applyArchetypeDefaults(const QString &archetype, bool forceInfocardRefresh);
+    void setInfocardText(const QString &text);
+
+    PlanetCreationCatalog m_catalog;
+    QString m_lastSuggestedInfocard;
+    bool m_infocardManuallyEdited = false;
+    bool m_updatingInfocardText = false;
+    QLineEdit *m_nicknameEdit = nullptr;
+    QLineEdit *m_ingameNameEdit = nullptr;
+    QComboBox *m_archetypeCombo = nullptr;
+    QLabel *m_planetRadiusLabel = nullptr;
+    QSpinBox *m_deathZoneRadiusSpin = nullptr;
+    QSpinBox *m_deathZoneDamageSpin = nullptr;
+    QSpinBox *m_atmosphereRangeSpin = nullptr;
+    QLabel *m_infocardSourceLabel = nullptr;
+    QLabel *m_infocardStateLabel = nullptr;
+    QTextEdit *m_infoCardEdit = nullptr;
+    QPushButton *m_resetInfocardButton = nullptr;
 };
 
 class CreateSurpriseDialog : public QDialog {
