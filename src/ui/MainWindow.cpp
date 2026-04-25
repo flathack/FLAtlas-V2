@@ -488,7 +488,6 @@ void MainWindow::applyThemeStyling()
     const QColor tabText = pal.color(QPalette::ButtonText);
     const QColor selectedBg = pal.color(QPalette::Base);
     const QColor accent = pal.color(QPalette::Highlight);
-    const QColor selectedText = pal.color(QPalette::Highlight);
     const QColor border = pal.color(QPalette::Mid);
     const QColor dimText = pal.color(QPalette::PlaceholderText);
     const QColor dangerHover = pal.color(QPalette::Base).lightness() >= 170
@@ -497,18 +496,26 @@ void MainWindow::applyThemeStyling()
 
     m_centerTabs->tabBar()->setStyleSheet(
         QStringLiteral("QTabBar { background: transparent; }"
-                       "QTabBar::tab { padding: 6px 18px; margin: 0; border: none;"
+                       "QTabBar::tab {"
+                       " padding: 8px 16px;"
+                       " margin-right: 2px;"
+                       " min-width: 130px;"
+                       " border: 1px solid %3;"
+                       " border-bottom: 2px solid transparent;"
                        " background: %1; color: %2; }"
-                       "QTabBar::tab:selected { background: %3; color: %4; border-bottom: 2px solid %5; }"
+                       "QTabBar::tab:selected { background: %4; color: %2; border-bottom: 2px solid %5; }"
                        "QTabBar::tab:hover { background: %6; color: %2; }"
+                       "QTabBar::tab:disabled { background: %7; color: %8; border: 1px solid %3; }"
                        "QTabBar::close-button { subcontrol-origin: padding; subcontrol-position: right; }"
-                       "QTabBar::close-button:hover { background: %7; border-radius: 3px; }")
+                       "QTabBar::close-button:hover { background: %9; border-radius: 3px; }")
             .arg(tabBg.name(),
                  tabText.name(),
+                 border.name(),
                  selectedBg.name(),
-                 selectedText.name(),
                  accent.name(),
                  tabHover.name(),
+                 pal.color(QPalette::Midlight).name(),
+                 dimText.name(),
                  dangerHover.name()));
 
     if (m_editingLabel) {
