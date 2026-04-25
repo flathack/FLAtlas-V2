@@ -1114,9 +1114,27 @@ void BaseEditDialog::populateNpcTable(int roomRow)
 
         auto *roleCombo = new QComboBox(m_npcTable);
         roleCombo->addItems(roleChoices);
-        if (!npcs.at(index).role.trimmed().isEmpty() && roleCombo->findText(npcs.at(index).role.trimmed()) < 0)
-            roleCombo->addItem(npcs.at(index).role.trimmed());
-        roleCombo->setCurrentText(npcs.at(index).role.trimmed().isEmpty() ? roleChoices.value(0) : npcs.at(index).role.trimmed());
+        const QString currentRole = npcs.at(index).role.trimmed();
+        QString canonicalRole = currentRole;
+        if (!currentRole.isEmpty()) {
+            for (const QString &choice : roleChoices) {
+                if (choice.compare(currentRole, Qt::CaseInsensitive) == 0) {
+                    canonicalRole = choice;
+                    break;
+                }
+            }
+            bool hasCanonicalRole = false;
+            for (int comboIndex = 0; comboIndex < roleCombo->count(); ++comboIndex) {
+                if (roleCombo->itemText(comboIndex).compare(canonicalRole, Qt::CaseInsensitive) == 0) {
+                    hasCanonicalRole = true;
+                    canonicalRole = roleCombo->itemText(comboIndex);
+                    break;
+                }
+            }
+            if (!hasCanonicalRole)
+                roleCombo->addItem(canonicalRole);
+        }
+        roleCombo->setCurrentText(canonicalRole.isEmpty() ? roleChoices.value(0) : canonicalRole);
         connect(roleCombo, &QComboBox::currentTextChanged, this, [this]() { syncNpcStateFromTable(); });
         m_npcTable->setCellWidget(index, 1, roleCombo);
     }
