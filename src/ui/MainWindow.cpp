@@ -486,10 +486,12 @@ void MainWindow::applyThemeStyling()
     const QColor tabBg = pal.color(QPalette::Button);
     const QColor tabHover = pal.color(QPalette::AlternateBase);
     const QColor tabText = pal.color(QPalette::ButtonText);
-    const QColor selectedBg = pal.color(QPalette::Base);
-    const QColor accent = pal.color(QPalette::Highlight);
+    const QColor selectedBg(230, 126, 34);
+    const QColor accent(230, 126, 34);
     const QColor border = pal.color(QPalette::Mid);
+    const QColor disabledBg = pal.color(QPalette::Midlight);
     const QColor dimText = pal.color(QPalette::PlaceholderText);
+    const QColor selectedText = selectedBg.lightness() >= 170 ? QColor(36, 28, 8) : QColor(255, 255, 255);
     const QColor dangerHover = pal.color(QPalette::Base).lightness() >= 170
         ? QColor(232, 210, 210)
         : QColor(68, 51, 51);
@@ -503,20 +505,21 @@ void MainWindow::applyThemeStyling()
                        " border: 1px solid %3;"
                        " border-bottom: 2px solid transparent;"
                        " background: %1; color: %2; }"
-                       "QTabBar::tab:selected { background: %4; color: %2; border-bottom: 2px solid %5; }"
-                       "QTabBar::tab:hover { background: %6; color: %2; }"
-                       "QTabBar::tab:disabled { background: %7; color: %8; border: 1px solid %3; }"
+                                             "QTabBar::tab:selected { background: %4; color: %5; border-bottom: 2px solid %6; }"
+                                             "QTabBar::tab:!selected:hover { background: %7; color: %2; }"
+                                             "QTabBar::tab:disabled { background: %8; color: %9; border: 1px solid %3; }"
                        "QTabBar::close-button { subcontrol-origin: padding; subcontrol-position: right; }"
-                       "QTabBar::close-button:hover { background: %9; border-radius: 3px; }")
-            .arg(tabBg.name(),
-                 tabText.name(),
-                 border.name(),
-                 selectedBg.name(),
-                 accent.name(),
-                 tabHover.name(),
-                 pal.color(QPalette::Midlight).name(),
-                 dimText.name(),
-                 dangerHover.name()));
+                                             "QTabBar::close-button:hover { background: %10; border-radius: 3px; }")
+                        .arg(tabBg.name())
+                        .arg(tabText.name())
+                        .arg(border.name())
+                        .arg(selectedBg.name())
+                        .arg(selectedText.name())
+                        .arg(accent.name())
+                        .arg(tabHover.name())
+                        .arg(disabledBg.name())
+                        .arg(dimText.name())
+                        .arg(dangerHover.name()));
 
     if (m_editingLabel) {
         m_editingLabel->setStyleSheet(
