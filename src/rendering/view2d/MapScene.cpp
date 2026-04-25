@@ -159,10 +159,19 @@ void MapScene::loadDocument(flatlas::domain::SystemDocument *doc,
             this, &MapScene::addSolarObject);
     connect(doc, &flatlas::domain::SystemDocument::objectRemoved,
             this, [this](const std::shared_ptr<flatlas::domain::SolarObject> &obj) {
+        if (!obj)
+            return;
+        const QString key = obj->nickname().trimmed().toLower();
+        if (SolarObjectItem *mappedItem = m_solarItemsByNickname.take(key)) {
+            removeItem(mappedItem);
+            delete mappedItem;
+            return;
+        }
         const auto items = this->items();
         for (auto *item : items) {
             if (auto *soi = dynamic_cast<SolarObjectItem *>(item)) {
                 if (soi->nickname() == obj->nickname()) {
+                    m_solarItemsByNickname.remove(soi->nickname().trimmed().toLower());
                     removeItem(soi);
                     delete soi;
                     break;
@@ -175,10 +184,19 @@ void MapScene::loadDocument(flatlas::domain::SystemDocument *doc,
             this, &MapScene::addZone);
     connect(doc, &flatlas::domain::SystemDocument::zoneRemoved,
             this, [this](const std::shared_ptr<flatlas::domain::ZoneItem> &zone) {
+        if (!zone)
+            return;
+        const QString key = zone->nickname().trimmed().toLower();
+        if (ZoneItem2D *mappedItem = m_zoneItemsByNickname.take(key)) {
+            removeItem(mappedItem);
+            delete mappedItem;
+            return;
+        }
         const auto items = this->items();
         for (auto *item : items) {
             if (auto *zi = dynamic_cast<ZoneItem2D *>(item)) {
                 if (zi->nickname() == zone->nickname()) {
+                    m_zoneItemsByNickname.remove(zi->nickname().trimmed().toLower());
                     removeItem(zi);
                     delete zi;
                     break;
@@ -192,6 +210,8 @@ void MapScene::loadDocument(flatlas::domain::SystemDocument *doc,
 void MapScene::clear()
 {
     clearTradeLaneSelectionOverlay();
+    m_solarItemsByNickname.clear();
+    m_zoneItemsByNickname.clear();
     if (m_document) {
         disconnect(m_document, nullptr, this, nullptr);
         m_document = nullptr;
@@ -426,6 +446,15 @@ void MapScene::updateTradeLaneSelectionOverlay(const QStringList &nicknames)
 
 void MapScene::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObject> &obj)
 {
+    if (!obj)
+        return;
+
+    const QString key = obj->nickname().trimmed().toLower();
+    if (SolarObjectItem *existingItem = m_solarItemsByNickname.take(key)) {
+        removeItem(existingItem);
+        delete existingItem;
+    }
+
     auto *item = new SolarObjectItem(obj->nickname(), obj->type());
     item->updateFromObject(*obj);
 
@@ -436,19 +465,32 @@ void MapScene::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObject
     item->setFlag(QGraphicsItem::ItemIsMovable, m_moveEnabled);
 
     addItem(item);
+    m_solarItemsByNickname.insert(key, item);
 
     // Update item when domain object changes
     connect(obj.get(), &flatlas::domain::SolarObject::changed, this,
-            [item, weak = std::weak_ptr(obj)]() {
+            [this, key, weak = std::weak_ptr(obj)]() {
         if (auto obj = weak.lock()) {
-            item->updateFromObject(*obj);
-            item->setPos(flToQt(obj->position().x(), obj->position().z()));
+            SolarObjectItem *currentItem = m_solarItemsByNickname.value(key, nullptr);
+            if (!currentItem)
+                return;
+            currentItem->updateFromObject(*obj);
+            currentItem->setPos(flToQt(obj->position().x(), obj->position().z()));
         }
     });
 }
 
 void MapScene::addZone(const std::shared_ptr<flatlas::domain::ZoneItem> &zone)
 {
+    if (!zone)
+        return;
+
+    const QString key = zone->nickname().trimmed().toLower();
+    if (ZoneItem2D *existingItem = m_zoneItemsByNickname.take(key)) {
+        removeItem(existingItem);
+        delete existingItem;
+    }
+
     auto *item = new ZoneItem2D(zone->nickname(), zone->shape());
     item->updateFromZone(*zone);
 
@@ -459,13 +501,17 @@ void MapScene::addZone(const std::shared_ptr<flatlas::domain::ZoneItem> &zone)
     item->setFlag(QGraphicsItem::ItemIsMovable, m_moveEnabled);
 
     addItem(item);
+    m_zoneItemsByNickname.insert(key, item);
 
     // Update item when domain zone changes
     connect(zone.get(), &flatlas::domain::ZoneItem::changed, this,
-            [item, weak = std::weak_ptr(zone)]() {
+            [this, key, weak = std::weak_ptr(zone)]() {
         if (auto zone = weak.lock()) {
-            item->updateFromZone(*zone);
-            item->setPos(flToQt(zone->position().x(), zone->position().z()));
+            ZoneItem2D *currentItem = m_zoneItemsByNickname.value(key, nullptr);
+            if (!currentItem)
+                return;
+            currentItem->updateFromZone(*zone);
+            currentItem->setPos(flToQt(zone->position().x(), zone->position().z()));
         }
     });
 }

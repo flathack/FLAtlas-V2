@@ -13,9 +13,9 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
+#include <QSaveFile>
 #include <QRegularExpression>
 #include <QStringDecoder>
-#include <QTextStream>
 #include <QVector3D>
 
 using namespace flatlas::infrastructure;
@@ -955,12 +955,24 @@ bool SystemPersistence::save(const SystemDocument &doc, const QString &filePath)
     const IniDocument orderedSections = mergeSectionsWithLayout(layoutSections, currentSections);
     const QString text = serializeToText(doc);
 
-    QFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    QSaveFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate))
         return false;
 
-    QTextStream out(&file);
-    out << text;
+    const QByteArray bytes = text.toUtf8();
+    if (file.write(bytes) != bytes.size()) {
+        file.cancelWriting();
+        return false;
+    }
+    if (!file.commit())
+        return false;
+
+    QFile verifyFile(filePath);
+    if (!verifyFile.open(QIODevice::ReadOnly | QIODevice::Text))
+        return false;
+    if (verifyFile.readAll() != bytes)
+        return false;
+
     if (!orderedSections.isEmpty()
         && normalizedSectionName(orderedSections.first().name) == QStringLiteral("systeminfo")) {
         s_systemInfoSections[&doc] = orderedSections.first();

@@ -5,6 +5,7 @@
 #include <QVariant>
 #include <QByteArray>
 #include <QObject>
+#include <QPointer>
 #include <memory>
 
 #include "domain/SystemDocument.h"
@@ -20,11 +21,11 @@ public:
                               const QString& text = QStringLiteral("Add Object"))
         : QUndoCommand(text), m_doc(doc), m_obj(std::move(obj)) {}
 
-    void undo() override { m_doc->removeObject(m_obj); }
-    void redo() override { m_doc->addObject(m_obj); }
+    void undo() override { if (m_doc) m_doc->removeObject(m_obj); }
+    void redo() override { if (m_doc) m_doc->addObject(m_obj); }
 
 private:
-    domain::SystemDocument* m_doc;
+    QPointer<domain::SystemDocument> m_doc;
     std::shared_ptr<domain::SolarObject> m_obj;
 };
 
@@ -35,11 +36,11 @@ public:
                                  const QString& text = QStringLiteral("Remove Object"))
         : QUndoCommand(text), m_doc(doc), m_obj(std::move(obj)) {}
 
-    void undo() override { m_doc->addObject(m_obj); }
-    void redo() override { m_doc->removeObject(m_obj); }
+    void undo() override { if (m_doc) m_doc->addObject(m_obj); }
+    void redo() override { if (m_doc) m_doc->removeObject(m_obj); }
 
 private:
-    domain::SystemDocument* m_doc;
+    QPointer<domain::SystemDocument> m_doc;
     std::shared_ptr<domain::SolarObject> m_obj;
 };
 
@@ -51,21 +52,21 @@ public:
                                const QString& text = QStringLiteral("Move Object"))
         : QUndoCommand(text), m_obj(obj), m_oldPos(oldPos), m_newPos(newPos) {}
 
-    void undo() override { m_obj->setPosition(m_oldPos); }
-    void redo() override { m_obj->setPosition(m_newPos); }
+    void undo() override { if (m_obj) m_obj->setPosition(m_oldPos); }
+    void redo() override { if (m_obj) m_obj->setPosition(m_newPos); }
 
     int id() const override { return 1; }
 
     bool mergeWith(const QUndoCommand* other) override {
         auto cmd = dynamic_cast<const MoveObjectCommand*>(other);
-        if (!cmd || cmd->m_obj != m_obj)
+        if (!cmd || !m_obj || cmd->m_obj != m_obj)
             return false;
         m_newPos = cmd->m_newPos;
         return true;
     }
 
 private:
-    domain::SolarObject* m_obj;
+    QPointer<domain::SolarObject> m_obj;
     QVector3D m_oldPos;
     QVector3D m_newPos;
 };
@@ -78,11 +79,11 @@ public:
                                  const QString& text = QStringLiteral("Rotate Object"))
         : QUndoCommand(text), m_obj(obj), m_oldRotation(oldRotation), m_newRotation(newRotation) {}
 
-    void undo() override { m_obj->setRotation(m_oldRotation); }
-    void redo() override { m_obj->setRotation(m_newRotation); }
+    void undo() override { if (m_obj) m_obj->setRotation(m_oldRotation); }
+    void redo() override { if (m_obj) m_obj->setRotation(m_newRotation); }
 
 private:
-    domain::SolarObject* m_obj;
+    QPointer<domain::SolarObject> m_obj;
     QVector3D m_oldRotation;
     QVector3D m_newRotation;
 };
@@ -94,11 +95,11 @@ public:
                             const QString& text = QStringLiteral("Add Zone"))
         : QUndoCommand(text), m_doc(doc), m_zone(std::move(zone)) {}
 
-    void undo() override { m_doc->removeZone(m_zone); }
-    void redo() override { m_doc->addZone(m_zone); }
+    void undo() override { if (m_doc) m_doc->removeZone(m_zone); }
+    void redo() override { if (m_doc) m_doc->addZone(m_zone); }
 
 private:
-    domain::SystemDocument* m_doc;
+    QPointer<domain::SystemDocument> m_doc;
     std::shared_ptr<domain::ZoneItem> m_zone;
 };
 
@@ -110,21 +111,21 @@ public:
                              const QString& text = QStringLiteral("Move Zone"))
         : QUndoCommand(text), m_zone(zone), m_oldPos(oldPos), m_newPos(newPos) {}
 
-    void undo() override { m_zone->setPosition(m_oldPos); }
-    void redo() override { m_zone->setPosition(m_newPos); }
+    void undo() override { if (m_zone) m_zone->setPosition(m_oldPos); }
+    void redo() override { if (m_zone) m_zone->setPosition(m_newPos); }
 
     int id() const override { return 2; }
 
     bool mergeWith(const QUndoCommand* other) override {
         auto cmd = dynamic_cast<const MoveZoneCommand*>(other);
-        if (!cmd || cmd->m_zone != m_zone)
+        if (!cmd || !m_zone || cmd->m_zone != m_zone)
             return false;
         m_newPos = cmd->m_newPos;
         return true;
     }
 
 private:
-    domain::ZoneItem* m_zone;
+    QPointer<domain::ZoneItem> m_zone;
     QVector3D m_oldPos;
     QVector3D m_newPos;
 };
@@ -137,11 +138,11 @@ public:
                                const QString& text = QStringLiteral("Rotate Zone"))
         : QUndoCommand(text), m_zone(zone), m_oldRotation(oldRotation), m_newRotation(newRotation) {}
 
-    void undo() override { m_zone->setRotation(m_oldRotation); }
-    void redo() override { m_zone->setRotation(m_newRotation); }
+    void undo() override { if (m_zone) m_zone->setRotation(m_oldRotation); }
+    void redo() override { if (m_zone) m_zone->setRotation(m_newRotation); }
 
 private:
-    domain::ZoneItem* m_zone;
+    QPointer<domain::ZoneItem> m_zone;
     QVector3D m_oldRotation;
     QVector3D m_newRotation;
 };
@@ -153,11 +154,11 @@ public:
                                const QString& text = QStringLiteral("Remove Zone"))
         : QUndoCommand(text), m_doc(doc), m_zone(std::move(zone)) {}
 
-    void undo() override { m_doc->addZone(m_zone); }
-    void redo() override { m_doc->removeZone(m_zone); }
+    void undo() override { if (m_doc) m_doc->addZone(m_zone); }
+    void redo() override { if (m_doc) m_doc->removeZone(m_zone); }
 
 private:
-    domain::SystemDocument* m_doc;
+    QPointer<domain::SystemDocument> m_doc;
     std::shared_ptr<domain::ZoneItem> m_zone;
 };
 
@@ -171,11 +172,11 @@ public:
         : QUndoCommand(text), m_target(target), m_propertyName(propertyName),
           m_oldValue(oldValue), m_newValue(newValue) {}
 
-    void undo() override { m_target->setProperty(m_propertyName.constData(), m_oldValue); }
-    void redo() override { m_target->setProperty(m_propertyName.constData(), m_newValue); }
+    void undo() override { if (m_target) m_target->setProperty(m_propertyName.constData(), m_oldValue); }
+    void redo() override { if (m_target) m_target->setProperty(m_propertyName.constData(), m_newValue); }
 
 private:
-    QObject* m_target;
+    QPointer<QObject> m_target;
     QByteArray m_propertyName;
     QVariant m_oldValue;
     QVariant m_newValue;

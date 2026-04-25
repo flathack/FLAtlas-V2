@@ -709,12 +709,20 @@ void MainWindow::saveCurrentSystem()
         if (editor->saveAs(filePath))
             statusBar()->showMessage(tr("Saved: %1").arg(filePath), 3000);
         else
-            QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
+            QMessageBox::warning(this,
+                                 tr("Error"),
+                                 editor->lastSaveError().trimmed().isEmpty()
+                                     ? tr("Could not save file.")
+                                     : editor->lastSaveError());
     } else {
         if (editor->save())
             statusBar()->showMessage(tr("Saved"), 3000);
         else
-            QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
+            QMessageBox::warning(this,
+                                 tr("Error"),
+                                 editor->lastSaveError().trimmed().isEmpty()
+                                     ? tr("Could not save file.")
+                                     : editor->lastSaveError());
     }
 }
 

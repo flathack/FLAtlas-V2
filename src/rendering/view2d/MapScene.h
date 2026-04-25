@@ -1,5 +1,6 @@
 #pragma once
 #include <QGraphicsScene>
+#include <QHash>
 #include <QStringList>
 #include <QVector3D>
 #include <functional>
@@ -62,6 +63,8 @@ private:
     bool m_gridVisible = true;
     bool m_moveEnabled = false;
     QVector<TradelaneItem *> m_tradeLaneSelectionOverlay;
+    QHash<QString, SolarObjectItem *> m_solarItemsByNickname;
+    QHash<QString, ZoneItem2D *> m_zoneItemsByNickname;
     static constexpr double kScale = 0.01; // Freelancer coords → scene coords
 };
 

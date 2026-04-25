@@ -69,21 +69,25 @@
 #include <QPushButton>
 #include <QComboBox>
 #include <QAbstractSpinBox>
+#include <QDoubleSpinBox>
 #include <QPlainTextEdit>
 #include <QTextEdit>
 #include <QGroupBox>
 #include <QHeaderView>
+#include <QListWidget>
 #include <QSet>
 #include <QBrush>
 #include <QFrame>
 #include <QFileInfo>
 #include <QDesktopServices>
+#include <QDebug>
 #include <QFont>
 #include <QPalette>
 #include <QSaveFile>
 #include <QDir>
 #include <QDirIterator>
 #include <QSignalBlocker>
+#include <QTabBar>
 #include <QUrl>
 #include <QGraphicsEllipseItem>
 #include <QGraphicsLineItem>
@@ -1309,6 +1313,84 @@ QQuaternion quaternionFromFreelancerRotation(const QVector3D &rotation)
     return QQuaternion::fromEulerAngles(rotation.x(), rotation.y(), rotation.z());
 }
 
+QString vector3ToIniString(const QVector3D &value)
+{
+    return QStringLiteral("%1, %2, %3")
+        .arg(static_cast<double>(value.x()), 0, 'f', -1)
+        .arg(static_cast<double>(value.y()), 0, 'f', -1)
+        .arg(static_cast<double>(value.z()), 0, 'f', -1);
+}
+
+bool verifySavedTextFile(const QString &absolutePath,
+                         const QString &expectedContent,
+                         QString *errorMessage)
+{
+    QFile verifyFile(absolutePath);
+    if (!verifyFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        if (errorMessage) {
+            *errorMessage = QObject::tr("Die geschriebene Datei konnte nicht erneut gelesen werden:\n%1")
+                                .arg(absolutePath);
+        }
+        return false;
+    }
+
+    if (verifyFile.readAll() != expectedContent.toUtf8()) {
+        if (errorMessage) {
+            *errorMessage = QObject::tr("Die geschriebene Datei stimmt nach dem Speichern nicht mit den erwarteten Daten ueberein:\n%1")
+                                .arg(absolutePath);
+        }
+        return false;
+    }
+    return true;
+}
+
+QString suggestBaseBuilderPartNickname(const QString &rootNickname,
+                                       const QStringList &existingNicknames)
+{
+    QString base = rootNickname.trimmed();
+    if (base.isEmpty())
+        base = QStringLiteral("base");
+
+    base.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9_]+")), QStringLiteral("_"));
+    base.remove(QRegularExpression(QStringLiteral("^_+|_+$")));
+    if (base.isEmpty())
+        base = QStringLiteral("base");
+
+    const QString prefix = QStringLiteral("%1_part_").arg(base);
+    QRegularExpression pattern(QStringLiteral("^%1(\\d+)$")
+                                   .arg(QRegularExpression::escape(prefix)),
+                               QRegularExpression::CaseInsensitiveOption);
+
+    int highest = 0;
+    for (const QString &nickname : existingNicknames) {
+        const QRegularExpressionMatch match = pattern.match(nickname.trimmed());
+        if (!match.hasMatch())
+            continue;
+        bool ok = false;
+        const int number = match.captured(1).toInt(&ok);
+        if (ok)
+            highest = std::max(highest, number);
+    }
+
+    return QStringLiteral("%1%2").arg(prefix).arg(highest + 1, 3, 10, QLatin1Char('0'));
+}
+
+QVector<QPair<QString, QString>> buildBaseBuilderPartEntries(const QString &parentNickname,
+                                                             const QString &partNickname,
+                                                             const QString &archetype,
+                                                             const QVector3D &position,
+                                                             const QVector3D &rotation = QVector3D())
+{
+    return {
+        {QStringLiteral("nickname"), partNickname.trimmed()},
+        {QStringLiteral("archetype"), archetype.trimmed()},
+        {QStringLiteral("pos"), vector3ToIniString(position)},
+        {QStringLiteral("rotate"), vector3ToIniString(rotation)},
+        {QStringLiteral("parent"), parentNickname.trimmed()},
+        {QStringLiteral("visit"), QStringLiteral("0")},
+    };
+}
+
 QString solarObjectTypeLabel(SolarObject::Type type)
 {
     const QMetaEnum typeEnum = QMetaEnum::fromType<SolarObject::Type>();
@@ -1366,6 +1448,614 @@ private:
     ModelViewport3D *m_viewport = nullptr;
 };
 
+struct BaseBuilderSnapshot {
+    QString label;
+    QString selectedNickname;
+    std::shared_ptr<SolarObject> rootObject;
+    QVector<std::shared_ptr<SolarObject>> childObjects;
+};
+
+class SystemBaseBuilderDialog final : public QDialog {
+public:
+    SystemBaseBuilderDialog(const std::shared_ptr<SolarObject> &rootObject,
+                            const QVector<std::shared_ptr<SolarObject>> &childObjects,
+                            const QStringList &libraryArchetypes,
+                            const QHash<QString, QString> &modelPaths,
+                            const QStringList &reservedNicknames,
+                            QWidget *parent = nullptr)
+        : QDialog(parent)
+        , m_rootObject(cloneSolarObject(rootObject))
+        , m_modelPaths(modelPaths)
+        , m_libraryArchetypes(libraryArchetypes)
+        , m_reservedNicknames(reservedNicknames)
+    {
+        for (const auto &child : childObjects)
+            m_childObjects.append(cloneSolarObject(child));
+
+        m_selectedNickname = m_rootObject ? m_rootObject->nickname() : QString();
+        setWindowTitle(tr("Base Builder - %1").arg(m_rootObject ? m_rootObject->nickname() : tr("Base")));
+        resize(1460, 900);
+        setupUi();
+        resetHistory();
+        rebuildLibraryList();
+        refreshUi();
+    }
+
+    QVector<std::shared_ptr<SolarObject>> childObjects() const
+    {
+        QVector<std::shared_ptr<SolarObject>> clones;
+        clones.reserve(m_childObjects.size());
+        for (const auto &child : m_childObjects)
+            clones.append(cloneSolarObject(child));
+        return clones;
+    }
+
+    bool hasChanges() const
+    {
+        return m_historyIndex >= 0 && m_historyIndex != m_savedHistoryIndex;
+    }
+
+protected:
+    void reject() override
+    {
+        if (!hasChanges()) {
+            QDialog::reject();
+            return;
+        }
+
+        const auto result = QMessageBox::question(this,
+                                                  tr("Base Builder schließen"),
+                                                  tr("Die Änderungen im Base Builder sind noch nicht übernommen. Verwerfen?"));
+        if (result == QMessageBox::Yes)
+            QDialog::reject();
+    }
+
+private:
+    void setupUi()
+    {
+        auto *rootLayout = new QVBoxLayout(this);
+        rootLayout->setContentsMargins(10, 10, 10, 10);
+        rootLayout->setSpacing(8);
+
+        auto *contentLayout = new QHBoxLayout();
+        contentLayout->setSpacing(10);
+        rootLayout->addLayout(contentLayout, 1);
+
+        auto *leftColumn = new QVBoxLayout();
+        leftColumn->setSpacing(8);
+        contentLayout->addLayout(leftColumn, 3);
+
+        auto *transformGroup = new QGroupBox(tr("Transform"), this);
+        auto *transformLayout = new QVBoxLayout(transformGroup);
+        transformLayout->setContentsMargins(8, 8, 8, 8);
+        transformLayout->setSpacing(6);
+
+        m_selectionLabel = new QLabel(transformGroup);
+        transformLayout->addWidget(m_selectionLabel);
+
+        auto *moveRow = new QHBoxLayout();
+        moveRow->setSpacing(4);
+        moveRow->addWidget(new QLabel(tr("Move step"), transformGroup));
+        m_moveStepSpin = new QDoubleSpinBox(transformGroup);
+        m_moveStepSpin->setRange(0.1, 50000.0);
+        m_moveStepSpin->setDecimals(1);
+        m_moveStepSpin->setValue(10.0);
+        m_moveStepSpin->setSuffix(tr(" m"));
+        moveRow->addWidget(m_moveStepSpin);
+        moveRow->addStretch(1);
+        transformLayout->addLayout(moveRow);
+
+        auto *moveButtonsRow = new QHBoxLayout();
+        moveButtonsRow->setSpacing(4);
+        m_moveButtons.append(createTransformButton(tr("X-"), [this]() { applyMoveDelta(0, -m_moveStepSpin->value()); }));
+        m_moveButtons.append(createTransformButton(tr("X+"), [this]() { applyMoveDelta(0, m_moveStepSpin->value()); }));
+        m_moveButtons.append(createTransformButton(tr("Y-"), [this]() { applyMoveDelta(1, -m_moveStepSpin->value()); }));
+        m_moveButtons.append(createTransformButton(tr("Y+"), [this]() { applyMoveDelta(1, m_moveStepSpin->value()); }));
+        m_moveButtons.append(createTransformButton(tr("Z-"), [this]() { applyMoveDelta(2, -m_moveStepSpin->value()); }));
+        m_moveButtons.append(createTransformButton(tr("Z+"), [this]() { applyMoveDelta(2, m_moveStepSpin->value()); }));
+        for (QPushButton *button : std::as_const(m_moveButtons))
+            moveButtonsRow->addWidget(button);
+        moveButtonsRow->addStretch(1);
+        transformLayout->addLayout(moveButtonsRow);
+
+        auto *rotateRow = new QHBoxLayout();
+        rotateRow->setSpacing(4);
+        rotateRow->addWidget(new QLabel(tr("Rotate step"), transformGroup));
+        m_rotateStepSpin = new QDoubleSpinBox(transformGroup);
+        m_rotateStepSpin->setRange(1.0, 360.0);
+        m_rotateStepSpin->setDecimals(1);
+        m_rotateStepSpin->setValue(15.0);
+        m_rotateStepSpin->setSuffix(QStringLiteral("°"));
+        rotateRow->addWidget(m_rotateStepSpin);
+        rotateRow->addStretch(1);
+        transformLayout->addLayout(rotateRow);
+
+        auto *rotateButtonsRow = new QHBoxLayout();
+        rotateButtonsRow->setSpacing(4);
+        m_rotateButtons.append(createTransformButton(tr("Pitch-"), [this]() { applyRotationDelta(0, -m_rotateStepSpin->value()); }));
+        m_rotateButtons.append(createTransformButton(tr("Pitch+"), [this]() { applyRotationDelta(0, m_rotateStepSpin->value()); }));
+        m_rotateButtons.append(createTransformButton(tr("Yaw-"), [this]() { applyRotationDelta(1, -m_rotateStepSpin->value()); }));
+        m_rotateButtons.append(createTransformButton(tr("Yaw+"), [this]() { applyRotationDelta(1, m_rotateStepSpin->value()); }));
+        m_rotateButtons.append(createTransformButton(tr("Roll-"), [this]() { applyRotationDelta(2, -m_rotateStepSpin->value()); }));
+        m_rotateButtons.append(createTransformButton(tr("Roll+"), [this]() { applyRotationDelta(2, m_rotateStepSpin->value()); }));
+        for (QPushButton *button : std::as_const(m_rotateButtons))
+            rotateButtonsRow->addWidget(button);
+        rotateButtonsRow->addStretch(1);
+        transformLayout->addLayout(rotateButtonsRow);
+
+        m_transformHintLabel = new QLabel(transformGroup);
+        m_transformHintLabel->setWordWrap(true);
+        transformLayout->addWidget(m_transformHintLabel);
+        leftColumn->addWidget(transformGroup);
+
+        m_assemblyViewport = new ModelViewport3D(this);
+        leftColumn->addWidget(m_assemblyViewport, 1);
+
+        auto *tabGroup = new QGroupBox(tr("Placed Parts"), this);
+        auto *tabLayout = new QVBoxLayout(tabGroup);
+        tabLayout->setContentsMargins(8, 8, 8, 8);
+        tabLayout->setSpacing(4);
+        m_partTabs = new QTabBar(tabGroup);
+        m_partTabs->setExpanding(false);
+        m_partTabs->setUsesScrollButtons(true);
+        connect(m_partTabs, &QTabBar::currentChanged, this, [this](int index) {
+            if (index < 0)
+                return;
+            setSelectedNickname(m_partTabs->tabData(index).toString());
+        });
+        tabLayout->addWidget(m_partTabs);
+        leftColumn->addWidget(tabGroup);
+
+        auto *rightColumn = new QVBoxLayout();
+        rightColumn->setSpacing(8);
+        contentLayout->addLayout(rightColumn, 1);
+
+        auto *libraryGroup = new QGroupBox(tr("Object Library"), this);
+        auto *libraryLayout = new QVBoxLayout(libraryGroup);
+        libraryLayout->setContentsMargins(8, 8, 8, 8);
+        libraryLayout->setSpacing(6);
+
+        m_libraryFilterEdit = new QLineEdit(libraryGroup);
+        m_libraryFilterEdit->setPlaceholderText(tr("Filter by archetype"));
+        connect(m_libraryFilterEdit, &QLineEdit::textChanged, this, [this]() { rebuildLibraryList(); });
+        libraryLayout->addWidget(m_libraryFilterEdit);
+
+        m_libraryList = new QListWidget(libraryGroup);
+        connect(m_libraryList, &QListWidget::currentItemChanged, this, [this]() { updateLibraryPreview(); });
+        connect(m_libraryList, &QListWidget::itemDoubleClicked, this, [this]() { addSelectedLibraryPart(); });
+        libraryLayout->addWidget(m_libraryList, 1);
+        rightColumn->addWidget(libraryGroup, 2);
+
+        auto *previewGroup = new QGroupBox(tr("Library Preview"), this);
+        auto *previewLayout = new QVBoxLayout(previewGroup);
+        previewLayout->setContentsMargins(8, 8, 8, 8);
+        previewLayout->setSpacing(6);
+        m_libraryPreviewLabel = new QLabel(previewGroup);
+        m_libraryPreviewLabel->setWordWrap(true);
+        previewLayout->addWidget(m_libraryPreviewLabel);
+        m_libraryViewport = new ModelViewport3D(previewGroup);
+        previewLayout->addWidget(m_libraryViewport, 1);
+        rightColumn->addWidget(previewGroup, 2);
+
+        auto *buttonRow = new QHBoxLayout();
+        buttonRow->setSpacing(6);
+        m_addPartButton = new QPushButton(tr("Add"), this);
+        connect(m_addPartButton, &QPushButton::clicked, this, [this]() { addSelectedLibraryPart(); });
+        buttonRow->addWidget(m_addPartButton);
+        m_deletePartButton = new QPushButton(tr("Delete Child"), this);
+        connect(m_deletePartButton, &QPushButton::clicked, this, [this]() { deleteSelectedChild(); });
+        buttonRow->addWidget(m_deletePartButton);
+        rightColumn->addLayout(buttonRow);
+
+        auto *bottomButtons = new QHBoxLayout();
+        bottomButtons->setSpacing(6);
+        m_undoButton = new QPushButton(tr("Undo"), this);
+        connect(m_undoButton, &QPushButton::clicked, this, [this]() { undoLastChange(); });
+        bottomButtons->addWidget(m_undoButton);
+        bottomButtons->addStretch(1);
+        m_saveButton = new QPushButton(tr("Apply to System"), this);
+        connect(m_saveButton, &QPushButton::clicked, this, &QDialog::accept);
+        bottomButtons->addWidget(m_saveButton);
+        auto *closeButton = new QPushButton(tr("Close"), this);
+        connect(closeButton, &QPushButton::clicked, this, &QDialog::reject);
+        bottomButtons->addWidget(closeButton);
+        rootLayout->addLayout(bottomButtons);
+    }
+
+    QPushButton *createTransformButton(const QString &text, std::function<void()> handler)
+    {
+        auto *button = new QPushButton(text, this);
+        button->setMinimumWidth(56);
+        connect(button, &QPushButton::clicked, this, [handler = std::move(handler)]() {
+            if (handler)
+                handler();
+        });
+        return button;
+    }
+
+    void rebuildLibraryList()
+    {
+        const QString filter = m_libraryFilterEdit ? m_libraryFilterEdit->text().trimmed() : QString();
+        QString previousArchetype;
+        if (auto *item = m_libraryList ? m_libraryList->currentItem() : nullptr)
+            previousArchetype = item->data(Qt::UserRole).toString();
+
+        QSignalBlocker blocker(m_libraryList);
+        m_libraryList->clear();
+
+        for (const QString &archetype : m_libraryArchetypes) {
+            if (!filter.isEmpty() && !archetype.contains(filter, Qt::CaseInsensitive))
+                continue;
+            auto *item = new QListWidgetItem(archetype, m_libraryList);
+            item->setData(Qt::UserRole, archetype);
+            item->setData(Qt::UserRole + 1, m_modelPaths.value(normalizedPathKey(archetype)));
+        }
+
+        if (!previousArchetype.isEmpty()) {
+            for (int index = 0; index < m_libraryList->count(); ++index) {
+                auto *item = m_libraryList->item(index);
+                if (item && item->data(Qt::UserRole).toString().compare(previousArchetype, Qt::CaseInsensitive) == 0) {
+                    m_libraryList->setCurrentRow(index);
+                    break;
+                }
+            }
+        }
+        if (m_libraryList->currentRow() < 0 && m_libraryList->count() > 0)
+            m_libraryList->setCurrentRow(0);
+
+        updateLibraryPreview();
+    }
+
+    void updateLibraryPreview()
+    {
+        QListWidgetItem *item = m_libraryList ? m_libraryList->currentItem() : nullptr;
+        const QString archetype = item ? item->data(Qt::UserRole).toString() : QString();
+        const QString modelPath = item ? item->data(Qt::UserRole + 1).toString() : QString();
+
+        m_addPartButton->setEnabled(item != nullptr && !archetype.trimmed().isEmpty());
+        if (archetype.isEmpty()) {
+            m_libraryPreviewLabel->setText(tr("Select an archetype to preview and add it."));
+            if (m_libraryViewport)
+                m_libraryViewport->clearModel();
+            return;
+        }
+
+        if (modelPath.isEmpty()) {
+            m_libraryPreviewLabel->setText(tr("%1\nNo 3D model could be resolved for this archetype.").arg(archetype));
+            if (m_libraryViewport)
+                m_libraryViewport->clearModel();
+            return;
+        }
+
+        QString errorMessage;
+        const bool loaded = m_libraryViewport && m_libraryViewport->loadModelFile(modelPath, &errorMessage);
+        m_libraryPreviewLabel->setText(loaded
+                                           ? tr("%1").arg(archetype)
+                                           : tr("%1\n%2").arg(archetype, errorMessage));
+    }
+
+    void rebuildPartTabs()
+    {
+        QSignalBlocker blocker(m_partTabs);
+        while (m_partTabs->count() > 0)
+            m_partTabs->removeTab(m_partTabs->count() - 1);
+        if (m_rootObject) {
+            const int rootIndex = m_partTabs->addTab(tr("Root: %1").arg(m_rootObject->nickname()));
+            m_partTabs->setTabData(rootIndex, m_rootObject->nickname());
+        }
+        for (const auto &child : m_childObjects) {
+            if (!child)
+                continue;
+            const int index = m_partTabs->addTab(child->nickname());
+            m_partTabs->setTabData(index, child->nickname());
+        }
+
+        for (int index = 0; index < m_partTabs->count(); ++index) {
+            if (m_partTabs->tabData(index).toString().compare(m_selectedNickname, Qt::CaseInsensitive) == 0) {
+                m_partTabs->setCurrentIndex(index);
+                return;
+            }
+        }
+
+        if (m_partTabs->count() > 0)
+            m_partTabs->setCurrentIndex(0);
+    }
+
+    void refreshUi()
+    {
+        rebuildPartTabs();
+
+        const bool childSelected = selectedChildObject() != nullptr;
+        const bool dirty = hasChanges();
+        const QString selectedName = m_selectedNickname.trimmed().isEmpty() ? tr("none") : m_selectedNickname;
+        m_selectionLabel->setText(childSelected
+                                      ? tr("Selected child: %1").arg(selectedName)
+                                      : tr("Selected root: %1").arg(selectedName));
+        m_transformHintLabel->setText(childSelected
+                                          ? tr("Move and rotate act on the selected child part. The root object stays protected.")
+                                          : tr("The root object is protected. Select a child tab to move, rotate or delete that part."));
+
+        for (QPushButton *button : std::as_const(m_moveButtons))
+            button->setEnabled(childSelected);
+        for (QPushButton *button : std::as_const(m_rotateButtons))
+            button->setEnabled(childSelected);
+
+        if (m_deletePartButton)
+            m_deletePartButton->setEnabled(childSelected);
+        if (m_undoButton)
+            m_undoButton->setEnabled(m_historyIndex > 0);
+        if (m_saveButton)
+            m_saveButton->setEnabled(dirty);
+
+        rebuildAssemblyPreview();
+    }
+
+    void rebuildAssemblyPreview()
+    {
+        if (!m_assemblyViewport || !m_rootObject)
+            return;
+
+        flatlas::infrastructure::ModelNode sceneRoot;
+        sceneRoot.name = m_rootObject->nickname();
+        const QVector3D rootPosition = m_rootObject->position();
+        int renderableCount = 0;
+
+        const auto appendObjectNode = [this, &sceneRoot, &rootPosition, &renderableCount](const std::shared_ptr<SolarObject> &object) {
+            if (!object)
+                return;
+
+            const QString modelPath = m_modelPaths.value(normalizedPathKey(object->archetype()));
+            if (modelPath.isEmpty())
+                return;
+
+            const auto decoded = flatlas::rendering::ModelCache::instance().load(modelPath);
+            if (!decoded.isValid())
+                return;
+
+            flatlas::infrastructure::ModelNode wrapper;
+            wrapper.name = object->nickname();
+            wrapper.origin = object->position() - rootPosition;
+            wrapper.rotation = quaternionFromFreelancerRotation(object->rotation());
+            wrapper.children.append(decoded.rootNode);
+            sceneRoot.children.append(wrapper);
+            ++renderableCount;
+        };
+
+        appendObjectNode(m_rootObject);
+        for (const auto &child : m_childObjects)
+            appendObjectNode(child);
+
+        if (renderableCount <= 0) {
+            m_assemblyViewport->clearModel();
+            return;
+        }
+
+        const flatlas::rendering::OrbitCameraState previousCamera = m_assemblyViewport->cameraState();
+        QString errorMessage;
+        if (m_assemblyViewport->loadModelNode(sceneRoot, &errorMessage) && previousCamera.valid)
+            m_assemblyViewport->setCameraState(previousCamera);
+    }
+
+    void setSelectedNickname(const QString &nickname)
+    {
+        m_selectedNickname = nickname.trimmed();
+        refreshUi();
+    }
+
+    std::shared_ptr<SolarObject> selectedChildObject() const
+    {
+        const QString target = m_selectedNickname.trimmed();
+        if (target.isEmpty())
+            return {};
+        for (const auto &child : m_childObjects) {
+            if (child && child->nickname().compare(target, Qt::CaseInsensitive) == 0)
+                return child;
+        }
+        return {};
+    }
+
+    void syncSerializedEntries(SolarObject *object)
+    {
+        if (!object)
+            return;
+        object->setRawEntries(SystemPersistence::serializeObjectSection(*object).entries);
+    }
+
+    void addSelectedLibraryPart()
+    {
+        QListWidgetItem *item = m_libraryList ? m_libraryList->currentItem() : nullptr;
+        if (!item || !m_rootObject)
+            return;
+
+        const QString archetype = item->data(Qt::UserRole).toString().trimmed();
+        if (archetype.isEmpty())
+            return;
+
+        QStringList usedNicknames = m_reservedNicknames;
+        if (m_rootObject)
+            usedNicknames.append(m_rootObject->nickname());
+        for (const auto &child : m_childObjects) {
+            if (child)
+                usedNicknames.append(child->nickname());
+        }
+
+        const QString nickname = suggestBaseBuilderPartNickname(m_rootObject->nickname(), usedNicknames);
+        flatlas::infrastructure::IniSection section;
+        section.name = QStringLiteral("Object");
+        section.entries = buildBaseBuilderPartEntries(m_rootObject->nickname(),
+                                                     nickname,
+                                                     archetype,
+                                                     m_rootObject->position(),
+                                                     QVector3D());
+
+        auto child = std::make_shared<SolarObject>();
+        SystemPersistence::applyObjectSection(*child, section);
+        m_childObjects.append(child);
+        m_selectedNickname = child->nickname();
+        pushHistory(tr("Add %1").arg(child->nickname()));
+        refreshUi();
+    }
+
+    void deleteSelectedChild()
+    {
+        const auto child = selectedChildObject();
+        if (!child)
+            return;
+
+        for (int index = 0; index < m_childObjects.size(); ++index) {
+            if (m_childObjects[index] == child) {
+                const QString deletedNickname = child->nickname();
+                m_childObjects.removeAt(index);
+                m_selectedNickname = m_rootObject ? m_rootObject->nickname() : QString();
+                pushHistory(tr("Delete %1").arg(deletedNickname));
+                refreshUi();
+                return;
+            }
+        }
+    }
+
+    void applyMoveDelta(int axis, double delta)
+    {
+        const auto child = selectedChildObject();
+        if (!child)
+            return;
+
+        QVector3D position = child->position();
+        if (axis == 0)
+            position.setX(position.x() + static_cast<float>(delta));
+        else if (axis == 1)
+            position.setY(position.y() + static_cast<float>(delta));
+        else
+            position.setZ(position.z() + static_cast<float>(delta));
+
+        child->setPosition(position);
+        syncSerializedEntries(child.get());
+        pushHistory(tr("Move %1").arg(child->nickname()));
+        refreshUi();
+    }
+
+    void applyRotationDelta(int axis, double delta)
+    {
+        const auto child = selectedChildObject();
+        if (!child)
+            return;
+
+        QVector3D rotation = child->rotation();
+        if (axis == 0)
+            rotation.setX(rotation.x() + static_cast<float>(delta));
+        else if (axis == 1)
+            rotation.setY(rotation.y() + static_cast<float>(delta));
+        else
+            rotation.setZ(rotation.z() + static_cast<float>(delta));
+
+        child->setRotation(rotation);
+        syncSerializedEntries(child.get());
+        pushHistory(tr("Rotate %1").arg(child->nickname()));
+        refreshUi();
+    }
+
+    BaseBuilderSnapshot captureSnapshot(const QString &label) const
+    {
+        BaseBuilderSnapshot snapshot;
+        snapshot.label = label;
+        snapshot.selectedNickname = m_selectedNickname;
+        snapshot.rootObject = cloneSolarObject(m_rootObject);
+        for (const auto &child : m_childObjects)
+            snapshot.childObjects.append(cloneSolarObject(child));
+        return snapshot;
+    }
+
+    void restoreSnapshot(const BaseBuilderSnapshot &snapshot)
+    {
+        m_rootObject = cloneSolarObject(snapshot.rootObject);
+        m_childObjects.clear();
+        for (const auto &child : snapshot.childObjects)
+            m_childObjects.append(cloneSolarObject(child));
+        m_selectedNickname = snapshot.selectedNickname;
+        if (m_selectedNickname.trimmed().isEmpty() && m_rootObject)
+            m_selectedNickname = m_rootObject->nickname();
+    }
+
+    void resetHistory()
+    {
+        m_history.clear();
+        m_history.append(captureSnapshot(tr("Initial state")));
+        m_historyIndex = 0;
+        m_savedHistoryIndex = 0;
+    }
+
+    void pushHistory(const QString &label)
+    {
+        BaseBuilderSnapshot snapshot = captureSnapshot(label);
+        if (m_historyIndex >= 0 && m_historyIndex < m_history.size()) {
+            const BaseBuilderSnapshot &current = m_history[m_historyIndex];
+            if (current.selectedNickname == snapshot.selectedNickname
+                && IniParser::serialize({SystemPersistence::serializeObjectSection(*snapshot.rootObject)}).trimmed()
+                       == IniParser::serialize({SystemPersistence::serializeObjectSection(*current.rootObject)}).trimmed()
+                && snapshot.childObjects.size() == current.childObjects.size()) {
+                bool childrenEqual = true;
+                for (int index = 0; index < snapshot.childObjects.size(); ++index) {
+                    IniDocument left;
+                    left.append(SystemPersistence::serializeObjectSection(*snapshot.childObjects[index]));
+                    IniDocument right;
+                    right.append(SystemPersistence::serializeObjectSection(*current.childObjects[index]));
+                    if (IniParser::serialize(left).trimmed() != IniParser::serialize(right).trimmed()) {
+                        childrenEqual = false;
+                        break;
+                    }
+                }
+                if (childrenEqual)
+                    return;
+            }
+        }
+
+        const int nextIndex = m_historyIndex + 1;
+        if (nextIndex < m_history.size()) {
+            m_history.resize(nextIndex);
+            if (m_savedHistoryIndex >= nextIndex)
+                m_savedHistoryIndex = nextIndex - 1;
+        }
+        m_history.append(snapshot);
+        m_historyIndex = m_history.size() - 1;
+    }
+
+    void undoLastChange()
+    {
+        if (m_historyIndex <= 0)
+            return;
+        --m_historyIndex;
+        restoreSnapshot(m_history[m_historyIndex]);
+        refreshUi();
+    }
+
+    std::shared_ptr<SolarObject> m_rootObject;
+    QVector<std::shared_ptr<SolarObject>> m_childObjects;
+    QHash<QString, QString> m_modelPaths;
+    QStringList m_libraryArchetypes;
+    QStringList m_reservedNicknames;
+    QString m_selectedNickname;
+    QVector<BaseBuilderSnapshot> m_history;
+    int m_historyIndex = -1;
+    int m_savedHistoryIndex = -1;
+
+    QLabel *m_selectionLabel = nullptr;
+    QLabel *m_transformHintLabel = nullptr;
+    ModelViewport3D *m_assemblyViewport = nullptr;
+    QTabBar *m_partTabs = nullptr;
+    QLineEdit *m_libraryFilterEdit = nullptr;
+    QListWidget *m_libraryList = nullptr;
+    QLabel *m_libraryPreviewLabel = nullptr;
+    ModelViewport3D *m_libraryViewport = nullptr;
+    QDoubleSpinBox *m_moveStepSpin = nullptr;
+    QDoubleSpinBox *m_rotateStepSpin = nullptr;
+    QPushButton *m_addPartButton = nullptr;
+    QPushButton *m_deletePartButton = nullptr;
+    QPushButton *m_undoButton = nullptr;
+    QPushButton *m_saveButton = nullptr;
+    QVector<QPushButton *> m_moveButtons;
+    QVector<QPushButton *> m_rotateButtons;
+};
+
 }
 
 SystemEditorPage::SystemEditorPage(QWidget *parent)
@@ -1386,6 +2076,14 @@ SystemEditorPage::~SystemEditorPage()
     m_isShuttingDown = true;
     cancelDockingRingPlacement();
     qApp->removeEventFilter(this);
+    if (m_sceneView3D)
+        m_sceneView3D->loadDocument(nullptr);
+    if (m_mapView)
+        m_mapView->setMapScene(nullptr);
+    if (m_mapScene)
+        m_mapScene->clear();
+    if (m_mapView)
+        m_mapView->setMoveGroupResolver({});
     if (m_mapScene)
         disconnect(m_mapScene, nullptr, this, nullptr);
     if (m_mapView)
@@ -2321,21 +3019,30 @@ void SystemEditorPage::emitLoadingProgress(int percent, const QString &message)
 
 bool SystemEditorPage::save()
 {
-    if (!m_document || m_document->filePath().isEmpty())
+    m_lastSaveError.clear();
+    if (!m_document || m_document->filePath().isEmpty()) {
+        m_lastSaveError = tr("Die Systemdatei besitzt keinen gueltigen Dateipfad.");
         return false;
+    }
     QString generatedFileError;
     if (!writePendingGeneratedZoneFiles(&generatedFileError)) {
+        m_lastSaveError = generatedFileError;
         if (!generatedFileError.isEmpty())
             QMessageBox::warning(this, tr("Speichern fehlgeschlagen"), generatedFileError);
         return false;
     }
     QString pendingTextError;
     if (!writePendingTextFiles(&pendingTextError)) {
+        m_lastSaveError = pendingTextError;
         if (!pendingTextError.isEmpty())
             QMessageBox::warning(this, tr("Speichern fehlgeschlagen"), pendingTextError);
         return false;
     }
     bool ok = SystemPersistence::save(*m_document);
+    if (!ok && m_lastSaveError.isEmpty()) {
+        m_lastSaveError = tr("Die System-INI konnte nicht auf den Datentraeger geschrieben werden:\n%1")
+                              .arg(m_document->filePath());
+    }
     if (ok) {
         m_pendingGeneratedZoneFiles.clear();
         m_pendingTextFileWrites.clear();
@@ -2782,9 +3489,7 @@ void SystemEditorPage::setupRightSidebar()
     editingLayout->addWidget(m_editBaseButton);
 
     m_baseBuilderButton = makeSidebarButton(tr("Base Builder"), editingGroup);
-    connect(m_baseBuilderButton, &QPushButton::clicked, this, [this]() {
-        showNotYetPorted(tr("Base Builder"), QStringLiteral("FLAtlas/fl_editor/main_window.py::_open_base_builder_for_object"));
-    });
+    connect(m_baseBuilderButton, &QPushButton::clicked, this, &SystemEditorPage::openBaseBuilderForSelection);
     editingLayout->addWidget(m_baseBuilderButton);
 
     editingLayout->addSpacing(12);
@@ -7875,8 +8580,13 @@ bool SystemEditorPage::writePendingGeneratedZoneFiles(QString *errorMessage)
 {
     for (auto it = m_pendingGeneratedZoneFiles.constBegin(); it != m_pendingGeneratedZoneFiles.constEnd(); ++it) {
         const PendingGeneratedZoneFile &fileData = it.value();
-        if (fileData.absolutePath.trimmed().isEmpty())
-            continue;
+        if (fileData.absolutePath.trimmed().isEmpty()) {
+            if (errorMessage) {
+                *errorMessage = tr("Eine generierte Referenzdatei hat keinen gueltigen Zielpfad und konnte deshalb nicht gespeichert werden.");
+            }
+            qWarning() << "SystemEditorPage::writePendingGeneratedZoneFiles missing path";
+            return false;
+        }
 
         QDir().mkpath(QFileInfo(fileData.absolutePath).absolutePath());
         QSaveFile file(fileData.absolutePath);
@@ -7887,12 +8597,25 @@ bool SystemEditorPage::writePendingGeneratedZoneFiles(QString *errorMessage)
             }
             return false;
         }
-        file.write(fileData.content.toUtf8());
+        const QByteArray bytes = fileData.content.toUtf8();
+        if (file.write(bytes) != bytes.size()) {
+            if (errorMessage) {
+                *errorMessage = tr("Die generierte Referenzdatei konnte nicht vollstaendig geschrieben werden:\n%1")
+                                    .arg(fileData.absolutePath);
+            }
+            qWarning() << "SystemEditorPage::writePendingGeneratedZoneFiles short write" << fileData.absolutePath;
+            file.cancelWriting();
+            return false;
+        }
         if (!file.commit()) {
             if (errorMessage) {
                 *errorMessage = tr("Die generierte Referenzdatei konnte nicht geschrieben werden:\n%1")
                                     .arg(fileData.absolutePath);
             }
+            return false;
+        }
+        if (!verifySavedTextFile(fileData.absolutePath, fileData.content, errorMessage)) {
+            qWarning() << "SystemEditorPage::writePendingGeneratedZoneFiles verification failed" << fileData.absolutePath;
             return false;
         }
     }
@@ -7903,8 +8626,12 @@ bool SystemEditorPage::writePendingTextFiles(QString *errorMessage)
 {
     for (auto it = m_pendingTextFileWrites.constBegin(); it != m_pendingTextFileWrites.constEnd(); ++it) {
         const PendingTextFileWrite &fileData = it.value();
-        if (fileData.absolutePath.trimmed().isEmpty())
-            continue;
+        if (fileData.absolutePath.trimmed().isEmpty()) {
+            if (errorMessage)
+                *errorMessage = tr("Eine verknuepfte Datei hat keinen gueltigen Zielpfad und konnte deshalb nicht gespeichert werden.");
+            qWarning() << "SystemEditorPage::writePendingTextFiles missing path";
+            return false;
+        }
         QDir().mkpath(QFileInfo(fileData.absolutePath).absolutePath());
         QSaveFile file(fileData.absolutePath);
         if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
@@ -7913,15 +8640,32 @@ bool SystemEditorPage::writePendingTextFiles(QString *errorMessage)
                                     .arg(fileData.absolutePath);
             return false;
         }
-        file.write(fileData.content.toUtf8());
+        const QByteArray bytes = fileData.content.toUtf8();
+        if (file.write(bytes) != bytes.size()) {
+            if (errorMessage)
+                *errorMessage = tr("Die verknuepfte Datei konnte nicht vollstaendig geschrieben werden:\n%1")
+                                    .arg(fileData.absolutePath);
+            qWarning() << "SystemEditorPage::writePendingTextFiles short write" << fileData.absolutePath;
+            file.cancelWriting();
+            return false;
+        }
         if (!file.commit()) {
             if (errorMessage)
                 *errorMessage = tr("Die verknuepfte Datei konnte nicht geschrieben werden:\n%1")
                                     .arg(fileData.absolutePath);
             return false;
         }
+        if (!verifySavedTextFile(fileData.absolutePath, fileData.content, errorMessage)) {
+            qWarning() << "SystemEditorPage::writePendingTextFiles verification failed" << fileData.absolutePath;
+            return false;
+        }
     }
     return true;
+}
+
+QString SystemEditorPage::lastSaveError() const
+{
+    return m_lastSaveError;
 }
 
 void SystemEditorPage::stagePendingTextWrite(const QString &absolutePath, const QString &content)
@@ -8521,6 +9265,109 @@ bool SystemEditorPage::isChildObject(const SolarObject &obj) const
 bool SystemEditorPage::hasSingleObjectGroupSelection() const
 {
     return m_selectedNicknames.size() == 1 && findObjectByNickname(m_selectedNicknames.first()) != nullptr;
+}
+
+void SystemEditorPage::openBaseBuilderForSelection()
+{
+    if (!m_document)
+        return;
+
+    SolarObject *rootObject = findBaseHostForSelection();
+    if (!rootObject)
+        return;
+
+    std::shared_ptr<SolarObject> rootShared;
+    QVector<std::shared_ptr<SolarObject>> childShared;
+    QHash<QString, std::shared_ptr<SolarObject>> originalChildrenByKey;
+    const QStringList groupNicknames = objectGroupNicknames(rootObject->nickname());
+    for (const QString &nickname : groupNicknames) {
+        for (const auto &object : m_document->objects()) {
+            if (!object || object->nickname().compare(nickname, Qt::CaseInsensitive) != 0)
+                continue;
+            if (nickname.compare(rootObject->nickname(), Qt::CaseInsensitive) == 0)
+                rootShared = object;
+            else {
+                childShared.append(object);
+                originalChildrenByKey.insert(object->nickname().trimmed().toLower(), object);
+            }
+            break;
+        }
+    }
+
+    if (!rootShared)
+        return;
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    const QStringList libraryArchetypes = loadSolarArchetypesMatching(gameRoot, {});
+    const QHash<QString, QString> modelPaths = solarArchetypeModelPathsForPreview();
+
+    QStringList reservedNicknames;
+    reservedNicknames.reserve(m_document->objects().size());
+    for (const auto &object : m_document->objects()) {
+        if (object)
+            reservedNicknames.append(object->nickname());
+    }
+
+    SystemBaseBuilderDialog dialog(rootShared,
+                                   childShared,
+                                   libraryArchetypes,
+                                   modelPaths,
+                                   reservedNicknames,
+                                   this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const QVector<std::shared_ptr<SolarObject>> draftChildren = dialog.childObjects();
+    QSet<QString> keptChildKeys;
+    bool changedAnything = false;
+
+    for (const auto &draftChild : draftChildren) {
+        if (!draftChild)
+            continue;
+
+        const QString nicknameKey = draftChild->nickname().trimmed().toLower();
+        if (nicknameKey.isEmpty())
+            continue;
+        keptChildKeys.insert(nicknameKey);
+
+        IniDocument draftDoc;
+        draftDoc.append(SystemPersistence::serializeObjectSection(*draftChild));
+        const QString draftText = IniParser::serialize(draftDoc).trimmed();
+
+        if (originalChildrenByKey.contains(nicknameKey)) {
+            const auto &existing = originalChildrenByKey.value(nicknameKey);
+            if (!existing)
+                continue;
+
+            IniDocument beforeDoc;
+            beforeDoc.append(SystemPersistence::serializeObjectSection(*existing));
+            const QString beforeText = IniParser::serialize(beforeDoc).trimmed();
+            SystemPersistence::applyObjectSection(*existing, draftDoc.first());
+            changedAnything = changedAnything || (beforeText != draftText);
+            continue;
+        }
+
+        m_document->addObject(cloneSolarObject(draftChild));
+        changedAnything = true;
+    }
+
+    for (auto it = originalChildrenByKey.constBegin(); it != originalChildrenByKey.constEnd(); ++it) {
+        if (keptChildKeys.contains(it.key()) || !it.value())
+            continue;
+        m_document->removeObject(it.value());
+        changedAnything = true;
+    }
+
+    if (!changedAnything)
+        return;
+
+    m_document->setDirty(true);
+    m_selectedNicknames = normalizeSelectionNicknames({rootObject->nickname()});
+    refreshObjectList();
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+    updateIniEditorForSelection();
 }
 
 void SystemEditorPage::open3DPreviewForSelection()

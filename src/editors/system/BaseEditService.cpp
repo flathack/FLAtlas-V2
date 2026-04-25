@@ -1118,25 +1118,84 @@ QString generateRoomIniText(const QString &roomName, const QStringList &allRooms
     return normalizeGeneratedText(lines.join(QLatin1Char('\n')));
 }
 
-QString buildBaseIniText(const BaseEditState &state)
+QString defaultRoomFilePathForBase(const BaseEditState &state, const QString &roomName)
+{
+    const QString roomFileName = QStringLiteral("%1_%2.ini")
+        .arg(generatedBaseStem(state.baseNickname), normalizeKey(roomName));
+
+    const QString relativeBaseIniPath = QDir::fromNativeSeparators(state.universeBaseFileRelativePath.trimmed());
+    if (!relativeBaseIniPath.isEmpty()) {
+        const QString baseDir = QFileInfo(relativeBaseIniPath).path();
+        if (!baseDir.trimmed().isEmpty()) {
+            return QDir(baseDir)
+                .filePath(QStringLiteral("ROOMS/%1").arg(roomFileName))
+                .replace(QLatin1Char('/'), QLatin1Char('\\'));
+        }
+    }
+
+    return QStringLiteral("Universe\\Systems\\%1\\Bases\\ROOMS\\%2")
+        .arg(state.systemNickname.trimmed(), roomFileName);
+}
+
+QString buildUpdatedBaseIniText(const QString &existingText, const BaseEditState &state)
 {
     const QStringList rooms = enabledRoomNames(state);
-    QStringList lines;
-    lines << QStringLiteral("[BaseInfo]")
-          << QStringLiteral("nickname = %1").arg(state.baseNickname.trimmed())
-          << QStringLiteral("start_room = %1").arg(chooseStartRoom(rooms, state.startRoom))
-          << QStringLiteral("price_variance = %1").arg(state.priceVariance, 0, 'f', 2)
-          << QString();
-    for (const QString &room : rooms) {
-        lines << QStringLiteral("[Room]")
-              << QStringLiteral("nickname = %1").arg(room)
-              << QStringLiteral("file = Universe\\Systems\\%1\\Bases\\Rooms\\%2_%3.ini")
-                    .arg(state.systemNickname.trimmed(),
-                         generatedBaseStem(state.baseNickname),
-                         normalizeKey(room))
-              << QString();
+    const IniDocument existingDoc = existingText.trimmed().isEmpty()
+        ? IniDocument{}
+        : IniParser::parseText(existingText);
+
+    IniSection baseInfoSection;
+    bool hasBaseInfo = false;
+    int baseInfoInsertIndex = -1;
+    QHash<QString, QString> existingRoomFiles;
+    IniDocument updatedDoc;
+
+    for (const IniSection &section : existingDoc) {
+        if (section.name.compare(QStringLiteral("BaseInfo"), Qt::CaseInsensitive) == 0) {
+            if (!hasBaseInfo) {
+                baseInfoSection = section;
+                hasBaseInfo = true;
+                baseInfoInsertIndex = updatedDoc.size();
+            }
+            continue;
+        }
+
+        if (section.name.compare(QStringLiteral("Room"), Qt::CaseInsensitive) == 0) {
+            const QString roomName = canonicalRoomName(section.value(QStringLiteral("nickname")).trimmed());
+            const QString relativeFile = section.value(QStringLiteral("file")).trimmed();
+            if (!roomName.isEmpty() && !relativeFile.isEmpty())
+                existingRoomFiles.insert(normalizeKey(roomName), relativeFile);
+            continue;
+        }
+
+        updatedDoc.append(section);
     }
-    return normalizeGeneratedText(lines.join(QLatin1Char('\n')));
+
+    if (!hasBaseInfo) {
+        baseInfoSection.name = QStringLiteral("BaseInfo");
+        baseInfoInsertIndex = 0;
+    }
+    setOrRemoveRawEntry(&baseInfoSection.entries, QStringLiteral("nickname"), state.baseNickname.trimmed());
+    setOrRemoveRawEntry(&baseInfoSection.entries, QStringLiteral("start_room"), chooseStartRoom(rooms, state.startRoom));
+    setOrRemoveRawEntry(&baseInfoSection.entries,
+                        QStringLiteral("price_variance"),
+                        QStringLiteral("%1").arg(state.priceVariance, 0, 'f', 2));
+
+    baseInfoInsertIndex = std::clamp(baseInfoInsertIndex, 0, static_cast<int>(updatedDoc.size()));
+    updatedDoc.insert(baseInfoInsertIndex, baseInfoSection);
+
+    int roomInsertIndex = baseInfoInsertIndex + 1;
+    for (const QString &room : rooms) {
+        IniSection roomSection;
+        roomSection.name = QStringLiteral("Room");
+        roomSection.entries = {
+            {QStringLiteral("nickname"), room},
+            {QStringLiteral("file"), existingRoomFiles.value(normalizeKey(room), defaultRoomFilePathForBase(state, room))},
+        };
+        updatedDoc.insert(roomInsertIndex++, roomSection);
+    }
+
+    return normalizeGeneratedText(IniParser::serialize(updatedDoc));
 }
 
 QString resolvedDisplayName(const QString &gameRoot, int idsName)
@@ -1840,7 +1899,7 @@ bool BaseEditService::applyCreate(const BaseEditState &state,
     outResult->createdObject = object;
     outResult->stagedWrites = {
         {working.universeIniAbsolutePath, normalizeGeneratedText(IniParser::serialize(universeDoc))},
-        {working.baseIniAbsolutePath, buildBaseIniText(working)},
+        {working.baseIniAbsolutePath, buildUpdatedBaseIniText(QString(), working)},
         {working.mbaseAbsolutePath, normalizeGeneratedText(IniParser::serialize(mbasesDoc))},
     };
 
@@ -1900,10 +1959,11 @@ bool BaseEditService::applyEdit(SolarObject &object,
 
     IniDocument mbasesDoc = IniParser::parseText(textForPath(working.mbaseAbsolutePath, textOverrides));
     syncMbaseRooms(&mbasesDoc, working);
+    const QString existingBaseIniText = textForPath(working.baseIniAbsolutePath, textOverrides);
 
     outResult->stagedWrites = {
         {working.universeIniAbsolutePath, normalizeGeneratedText(IniParser::serialize(universeDoc))},
-        {working.baseIniAbsolutePath, buildBaseIniText(working)},
+        {working.baseIniAbsolutePath, buildUpdatedBaseIniText(existingBaseIniText, working)},
         {working.mbaseAbsolutePath, normalizeGeneratedText(IniParser::serialize(mbasesDoc))},
     };
 

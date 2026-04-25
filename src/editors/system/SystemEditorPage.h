@@ -69,6 +69,7 @@ public:
     flatlas::domain::SystemDocument *document() const;
     QString filePath() const;
     bool isDirty() const;
+    QString lastSaveError() const;
 
 signals:
     void titleChanged(const QString &title);
@@ -154,6 +155,7 @@ private:
     bool openDockingRingDialogForPlacement();
     bool openDockingRingDialogForEdit(flatlas::domain::SolarObject *ringObject);
     bool hasSingleObjectGroupSelection() const;
+    void openBaseBuilderForSelection();
     void open3DPreviewForSelection();
     void setupUi();
     void setupToolBar();
@@ -415,6 +417,7 @@ private:
     bool m_liveMoveActive = false;
     QHash<QString, PendingGeneratedZoneFile> m_pendingGeneratedZoneFiles;
     QHash<QString, PendingTextFileWrite> m_pendingTextFileWrites;
+    QString m_lastSaveError;
     std::unique_ptr<CreateFieldZoneResult> m_pendingFieldZoneRequest;
     bool m_pendingFieldZoneHasCenter = false;
     QPointF m_pendingFieldZoneCenterScenePos;

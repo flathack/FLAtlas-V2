@@ -425,8 +425,13 @@ SolarObjectItem::SolarObjectItem(const QString &nickname,
 
 SolarObjectItem::~SolarObjectItem()
 {
-    delete m_hoverAnimation;
-    m_hoverAnimation = nullptr;
+    if (m_hoverAnimation) {
+        m_hoverAnimation->blockSignals(true);
+        m_hoverAnimation->stop();
+        QObject::disconnect(m_hoverAnimation, nullptr, nullptr, nullptr);
+        delete m_hoverAnimation;
+        m_hoverAnimation = nullptr;
+    }
 }
 
 QColor SolarObjectItem::colorForType(flatlas::domain::SolarObject::Type t)
