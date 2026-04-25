@@ -35,6 +35,7 @@ public:
     void setLabelSuppressedByCluster(bool suppressed);
     bool isLabelSuppressedByCluster() const { return m_labelSuppressedByCluster; }
     qreal currentRadius() const { return m_currentRadius; }
+    QRectF selectionCircleLocalRect() const;
     QRectF boundingRect() const override;
     void paint(QPainter *painter,
                const QStyleOptionGraphicsItem *option,

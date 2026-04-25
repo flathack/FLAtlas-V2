@@ -18,6 +18,7 @@
 #include <QPainterPath>
 #include <QRubberBand>
 #include <QScrollBar>
+#include <QSet>
 #include <QTimer>
 #include <QPalette>
 #include <QKeyEvent>
@@ -89,6 +90,40 @@ double worldDistanceForScenePoints(const QPointF &startScenePos, const QPointF &
     return QLineF(startWorld, endWorld).length();
 }
 
+QPen sharedSelectionCirclePen()
+{
+    QPen pen(QColor(64, 170, 255, 230), 2.4);
+    pen.setCosmetic(true);
+    pen.setJoinStyle(Qt::RoundJoin);
+    pen.setCapStyle(Qt::RoundCap);
+    return pen;
+}
+
+void drawSelectionCircle(QPainter *painter, const QRectF &bounds, qreal padding)
+{
+    if (!painter || bounds.isNull() || bounds.width() <= 0.0 || bounds.height() <= 0.0)
+        return;
+
+    const QPointF center = bounds.center();
+    qreal radius = 0.0;
+    radius = std::max(radius, QLineF(center, bounds.topLeft()).length());
+    radius = std::max(radius, QLineF(center, bounds.topRight()).length());
+    radius = std::max(radius, QLineF(center, bounds.bottomLeft()).length());
+    radius = std::max(radius, QLineF(center, bounds.bottomRight()).length());
+    radius += padding;
+
+    painter->setPen(sharedSelectionCirclePen());
+    painter->setBrush(Qt::NoBrush);
+    painter->drawEllipse(center, radius, radius);
+}
+
+QRectF selectionBoundsInView(SolarObjectItem *item, const QGraphicsView *view)
+{
+    if (!item || !view)
+        return {};
+    return view->mapFromScene(item->mapRectToScene(item->selectionCircleLocalRect())).boundingRect();
+}
+
 }
 
 SystemMapView::SystemMapView(QWidget *parent)
@@ -138,6 +173,12 @@ void SystemMapView::setMapScene(MapScene *scene)
 {
     m_mapScene = scene;
     QGraphicsView::setScene(scene);
+    if (scene) {
+        connect(scene, &QGraphicsScene::selectionChanged, this, [this]() {
+            if (viewport())
+                viewport()->update();
+        });
+    }
     m_pendingInitialFit = true;
     m_pendingInitialFitPasses = 3;
 }
@@ -598,6 +639,56 @@ void SystemMapView::drawForeground(QPainter *painter, const QRectF &rect)
 
     painter->save();
     painter->resetTransform();
+
+    QHash<QString, SolarObjectItem *> solarItemsByNickname;
+    const auto sceneItems = scene()->items();
+    for (QGraphicsItem *item : sceneItems) {
+        auto *solarItem = dynamic_cast<SolarObjectItem *>(item);
+        if (!solarItem || !solarItem->isVisible())
+            continue;
+        solarItemsByNickname.insert(solarItem->nickname(), solarItem);
+    }
+
+    QSet<QString> renderedGroupKeys;
+    const auto selectedItems = scene()->selectedItems();
+    for (QGraphicsItem *item : selectedItems) {
+        auto *solarItem = dynamic_cast<SolarObjectItem *>(item);
+        if (!solarItem || !solarItem->isVisible())
+            continue;
+
+        QStringList resolvedGroup = m_moveGroupResolver
+            ? m_moveGroupResolver(solarItem->nickname())
+            : QStringList{solarItem->nickname()};
+        resolvedGroup.removeDuplicates();
+
+        QStringList groupMembers;
+        for (const QString &nickname : resolvedGroup) {
+            if (solarItemsByNickname.contains(nickname))
+                groupMembers.append(nickname);
+        }
+
+        if (groupMembers.size() <= 1) {
+            drawSelectionCircle(painter,
+                                selectionBoundsInView(solarItem, this),
+                                2.0);
+            continue;
+        }
+
+        const QString groupKey = groupMembers.join(QChar(0x1f));
+        if (renderedGroupKeys.contains(groupKey))
+            continue;
+        renderedGroupKeys.insert(groupKey);
+
+        QRectF unionBounds;
+        for (const QString &nickname : groupMembers) {
+            SolarObjectItem *groupItem = solarItemsByNickname.value(nickname, nullptr);
+            if (!groupItem)
+                continue;
+            const QRectF itemBounds = selectionBoundsInView(groupItem, this);
+            unionBounds = unionBounds.isNull() ? itemBounds : unionBounds.united(itemBounds);
+        }
+        drawSelectionCircle(painter, unionBounds, 4.0);
+    }
 
     QFont font(QStringLiteral("Segoe UI"), 11, QFont::Bold);
     painter->setFont(font);

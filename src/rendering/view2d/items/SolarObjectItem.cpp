@@ -656,6 +656,18 @@ void SolarObjectItem::applyDisplayFilter(const SystemDisplayFilterSettings &sett
     setLabelVisibleForScale(scale);
 }
 
+QRectF SolarObjectItem::selectionCircleLocalRect() const
+{
+    QRectF selectionRect = rect();
+    if (m_atmosphereRadius > selectionRect.width() * 0.5) {
+        selectionRect = selectionRect.united(QRectF(-m_atmosphereRadius,
+                                                    -m_atmosphereRadius,
+                                                    m_atmosphereRadius * 2.0,
+                                                    m_atmosphereRadius * 2.0));
+    }
+    return selectionRect;
+}
+
 QRectF SolarObjectItem::boundingRect() const
 {
     QRectF rect = QGraphicsEllipseItem::boundingRect();
@@ -704,10 +716,6 @@ void SolarObjectItem::paint(QPainter *painter,
                                                       m_hoverProgress * 2.0,
                                                       m_hoverProgress * 2.0));
         }
-        if (isSelected()) {
-            painter->setPen(selectionGlowPen());
-            painter->drawEllipse(ellipseRect.adjusted(-2.5, -2.5, 2.5, 2.5));
-        }
         painter->restore();
         return;
     }
@@ -722,11 +730,6 @@ void SolarObjectItem::paint(QPainter *painter,
                                                   -m_hoverProgress * 2.0,
                                                   m_hoverProgress * 2.0,
                                                   m_hoverProgress * 2.0));
-    }
-    if (isSelected()) {
-        painter->setPen(selectionGlowPen());
-        painter->setBrush(Qt::NoBrush);
-        painter->drawEllipse(ellipseRect.adjusted(-2.5, -2.5, 2.5, 2.5));
     }
     painter->restore();
 }
