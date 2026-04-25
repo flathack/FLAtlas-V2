@@ -7,6 +7,8 @@
 #include "SystemSettingsService.h"
 #include "BaseEditDialog.h"
 #include "BaseEditService.h"
+#include "DockingRingCreationService.h"
+#include "DockingRingDialog.h"
 #include "PlanetCreationService.h"
 #include "RingEditService.h"
 #include "SystemUndoCommands.h"
@@ -90,6 +92,7 @@
 #include <QPen>
 #include <QRegularExpression>
 #include <QFile>
+#include <QTimer>
 #include <QtMath>
 
 #include <QQuaternion>
@@ -1216,6 +1219,9 @@ SystemEditorPage::SystemEditorPage(QWidget *parent)
 {
     setupUi();
     applyThemeStyling();
+    m_dockingRingPreviewTimer = new QTimer(this);
+    m_dockingRingPreviewTimer->setInterval(50);
+    connect(m_dockingRingPreviewTimer, &QTimer::timeout, this, &SystemEditorPage::refreshDockingRingPlacementAnimation);
     qApp->installEventFilter(this);
     connect(&flatlas::core::Theme::instance(), &flatlas::core::Theme::themeChanged,
             this, [this](const QString &) { applyThemeStyling(); });
@@ -1224,6 +1230,7 @@ SystemEditorPage::SystemEditorPage(QWidget *parent)
 SystemEditorPage::~SystemEditorPage()
 {
     m_isShuttingDown = true;
+    cancelDockingRingPlacement();
     qApp->removeEventFilter(this);
     if (m_mapScene)
         disconnect(m_mapScene, nullptr, this, nullptr);
@@ -4066,6 +4073,38 @@ bool SystemEditorPage::eventFilter(QObject *watched, QEvent *event)
         }
     }
 
+    if (m_dockingRingPlacement.isActive() && m_mapView && watched == m_mapView->viewport()) {
+        switch (event->type()) {
+        case QEvent::MouseMove: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            updateDockingRingPlacementPreview(m_mapView->mapToScene(mouseEvent->pos()));
+            return true;
+        }
+        case QEvent::MouseButtonPress: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (mouseEvent->button() == Qt::RightButton || mouseEvent->button() == Qt::MiddleButton) {
+                cancelDockingRingPlacement();
+                return true;
+            }
+            if (mouseEvent->button() == Qt::LeftButton) {
+                handleDockingRingPlacementClick(m_mapView->mapToScene(mouseEvent->pos()));
+                return true;
+            }
+            break;
+        }
+        case QEvent::KeyPress: {
+            auto *keyEvent = static_cast<QKeyEvent *>(event);
+            if (keyEvent->key() == Qt::Key_Escape) {
+                cancelDockingRingPlacement();
+                return true;
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
     if (m_pendingFieldZoneRequest && m_mapView && watched == m_mapView->viewport()) {
         switch (event->type()) {
         case QEvent::MouseMove: {
@@ -5497,7 +5536,376 @@ void SystemEditorPage::onCreateBase()
 
 void SystemEditorPage::onCreateDockingRing()
 {
-    createQuickObject(SolarObject::DockingRing, QStringLiteral("new_docking_ring"), QStringLiteral("docking_ring"));
+    if (!m_document || !m_mapView || !m_mapScene || m_mapView->isPlacementModeActive())
+        return;
+
+    beginDockingRingPlacement();
+}
+
+void SystemEditorPage::beginDockingRingPlacement()
+{
+    cancelDockingRingPlacement();
+    if (!m_mapView || !m_mapScene)
+        return;
+
+    m_dockingRingPlacement = DockingRingPlacementState{};
+    m_dockingRingPlacement.step = DockingRingPlacementStep::SelectPlanet;
+    m_mapView->viewport()->installEventFilter(this);
+    m_mapView->setPlacementMode(true,
+                                tr("1. Klick waehlt den Planeten. 2. Klick waehlt die Ringposition. 3. Klick bestaetigt und oeffnet den Dialog."));
+    emit selectionStatusChanged(tr("Docking-Ring: Waehle einen Planeten als Host."));
+}
+
+QPointF SystemEditorPage::projectDockingRingScenePos(const QPointF &scenePos) const
+{
+    if (!m_dockingRingPlacement.isActive() || m_dockingRingPlacement.planetRadiusScene <= 0.0)
+        return scenePos;
+
+    const QPointF center = m_dockingRingPlacement.planetSceneCenter;
+    const QLineF direction(center, scenePos);
+    if (direction.length() <= 0.001) {
+        return QPointF(center.x() + m_dockingRingPlacement.planetRadiusScene, center.y());
+    }
+
+    const QPointF unit((scenePos.x() - center.x()) / direction.length(),
+                       (scenePos.y() - center.y()) / direction.length());
+    return center + QPointF(unit.x() * m_dockingRingPlacement.planetRadiusScene,
+                            unit.y() * m_dockingRingPlacement.planetRadiusScene);
+}
+
+void SystemEditorPage::updateDockingRingPlacementPreview(const QPointF &scenePos)
+{
+    if (!m_mapScene || !m_dockingRingPlacement.isActive())
+        return;
+    if (m_dockingRingPlacement.step != DockingRingPlacementStep::SelectPosition)
+        return;
+
+    m_dockingRingPlacement.currentProjectedScenePos = projectDockingRingScenePos(scenePos);
+
+    if (!m_dockingRingOrbitPreview) {
+        m_dockingRingOrbitPreview = new QGraphicsEllipseItem();
+        m_dockingRingOrbitPreview->setZValue(9997.0);
+        m_mapScene->addItem(m_dockingRingOrbitPreview);
+    }
+    if (!m_dockingRingPlanetPreview) {
+        m_dockingRingPlanetPreview = new QGraphicsEllipseItem();
+        m_dockingRingPlanetPreview->setZValue(9996.0);
+        m_mapScene->addItem(m_dockingRingPlanetPreview);
+    }
+    if (!m_dockingRingGuidePreview) {
+        m_dockingRingGuidePreview = new QGraphicsLineItem();
+        m_dockingRingGuidePreview->setZValue(9998.0);
+        m_mapScene->addItem(m_dockingRingGuidePreview);
+    }
+    if (!m_dockingRingDotPreview) {
+        m_dockingRingDotPreview = new QGraphicsEllipseItem();
+        m_dockingRingDotPreview->setZValue(9999.0);
+        m_mapScene->addItem(m_dockingRingDotPreview);
+    }
+
+    const QPointF center = m_dockingRingPlacement.planetSceneCenter;
+    const qreal radius = m_dockingRingPlacement.planetRadiusScene;
+    m_dockingRingOrbitPreview->setRect(center.x() - radius,
+                                       center.y() - radius,
+                                       radius * 2.0,
+                                       radius * 2.0);
+    m_dockingRingGuidePreview->setLine(QLineF(center, m_dockingRingPlacement.currentProjectedScenePos));
+    refreshDockingRingPlacementAnimation();
+
+    m_mapView->setPlacementMode(true,
+                                tr("2. Klick legt die genaue Ringposition am Planetenrand fest. [Esc] oder Rechtsklick bricht ab."));
+    emit selectionStatusChanged(tr("Docking-Ring: Ziehe auf den Planetenrand und bestaetige die Position."));
+}
+
+void SystemEditorPage::handleDockingRingPlacementClick(const QPointF &scenePos)
+{
+    if (!m_dockingRingPlacement.isActive())
+        return;
+
+    if (m_dockingRingPlacement.step == DockingRingPlacementStep::SelectPlanet) {
+        SolarObject *planet = findDockingRingPlanetAtScenePos(scenePos);
+        if (!planet) {
+            emit selectionStatusChanged(tr("Docking-Ring: Nur Planeten koennen als Host verwendet werden."));
+            return;
+        }
+
+        const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+        const QPointF sceneCenter = MapScene::flToQt(planet->position().x(), planet->position().z());
+        const float orbitRadiusWorld = std::max<float>(static_cast<float>(RingEditService::resolvedHostRadius(*planet, gameRoot)), 1.0f);
+        const QPointF edgeScene = MapScene::flToQt(planet->position().x() + orbitRadiusWorld, planet->position().z());
+
+        m_dockingRingPlacement.step = DockingRingPlacementStep::SelectPosition;
+        m_dockingRingPlacement.planetNickname = planet->nickname();
+        m_dockingRingPlacement.planetSceneCenter = sceneCenter;
+        m_dockingRingPlacement.planetWorldCenter = planet->position();
+        m_dockingRingPlacement.orbitRadiusWorld = orbitRadiusWorld;
+        m_dockingRingPlacement.planetRadiusScene = std::max<qreal>(QLineF(sceneCenter, edgeScene).length(), 4.0);
+        m_dockingRingPlacement.currentProjectedScenePos = QPointF(sceneCenter.x() + m_dockingRingPlacement.planetRadiusScene,
+                                                                  sceneCenter.y());
+        if (m_dockingRingPreviewTimer)
+            m_dockingRingPreviewTimer->start();
+        updateDockingRingPlacementPreview(scenePos);
+        return;
+    }
+
+    if (m_dockingRingPlacement.step == DockingRingPlacementStep::SelectPosition) {
+        m_dockingRingPlacement.currentProjectedScenePos = projectDockingRingScenePos(scenePos);
+        m_dockingRingPlacement.step = DockingRingPlacementStep::ConfirmPosition;
+        refreshDockingRingPlacementAnimation();
+        m_mapView->setPlacementMode(true,
+                                    tr("3. Klick bestaetigt die Ringposition und oeffnet den Docking-Ring-Dialog. [Esc] oder Rechtsklick bricht ab."));
+        emit selectionStatusChanged(tr("Docking-Ring: Position fixiert. Bestaetige jetzt mit dem dritten Klick."));
+        return;
+    }
+
+    if (m_dockingRingPlacement.step == DockingRingPlacementStep::ConfirmPosition)
+        confirmDockingRingPlacement();
+}
+
+void SystemEditorPage::confirmDockingRingPlacement()
+{
+    openDockingRingDialogForPlacement();
+    cancelDockingRingPlacement();
+}
+
+void SystemEditorPage::cancelDockingRingPlacement()
+{
+    clearDockingRingPlacementPreview();
+    m_dockingRingPlacement = DockingRingPlacementState{};
+    if (m_mapView)
+        m_mapView->setPlacementMode(false);
+}
+
+void SystemEditorPage::clearDockingRingPlacementPreview()
+{
+    if (m_dockingRingPreviewTimer)
+        m_dockingRingPreviewTimer->stop();
+    m_dockingRingPreviewPulse = 0.0;
+
+    auto removeItem = [this](QGraphicsItem *item) {
+        if (!item || !m_mapScene)
+            return;
+        m_mapScene->removeItem(item);
+        delete item;
+    };
+    removeItem(m_dockingRingPlanetPreview);
+    removeItem(m_dockingRingOrbitPreview);
+    removeItem(m_dockingRingDotPreview);
+    removeItem(m_dockingRingGuidePreview);
+    m_dockingRingPlanetPreview = nullptr;
+    m_dockingRingOrbitPreview = nullptr;
+    m_dockingRingDotPreview = nullptr;
+    m_dockingRingGuidePreview = nullptr;
+}
+
+void SystemEditorPage::refreshDockingRingPlacementAnimation()
+{
+    if (!m_dockingRingPlacement.isActive())
+        return;
+
+    m_dockingRingPreviewPulse = std::fmod(m_dockingRingPreviewPulse + 0.18, 2.0 * M_PI);
+    const qreal pulse = 0.5 + 0.5 * std::sin(m_dockingRingPreviewPulse);
+    const QColor orbitStroke(255, 210, 96, 180 + static_cast<int>(pulse * 60.0));
+    const QColor orbitFill(255, 210, 96, 18 + static_cast<int>(pulse * 18.0));
+    const QColor guideStroke(255, 230, 150, 180 + static_cast<int>(pulse * 50.0));
+    const QColor dotStroke(255, 245, 185, 240);
+    const QColor dotFill(255, 219, 111, 140 + static_cast<int>(pulse * 70.0));
+
+    const QPointF center = m_dockingRingPlacement.planetSceneCenter;
+    const qreal orbitRadius = m_dockingRingPlacement.planetRadiusScene;
+    const qreal pulseRadius = orbitRadius + 3.0 + pulse * 4.0;
+    if (m_dockingRingPlanetPreview) {
+        m_dockingRingPlanetPreview->setRect(center.x() - pulseRadius,
+                                            center.y() - pulseRadius,
+                                            pulseRadius * 2.0,
+                                            pulseRadius * 2.0);
+        m_dockingRingPlanetPreview->setPen(QPen(orbitStroke, 1.5));
+        m_dockingRingPlanetPreview->setBrush(Qt::NoBrush);
+    }
+    if (m_dockingRingOrbitPreview) {
+        m_dockingRingOrbitPreview->setPen(QPen(orbitStroke, 2.0, Qt::DashLine));
+        m_dockingRingOrbitPreview->setBrush(orbitFill);
+    }
+    if (m_dockingRingGuidePreview)
+        m_dockingRingGuidePreview->setPen(QPen(guideStroke, 2.0, Qt::DashLine));
+    if (m_dockingRingDotPreview) {
+        const qreal dotRadius = 4.0 + pulse * 1.5;
+        const QPointF pos = m_dockingRingPlacement.currentProjectedScenePos;
+        m_dockingRingDotPreview->setRect(pos.x() - dotRadius,
+                                         pos.y() - dotRadius,
+                                         dotRadius * 2.0,
+                                         dotRadius * 2.0);
+        m_dockingRingDotPreview->setPen(QPen(dotStroke, 1.5));
+        m_dockingRingDotPreview->setBrush(dotFill);
+    }
+}
+
+bool SystemEditorPage::openDockingRingDialogForPlacement()
+{
+    if (!m_document)
+        return false;
+
+    SolarObject *planet = findObjectByNickname(m_dockingRingPlacement.planetNickname);
+    if (!planet)
+        return false;
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    const bool needsBase = !BaseEditService::objectHasBase(*planet);
+    QString baseNickname = planet->base().trimmed();
+    if (baseNickname.isEmpty()) {
+        for (const auto &entry : planet->rawEntries()) {
+            if (entry.first.compare(QStringLiteral("base"), Qt::CaseInsensitive) == 0) {
+                baseNickname = entry.second.trimmed();
+                break;
+            }
+        }
+    }
+    if (needsBase)
+        baseNickname = DockingRingCreationService::defaultBaseNickname(*m_document);
+
+    QHash<QString, QString> overrides;
+    for (auto it = m_pendingTextFileWrites.constBegin(); it != m_pendingTextFileWrites.constEnd(); ++it)
+        overrides.insert(it.key(), it.value().content);
+
+    QVector<QPair<QString, QString>> existingBases;
+    QHash<QString, QStringList> templateRoomsByBase;
+    for (const auto &objectPtr : m_document->objects()) {
+        if (!objectPtr || !BaseEditService::objectHasBase(*objectPtr))
+            continue;
+        const QString existingBase = objectPtr->base().trimmed();
+        if (existingBase.isEmpty())
+            continue;
+        existingBases.append({existingBase, existingBase});
+
+        BaseEditState baseState;
+        QString loadError;
+        if (BaseEditService::loadState(*m_document, *objectPtr, gameRoot, overrides, &baseState, &loadError)) {
+            QStringList roomNames;
+            for (const BaseRoomState &room : baseState.rooms) {
+                if (room.enabled)
+                    roomNames.append(room.roomName);
+            }
+            if (!roomNames.isEmpty())
+                templateRoomsByBase.insert(existingBase, roomNames);
+        }
+    }
+
+    const QString planetName = objectIngameName(*planet, gameRoot).trimmed().isEmpty()
+        ? planet->nickname()
+        : objectIngameName(*planet, gameRoot).trimmed();
+    const QString defaultIdsNameText = QStringLiteral("%1 Docking Ring").arg(planetName);
+
+    DockingRingDialog dialog(this,
+                             planet->nickname(),
+                             baseNickname,
+                             loadLoadoutsMatching(gameRoot, {QStringLiteral("docking_ring")}),
+                             loadFactionDisplays(gameRoot),
+                             existingBases,
+                             loadPilotNicknames(gameRoot),
+                             {},
+                             templateRoomsByBase,
+                             needsBase,
+                             QString(),
+                             defaultIdsNameText,
+                             QStringLiteral("66141"),
+                             planet->idsName());
+    if (dialog.exec() != QDialog::Accepted)
+        return false;
+
+    DockingRingCreateRequest request = dialog.result();
+    request.factionDisplay = factionNicknameFromDisplay(request.factionDisplay);
+
+    if (request.nickname.trimmed().isEmpty()) {
+        QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Bitte gib einen Nickname fuer den Docking Ring ein."));
+        return false;
+    }
+    for (const auto &objectPtr : m_document->objects()) {
+        if (objectPtr && objectPtr->nickname().compare(request.nickname.trimmed(), Qt::CaseInsensitive) == 0) {
+            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Der Nickname '%1' existiert bereits.").arg(request.nickname.trimmed()));
+            return false;
+        }
+    }
+    if (request.needsBase) {
+        if (request.baseNickname.trimmed().isEmpty()) {
+            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Bitte gib einen Base-Nickname fuer den Planeten an."));
+            return false;
+        }
+        if (request.roomNames.isEmpty()) {
+            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Fuer eine neue planetare Base muss mindestens ein Room aktiviert sein."));
+            return false;
+        }
+        request.startRoom = DockingRingCreationService::chooseStartRoom(request.roomNames, request.startRoom);
+        if (!request.roomNames.contains(request.startRoom, Qt::CaseInsensitive)) {
+            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Der Start-Room muss einer der aktivierten Rooms sein."));
+            return false;
+        }
+    }
+
+    QString idsError;
+    int resolvedIdsName = 0;
+    if (!resolveIdsStringInput(gameRoot,
+                               request.idsNameText,
+                               0,
+                               QString(),
+                               &resolvedIdsName,
+                               &idsError)) {
+        QMessageBox::warning(this,
+                             tr("Docking Ring erstellen"),
+                             idsError.trimmed().isEmpty()
+                                 ? tr("Der IDS-Name fuer den Docking Ring konnte nicht aufgeloest werden.")
+                                 : idsError);
+        return false;
+    }
+    request.ringIdsName = resolvedIdsName;
+
+    bool idsInfoOk = false;
+    request.ringIdsInfo = request.idsInfoValue.trimmed().toInt(&idsInfoOk);
+    if (!idsInfoOk)
+        request.ringIdsInfo = 66141;
+
+    const QPointF ringScenePos = m_dockingRingPlacement.currentProjectedScenePos;
+    const QLineF radial(m_dockingRingPlacement.planetSceneCenter, ringScenePos);
+    const double angleDegrees = radial.angle();
+    float yawDegrees = static_cast<float>(90.0 - std::atan2(ringScenePos.y() - m_dockingRingPlacement.planetSceneCenter.y(),
+                                                            ringScenePos.x() - m_dockingRingPlacement.planetSceneCenter.x())
+                                                     * 180.0 / M_PI);
+    Q_UNUSED(angleDegrees);
+    while (yawDegrees > 180.0f)
+        yawDegrees -= 360.0f;
+    while (yawDegrees < -180.0f)
+        yawDegrees += 360.0f;
+
+    DockingRingCreationResult createResult;
+    QString errorMessage;
+    if (!DockingRingCreationService::apply(m_document.get(),
+                                           planet,
+                                           request,
+                                           ringScenePos,
+                                           yawDegrees,
+                                           gameRoot,
+                                           overrides,
+                                           &createResult,
+                                           &errorMessage)) {
+        QMessageBox::warning(this,
+                             tr("Docking Ring erstellen"),
+                             errorMessage.trimmed().isEmpty()
+                                 ? tr("Der Docking Ring konnte nicht erstellt werden.")
+                                 : errorMessage);
+        return false;
+    }
+
+    for (const BaseStagedWrite &write : createResult.stagedWrites)
+        stagePendingTextWrite(write.absolutePath, write.content);
+
+    flatlas::core::UndoManager::instance().push(new AddObjectCommand(m_document.get(), createResult.createdRing, tr("Create Docking Ring")));
+    m_selectedNicknames = {createResult.createdRing->nickname()};
+    refreshObjectList();
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+    updateIniEditorForSelection();
+    emit selectionStatusChanged(tr("Docking-Ring '%1' wurde fuer '%2' vorbereitet.").arg(createResult.createdRing->nickname(), planet->nickname()));
+    return true;
 }
 
 void SystemEditorPage::onCreateAsteroidNebulaZone()
@@ -7361,6 +7769,28 @@ SolarObject *SystemEditorPage::findRingHostAtScenePos(const QPointF &scenePos) c
             continue;
         SolarObject *hostObject = findObjectByNickname(solarItem->nickname());
         if (hostObject && RingEditService::canHostRing(*hostObject))
+            return hostObject;
+    }
+    return nullptr;
+}
+
+bool SystemEditorPage::canHostDockingRing(const SolarObject &obj) const
+{
+    return DockingRingCreationService::canHostDockingRing(obj);
+}
+
+SolarObject *SystemEditorPage::findDockingRingPlanetAtScenePos(const QPointF &scenePos) const
+{
+    if (!m_mapScene)
+        return nullptr;
+
+    const auto sceneItems = m_mapScene->items(scenePos);
+    for (QGraphicsItem *item : sceneItems) {
+        auto *solarItem = dynamic_cast<flatlas::rendering::SolarObjectItem *>(item);
+        if (!solarItem)
+            continue;
+        SolarObject *hostObject = findObjectByNickname(solarItem->nickname());
+        if (hostObject && canHostDockingRing(*hostObject))
             return hostObject;
     }
     return nullptr;

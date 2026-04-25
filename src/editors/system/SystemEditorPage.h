@@ -41,6 +41,7 @@ class QStackedWidget;
 class QGraphicsEllipseItem;
 class QGraphicsLineItem;
 class QGraphicsPolygonItem;
+class QTimer;
 
 namespace flatlas::editors { class IniCodeEditor; class IniSyntaxHighlighter; }
 
@@ -103,6 +104,25 @@ private:
         }
     };
 
+    enum class DockingRingPlacementStep {
+        Idle,
+        SelectPlanet,
+        SelectPosition,
+        ConfirmPosition,
+    };
+
+    struct DockingRingPlacementState {
+        DockingRingPlacementStep step = DockingRingPlacementStep::Idle;
+        QString planetNickname;
+        QPointF planetSceneCenter;
+        QVector3D planetWorldCenter;
+        qreal planetRadiusScene = 0.0;
+        float orbitRadiusWorld = 0.0f;
+        QPointF currentProjectedScenePos;
+
+        bool isActive() const { return step != DockingRingPlacementStep::Idle; }
+    };
+
     void loadDocumentIntoUi();
     void openSystemSettingsDialog();
     void emitLoadingProgress(int percent, const QString &message);
@@ -115,10 +135,21 @@ private:
     QStringList objectGroupNicknames(const QString &rootNickname) const;
     bool isPlanetLikeObject(const flatlas::domain::SolarObject &obj) const;
     bool isChildObject(const flatlas::domain::SolarObject &obj) const;
+    bool canHostDockingRing(const flatlas::domain::SolarObject &obj) const;
     flatlas::domain::SolarObject *findBaseHostForSelection() const;
     flatlas::domain::SolarObject *findRingHostForSelection() const;
     flatlas::domain::SolarObject *findRingHostAtScenePos(const QPointF &scenePos) const;
+    flatlas::domain::SolarObject *findDockingRingPlanetAtScenePos(const QPointF &scenePos) const;
     bool openRingDialogForHost(flatlas::domain::SolarObject *hostObject, bool forceEnableForCreate);
+    void beginDockingRingPlacement();
+    void updateDockingRingPlacementPreview(const QPointF &scenePos);
+    void handleDockingRingPlacementClick(const QPointF &scenePos);
+    void confirmDockingRingPlacement();
+    void cancelDockingRingPlacement();
+    void clearDockingRingPlacementPreview();
+    void refreshDockingRingPlacementAnimation();
+    QPointF projectDockingRingScenePos(const QPointF &scenePos) const;
+    bool openDockingRingDialogForPlacement();
     bool hasSingleObjectGroupSelection() const;
     void open3DPreviewForSelection();
     void setupUi();
@@ -402,6 +433,13 @@ private:
     bool m_pendingExclusionZoneHasCenter = false;
     QPointF m_pendingExclusionZoneCenterScenePos;
     QGraphicsEllipseItem *m_exclusionZonePlacementPreview = nullptr;
+    DockingRingPlacementState m_dockingRingPlacement;
+    QGraphicsEllipseItem *m_dockingRingPlanetPreview = nullptr;
+    QGraphicsEllipseItem *m_dockingRingOrbitPreview = nullptr;
+    QGraphicsEllipseItem *m_dockingRingDotPreview = nullptr;
+    QGraphicsLineItem *m_dockingRingGuidePreview = nullptr;
+    QTimer *m_dockingRingPreviewTimer = nullptr;
+    qreal m_dockingRingPreviewPulse = 0.0;
 };
 
 } // namespace flatlas::editors
