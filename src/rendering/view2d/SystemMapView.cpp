@@ -253,6 +253,11 @@ void SystemMapView::zoomToSceneRect(const QRectF &sceneRect)
     updateItemDetailForScale();
 }
 
+void SystemMapView::setMoveGroupResolver(std::function<QStringList(const QString &)> resolver)
+{
+    m_moveGroupResolver = std::move(resolver);
+}
+
 void SystemMapView::focusSelection()
 {
     if (!m_mapScene) {
@@ -1365,6 +1370,17 @@ void SystemMapView::beginTrackedSelectionMove(QMouseEvent *event)
         return;
 
     QGraphicsItem *hitItem = itemAt(event->pos());
+    const QString hitNickname = itemNickname(hitItem);
+    const bool hitAlreadySelected = hitItem && hitItem->isSelected();
+    const Qt::KeyboardModifiers modifiers = event->modifiers();
+    const bool plainDragStart = !(modifiers & (Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier | Qt::MetaModifier));
+    if (plainDragStart && !hitNickname.isEmpty()) {
+        const QStringList targetSelection = resolvedMoveSelectionForHit(hitNickname, hitAlreadySelected);
+        if (!targetSelection.isEmpty())
+            m_mapScene->selectNicknames(targetSelection);
+        hitItem = itemAt(event->pos());
+    }
+
     if (!hitItem || !hitItem->isSelected())
         return;
 
@@ -1376,6 +1392,31 @@ void SystemMapView::beginTrackedSelectionMove(QMouseEvent *event)
     }
 
     m_trackingSelectionMove = !m_moveStartPositions.isEmpty();
+}
+
+QStringList SystemMapView::resolvedMoveSelectionForHit(const QString &hitNickname, bool hitAlreadySelected) const
+{
+    if (!m_mapScene || hitNickname.trimmed().isEmpty())
+        return {};
+
+    auto resolveNickname = [this](const QString &nickname) {
+        if (!m_moveGroupResolver)
+            return QStringList{nickname};
+        const QStringList resolved = m_moveGroupResolver(nickname);
+        return resolved.isEmpty() ? QStringList{nickname} : resolved;
+    };
+
+    QStringList targetSelection;
+    if (hitAlreadySelected) {
+        const QStringList currentSelection = m_mapScene->selectedNicknames();
+        for (const QString &nickname : currentSelection)
+            targetSelection.append(resolveNickname(nickname));
+    } else {
+        targetSelection = resolveNickname(hitNickname);
+    }
+
+    targetSelection.removeDuplicates();
+    return targetSelection;
 }
 
 void SystemMapView::finishTrackedSelectionMove()

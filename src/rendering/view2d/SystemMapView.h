@@ -8,6 +8,7 @@
 #include <QString>
 #include <QStringList>
 #include <QVector>
+#include <functional>
 #include "SystemDisplayFilter.h"
 
 class QRubberBand;
@@ -35,6 +36,7 @@ public:
     void focusSelection();
     void setDisplayFilterSettings(const SystemDisplayFilterSettings &settings);
     SystemDisplayFilterSettings displayFilterSettings() const { return m_displayFilterSettings; }
+    void setMoveGroupResolver(std::function<QStringList(const QString &)> resolver);
 
     /// Enable/disable a one-shot placement mode. While active the view shows
     /// a yellow frame + help banner and the next left click is captured to
@@ -108,6 +110,7 @@ private:
     QString measurementBannerText() const;
     bool hasMeasurementResult() const;
     double measurementDistanceWorld() const;
+    QStringList resolvedMoveSelectionForHit(const QString &hitNickname, bool hitAlreadySelected) const;
 
     MapScene *m_mapScene = nullptr;
     bool m_panning = false;
@@ -136,6 +139,7 @@ private:
     QTimer *m_clusterHoverHideTimer = nullptr;
     bool m_placementMode = false;
     QString m_placementHelpText;
+    std::function<QStringList(const QString &)> m_moveGroupResolver;
     MeasurementStage m_measurementStage = MeasurementStage::Inactive;
     QPointF m_measurementStartScenePos;
     QPointF m_measurementEndScenePos;

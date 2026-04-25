@@ -1528,6 +1528,9 @@ void SystemEditorPage::setupUi()
     m_mapView = new SystemMapView(this);
     m_mapView->setFocusPolicy(Qt::StrongFocus);
     m_mapView->setMapScene(m_mapScene);
+    m_mapView->setMoveGroupResolver([this](const QString &nickname) {
+        return expandSelectionNicknamesForScene({nickname});
+    });
     m_mapView->setBackgroundPixmap(QPixmap(flatlas::core::Theme::instance().wallpaperResourcePath()),
                                    palette().color(QPalette::Base));
     loadDisplayFilterSettings();
