@@ -3,6 +3,7 @@ build/
 build-mingw-ci/
 cmake-build-*/
 out/
+docs/
 
 # IDE
 .vs/
