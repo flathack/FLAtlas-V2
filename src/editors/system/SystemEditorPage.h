@@ -7,10 +7,11 @@
 #include <QStringList>
 #include <QVector>
 #include <QVector3D>
+#include "domain/ZoneItem.h"
 #include "rendering/view2d/SystemDisplayFilter.h"
 #include <memory>
 
-namespace flatlas::domain { class SystemDocument; class SolarObject; class ZoneItem; }
+namespace flatlas::domain { class SystemDocument; class SolarObject; }
 namespace flatlas::rendering { class MapScene; class SystemMapView; class SceneView3D; }
 namespace flatlas::editors {
 struct CreateFieldZoneResult;
@@ -222,9 +223,17 @@ private:
     void refreshObjectList();
     void onCanvasSelectionChanged(const QStringList &nicknames);
     void onTreeSelectionChanged();
+    void showMapContextMenu(const QPoint &globalPos,
+                            const QPointF &scenePos,
+                            const QStringList &zoneNicknames);
     void onAddObject();
     void onDeleteSelected();
     void onDuplicateSelected();
+    bool selectSingleContextTarget(const QString &nickname);
+    void editContextTarget(const QString &nickname);
+    void deleteContextTarget(const QString &nickname);
+    QString zoneContextLabel(const flatlas::domain::ZoneItem &zone) const;
+    QString zoneShapeLabel(flatlas::domain::ZoneItem::Shape shape) const;
     void onItemsMoved(const QHash<QString, QPointF> &oldPositions,
                       const QHash<QString, QPointF> &newPositions,
                       double verticalOffsetMeters);

@@ -55,6 +55,13 @@ signals:
                     double verticalOffsetMeters);
     void placementClicked(const QPointF &scenePos);
     void placementCanceled();
+    void contextMenuRequested(const QPoint &globalPos,
+                              const QPointF &scenePos,
+                              const QStringList &zoneNicknames);
+
+public:
+    void startMeasurement();
+    void clearMeasurementResults();
 
 protected:
     void wheelEvent(QWheelEvent *event) override;
@@ -93,6 +100,7 @@ private:
     void finishTrackedSelectionMove();
     void updateRubberBandSelection(const QRect &viewportRect, Qt::KeyboardModifiers modifiers);
     QString itemNicknameAtViewportPos(const QPoint &pos) const;
+    QStringList zoneNicknamesAtViewportPos(const QPoint &pos) const;
     void startMeasurementMode();
     void cancelMeasurementMode();
     void clearMeasurement(bool keepMode = false);

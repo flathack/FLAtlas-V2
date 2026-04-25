@@ -47,6 +47,26 @@ ZoneItem2D::ZoneItem2D(const QString &nickname,
     setToolTip(nickname);
 }
 
+QPainterPath ZoneItem2D::shape() const
+{
+    QPainterPath path;
+    if (m_shape == flatlas::domain::ZoneItem::Cylinder && m_drawCylinderAsEllipse) {
+        path.addEllipse(rect());
+        return path;
+    }
+
+    if (m_drawAsRect)
+        path.addRect(rect());
+    else
+        path.addEllipse(rect());
+    return path;
+}
+
+bool ZoneItem2D::contains(const QPointF &point) const
+{
+    return shape().contains(point);
+}
+
 QQuaternion ZoneItem2D::rotationQuaternionFromFl(float rx, float ry, float rz)
 {
     constexpr float tolerance = 0.25f;

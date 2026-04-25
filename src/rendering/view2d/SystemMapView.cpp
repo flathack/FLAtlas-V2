@@ -292,6 +292,16 @@ bool SystemMapView::hasActiveMeasurement() const
     return m_measurementStage != MeasurementStage::Inactive || m_measurementHasFinal;
 }
 
+void SystemMapView::startMeasurement()
+{
+    startMeasurementMode();
+}
+
+void SystemMapView::clearMeasurementResults()
+{
+    clearMeasurement();
+}
+
 void SystemMapView::cancelActiveMeasurement()
 {
     if (hasActiveMeasurement())
@@ -542,44 +552,10 @@ void SystemMapView::mouseReleaseEvent(QMouseEvent *event)
 
 void SystemMapView::contextMenuEvent(QContextMenuEvent *event)
 {
-    QMenu menu(this);
-    QAction *measureAction = nullptr;
-    QAction *restartMeasureAction = nullptr;
-    QAction *clearMeasureAction = nullptr;
-    QAction *cancelMeasureAction = nullptr;
-
-    if (!m_placementMode) {
-        if (m_measurementStage == MeasurementStage::Inactive)
-            measureAction = menu.addAction(tr("Measure distance"));
-        else
-            restartMeasureAction = menu.addAction(tr("Restart ruler"));
-
-        if (m_measurementStage != MeasurementStage::Inactive)
-            cancelMeasureAction = menu.addAction(tr("Cancel ruler"));
-        if (m_measurementStage != MeasurementStage::Inactive || m_measurementHasFinal)
-            clearMeasureAction = menu.addAction(tr("Clear measurement"));
-
-        if (measureAction || restartMeasureAction || clearMeasureAction || cancelMeasureAction)
-            menu.addSeparator();
-    }
-
-    menu.addAction(tr("Add Object..."));
-    menu.addSeparator();
-    menu.addAction(tr("Delete"));
-    menu.addAction(tr("Properties..."));
-    QAction *selectedAction = menu.exec(event->globalPos());
-    if (selectedAction == measureAction || selectedAction == restartMeasureAction) {
-        startMeasurementMode();
-        return;
-    }
-    if (selectedAction == cancelMeasureAction) {
-        cancelMeasurementMode();
-        return;
-    }
-    if (selectedAction == clearMeasureAction) {
-        clearMeasurement();
-        return;
-    }
+    emit contextMenuRequested(event->globalPos(),
+                              mapToScene(event->pos()),
+                              zoneNicknamesAtViewportPos(event->pos()));
+    event->accept();
 }
 
 void SystemMapView::drawBackground(QPainter *painter, const QRectF &rect)
@@ -1466,6 +1442,23 @@ void SystemMapView::updateRubberBandSelection(const QRect &viewportRect, Qt::Key
 QString SystemMapView::itemNicknameAtViewportPos(const QPoint &pos) const
 {
     return itemNickname(itemAt(pos));
+}
+
+QStringList SystemMapView::zoneNicknamesAtViewportPos(const QPoint &pos) const
+{
+    QStringList nicknames;
+    const auto hitItems = items(pos);
+    nicknames.reserve(hitItems.size());
+    for (QGraphicsItem *item : hitItems) {
+        auto *zoneItem = dynamic_cast<ZoneItem2D *>(item);
+        if (!zoneItem || !zoneItem->isVisible())
+            continue;
+        const QString nickname = zoneItem->nickname().trimmed();
+        if (!nickname.isEmpty())
+            nicknames.append(nickname);
+    }
+    nicknames.removeDuplicates();
+    return nicknames;
 }
 
 } // namespace flatlas::rendering

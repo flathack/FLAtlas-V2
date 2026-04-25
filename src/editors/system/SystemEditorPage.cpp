@@ -59,6 +59,7 @@
 #include <QTreeWidget>
 #include <QAction>
 #include <QActionGroup>
+#include <QMenu>
 #include <QMessageBox>
 #include <QInputDialog>
 #include <QMetaEnum>
@@ -1788,6 +1789,7 @@ void SystemEditorPage::connectSignals()
     connect(m_rotateRightButton, &QPushButton::clicked, this, [this]() { rotateSelectedObjectYaw(15.0f); });
     connect(m_openSystemIniButton, &QPushButton::clicked, this, &SystemEditorPage::openSystemIniExternally);
     connect(m_preview3DButton, &QPushButton::clicked, this, &SystemEditorPage::open3DPreviewForSelection);
+    connect(m_mapView, &SystemMapView::contextMenuRequested, this, &SystemEditorPage::showMapContextMenu);
     connect(m_mapView, &SystemMapView::itemsMoved, this, &SystemEditorPage::onItemsMoved);
     connect(m_mapView, &SystemMapView::itemsMoveStarted, this, &SystemEditorPage::onItemsMoveStarted);
     connect(m_mapView, &SystemMapView::itemsMoving, this, &SystemEditorPage::onItemsMoving);
@@ -3009,6 +3011,119 @@ void SystemEditorPage::onTreeSelectionChanged()
     updateSidebarButtons();
 }
 
+void SystemEditorPage::showMapContextMenu(const QPoint &globalPos,
+                                          const QPointF &scenePos,
+                                          const QStringList &zoneNicknames)
+{
+    Q_UNUSED(scenePos)
+
+    if (!m_mapView)
+        return;
+
+    QMenu menu(this);
+    QAction *measureAction = nullptr;
+    QAction *restartMeasureAction = nullptr;
+    QAction *clearMeasureAction = nullptr;
+    QAction *cancelMeasureAction = nullptr;
+
+    if (!m_mapView->isPlacementModeActive()) {
+        if (m_mapView->hasActiveMeasurement()) {
+            restartMeasureAction = menu.addAction(tr("Restart ruler"));
+            cancelMeasureAction = menu.addAction(tr("Cancel ruler"));
+            clearMeasureAction = menu.addAction(tr("Clear measurement"));
+        } else {
+            measureAction = menu.addAction(tr("Measure distance"));
+        }
+
+        if (measureAction || restartMeasureAction || cancelMeasureAction || clearMeasureAction)
+            menu.addSeparator();
+    }
+
+    struct ZoneMenuEntry {
+        QString nickname;
+        QString label;
+    };
+
+    QVector<ZoneMenuEntry> zoneEntries;
+    zoneEntries.reserve(zoneNicknames.size());
+    for (const QString &nickname : zoneNicknames) {
+        ZoneItem *zone = findZoneByNickname(nickname);
+        if (!zone)
+            continue;
+        zoneEntries.push_back({zone->nickname(), zoneContextLabel(*zone)});
+    }
+
+    std::sort(zoneEntries.begin(), zoneEntries.end(), [](const ZoneMenuEntry &left, const ZoneMenuEntry &right) {
+        const int labelCompare = left.label.compare(right.label, Qt::CaseInsensitive);
+        if (labelCompare != 0)
+            return labelCompare < 0;
+        return left.nickname.compare(right.nickname, Qt::CaseInsensitive) < 0;
+    });
+
+    QHash<QAction *, QString> editTargets;
+    QHash<QAction *, QString> deleteTargets;
+    if (!zoneEntries.isEmpty()) {
+        if (zoneEntries.size() == 1) {
+            QAction *zoneHeader = menu.addAction(zoneEntries.first().label);
+            zoneHeader->setEnabled(false);
+            editTargets.insert(menu.addAction(tr("Edit Object")), zoneEntries.first().nickname);
+            deleteTargets.insert(menu.addAction(tr("Delete Object")), zoneEntries.first().nickname);
+        } else {
+            QMenu *zonesMenu = menu.addMenu(tr("Zones under cursor"));
+            for (const ZoneMenuEntry &entry : std::as_const(zoneEntries)) {
+                QMenu *zoneMenu = zonesMenu->addMenu(entry.label);
+                editTargets.insert(zoneMenu->addAction(tr("Edit Object")), entry.nickname);
+                deleteTargets.insert(zoneMenu->addAction(tr("Delete Object")), entry.nickname);
+            }
+        }
+        menu.addSeparator();
+    }
+
+    QAction *addObjectAction = menu.addAction(tr("Add Object..."));
+    QAction *deleteSelectionAction = menu.addAction(tr("Delete"));
+    QAction *propertiesAction = menu.addAction(tr("Properties..."));
+    deleteSelectionAction->setEnabled(!m_selectedNicknames.isEmpty());
+    propertiesAction->setEnabled(m_selectedNicknames.size() == 1);
+
+    QAction *selectedAction = menu.exec(globalPos);
+    if (!selectedAction)
+        return;
+
+    if (selectedAction == measureAction || selectedAction == restartMeasureAction) {
+        m_mapView->startMeasurement();
+        return;
+    }
+    if (selectedAction == cancelMeasureAction) {
+        m_mapView->cancelActiveMeasurement();
+        return;
+    }
+    if (selectedAction == clearMeasureAction) {
+        m_mapView->clearMeasurementResults();
+        return;
+    }
+    if (selectedAction == addObjectAction) {
+        onAddObject();
+        return;
+    }
+    if (selectedAction == deleteSelectionAction) {
+        onDeleteSelected();
+        return;
+    }
+    if (selectedAction == propertiesAction) {
+        if (!m_selectedNicknames.isEmpty())
+            editContextTarget(m_selectedNicknames.first());
+        return;
+    }
+    if (editTargets.contains(selectedAction)) {
+        editContextTarget(editTargets.value(selectedAction));
+        return;
+    }
+    if (deleteTargets.contains(selectedAction)) {
+        deleteContextTarget(deleteTargets.value(selectedAction));
+        return;
+    }
+}
+
 void SystemEditorPage::onAddObject()
 {
     if (!m_document)
@@ -3302,6 +3417,90 @@ void SystemEditorPage::onDeleteSelected()
 
     m_selectedNicknames.clear();
     refreshObjectList();
+}
+
+bool SystemEditorPage::selectSingleContextTarget(const QString &nickname)
+{
+    const QString trimmedNickname = nickname.trimmed();
+    if (trimmedNickname.isEmpty() || !m_mapScene)
+        return false;
+
+    if (!findObjectByNickname(trimmedNickname)
+        && !findZoneByNickname(trimmedNickname)
+        && findLightSourceSectionIndexByNickname(trimmedNickname) < 0) {
+        QMessageBox::warning(this,
+                             tr("Target no longer available"),
+                             tr("The selected target '%1' no longer exists.").arg(trimmedNickname));
+        return false;
+    }
+
+    m_mapScene->selectNicknames({trimmedNickname});
+    if (m_mapView)
+        m_mapView->setFocus(Qt::OtherFocusReason);
+    return true;
+}
+
+void SystemEditorPage::editContextTarget(const QString &nickname)
+{
+    if (!selectSingleContextTarget(nickname))
+        return;
+
+    if (m_iniEditor)
+        m_iniEditor->setFocus(Qt::OtherFocusReason);
+}
+
+void SystemEditorPage::deleteContextTarget(const QString &nickname)
+{
+    if (!selectSingleContextTarget(nickname))
+        return;
+
+    onDeleteSelected();
+}
+
+QString SystemEditorPage::zoneContextLabel(const ZoneItem &zone) const
+{
+    const QString nickname = zone.nickname().trimmed().isEmpty() ? tr("Unnamed zone") : zone.nickname().trimmed();
+
+    QStringList details;
+    details.append(zoneShapeLabel(zone.shape()));
+
+    const QString zoneType = zone.zoneType().trimmed();
+    if (!zoneType.isEmpty())
+        details.append(zoneType);
+
+    const QString usage = zone.usage().trimmed();
+    if (!usage.isEmpty() && !details.contains(usage, Qt::CaseInsensitive))
+        details.append(usage);
+
+    const QString popType = zone.popType().trimmed();
+    if (!popType.isEmpty() && !details.contains(popType, Qt::CaseInsensitive))
+        details.append(popType);
+
+    const QString pathLabel = zone.pathLabel().trimmed();
+    if (!pathLabel.isEmpty() && !details.contains(pathLabel, Qt::CaseInsensitive))
+        details.append(pathLabel);
+
+    if (details.isEmpty())
+        return nickname;
+    return QStringLiteral("%1 | %2").arg(nickname, details.join(QStringLiteral(" | ")));
+}
+
+QString SystemEditorPage::zoneShapeLabel(ZoneItem::Shape shape) const
+{
+    switch (shape) {
+    case ZoneItem::Sphere:
+        return tr("Sphere");
+    case ZoneItem::Ellipsoid:
+        return tr("Ellipsoid");
+    case ZoneItem::Cylinder:
+        return tr("Cylinder");
+    case ZoneItem::Box:
+        return tr("Box");
+    case ZoneItem::Ring:
+        return tr("Ring");
+    }
+
+    return tr("Zone");
 }
 
 void SystemEditorPage::onDuplicateSelected()
