@@ -858,6 +858,21 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
 void BaseEditDialog::populateRooms(const QVector<BaseRoomState> &rooms)
 {
     const QString previousSelected = m_selectedRoomKey;
+    for (int row = 0; row < m_roomTable->rowCount(); ++row) {
+        if (QWidget *widget = m_roomTable->cellWidget(row, 1)) {
+            m_roomTable->removeCellWidget(row, 1);
+            widget->hide();
+            widget->setParent(nullptr);
+            delete widget;
+        }
+        if (QWidget *widget = m_roomTable->cellWidget(row, 3)) {
+            m_roomTable->removeCellWidget(row, 3);
+            widget->hide();
+            widget->setParent(nullptr);
+            delete widget;
+        }
+    }
+    m_roomTable->clearContents();
     m_roomTable->blockSignals(true);
     m_roomTable->setRowCount(0);
     for (const BaseRoomState &room : rooms) {
@@ -869,7 +884,7 @@ void BaseEditDialog::populateRooms(const QVector<BaseRoomState> &rooms)
         enabledItem->setCheckState(room.enabled ? Qt::Checked : Qt::Unchecked);
         m_roomTable->setItem(row, 0, enabledItem);
 
-        auto *activateButton = new QPushButton(tr("Activate"), m_roomTable);
+        auto *activateButton = new QPushButton(tr("Activate"));
         activateButton->setProperty("roomRow", row);
         connect(activateButton, &QPushButton::clicked, this, &BaseEditDialog::activateRoomFromTable);
         m_roomTable->setCellWidget(row, 1, activateButton);
@@ -1184,7 +1199,14 @@ QStringList BaseEditDialog::roleChoicesForRoom(const QString &roomName) const
 void BaseEditDialog::populateSceneCombo(int row, const QString &roomName, const QString &currentScene)
 {
     const BaseDialogCatalog &catalog = sharedBaseDialogCatalog();
-    auto *sceneCombo = new QComboBox(m_roomTable);
+    if (QWidget *existing = m_roomTable->cellWidget(row, 3)) {
+        m_roomTable->removeCellWidget(row, 3);
+        existing->hide();
+        existing->setParent(nullptr);
+        delete existing;
+    }
+
+    auto *sceneCombo = new QComboBox();
     sceneCombo->setEditable(false);
 
     const QString roomKey = roomPreviewKind(roomName);
