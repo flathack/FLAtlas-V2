@@ -605,6 +605,60 @@ QString idsDisplayTextFromTable(const IdsStringTable &ids, int globalId)
     return globalId > 0 ? ids.getString(globalId).trimmed() : QString();
 }
 
+const IdsStringTable &selectionDisplayIdsTable(const QString &gameRoot)
+{
+    static QString cachedGameRoot;
+    static IdsStringTable cachedIds;
+
+    if (cachedGameRoot == gameRoot)
+        return cachedIds;
+
+    cachedGameRoot = gameRoot;
+    cachedIds = IdsStringTable();
+
+    const QString exeDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("EXE"));
+    if (!exeDir.isEmpty())
+        cachedIds.loadFromFreelancerDir(exeDir);
+
+    return cachedIds;
+}
+
+int idsNameFromRawEntries(const QVector<QPair<QString, QString>> &entries)
+{
+    for (int index = entries.size() - 1; index >= 0; --index) {
+        if (entries[index].first.compare(QStringLiteral("ids_name"), Qt::CaseInsensitive) != 0)
+            continue;
+        bool ok = false;
+        const int value = entries[index].second.trimmed().toInt(&ok);
+        if (ok && value > 0)
+            return value;
+    }
+    return 0;
+}
+
+QString nicknameWithIngameName(const QString &nickname, int idsName, const QString &gameRoot)
+{
+    const QString trimmedNickname = nickname.trimmed();
+    if (trimmedNickname.isEmpty())
+        return {};
+
+    const QString ingameName = idsDisplayTextFromTable(selectionDisplayIdsTable(gameRoot), idsName);
+    return ingameName.isEmpty()
+        ? trimmedNickname
+        : QStringLiteral("%1 - %2").arg(trimmedNickname, ingameName);
+}
+
+QString objectHeaderDisplayTitle(const SolarObject &obj, const QString &gameRoot)
+{
+    const int idsName = obj.idsName() > 0 ? obj.idsName() : idsNameFromRawEntries(obj.rawEntries());
+    return nicknameWithIngameName(obj.nickname(), idsName, gameRoot);
+}
+
+QString zoneHeaderDisplayTitle(const ZoneItem &zone, const QString &gameRoot)
+{
+    return nicknameWithIngameName(zone.nickname(), idsNameFromRawEntries(zone.rawEntries()), gameRoot);
+}
+
 std::shared_ptr<SolarObject> cloneSolarObject(const std::shared_ptr<SolarObject> &source)
 {
     if (!source)
@@ -2942,8 +2996,9 @@ void SystemEditorPage::updateSelectionSummary()
     }
 
     const QString nickname = m_selectedNicknames.first();
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
     if (SolarObject *obj = findObjectByNickname(nickname)) {
-        m_selectionTitleLabel->setText(obj->nickname());
+        m_selectionTitleLabel->setText(objectHeaderDisplayTitle(*obj, gameRoot));
         const int groupCount = objectGroupNicknames(obj->nickname()).size();
         QString subtitle = tr("Objekt · %1").arg(solarObjectTypeLabel(obj->type()));
         if (groupCount > 1)
@@ -2955,7 +3010,7 @@ void SystemEditorPage::updateSelectionSummary()
 
     for (const auto &zone : m_document->zones()) {
         if (zone->nickname() == nickname) {
-            m_selectionTitleLabel->setText(zone->nickname());
+            m_selectionTitleLabel->setText(zoneHeaderDisplayTitle(*zone, gameRoot));
             const QString zoneType = zone->zoneType().trimmed().isEmpty() ? tr("Zone") : zone->zoneType().trimmed();
             m_selectionSubtitleLabel->setText(tr("Zone · %1").arg(zoneType));
             emit selectionStatusChanged(tr("1 Objekt markiert"));
