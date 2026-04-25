@@ -74,6 +74,21 @@ QString itemNickname(QGraphicsItem *item)
     return {};
 }
 
+QString formatWorldDistance(double distance)
+{
+    const double safeDistance = std::max(0.0, distance);
+    if (safeDistance >= 1000.0)
+        return QStringLiteral("%1 km").arg(safeDistance / 1000.0, 0, 'f', 2);
+    return QStringLiteral("%1 m").arg(safeDistance, 0, 'f', 0);
+}
+
+double worldDistanceForScenePoints(const QPointF &startScenePos, const QPointF &endScenePos)
+{
+    const QPointF startWorld = MapScene::qtToFl(startScenePos.x(), startScenePos.y());
+    const QPointF endWorld = MapScene::qtToFl(endScenePos.x(), endScenePos.y());
+    return QLineF(startWorld, endWorld).length();
+}
+
 }
 
 SystemMapView::SystemMapView(QWidget *parent)
@@ -266,6 +281,31 @@ void SystemMapView::wheelEvent(QWheelEvent *event)
 
 void SystemMapView::mousePressEvent(QMouseEvent *event)
 {
+    if (m_measurementStage != MeasurementStage::Inactive) {
+        if (event->button() == Qt::LeftButton) {
+            const QPointF scenePos = mapToScene(event->pos());
+            if (m_measurementStage == MeasurementStage::AwaitingStart) {
+                m_measurementStartScenePos = scenePos;
+                m_measurementEndScenePos = scenePos;
+                m_measurementHasFinal = false;
+                m_measurementStage = MeasurementStage::AwaitingEnd;
+            } else {
+                m_measurementEndScenePos = scenePos;
+                m_measurementHasFinal = true;
+                m_measurementStage = MeasurementStage::Inactive;
+            }
+            updateMeasurementCursor();
+            viewport()->update();
+            event->accept();
+            return;
+        }
+        if (event->button() == Qt::MiddleButton) {
+            cancelMeasurementMode();
+            event->accept();
+            return;
+        }
+    }
+
     if (m_placementMode) {
         if (event->button() == Qt::LeftButton) {
             const QPointF scenePos = mapToScene(event->pos());
@@ -328,6 +368,13 @@ void SystemMapView::mouseMoveEvent(QMouseEvent *event)
 {
     m_lastMouseViewportPos = event->pos();
     m_hasMouseInViewport = true;
+    if (m_measurementStage != MeasurementStage::Inactive) {
+        if (m_measurementStage == MeasurementStage::AwaitingEnd)
+            m_measurementEndScenePos = mapToScene(event->pos());
+        viewport()->update();
+        event->accept();
+        return;
+    }
     if (m_panning) {
         const QPoint delta = event->pos() - m_lastPanPosition;
         m_lastPanPosition = event->pos();
@@ -375,6 +422,12 @@ void SystemMapView::mouseMoveEvent(QMouseEvent *event)
 
 void SystemMapView::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (m_measurementStage != MeasurementStage::Inactive) {
+        if (event->button() == Qt::LeftButton || event->button() == Qt::MiddleButton) {
+            event->accept();
+            return;
+        }
+    }
     if (m_panning && event->button() == Qt::MiddleButton) {
         m_panning = false;
         unsetCursor();
@@ -418,11 +471,43 @@ void SystemMapView::mouseReleaseEvent(QMouseEvent *event)
 void SystemMapView::contextMenuEvent(QContextMenuEvent *event)
 {
     QMenu menu(this);
+    QAction *measureAction = nullptr;
+    QAction *restartMeasureAction = nullptr;
+    QAction *clearMeasureAction = nullptr;
+    QAction *cancelMeasureAction = nullptr;
+
+    if (!m_placementMode) {
+        if (m_measurementStage == MeasurementStage::Inactive)
+            measureAction = menu.addAction(tr("Measure distance"));
+        else
+            restartMeasureAction = menu.addAction(tr("Restart ruler"));
+
+        if (m_measurementStage != MeasurementStage::Inactive)
+            cancelMeasureAction = menu.addAction(tr("Cancel ruler"));
+        if (m_measurementStage != MeasurementStage::Inactive || m_measurementHasFinal)
+            clearMeasureAction = menu.addAction(tr("Clear measurement"));
+
+        if (measureAction || restartMeasureAction || clearMeasureAction || cancelMeasureAction)
+            menu.addSeparator();
+    }
+
     menu.addAction(tr("Add Object..."));
     menu.addSeparator();
     menu.addAction(tr("Delete"));
     menu.addAction(tr("Properties..."));
-    menu.exec(event->globalPos());
+    QAction *selectedAction = menu.exec(event->globalPos());
+    if (selectedAction == measureAction || selectedAction == restartMeasureAction) {
+        startMeasurementMode();
+        return;
+    }
+    if (selectedAction == cancelMeasureAction) {
+        cancelMeasurementMode();
+        return;
+    }
+    if (selectedAction == clearMeasureAction) {
+        clearMeasurement();
+        return;
+    }
 }
 
 void SystemMapView::drawBackground(QPainter *painter, const QRectF &rect)
@@ -723,6 +808,60 @@ void SystemMapView::drawForeground(QPainter *painter, const QRectF &rect)
         }
     }
 
+    if (m_measurementStage != MeasurementStage::Inactive || m_measurementHasFinal) {
+        const bool previewActive = m_measurementStage == MeasurementStage::AwaitingEnd;
+        const bool showStartPoint = previewActive || m_measurementHasFinal;
+        const bool showEndPoint = previewActive || m_measurementHasFinal;
+        if (showStartPoint && showEndPoint) {
+            const QPointF startView = mapFromScene(m_measurementStartScenePos);
+            const QPointF endView = mapFromScene(m_measurementEndScenePos);
+            const QColor accent(60, 210, 255, 240);
+            const QColor accentFill(60, 210, 255, previewActive ? 72 : 110);
+            QPen linePen(accent);
+            linePen.setWidth(2);
+            linePen.setStyle(previewActive ? Qt::DashLine : Qt::SolidLine);
+            painter->setPen(linePen);
+            painter->drawLine(startView, endView);
+
+            painter->setPen(QPen(accent, 2));
+            painter->setBrush(accentFill);
+            painter->drawEllipse(startView, 6, 6);
+            painter->setBrush(previewActive ? QColor(255, 255, 255, 30) : accentFill);
+            painter->drawEllipse(endView, 6, 6);
+
+            const double distanceWorld = measurementDistanceWorld();
+            const QString distanceText = tr("Distance: %1").arg(formatWorldDistance(distanceWorld));
+            const QPointF midpoint = (startView + endView) / 2.0;
+            QFont labelFont(QStringLiteral("Segoe UI"), 10, QFont::Bold);
+            painter->setFont(labelFont);
+            const QFontMetrics metrics(labelFont);
+            const int pad = 8;
+            const int boxW = metrics.horizontalAdvance(distanceText) + pad * 2;
+            const int boxH = metrics.height() + pad * 2;
+            QPoint labelPos(int(midpoint.x()) + 14, int(midpoint.y()) - boxH - 10);
+            const QRect vp = viewport()->rect();
+            if (labelPos.x() + boxW > vp.right() - 4)
+                labelPos.setX(vp.right() - boxW - 4);
+            if (labelPos.x() < vp.left() + 4)
+                labelPos.setX(vp.left() + 4);
+            if (labelPos.y() < vp.top() + 4)
+                labelPos.setY(int(midpoint.y()) + 14);
+
+            const QRect boxRect(labelPos, QSize(boxW, boxH));
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(QColor(18, 24, 34, 225));
+            painter->drawRoundedRect(boxRect, 6, 6);
+            painter->setPen(QPen(accent, 1));
+            painter->setBrush(Qt::NoBrush);
+            painter->drawRoundedRect(boxRect, 6, 6);
+            painter->setPen(QColor(235, 240, 250, 240));
+            painter->drawText(boxRect.left() + pad,
+                              boxRect.top() + pad + metrics.ascent(),
+                              distanceText);
+            painter->setFont(font);
+        }
+    }
+
     if (m_placementMode) {
         const QRect vp = viewport()->rect();
         // Yellow frame - thick enough to be unmistakable even on dark
@@ -757,6 +896,37 @@ void SystemMapView::drawForeground(QPainter *painter, const QRectF &rect)
         painter->drawText(bannerRect.left() + bannerPadding,
                           bannerRect.top() + bannerPadding / 2 + bannerMetrics.ascent(),
                           helpText);
+    }
+
+    if (m_measurementStage != MeasurementStage::Inactive) {
+        const QRect vp = viewport()->rect();
+        constexpr int kFrameThickness = 4;
+        QPen framePen(QColor(60, 210, 255, 235));
+        framePen.setWidth(kFrameThickness);
+        framePen.setJoinStyle(Qt::MiterJoin);
+        painter->setPen(framePen);
+        painter->setBrush(Qt::NoBrush);
+        const int inset = kFrameThickness / 2;
+        painter->drawRect(vp.adjusted(inset, inset, -inset, -inset));
+
+        const QString bannerText = measurementBannerText();
+        QFont bannerFont(QStringLiteral("Segoe UI"), 11, QFont::Bold);
+        painter->setFont(bannerFont);
+        const QFontMetrics bannerMetrics(bannerFont);
+        const int bannerPadding = 10;
+        const int bannerWidth = bannerMetrics.horizontalAdvance(bannerText) + bannerPadding * 2;
+        const int bannerHeight = bannerMetrics.height() + bannerPadding;
+        const QRect bannerRect((vp.width() - bannerWidth) / 2,
+                               vp.top() + 12,
+                               bannerWidth,
+                               bannerHeight);
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(QColor(60, 210, 255, 220));
+        painter->drawRoundedRect(bannerRect, 6, 6);
+        painter->setPen(QColor(8, 20, 30));
+        painter->drawText(bannerRect.left() + bannerPadding,
+                          bannerRect.top() + bannerPadding / 2 + bannerMetrics.ascent(),
+                          bannerText);
     }
 
     painter->restore();
@@ -1050,6 +1220,11 @@ void SystemMapView::leaveEvent(QEvent *event)
 
 void SystemMapView::keyPressEvent(QKeyEvent *event)
 {
+    if (m_measurementStage != MeasurementStage::Inactive && event->key() == Qt::Key_Escape) {
+        cancelMeasurementMode();
+        event->accept();
+        return;
+    }
     if (m_placementMode && event->key() == Qt::Key_Escape) {
         m_placementMode = false;
         m_placementHelpText.clear();
@@ -1075,6 +1250,60 @@ void SystemMapView::setPlacementMode(bool enabled, const QString &helpText)
         setCursor(Qt::ArrowCursor);
     }
     viewport()->update();
+}
+
+void SystemMapView::startMeasurementMode()
+{
+    clearMeasurement(true);
+    m_measurementStage = MeasurementStage::AwaitingStart;
+    updateMeasurementCursor();
+    setFocus(Qt::OtherFocusReason);
+    viewport()->update();
+}
+
+void SystemMapView::cancelMeasurementMode()
+{
+    clearMeasurement(false);
+}
+
+void SystemMapView::clearMeasurement(bool keepMode)
+{
+    if (!keepMode)
+        m_measurementStage = MeasurementStage::Inactive;
+    m_measurementStartScenePos = QPointF();
+    m_measurementEndScenePos = QPointF();
+    m_measurementHasFinal = false;
+    updateMeasurementCursor();
+    viewport()->update();
+}
+
+void SystemMapView::updateMeasurementCursor()
+{
+    if (m_measurementStage != MeasurementStage::Inactive)
+        setCursor(Qt::CrossCursor);
+    else if (!m_placementMode)
+        setCursor(Qt::ArrowCursor);
+}
+
+QString SystemMapView::measurementBannerText() const
+{
+    if (m_measurementStage == MeasurementStage::AwaitingStart)
+        return tr("Ruler: click the first point. [Esc] cancels.");
+    if (m_measurementStage == MeasurementStage::AwaitingEnd)
+        return tr("Ruler: click the second point. [Esc] cancels.");
+    return tr("Ruler");
+}
+
+bool SystemMapView::hasMeasurementResult() const
+{
+    return m_measurementHasFinal;
+}
+
+double SystemMapView::measurementDistanceWorld() const
+{
+    if (m_measurementStage == MeasurementStage::Inactive && !m_measurementHasFinal)
+        return 0.0;
+    return worldDistanceForScenePoints(m_measurementStartScenePos, m_measurementEndScenePos);
 }
 
 void SystemMapView::beginTrackedSelectionMove(QMouseEvent *event)

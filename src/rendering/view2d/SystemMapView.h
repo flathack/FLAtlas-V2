@@ -67,6 +67,12 @@ protected:
     void keyPressEvent(QKeyEvent *event) override;
 
 private:
+    enum class MeasurementStage {
+        Inactive,
+        AwaitingStart,
+        AwaitingEnd,
+    };
+
     struct LabelCluster {
         QVector<SolarObjectItem *> members;
         QStringList nicknames;
@@ -83,6 +89,13 @@ private:
     void finishTrackedSelectionMove();
     void updateRubberBandSelection(const QRect &viewportRect, Qt::KeyboardModifiers modifiers);
     QString itemNicknameAtViewportPos(const QPoint &pos) const;
+    void startMeasurementMode();
+    void cancelMeasurementMode();
+    void clearMeasurement(bool keepMode = false);
+    void updateMeasurementCursor();
+    QString measurementBannerText() const;
+    bool hasMeasurementResult() const;
+    double measurementDistanceWorld() const;
 
     MapScene *m_mapScene = nullptr;
     bool m_panning = false;
@@ -111,6 +124,10 @@ private:
     QTimer *m_clusterHoverHideTimer = nullptr;
     bool m_placementMode = false;
     QString m_placementHelpText;
+    MeasurementStage m_measurementStage = MeasurementStage::Inactive;
+    QPointF m_measurementStartScenePos;
+    QPointF m_measurementEndScenePos;
+    bool m_measurementHasFinal = false;
 };
 
 } // namespace flatlas::rendering
