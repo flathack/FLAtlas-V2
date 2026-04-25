@@ -111,6 +111,7 @@ DockingRingDialog::DockingRingDialog(QWidget *parent,
                                      const QString &defaultFactionDisplay,
                                      const QString &idsNameText,
                                      const QString &idsInfoValue,
+                                     double initialDistanceToPlanetCore,
                                      int stridNameValue,
                                      bool initialCreateFixture,
                                      const QString &windowTitle,
@@ -131,6 +132,7 @@ DockingRingDialog::DockingRingDialog(QWidget *parent,
             defaultFactionDisplay,
             idsNameText,
             idsInfoValue,
+            initialDistanceToPlanetCore,
             stridNameValue);
     if (m_createFixtureCheck)
         m_createFixtureCheck->setChecked(initialCreateFixture);
@@ -145,6 +147,8 @@ DockingRingDialog::DockingRingDialog(QWidget *parent,
         m_difficultySpin->setValue(initialRequest->difficulty);
         m_idsNameEdit->setText(initialRequest->idsNameText);
         m_idsInfoEdit->setText(initialRequest->idsInfoValue);
+        if (m_distanceSpin)
+            m_distanceSpin->setValue(std::max(0.0, initialRequest->distanceToPlanetCore));
         if (m_createFixtureCheck)
             m_createFixtureCheck->setChecked(initialRequest->createFixture);
     }
@@ -163,6 +167,7 @@ DockingRingCreateRequest DockingRingDialog::result() const
     request.difficulty = m_difficultySpin->value();
     request.idsNameText = m_idsNameEdit->text().trimmed();
     request.idsInfoValue = m_idsInfoEdit->text().trimmed();
+    request.distanceToPlanetCore = m_distanceSpin ? m_distanceSpin->value() : 0.0;
     request.createFixture = m_createFixtureCheck && m_createFixtureCheck->isChecked();
     request.needsBase = m_needsBase;
 
@@ -193,6 +198,7 @@ void DockingRingDialog::buildUi(const QString &planetNickname,
                                 const QString &defaultFactionDisplay,
                                 const QString &idsNameText,
                                 const QString &idsInfoValue,
+                                double initialDistanceToPlanetCore,
                                 int stridNameValue)
 {
     auto *outerLayout = new QVBoxLayout(this);
@@ -270,6 +276,13 @@ void DockingRingDialog::buildUi(const QString &planetNickname,
 
     m_idsInfoEdit = new QLineEdit(idsInfoValue, ringGroup);
     ringLayout->addRow(QStringLiteral("ids_info:"), m_idsInfoEdit);
+
+    m_distanceSpin = new QDoubleSpinBox(ringGroup);
+    m_distanceSpin->setRange(1.0, 1000000.0);
+    m_distanceSpin->setDecimals(1);
+    m_distanceSpin->setSingleStep(10.0);
+    m_distanceSpin->setValue(std::max(1.0, initialDistanceToPlanetCore));
+    ringLayout->addRow(QStringLiteral("Distance to Planet Core:"), m_distanceSpin);
 
     m_createFixtureCheck = new QCheckBox(QStringLiteral("Create docking_fixture"), ringGroup);
     m_createFixtureCheck->setToolTip(QStringLiteral("Creates or keeps a docking_fixture above the docking ring with ids_name=261166 and ids_info=66489."));

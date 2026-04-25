@@ -99,6 +99,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 using namespace flatlas::domain;
 using namespace flatlas::rendering;
@@ -1021,6 +1022,88 @@ QString parentNicknameForObject(const SolarObject &obj)
     return rawObjectEntryValue(obj, QStringLiteral("parent"));
 }
 
+QString resolvedObjectBaseNickname(const SolarObject &obj)
+{
+    QString baseNickname = obj.base().trimmed();
+    if (baseNickname.isEmpty())
+        baseNickname = rawObjectEntryValue(obj, QStringLiteral("base"));
+    return baseNickname.trimmed();
+}
+
+double horizontalDistanceMeters(const QVector3D &lhs, const QVector3D &rhs)
+{
+    const double dx = static_cast<double>(lhs.x()) - static_cast<double>(rhs.x());
+    const double dz = static_cast<double>(lhs.z()) - static_cast<double>(rhs.z());
+    return std::sqrt(dx * dx + dz * dz);
+}
+
+SolarObject *findDockingRingHostPlanet(SystemDocument *document, const SolarObject &ringObject)
+{
+    if (!document)
+        return nullptr;
+
+    const QString baseNickname = DockingRingCreationService::resolvedDockWithBase(ringObject);
+    SolarObject *bestMatch = nullptr;
+    double bestDistance = std::numeric_limits<double>::max();
+
+    auto considerCandidate = [&](SolarObject *candidate) {
+        if (!candidate || !DockingRingCreationService::canHostDockingRing(*candidate))
+            return;
+        const double distance = horizontalDistanceMeters(candidate->position(), ringObject.position());
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestMatch = candidate;
+        }
+    };
+
+    if (!baseNickname.isEmpty()) {
+        for (const auto &objectPtr : document->objects()) {
+            if (!objectPtr)
+                continue;
+            if (resolvedObjectBaseNickname(*objectPtr).compare(baseNickname, Qt::CaseInsensitive) != 0)
+                continue;
+            considerCandidate(objectPtr.get());
+        }
+    }
+
+    if (bestMatch)
+        return bestMatch;
+
+    for (const auto &objectPtr : document->objects())
+        considerCandidate(objectPtr.get());
+
+    return bestMatch;
+}
+
+QVector3D dockingRingPositionForDistance(const SolarObject &planetObject,
+                                         const QVector3D &currentRingPosition,
+                                         double distanceToPlanetCore)
+{
+    const QVector3D planetPosition = planetObject.position();
+    double dx = static_cast<double>(currentRingPosition.x()) - static_cast<double>(planetPosition.x());
+    double dz = static_cast<double>(currentRingPosition.z()) - static_cast<double>(planetPosition.z());
+    const double currentDistance = std::sqrt(dx * dx + dz * dz);
+    if (currentDistance <= 0.001) {
+        dx = 1.0;
+        dz = 0.0;
+    } else {
+        dx /= currentDistance;
+        dz /= currentDistance;
+    }
+
+    return QVector3D(static_cast<float>(static_cast<double>(planetPosition.x()) + dx * distanceToPlanetCore),
+                     currentRingPosition.y(),
+                     static_cast<float>(static_cast<double>(planetPosition.z()) + dz * distanceToPlanetCore));
+}
+
+QString formatObjectPositionEntry(const QVector3D &position)
+{
+    return QStringLiteral("%1, %2, %3")
+        .arg(position.x(), 0, 'f', 2)
+        .arg(position.y(), 0, 'f', 2)
+        .arg(position.z(), 0, 'f', 2);
+}
+
 QString normalizedPathKey(const QString &value)
 {
     QString normalized = QDir::fromNativeSeparators(value).trimmed();
@@ -1028,6 +1111,76 @@ QString normalizedPathKey(const QString &value)
     normalized = normalized.toLower();
 #endif
     return normalized;
+}
+
+QString textForAbsolutePath(const QString &absolutePath, const QHash<QString, QString> &textOverrides)
+{
+    const QString normalizedTarget = normalizedPathKey(absolutePath);
+    for (auto it = textOverrides.cbegin(); it != textOverrides.cend(); ++it) {
+        if (normalizedPathKey(it.key()) == normalizedTarget)
+            return it.value();
+    }
+
+    QFile file(absolutePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return {};
+    return QString::fromUtf8(file.readAll());
+}
+
+QVector<QPair<QString, QString>> loadGlobalBaseTemplateChoices(const QString &gameRoot,
+                                                               const QHash<QString, QString> &textOverrides,
+                                                               QHash<QString, QStringList> *outTemplateRoomsByBase)
+{
+    QVector<QPair<QString, QString>> baseChoices;
+    if (outTemplateRoomsByBase)
+        outTemplateRoomsByBase->clear();
+
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
+    const QString universePath = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("UNIVERSE/universe.ini"));
+    if (universePath.isEmpty())
+        return baseChoices;
+
+    const QString universeText = textForAbsolutePath(universePath, textOverrides);
+    if (universeText.trimmed().isEmpty())
+        return baseChoices;
+
+    const IniDocument doc = IniParser::parseText(universeText);
+    QSet<QString> seenBases;
+    for (const IniSection &section : doc) {
+        if (section.name.compare(QStringLiteral("Base"), Qt::CaseInsensitive) != 0)
+            continue;
+
+        const QString baseNickname = section.value(QStringLiteral("nickname")).trimmed();
+        const QString baseKey = baseNickname.toLower();
+        if (baseNickname.isEmpty() || seenBases.contains(baseKey))
+            continue;
+
+        BaseEditState templateState;
+        QString loadError;
+        if (!BaseEditService::loadTemplateState(baseNickname, gameRoot, textOverrides, &templateState, &loadError))
+            continue;
+
+        QStringList roomNames;
+        for (const BaseRoomState &room : templateState.rooms) {
+            if (room.enabled && !room.roomName.trimmed().isEmpty())
+                roomNames.append(room.roomName.trimmed());
+        }
+        roomNames.removeDuplicates();
+        if (roomNames.isEmpty())
+            continue;
+
+        bool ok = false;
+        const int idsName = section.value(QStringLiteral("strid_name")).trimmed().toInt(&ok);
+        baseChoices.append({nicknameWithIngameName(baseNickname, ok ? idsName : 0, gameRoot), baseNickname});
+        if (outTemplateRoomsByBase)
+            outTemplateRoomsByBase->insert(baseNickname, roomNames);
+        seenBases.insert(baseKey);
+    }
+
+    std::sort(baseChoices.begin(), baseChoices.end(), [](const auto &left, const auto &right) {
+        return left.first.compare(right.first, Qt::CaseInsensitive) < 0;
+    });
+    return baseChoices;
 }
 
 QString normalizedNameToken(const QString &value)
@@ -5639,7 +5792,7 @@ void SystemEditorPage::handleDockingRingPlacementClick(const QPointF &scenePos)
 
         const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
         const QPointF sceneCenter = MapScene::flToQt(planet->position().x(), planet->position().z());
-        const float orbitRadiusWorld = std::max<float>(static_cast<float>(RingEditService::resolvedHostRadius(*planet, gameRoot)) + 20.0f, 1.0f);
+        const float orbitRadiusWorld = std::max<float>(static_cast<float>(RingEditService::resolvedHostRadius(*planet, gameRoot)) + 40.0f, 1.0f);
         const QPointF edgeScene = MapScene::flToQt(planet->position().x() + orbitRadiusWorld, planet->position().z());
 
         m_dockingRingPlacement.step = DockingRingPlacementStep::SelectPosition;
@@ -5775,9 +5928,15 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
     for (auto it = m_pendingTextFileWrites.constBegin(); it != m_pendingTextFileWrites.constEnd(); ++it)
         overrides.insert(it.key(), it.value().content);
 
-    QVector<QPair<QString, QString>> existingBases;
     QHash<QString, QStringList> templateRoomsByBase;
+    QVector<QPair<QString, QString>> existingBases = loadGlobalBaseTemplateChoices(gameRoot, overrides, &templateRoomsByBase);
     QSet<QString> existingTemplateLabels;
+    for (const auto &existingBase : existingBases) {
+        const QString normalizedBaseLabel = existingBase.first.trimmed().toLower();
+        if (!normalizedBaseLabel.isEmpty())
+            existingTemplateLabels.insert(normalizedBaseLabel);
+    }
+
     for (const auto &objectPtr : m_document->objects()) {
         if (!objectPtr || !BaseEditService::objectHasBase(*objectPtr))
             continue;
@@ -5785,16 +5944,18 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
         if (existingBase.isEmpty())
             continue;
 
-        BaseEditState baseState;
-        QString loadError;
-        if (BaseEditService::loadState(*m_document, *objectPtr, gameRoot, overrides, &baseState, &loadError)) {
-            QStringList roomNames;
-            for (const BaseRoomState &room : baseState.rooms) {
-                if (room.enabled)
-                    roomNames.append(room.roomName);
+        if (!templateRoomsByBase.contains(existingBase)) {
+            BaseEditState baseState;
+            QString loadError;
+            if (BaseEditService::loadState(*m_document, *objectPtr, gameRoot, overrides, &baseState, &loadError)) {
+                QStringList roomNames;
+                for (const BaseRoomState &room : baseState.rooms) {
+                    if (room.enabled)
+                        roomNames.append(room.roomName);
+                }
+                if (!roomNames.isEmpty())
+                    templateRoomsByBase.insert(existingBase, roomNames);
             }
-            if (!roomNames.isEmpty())
-                templateRoomsByBase.insert(existingBase, roomNames);
         }
 
         if (!templateRoomsByBase.contains(existingBase))
@@ -5817,10 +5978,15 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
         }
     }
 
+    std::sort(existingBases.begin(), existingBases.end(), [](const auto &left, const auto &right) {
+        return left.first.compare(right.first, Qt::CaseInsensitive) < 0;
+    });
+
     const QString planetName = objectIngameName(*planet, gameRoot).trimmed().isEmpty()
         ? planet->nickname()
         : objectIngameName(*planet, gameRoot).trimmed();
     const QString defaultIdsNameText = QStringLiteral("%1 Docking Ring").arg(planetName);
+    const double defaultDistanceToPlanetCore = std::max<double>(1.0, m_dockingRingPlacement.orbitRadiusWorld);
 
     DockingRingDialog dialog(this,
                              planet->nickname(),
@@ -5835,6 +6001,7 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
                              QString(),
                              defaultIdsNameText,
                              QStringLiteral("66141"),
+                             defaultDistanceToPlanetCore,
                              planet->idsName(),
                              false,
                              QStringLiteral("Create Docking Ring"));
@@ -5892,7 +6059,27 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
     if (!idsInfoOk)
         request.ringIdsInfo = 66141;
 
-    const QPointF ringScenePos = m_dockingRingPlacement.currentProjectedScenePos;
+    if (request.distanceToPlanetCore <= 0.0) {
+        QMessageBox::warning(this,
+                             tr("Docking Ring erstellen"),
+                             tr("Der Abstand zum Planetenkern muss groesser als 0 sein."));
+        return false;
+    }
+
+    const QPointF currentRingWorldPos = MapScene::qtToFl(m_dockingRingPlacement.currentProjectedScenePos.x(),
+                                                         m_dockingRingPlacement.currentProjectedScenePos.y());
+    double radialX = currentRingWorldPos.x() - planet->position().x();
+    double radialZ = currentRingWorldPos.y() - planet->position().z();
+    const double radialLength = std::sqrt(radialX * radialX + radialZ * radialZ);
+    if (radialLength > 0.001) {
+        radialX /= radialLength;
+        radialZ /= radialLength;
+    } else {
+        radialX = 1.0;
+        radialZ = 0.0;
+    }
+    const QPointF ringScenePos = MapScene::flToQt(planet->position().x() + radialX * request.distanceToPlanetCore,
+                                                  planet->position().z() + radialZ * request.distanceToPlanetCore);
     const QLineF radial(m_dockingRingPlacement.planetSceneCenter, ringScenePos);
     const double angleDegrees = radial.angle();
     float yawDegrees = static_cast<float>(90.0 - std::atan2(ringScenePos.y() - m_dockingRingPlacement.planetSceneCenter.y(),
@@ -7918,6 +8105,10 @@ bool SystemEditorPage::openDockingRingDialogForEdit(SolarObject *ringObject)
 
     const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
     const QString baseNickname = DockingRingCreationService::resolvedDockWithBase(*ringObject);
+    SolarObject *planetObject = findDockingRingHostPlanet(m_document.get(), *ringObject);
+    const double currentDistanceToPlanetCore = planetObject
+        ? horizontalDistanceMeters(planetObject->position(), ringObject->position())
+        : 0.0;
     int fixtureMatchCount = 0;
     const auto existingFixture = DockingRingCreationService::findAssociatedFixture(m_document.get(), *ringObject, &fixtureMatchCount);
 
@@ -7940,10 +8131,11 @@ bool SystemEditorPage::openDockingRingDialogForEdit(SolarObject *ringObject)
     initialRequest.difficulty = difficultyOk ? difficulty : 1;
     initialRequest.idsNameText = idsNameText;
     initialRequest.idsInfoValue = rawEntry(*ringObject, QStringLiteral("ids_info"));
+    initialRequest.distanceToPlanetCore = currentDistanceToPlanetCore;
     initialRequest.createFixture = fixtureMatchCount > 0;
 
     DockingRingDialog dialog(this,
-                             ringObject->nickname(),
+                             planetObject ? planetObject->nickname() : ringObject->nickname(),
                              baseNickname,
                              loadLoadoutsMatching(gameRoot, {QStringLiteral("docking_ring")}),
                              loadFactionDisplays(gameRoot),
@@ -7955,6 +8147,7 @@ bool SystemEditorPage::openDockingRingDialogForEdit(SolarObject *ringObject)
                              rawEntry(*ringObject, QStringLiteral("reputation")),
                              idsNameText,
                              rawEntry(*ringObject, QStringLiteral("ids_info")),
+                             std::max(1.0, currentDistanceToPlanetCore),
                              0,
                              fixtureMatchCount > 0,
                              QStringLiteral("Edit Docking Ring"),
@@ -7999,6 +8192,19 @@ bool SystemEditorPage::openDockingRingDialogForEdit(SolarObject *ringObject)
     bool idsInfoOk = false;
     const int resolvedIdsInfo = request.idsInfoValue.trimmed().toInt(&idsInfoOk);
 
+    if (request.distanceToPlanetCore <= 0.0) {
+        QMessageBox::warning(this,
+                             tr("Docking Ring bearbeiten"),
+                             tr("Der Abstand zum Planetenkern muss groesser als 0 sein."));
+        return false;
+    }
+    if (!planetObject) {
+        QMessageBox::warning(this,
+                             tr("Docking Ring bearbeiten"),
+                             tr("Der Host-Planet fuer diesen Docking Ring konnte nicht eindeutig ermittelt werden."));
+        return false;
+    }
+
     if (request.createFixture && fixtureMatchCount > 1) {
         QMessageBox::warning(this,
                              tr("Docking Ring bearbeiten"),
@@ -8034,10 +8240,14 @@ bool SystemEditorPage::openDockingRingDialogForEdit(SolarObject *ringObject)
     ringObject->setLoadout(request.loadout.trimmed());
     ringObject->setIdsName(resolvedIdsName);
     ringObject->setIdsInfo(idsInfoOk ? resolvedIdsInfo : ringObject->idsInfo());
+    ringObject->setPosition(dockingRingPositionForDistance(*planetObject,
+                                                           ringObject->position(),
+                                                           request.distanceToPlanetCore));
 
     setEntry(QStringLiteral("nickname"), ringObject->nickname());
     setEntry(QStringLiteral("ids_name"), QString::number(ringObject->idsName()));
     setEntry(QStringLiteral("ids_info"), QString::number(ringObject->idsInfo()));
+    setEntry(QStringLiteral("pos"), formatObjectPositionEntry(ringObject->position()));
     setEntry(QStringLiteral("Archetype"), ringObject->archetype());
     setEntry(QStringLiteral("dock_with"), baseNickname);
     if (!request.loadout.trimmed().isEmpty())

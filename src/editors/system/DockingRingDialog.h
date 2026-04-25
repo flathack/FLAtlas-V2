@@ -19,6 +19,7 @@ namespace flatlas::editors {
 struct DockingRingCreateRequest {
     QString nickname;
     QString archetype;
+    double distanceToPlanetCore = 0.0;
     QString loadout;
     QString factionDisplay;
     QString voice;
@@ -57,6 +58,7 @@ public:
                                const QString &defaultFactionDisplay,
                                const QString &idsNameText,
                                const QString &idsInfoValue,
+                               double initialDistanceToPlanetCore,
                                int stridNameValue,
                                bool initialCreateFixture = false,
                                const QString &windowTitle = QString(),
@@ -75,6 +77,7 @@ private:
                  const QString &defaultFactionDisplay,
                  const QString &idsNameText,
                  const QString &idsInfoValue,
+                 double initialDistanceToPlanetCore,
                  int stridNameValue);
     void ensureRoomCheckbox(const QString &roomName, bool checkedByDefault);
     void refreshStartRoomChoices(const QString &preferredRoom = QString());
@@ -94,6 +97,7 @@ private:
     QSpinBox *m_difficultySpin = nullptr;
     QLineEdit *m_idsNameEdit = nullptr;
     QLineEdit *m_idsInfoEdit = nullptr;
+    QDoubleSpinBox *m_distanceSpin = nullptr;
     QLineEdit *m_baseNicknameEdit = nullptr;
     QSpinBox *m_stridNameSpin = nullptr;
     QComboBox *m_startRoomCombo = nullptr;
