@@ -70,6 +70,23 @@ private:
     QVector3D m_newPos;
 };
 
+class RotateObjectCommand : public QUndoCommand {
+public:
+    explicit RotateObjectCommand(domain::SolarObject* obj,
+                                 const QVector3D& oldRotation,
+                                 const QVector3D& newRotation,
+                                 const QString& text = QStringLiteral("Rotate Object"))
+        : QUndoCommand(text), m_obj(obj), m_oldRotation(oldRotation), m_newRotation(newRotation) {}
+
+    void undo() override { m_obj->setRotation(m_oldRotation); }
+    void redo() override { m_obj->setRotation(m_newRotation); }
+
+private:
+    domain::SolarObject* m_obj;
+    QVector3D m_oldRotation;
+    QVector3D m_newRotation;
+};
+
 class AddZoneCommand : public QUndoCommand {
 public:
     explicit AddZoneCommand(domain::SystemDocument* doc,
@@ -110,6 +127,23 @@ private:
     domain::ZoneItem* m_zone;
     QVector3D m_oldPos;
     QVector3D m_newPos;
+};
+
+class RotateZoneCommand : public QUndoCommand {
+public:
+    explicit RotateZoneCommand(domain::ZoneItem* zone,
+                               const QVector3D& oldRotation,
+                               const QVector3D& newRotation,
+                               const QString& text = QStringLiteral("Rotate Zone"))
+        : QUndoCommand(text), m_zone(zone), m_oldRotation(oldRotation), m_newRotation(newRotation) {}
+
+    void undo() override { m_zone->setRotation(m_oldRotation); }
+    void redo() override { m_zone->setRotation(m_newRotation); }
+
+private:
+    domain::ZoneItem* m_zone;
+    QVector3D m_oldRotation;
+    QVector3D m_newRotation;
 };
 
 class RemoveZoneCommand : public QUndoCommand {

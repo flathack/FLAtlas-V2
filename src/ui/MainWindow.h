@@ -17,6 +17,7 @@ namespace flatlas::editors { class IdsEditorPage; }
 namespace flatlas::editors { class ModManagerPage; }
 namespace flatlas::editors { class NpcEditorPage; }
 namespace flatlas::tools { class HelpBrowser; }
+namespace flatlas::tools { class KeyboardShortcutOverviewDialog; }
 namespace flatlas::rendering { class ModelViewerPage; }
 
 /// FLAtlas-Hauptfenster – schlanke Orchestrierung, delegiert an Panels und Editoren.
@@ -61,6 +62,7 @@ private:
     bool isWidgetDirty(QWidget *widget) const;
     QString tabTitleForWidget(QWidget *widget) const;
     void showContextHelp();
+    void showShortcutOverview();
     void launchFreelancerFromContext();
     flatlas::editors::SystemEditorPage *currentSystemEditor() const;
     static QString formatSystemTabTitle(const QString &editorTitle, const QString &ingameName);
@@ -70,6 +72,7 @@ private:
     flatlas::ui::CenterTabWidget *m_centerTabs = nullptr;
     flatlas::ui::PropertiesPanel *m_propertiesPanel = nullptr;
     flatlas::tools::HelpBrowser *m_helpBrowser = nullptr;
+    flatlas::tools::KeyboardShortcutOverviewDialog *m_shortcutOverviewDialog = nullptr;
     QLabel *m_editingLabel = nullptr;
     QPushButton *m_settingsButton = nullptr;
     QProgressBar *m_progressBar = nullptr;

@@ -3,6 +3,7 @@ add_library(flatlas_tools STATIC
     ScriptPatcher.h ScriptPatcher.cpp
     SpStarter.h SpStarter.cpp
     HelpBrowser.h HelpBrowser.cpp
+    KeyboardShortcutOverviewDialog.h KeyboardShortcutOverviewDialog.cpp
     UpdateChecker.h UpdateChecker.cpp
     UpdateDownloader.h UpdateDownloader.cpp
     UpdateInstaller.h UpdateInstaller.cpp

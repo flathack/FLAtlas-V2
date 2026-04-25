@@ -22,6 +22,7 @@
 #include "tools/UpdateDownloader.h"
 #include "tools/UpdateInstaller.h"
 #include "tools/HelpBrowser.h"
+#include "tools/KeyboardShortcutOverviewDialog.h"
 #include "tools/PathFinderDialog.h"
 #include "rendering/preview/ModelViewerPage.h"
 #include "domain/SystemDocument.h"
@@ -271,6 +272,9 @@ void MainWindow::createMenus()
     helpMenu->addAction(tr("&Help Contents"), QKeySequence::HelpContents, this, [this]() {
         showContextHelp();
     });
+    helpMenu->addAction(tr("Keyboard &Shortcuts"), this, [this]() {
+        showShortcutOverview();
+    });
     helpMenu->addSeparator();
     helpMenu->addAction(tr("Check for &Updates..."), this, [this]() {
         statusBar()->showMessage(tr("Checking for updates..."), 3000);
@@ -455,6 +459,20 @@ void MainWindow::showContextHelp()
         topicId = flatlas::tools::HelpBrowser::topicForContext(shortName);
     }
     m_helpBrowser->showTopic(topicId);
+}
+
+void MainWindow::showShortcutOverview()
+{
+    if (!m_shortcutOverviewDialog) {
+        m_shortcutOverviewDialog = new flatlas::tools::KeyboardShortcutOverviewDialog(this);
+        connect(m_shortcutOverviewDialog, &QObject::destroyed, this, [this]() {
+            m_shortcutOverviewDialog = nullptr;
+        });
+    }
+
+    m_shortcutOverviewDialog->show();
+    m_shortcutOverviewDialog->raise();
+    m_shortcutOverviewDialog->activateWindow();
 }
 
 void MainWindow::applyThemeStyling()

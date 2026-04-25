@@ -5,6 +5,7 @@
 #include <QHash>
 #include <QPointF>
 #include <QStringList>
+#include <QVector>
 #include <QVector3D>
 #include "rendering/view2d/SystemDisplayFilter.h"
 #include <memory>
@@ -73,6 +74,13 @@ signals:
     void loadingProgressChanged(int percent, const QString &message);
 
 private:
+    enum class EditorTool {
+        Selection,
+        Move,
+        Rotate,
+        Scale,
+    };
+
     struct PendingGeneratedZoneFile {
         QString absolutePath;
         QString content;
@@ -81,6 +89,18 @@ private:
     struct PendingTextFileWrite {
         QString absolutePath;
         QString content;
+    };
+
+    struct ClipboardPayload {
+        QVector<std::shared_ptr<flatlas::domain::SolarObject>> objects;
+        QVector<std::shared_ptr<flatlas::domain::ZoneItem>> zones;
+
+        bool isEmpty() const { return objects.isEmpty() && zones.isEmpty(); }
+        void clear()
+        {
+            objects.clear();
+            zones.clear();
+        }
     };
 
     void loadDocumentIntoUi();
@@ -103,6 +123,7 @@ private:
     void open3DPreviewForSelection();
     void setupUi();
     void setupToolBar();
+    void setupShortcutActions();
     void setupObjectList();
     void connectSignals();
     void ensureSceneView3D();
@@ -113,6 +134,19 @@ private:
     void updateSaveButtonAppearance();
     bool hasPendingIniEditorChangesForSelection() const;
     void rotateSelectedObjectYaw(float deltaDegrees);
+    void rotateSelectedEntriesYaw(float deltaDegrees, const QString &undoText);
+    void moveSelectedEntries(const QVector3D &delta, const QString &undoText);
+    void copySelectedToClipboard();
+    void pasteClipboardSelection();
+    void focusCurrentSelectionInView();
+    void selectAllEligibleEntries();
+    bool cancelCurrentEditorInteraction();
+    void setCurrentEditorTool(EditorTool tool);
+    bool canTriggerEditorShortcut(bool requiresCanvasFocus = false) const;
+    bool isEditableShortcutTarget(QWidget *widget) const;
+    bool shouldConsumeShortcutOverride(QKeyEvent *event) const;
+    bool isMapCanvasFocusWidget(QWidget *widget) const;
+    QString uniqueNicknameForCopy(const QString &baseNickname) const;
     void connectDocumentEntitySignals();
     void set3DViewEnabled(bool enabled);
     void openDisplayFilterDialog();
@@ -262,8 +296,36 @@ private:
     QWidget *m_multiSelectionListHost = nullptr;
     QVBoxLayout *m_multiSelectionListLayout = nullptr;
     QAction *m_toggle3DAction = nullptr;
+    QAction *m_selectToolAction = nullptr;
+    QAction *m_moveToolAction = nullptr;
+    QAction *m_rotateToolAction = nullptr;
+    QAction *m_scaleToolAction = nullptr;
+    QAction *m_toggleGridAction = nullptr;
+    QAction *m_focusSelectionAction = nullptr;
+    QAction *m_deleteSelectionAction = nullptr;
+    QAction *m_duplicateSelectionAction = nullptr;
+    QAction *m_copySelectionAction = nullptr;
+    QAction *m_pasteSelectionAction = nullptr;
+    QAction *m_undoAction = nullptr;
+    QAction *m_redoAction = nullptr;
+    QAction *m_selectAllAction = nullptr;
+    QAction *m_saveAction = nullptr;
+    QAction *m_cancelAction = nullptr;
+    QAction *m_moveLeftAction = nullptr;
+    QAction *m_moveRightAction = nullptr;
+    QAction *m_moveUpAction = nullptr;
+    QAction *m_moveDownAction = nullptr;
+    QAction *m_moveLeftLargeAction = nullptr;
+    QAction *m_moveRightLargeAction = nullptr;
+    QAction *m_moveUpLargeAction = nullptr;
+    QAction *m_moveDownLargeAction = nullptr;
+    QAction *m_rotateLeftAction = nullptr;
+    QAction *m_rotateRightAction = nullptr;
     bool m_is3DViewEnabled = false;
+    EditorTool m_currentEditorTool = EditorTool::Selection;
     QStringList m_selectedNicknames;
+    ClipboardPayload m_clipboardPayload;
+    int m_clipboardPasteSequence = 0;
     flatlas::rendering::SystemDisplayFilterSettings m_displayFilterSettings;
     QWidget *m_rightSidebar = nullptr;
     QLabel *m_selectionTitleLabel = nullptr;

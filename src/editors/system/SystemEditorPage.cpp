@@ -45,6 +45,7 @@
 #include "ui/MainWindow.h"
 
 #include <QDialog>
+#include <QApplication>
 #include <QEvent>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -55,6 +56,7 @@
 #include <QToolBar>
 #include <QTreeWidget>
 #include <QAction>
+#include <QActionGroup>
 #include <QMessageBox>
 #include <QInputDialog>
 #include <QMetaEnum>
@@ -63,6 +65,9 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QComboBox>
+#include <QAbstractSpinBox>
+#include <QPlainTextEdit>
+#include <QTextEdit>
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QSet>
@@ -698,6 +703,65 @@ std::shared_ptr<SolarObject> cloneSolarObject(const std::shared_ptr<SolarObject>
     return clone;
 }
 
+std::shared_ptr<ZoneItem> cloneZoneItem(const std::shared_ptr<ZoneItem> &source)
+{
+    if (!source)
+        return {};
+
+    auto clone = std::make_shared<ZoneItem>();
+    clone->setNickname(source->nickname());
+    clone->setPosition(source->position());
+    clone->setSize(source->size());
+    clone->setShape(source->shape());
+    clone->setRotation(source->rotation());
+    clone->setZoneType(source->zoneType());
+    clone->setUsage(source->usage());
+    clone->setPopType(source->popType());
+    clone->setPathLabel(source->pathLabel());
+    clone->setComment(source->comment());
+    clone->setTightnessXyz(source->tightnessXyz());
+    clone->setDamage(source->damage());
+    clone->setInterference(source->interference());
+    clone->setDragScale(source->dragScale());
+    clone->setSortKey(source->sortKey());
+    clone->setRawEntries(source->rawEntries());
+    return clone;
+}
+
+void updateRawNicknameEntry(QVector<QPair<QString, QString>> *entries, const QString &nickname)
+{
+    if (!entries)
+        return;
+    bool updated = false;
+    for (auto &entry : *entries) {
+        if (entry.first.compare(QStringLiteral("nickname"), Qt::CaseInsensitive) == 0) {
+            entry.second = nickname;
+            updated = true;
+        }
+    }
+    if (!updated)
+        entries->append({QStringLiteral("nickname"), nickname});
+}
+
+void updateRawParentEntries(QVector<QPair<QString, QString>> *entries, const QHash<QString, QString> &renameMap)
+{
+    if (!entries)
+        return;
+    for (auto &entry : *entries) {
+        if (entry.first.compare(QStringLiteral("parent"), Qt::CaseInsensitive) != 0)
+            continue;
+        entry.second = renameMap.value(entry.second.trimmed(), entry.second);
+    }
+}
+
+float normalizedYawDegrees(float degrees)
+{
+    float yaw = std::fmod(degrees, 360.0f);
+    if (yaw < 0.0f)
+        yaw += 360.0f;
+    return yaw;
+}
+
 QVector<QPair<QString, QString>> removeRawEntriesByKey(const QVector<QPair<QString, QString>> &entries,
                                                        const QString &key)
 {
@@ -1152,6 +1216,7 @@ SystemEditorPage::SystemEditorPage(QWidget *parent)
 {
     setupUi();
     applyThemeStyling();
+    qApp->installEventFilter(this);
     connect(&flatlas::core::Theme::instance(), &flatlas::core::Theme::themeChanged,
             this, [this](const QString &) { applyThemeStyling(); });
 }
@@ -1159,6 +1224,7 @@ SystemEditorPage::SystemEditorPage(QWidget *parent)
 SystemEditorPage::~SystemEditorPage()
 {
     m_isShuttingDown = true;
+    qApp->removeEventFilter(this);
     if (m_mapScene)
         disconnect(m_mapScene, nullptr, this, nullptr);
     if (m_mapView)
@@ -1299,6 +1365,7 @@ void SystemEditorPage::setupUi()
     // Map view (center)
     m_mapScene = new MapScene(this);
     m_mapView = new SystemMapView(this);
+    m_mapView->setFocusPolicy(Qt::StrongFocus);
     m_mapView->setMapScene(m_mapScene);
     m_mapView->setBackgroundPixmap(QPixmap(flatlas::core::Theme::instance().wallpaperResourcePath()),
                                    palette().color(QPalette::Base));
@@ -1316,6 +1383,7 @@ void SystemEditorPage::setupUi()
 
     mainLayout->addWidget(m_splitter);
 
+    setupShortcutActions();
     connectSignals();
     updateSelectionSummary();
     updateSidebarButtons();
@@ -1329,15 +1397,33 @@ void SystemEditorPage::setupToolBar()
     auto *displayFiltersAction = m_toolBar->addAction(tr("Display Filters"));
     connect(displayFiltersAction, &QAction::triggered, this, &SystemEditorPage::openDisplayFilterDialog);
 
-    auto *moveAction = m_toolBar->addAction(tr("MOVE"));
-    moveAction->setCheckable(true);
-    moveAction->setChecked(false);
-    connect(moveAction, &QAction::toggled, this, [this](bool enabled) {
-        if (m_mapScene)
-            m_mapScene->setMoveEnabled(enabled);
-    });
+    auto *toolGroup = new QActionGroup(this);
+    toolGroup->setExclusive(true);
+
+    m_selectToolAction = m_toolBar->addAction(tr("SELECT"));
+    m_selectToolAction->setCheckable(true);
+    toolGroup->addAction(m_selectToolAction);
+    connect(m_selectToolAction, &QAction::triggered, this, [this]() { setCurrentEditorTool(EditorTool::Selection); });
+
+    m_moveToolAction = m_toolBar->addAction(tr("MOVE"));
+    m_moveToolAction->setCheckable(true);
+    toolGroup->addAction(m_moveToolAction);
+    connect(m_moveToolAction, &QAction::triggered, this, [this]() { setCurrentEditorTool(EditorTool::Move); });
+
+    m_rotateToolAction = m_toolBar->addAction(tr("ROTATE"));
+    m_rotateToolAction->setCheckable(true);
+    toolGroup->addAction(m_rotateToolAction);
+    connect(m_rotateToolAction, &QAction::triggered, this, [this]() { setCurrentEditorTool(EditorTool::Rotate); });
+
+    m_scaleToolAction = m_toolBar->addAction(tr("SCALE"));
+    m_scaleToolAction->setCheckable(true);
+    toolGroup->addAction(m_scaleToolAction);
+    connect(m_scaleToolAction, &QAction::triggered, this, [this]() { setCurrentEditorTool(EditorTool::Scale); });
 
     m_toolBar->addSeparator();
+
+    m_focusSelectionAction = m_toolBar->addAction(tr("Focus"));
+    connect(m_focusSelectionAction, &QAction::triggered, this, &SystemEditorPage::focusCurrentSelectionInView);
 
     auto *zoomFitAction = m_toolBar->addAction(tr("Zoom Fit"));
     connect(zoomFitAction, &QAction::triggered, this, [this]() {
@@ -1345,13 +1431,193 @@ void SystemEditorPage::setupToolBar()
             m_mapView->zoomToFit();
     });
 
-    auto *gridAction = m_toolBar->addAction(tr("Grid"));
-    gridAction->setCheckable(true);
-    gridAction->setChecked(true);
-    connect(gridAction, &QAction::toggled, this, [this](bool checked) {
+    m_toggleGridAction = m_toolBar->addAction(tr("Grid"));
+    m_toggleGridAction->setCheckable(true);
+    m_toggleGridAction->setChecked(true);
+    connect(m_toggleGridAction, &QAction::toggled, this, [this](bool checked) {
         if (m_mapScene)
             m_mapScene->setGridVisible(checked);
     });
+
+    setCurrentEditorTool(EditorTool::Selection);
+}
+
+void SystemEditorPage::setupShortcutActions()
+{
+    auto registerAction = [this](QAction *action, const QList<QKeySequence> &shortcuts) {
+        if (!action)
+            return;
+        action->setShortcuts(shortcuts);
+        action->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+        addAction(action);
+    };
+
+    auto registerShortcutProxy = [this, &registerAction](const QList<QKeySequence> &shortcuts,
+                                                         const std::function<void()> &handler) {
+        auto *action = new QAction(this);
+        connect(action, &QAction::triggered, this, [handler]() { handler(); });
+        registerAction(action, shortcuts);
+    };
+
+    registerShortcutProxy({QKeySequence(Qt::Key_Q), QKeySequence(Qt::Key_V)}, [this]() {
+        if (canTriggerEditorShortcut(true) && m_selectToolAction)
+            m_selectToolAction->trigger();
+    });
+    registerShortcutProxy({QKeySequence(Qt::Key_W)}, [this]() {
+        if (canTriggerEditorShortcut(true) && m_moveToolAction)
+            m_moveToolAction->trigger();
+    });
+    registerShortcutProxy({QKeySequence(Qt::Key_E)}, [this]() {
+        if (canTriggerEditorShortcut(true) && m_rotateToolAction)
+            m_rotateToolAction->trigger();
+    });
+    registerShortcutProxy({QKeySequence(Qt::Key_R)}, [this]() {
+        if (canTriggerEditorShortcut(true) && m_scaleToolAction)
+            m_scaleToolAction->trigger();
+    });
+    registerShortcutProxy({QKeySequence(Qt::Key_G)}, [this]() {
+        if (canTriggerEditorShortcut(true) && m_toggleGridAction)
+            m_toggleGridAction->trigger();
+    });
+    registerShortcutProxy({QKeySequence(Qt::Key_F)}, [this]() {
+        if (canTriggerEditorShortcut(true) && m_focusSelectionAction)
+            m_focusSelectionAction->trigger();
+    });
+
+    m_deleteSelectionAction = new QAction(this);
+    connect(m_deleteSelectionAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut())
+            onDeleteSelected();
+    });
+    registerAction(m_deleteSelectionAction, {QKeySequence(Qt::Key_Delete)});
+
+    m_duplicateSelectionAction = new QAction(this);
+    connect(m_duplicateSelectionAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut())
+            onDuplicateSelected();
+    });
+    registerAction(m_duplicateSelectionAction, {QKeySequence(Qt::CTRL | Qt::Key_D)});
+
+    m_copySelectionAction = new QAction(this);
+    connect(m_copySelectionAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut())
+            copySelectedToClipboard();
+    });
+    registerAction(m_copySelectionAction, {QKeySequence::Copy});
+
+    m_pasteSelectionAction = new QAction(this);
+    connect(m_pasteSelectionAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut())
+            pasteClipboardSelection();
+    });
+    registerAction(m_pasteSelectionAction, {QKeySequence::Paste});
+
+    m_undoAction = new QAction(this);
+    connect(m_undoAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut())
+            flatlas::core::UndoManager::instance().undo();
+    });
+    registerAction(m_undoAction, {QKeySequence::Undo});
+
+    m_redoAction = new QAction(this);
+    connect(m_redoAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut())
+            flatlas::core::UndoManager::instance().redo();
+    });
+    registerAction(m_redoAction, {QKeySequence::Redo,
+                                  QKeySequence(Qt::CTRL | Qt::Key_Y),
+                                  QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z)});
+
+    m_selectAllAction = new QAction(this);
+    connect(m_selectAllAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut())
+            selectAllEligibleEntries();
+    });
+    registerAction(m_selectAllAction, {QKeySequence::SelectAll});
+
+    m_saveAction = new QAction(this);
+    connect(m_saveAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut())
+            save();
+    });
+    registerAction(m_saveAction, {QKeySequence::Save});
+
+    m_cancelAction = new QAction(this);
+    connect(m_cancelAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            cancelCurrentEditorInteraction();
+    });
+    registerAction(m_cancelAction, {QKeySequence(Qt::Key_Escape)});
+
+    m_moveLeftAction = new QAction(this);
+    connect(m_moveLeftAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            moveSelectedEntries(QVector3D(-100.0f, 0.0f, 0.0f), tr("Nudge Selection"));
+    });
+    registerAction(m_moveLeftAction, {QKeySequence(Qt::Key_Left)});
+
+    m_moveRightAction = new QAction(this);
+    connect(m_moveRightAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            moveSelectedEntries(QVector3D(100.0f, 0.0f, 0.0f), tr("Nudge Selection"));
+    });
+    registerAction(m_moveRightAction, {QKeySequence(Qt::Key_Right)});
+
+    m_moveUpAction = new QAction(this);
+    connect(m_moveUpAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            moveSelectedEntries(QVector3D(0.0f, 0.0f, -100.0f), tr("Nudge Selection"));
+    });
+    registerAction(m_moveUpAction, {QKeySequence(Qt::Key_Up)});
+
+    m_moveDownAction = new QAction(this);
+    connect(m_moveDownAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            moveSelectedEntries(QVector3D(0.0f, 0.0f, 100.0f), tr("Nudge Selection"));
+    });
+    registerAction(m_moveDownAction, {QKeySequence(Qt::Key_Down)});
+
+    m_moveLeftLargeAction = new QAction(this);
+    connect(m_moveLeftLargeAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            moveSelectedEntries(QVector3D(-1000.0f, 0.0f, 0.0f), tr("Move Selection"));
+    });
+    registerAction(m_moveLeftLargeAction, {QKeySequence(Qt::SHIFT | Qt::Key_Left)});
+
+    m_moveRightLargeAction = new QAction(this);
+    connect(m_moveRightLargeAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            moveSelectedEntries(QVector3D(1000.0f, 0.0f, 0.0f), tr("Move Selection"));
+    });
+    registerAction(m_moveRightLargeAction, {QKeySequence(Qt::SHIFT | Qt::Key_Right)});
+
+    m_moveUpLargeAction = new QAction(this);
+    connect(m_moveUpLargeAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            moveSelectedEntries(QVector3D(0.0f, 0.0f, -1000.0f), tr("Move Selection"));
+    });
+    registerAction(m_moveUpLargeAction, {QKeySequence(Qt::SHIFT | Qt::Key_Up)});
+
+    m_moveDownLargeAction = new QAction(this);
+    connect(m_moveDownLargeAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            moveSelectedEntries(QVector3D(0.0f, 0.0f, 1000.0f), tr("Move Selection"));
+    });
+    registerAction(m_moveDownLargeAction, {QKeySequence(Qt::SHIFT | Qt::Key_Down)});
+
+    m_rotateLeftAction = new QAction(this);
+    connect(m_rotateLeftAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            rotateSelectedEntriesYaw(-15.0f, tr("Rotate Selection"));
+    });
+    registerAction(m_rotateLeftAction, {QKeySequence(Qt::Key_Z)});
+
+    m_rotateRightAction = new QAction(this);
+    connect(m_rotateRightAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            rotateSelectedEntriesYaw(15.0f, tr("Rotate Selection"));
+    });
+    registerAction(m_rotateRightAction, {QKeySequence(Qt::Key_X)});
 }
 
 void SystemEditorPage::connectSignals()
@@ -1375,6 +1641,412 @@ void SystemEditorPage::connectSignals()
         connect(m_iniEditor, &QPlainTextEdit::textChanged,
             this, [this]() { updateSidebarButtons(); });
 }
+
+    bool SystemEditorPage::isEditableShortcutTarget(QWidget *widget) const
+    {
+        if (!widget)
+            return false;
+        if (qobject_cast<QLineEdit *>(widget))
+            return true;
+        if (qobject_cast<QAbstractSpinBox *>(widget))
+            return true;
+        if (qobject_cast<QPlainTextEdit *>(widget))
+            return true;
+        if (qobject_cast<QTextEdit *>(widget))
+            return true;
+        if (auto *comboBox = qobject_cast<QComboBox *>(widget))
+            return comboBox->isEditable();
+        return false;
+    }
+
+    bool SystemEditorPage::isMapCanvasFocusWidget(QWidget *widget) const
+    {
+        return widget && m_mapView && (widget == m_mapView || m_mapView->isAncestorOf(widget));
+    }
+
+    bool SystemEditorPage::canTriggerEditorShortcut(bool requiresCanvasFocus) const
+    {
+        if (!isVisible() || !window() || !window()->isActiveWindow())
+            return false;
+
+        QWidget *focusWidget = QApplication::focusWidget();
+        if (!focusWidget || (focusWidget != this && !isAncestorOf(focusWidget)))
+            return false;
+        if (isEditableShortcutTarget(focusWidget))
+            return false;
+        if (requiresCanvasFocus && !isMapCanvasFocusWidget(focusWidget))
+            return false;
+        return true;
+    }
+
+    bool SystemEditorPage::shouldConsumeShortcutOverride(QKeyEvent *event) const
+    {
+        if (!event)
+            return false;
+
+        QWidget *focusWidget = QApplication::focusWidget();
+        if (!focusWidget || (focusWidget != this && !isAncestorOf(focusWidget)))
+            return false;
+        if (!isEditableShortcutTarget(focusWidget))
+            return false;
+
+        const Qt::KeyboardModifiers mods = event->modifiers();
+        const int key = event->key();
+        if (mods == Qt::NoModifier) {
+            switch (key) {
+            case Qt::Key_Q:
+            case Qt::Key_V:
+            case Qt::Key_W:
+            case Qt::Key_E:
+            case Qt::Key_R:
+            case Qt::Key_G:
+            case Qt::Key_F:
+            case Qt::Key_Escape:
+            case Qt::Key_Delete:
+            case Qt::Key_Left:
+            case Qt::Key_Right:
+            case Qt::Key_Up:
+            case Qt::Key_Down:
+            case Qt::Key_Z:
+            case Qt::Key_X:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        if (mods == Qt::ShiftModifier) {
+            switch (key) {
+            case Qt::Key_Left:
+            case Qt::Key_Right:
+            case Qt::Key_Up:
+            case Qt::Key_Down:
+            case Qt::Key_Z:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        if (mods == Qt::ControlModifier) {
+            switch (key) {
+            case Qt::Key_A:
+            case Qt::Key_C:
+            case Qt::Key_D:
+            case Qt::Key_S:
+            case Qt::Key_V:
+            case Qt::Key_Y:
+            case Qt::Key_Z:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        if (mods == (Qt::ControlModifier | Qt::ShiftModifier))
+            return key == Qt::Key_Z;
+
+        return false;
+    }
+
+    void SystemEditorPage::setCurrentEditorTool(EditorTool tool)
+    {
+        m_currentEditorTool = tool;
+        if (m_selectToolAction)
+            m_selectToolAction->setChecked(tool == EditorTool::Selection);
+        if (m_moveToolAction)
+            m_moveToolAction->setChecked(tool == EditorTool::Move);
+        if (m_rotateToolAction)
+            m_rotateToolAction->setChecked(tool == EditorTool::Rotate);
+        if (m_scaleToolAction)
+            m_scaleToolAction->setChecked(tool == EditorTool::Scale);
+        if (m_mapScene)
+            m_mapScene->setMoveEnabled(tool == EditorTool::Move);
+    }
+
+    QString SystemEditorPage::uniqueNicknameForCopy(const QString &baseNickname) const
+    {
+        const QString trimmed = baseNickname.trimmed();
+        QString candidate = trimmed.endsWith(QStringLiteral("_copy"), Qt::CaseInsensitive)
+            ? trimmed
+            : trimmed + QStringLiteral("_copy");
+        if (!findObjectByNickname(candidate) && !findZoneByNickname(candidate)
+            && findLightSourceSectionIndexByNickname(candidate) < 0) {
+            return candidate;
+        }
+
+        for (int index = 1; index < 10000; ++index) {
+            const QString numbered = QStringLiteral("%1_%2").arg(candidate).arg(index, 3, 10, QLatin1Char('0'));
+            if (!findObjectByNickname(numbered) && !findZoneByNickname(numbered)
+                && findLightSourceSectionIndexByNickname(numbered) < 0) {
+                return numbered;
+            }
+        }
+        return candidate + QStringLiteral("_new");
+    }
+
+    void SystemEditorPage::focusCurrentSelectionInView()
+    {
+        if (!m_mapView)
+            return;
+        if (m_selectedNicknames.isEmpty()) {
+            m_mapView->zoomToFit();
+        } else {
+            m_mapView->focusSelection();
+        }
+        m_mapView->setFocus();
+    }
+
+    void SystemEditorPage::selectAllEligibleEntries()
+    {
+        if (!m_document || !m_objectTree)
+            return;
+
+        QStringList nicknames;
+        for (int i = 0; i < m_objectTree->topLevelItemCount(); ++i) {
+            QTreeWidgetItem *root = m_objectTree->topLevelItem(i);
+            if (!root)
+                continue;
+            for (int childIndex = 0; childIndex < root->childCount(); ++childIndex) {
+                QTreeWidgetItem *child = root->child(childIndex);
+                if (!child || child->isHidden())
+                    continue;
+                nicknames.append(child->text(0));
+            }
+        }
+        nicknames = normalizeSelectionNicknames(nicknames);
+        if (nicknames.isEmpty())
+            return;
+
+        m_selectedNicknames = nicknames;
+        syncTreeSelectionFromNicknames(m_selectedNicknames);
+        syncSceneSelectionFromNicknames(m_selectedNicknames);
+        updateSelectionSummary();
+        updateIniEditorForSelection();
+        updateSidebarButtons();
+    }
+
+    bool SystemEditorPage::cancelCurrentEditorInteraction()
+    {
+        if (m_pendingFieldZoneRequest) {
+            cancelFieldZonePlacement();
+            return true;
+        }
+        if (m_pendingExclusionZoneRequest) {
+            cancelExclusionZonePlacement();
+            return true;
+        }
+        if (m_pendingSimpleZoneRequest) {
+            cancelSimpleZonePlacement();
+            return true;
+        }
+        if (m_pendingPatrolZoneRequest) {
+            cancelPatrolZonePlacement();
+            return true;
+        }
+        if (m_pendingBuoyRequest) {
+            cancelBuoyPlacement();
+            return true;
+        }
+        if (m_pendingTradeLaneHasStart) {
+            cancelTradeLanePlacement();
+            return true;
+        }
+        if (m_mapView && m_mapView->hasActiveMeasurement()) {
+            m_mapView->cancelActiveMeasurement();
+            return true;
+        }
+        if (m_currentEditorTool != EditorTool::Selection) {
+            setCurrentEditorTool(EditorTool::Selection);
+            return true;
+        }
+        return false;
+    }
+
+    void SystemEditorPage::moveSelectedEntries(const QVector3D &delta, const QString &undoText)
+    {
+        if (!m_document || m_selectedNicknames.isEmpty())
+            return;
+        if (m_selectedNicknames.size() == 1 && hasPendingIniEditorChangesForSelection())
+            return;
+
+        const QStringList expandedNicknames = expandMoveNicknames(m_selectedNicknames);
+        if (expandedNicknames.isEmpty())
+            return;
+
+        auto *stack = flatlas::core::UndoManager::instance().stack();
+        stack->beginMacro(undoText);
+        bool changedAnything = false;
+
+        for (const auto &obj : m_document->objects()) {
+            if (!expandedNicknames.contains(obj->nickname()))
+                continue;
+            const QVector3D oldPos = obj->position();
+            const QVector3D newPos = oldPos + delta;
+            stack->push(new MoveObjectCommand(obj.get(), oldPos, newPos, undoText));
+            changedAnything = true;
+        }
+        for (const auto &zone : m_document->zones()) {
+            if (!expandedNicknames.contains(zone->nickname()))
+                continue;
+            const QVector3D oldPos = zone->position();
+            const QVector3D newPos = oldPos + delta;
+            stack->push(new MoveZoneCommand(zone.get(), oldPos, newPos, undoText));
+            changedAnything = true;
+        }
+
+        stack->endMacro();
+        if (!changedAnything)
+            return;
+
+        updateIniEditorForSelection();
+        updateSidebarButtons();
+    }
+
+    void SystemEditorPage::rotateSelectedEntriesYaw(float deltaDegrees, const QString &undoText)
+    {
+        if (!m_document || m_selectedNicknames.isEmpty())
+            return;
+        if (m_selectedNicknames.size() == 1 && hasPendingIniEditorChangesForSelection())
+            return;
+
+        const QStringList expandedNicknames = expandMoveNicknames(m_selectedNicknames);
+        if (expandedNicknames.isEmpty())
+            return;
+
+        auto *stack = flatlas::core::UndoManager::instance().stack();
+        stack->beginMacro(undoText);
+        bool changedAnything = false;
+
+        for (const auto &obj : m_document->objects()) {
+            if (!expandedNicknames.contains(obj->nickname()))
+                continue;
+            const QVector3D oldRotation = obj->rotation();
+            QVector3D newRotation = oldRotation;
+            newRotation.setY(normalizedYawDegrees(oldRotation.y() + deltaDegrees));
+            stack->push(new RotateObjectCommand(obj.get(), oldRotation, newRotation, undoText));
+            changedAnything = true;
+        }
+        for (const auto &zone : m_document->zones()) {
+            if (!expandedNicknames.contains(zone->nickname()))
+                continue;
+            const QVector3D oldRotation = zone->rotation();
+            QVector3D newRotation = oldRotation;
+            newRotation.setY(normalizedYawDegrees(oldRotation.y() + deltaDegrees));
+            stack->push(new RotateZoneCommand(zone.get(), oldRotation, newRotation, undoText));
+            changedAnything = true;
+        }
+
+        stack->endMacro();
+        if (!changedAnything)
+            return;
+
+        updateIniEditorForSelection();
+        updateSidebarButtons();
+    }
+
+    void SystemEditorPage::copySelectedToClipboard()
+    {
+        m_clipboardPayload.clear();
+        m_clipboardPasteSequence = 0;
+        if (!m_document || m_selectedNicknames.isEmpty())
+            return;
+
+        QSet<QString> copiedObjects;
+        QSet<QString> copiedZones;
+        for (const QString &nickname : m_selectedNicknames) {
+            if (SolarObject *rootObject = findObjectByNickname(nickname)) {
+                for (const QString &groupNickname : objectGroupNicknames(rootObject->nickname())) {
+                    if (copiedObjects.contains(groupNickname.toLower()))
+                        continue;
+                    for (const auto &obj : m_document->objects()) {
+                        if (obj->nickname() != groupNickname)
+                            continue;
+                        m_clipboardPayload.objects.append(cloneSolarObject(obj));
+                        copiedObjects.insert(groupNickname.toLower());
+                        break;
+                    }
+                }
+                continue;
+            }
+            if (ZoneItem *zone = findZoneByNickname(nickname)) {
+                const QString key = zone->nickname().toLower();
+                if (copiedZones.contains(key))
+                    continue;
+                for (const auto &candidate : m_document->zones()) {
+                    if (candidate->nickname() != zone->nickname())
+                        continue;
+                    m_clipboardPayload.zones.append(cloneZoneItem(candidate));
+                    copiedZones.insert(key);
+                    break;
+                }
+            }
+        }
+    }
+
+    void SystemEditorPage::pasteClipboardSelection()
+    {
+        if (!m_document || m_clipboardPayload.isEmpty())
+            return;
+
+        const QVector3D pasteOffset(500.0f * static_cast<float>(m_clipboardPasteSequence + 1), 0.0f, 0.0f);
+        QHash<QString, QString> renameMap;
+        QStringList newSelectionNicknames;
+
+        for (const auto &source : m_clipboardPayload.objects) {
+            if (!source)
+                continue;
+            renameMap.insert(source->nickname(), uniqueNicknameForCopy(source->nickname()));
+        }
+
+        auto *stack = flatlas::core::UndoManager::instance().stack();
+        stack->beginMacro(tr("Paste Selection"));
+        bool pastedAnything = false;
+
+        for (const auto &source : m_clipboardPayload.objects) {
+            if (!source)
+                continue;
+            auto clone = cloneSolarObject(source);
+            const QString newNickname = renameMap.value(source->nickname(), uniqueNicknameForCopy(source->nickname()));
+            clone->setNickname(newNickname);
+            clone->setPosition(source->position() + pasteOffset);
+            QVector<QPair<QString, QString>> entries = clone->rawEntries();
+            updateRawNicknameEntry(&entries, newNickname);
+            updateRawParentEntries(&entries, renameMap);
+            clone->setRawEntries(entries);
+            stack->push(new AddObjectCommand(m_document.get(), clone, tr("Paste Selection")));
+            newSelectionNicknames.append(newNickname);
+            pastedAnything = true;
+        }
+
+        for (const auto &source : m_clipboardPayload.zones) {
+            if (!source)
+                continue;
+            auto clone = cloneZoneItem(source);
+            const QString newNickname = uniqueNicknameForCopy(source->nickname());
+            clone->setNickname(newNickname);
+            clone->setPosition(source->position() + pasteOffset);
+            QVector<QPair<QString, QString>> entries = clone->rawEntries();
+            updateRawNicknameEntry(&entries, newNickname);
+            clone->setRawEntries(entries);
+            stack->push(new AddZoneCommand(m_document.get(), clone, tr("Paste Selection")));
+            newSelectionNicknames.append(newNickname);
+            pastedAnything = true;
+        }
+
+        stack->endMacro();
+        if (!pastedAnything)
+            return;
+
+        ++m_clipboardPasteSequence;
+        m_selectedNicknames = normalizeSelectionNicknames(newSelectionNicknames);
+        refreshObjectList();
+        syncTreeSelectionFromNicknames(m_selectedNicknames);
+        syncSceneSelectionFromNicknames(m_selectedNicknames);
+        updateSelectionSummary();
+        updateIniEditorForSelection();
+        updateSidebarButtons();
+    }
 
 void SystemEditorPage::applyThemeStyling()
 {
@@ -1619,16 +2291,7 @@ void SystemEditorPage::rotateSelectedObjectYaw(float deltaDegrees)
     if (!obj)
         return;
 
-    QVector3D rotation = obj->rotation();
-    float yaw = std::fmod(rotation.y() + deltaDegrees, 360.0f);
-    if (yaw < 0.0f)
-        yaw += 360.0f;
-    rotation.setY(yaw);
-    obj->setRotation(rotation);
-
-    refreshObjectList();
-    onCanvasSelectionChanged({obj->nickname()});
-    refreshDocumentDirtyState();
+    rotateSelectedEntriesYaw(deltaDegrees, tr("Rotate Selection"));
 }
 
 void SystemEditorPage::connectDocumentEntitySignals()
@@ -2468,7 +3131,7 @@ void SystemEditorPage::onDeleteSelected()
             filtered.append(section);
         }
         SystemPersistence::setExtraSections(m_document.get(), filtered);
-        m_document->setDirty(true);
+        refreshDocumentDirtyState();
     }
 
     m_selectedNicknames.clear();
@@ -2477,108 +3140,15 @@ void SystemEditorPage::onDeleteSelected()
 
 void SystemEditorPage::onDuplicateSelected()
 {
-    if (!m_document || m_selectedNicknames.size() != 1)
+    if (!m_document || m_selectedNicknames.isEmpty())
         return;
-    const QString nickname = m_selectedNicknames.first();
 
-    if (SolarObject *rootObject = findObjectByNickname(nickname)) {
-        const QStringList groupNicknames = objectGroupNicknames(rootObject->nickname());
-        if (groupNicknames.size() > 1) {
-            QHash<QString, QString> renameMap;
-            for (const QString &groupNickname : groupNicknames)
-                renameMap.insert(groupNickname, groupNickname + QStringLiteral("_copy"));
-
-            auto *stack = flatlas::core::UndoManager::instance().stack();
-            stack->beginMacro(tr("Duplicate Object Group"));
-            for (const QString &groupNickname : groupNicknames) {
-                SolarObject *source = findObjectByNickname(groupNickname);
-                if (!source)
-                    continue;
-
-                auto dup = std::make_shared<SolarObject>();
-                dup->setNickname(renameMap.value(groupNickname, groupNickname + QStringLiteral("_copy")));
-                dup->setArchetype(source->archetype());
-                dup->setPosition(source->position() + QVector3D(500, 0, 0));
-                dup->setRotation(source->rotation());
-                dup->setType(source->type());
-                dup->setBase(source->base());
-                dup->setDockWith(source->dockWith());
-                dup->setGotoTarget(source->gotoTarget());
-                dup->setLoadout(source->loadout());
-                dup->setComment(source->comment());
-                dup->setIdsName(source->idsName());
-                dup->setIdsInfo(source->idsInfo());
-
-                QVector<QPair<QString, QString>> entries = source->rawEntries();
-                for (auto &entry : entries) {
-                    if (entry.first.compare(QStringLiteral("nickname"), Qt::CaseInsensitive) == 0)
-                        entry.second = dup->nickname();
-                    else if (entry.first.compare(QStringLiteral("parent"), Qt::CaseInsensitive) == 0)
-                        entry.second = renameMap.value(entry.second.trimmed(), entry.second);
-                }
-                dup->setRawEntries(entries);
-
-                stack->push(new AddObjectCommand(m_document.get(), dup, tr("Duplicate Object Group")));
-            }
-            stack->endMacro();
-            m_selectedNicknames = {renameMap.value(rootObject->nickname(), rootObject->nickname())};
-            refreshObjectList();
-            return;
-        }
-    }
-
-    for (const auto &obj : m_document->objects()) {
-        if (obj->nickname() == nickname) {
-            auto dup = std::make_shared<SolarObject>();
-            dup->setNickname(nickname + QStringLiteral("_copy"));
-            dup->setArchetype(obj->archetype());
-            dup->setPosition(obj->position() + QVector3D(500, 0, 0));
-            dup->setRotation(obj->rotation());
-            dup->setType(obj->type());
-            dup->setBase(obj->base());
-            dup->setDockWith(obj->dockWith());
-            dup->setGotoTarget(obj->gotoTarget());
-            dup->setLoadout(obj->loadout());
-            dup->setComment(obj->comment());
-            dup->setIdsName(obj->idsName());
-            dup->setIdsInfo(obj->idsInfo());
-            dup->setRawEntries(obj->rawEntries());
-
-            auto *cmd = new AddObjectCommand(m_document.get(), dup,
-                                              tr("Duplicate Object"));
-            flatlas::core::UndoManager::instance().push(cmd);
-            refreshObjectList();
-            return;
-        }
-    }
-
-    for (const auto &zone : m_document->zones()) {
-        if (zone->nickname() == nickname) {
-            auto dup = std::make_shared<ZoneItem>();
-            dup->setNickname(nickname + QStringLiteral("_copy"));
-            dup->setPosition(zone->position() + QVector3D(500, 0, 0));
-            dup->setSize(zone->size());
-            dup->setShape(zone->shape());
-            dup->setRotation(zone->rotation());
-            dup->setZoneType(zone->zoneType());
-            dup->setComment(zone->comment());
-            dup->setUsage(zone->usage());
-            dup->setPopType(zone->popType());
-            dup->setPathLabel(zone->pathLabel());
-            dup->setTightnessXyz(zone->tightnessXyz());
-            dup->setDamage(zone->damage());
-            dup->setInterference(zone->interference());
-            dup->setDragScale(zone->dragScale());
-            dup->setSortKey(zone->sortKey());
-            dup->setRawEntries(zone->rawEntries());
-
-            auto *cmd = new AddZoneCommand(m_document.get(), dup,
-                                            tr("Duplicate Zone"));
-            flatlas::core::UndoManager::instance().push(cmd);
-            refreshObjectList();
-            return;
-        }
-    }
+    const ClipboardPayload savedClipboard = m_clipboardPayload;
+    const int savedPasteSequence = m_clipboardPasteSequence;
+    copySelectedToClipboard();
+    pasteClipboardSelection();
+    m_clipboardPayload = savedClipboard;
+    m_clipboardPasteSequence = savedPasteSequence;
 }
 
 void SystemEditorPage::showObjectProperties(SolarObject *obj)
@@ -3488,6 +4058,14 @@ void SystemEditorPage::onItemsMoving(const QHash<QString, QPointF> &currentScene
 
 bool SystemEditorPage::eventFilter(QObject *watched, QEvent *event)
 {
+    if (event && event->type() == QEvent::ShortcutOverride) {
+        auto *keyEvent = static_cast<QKeyEvent *>(event);
+        if (shouldConsumeShortcutOverride(keyEvent)) {
+            event->accept();
+            return true;
+        }
+    }
+
     if (m_pendingFieldZoneRequest && m_mapView && watched == m_mapView->viewport()) {
         switch (event->type()) {
         case QEvent::MouseMove: {

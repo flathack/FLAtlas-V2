@@ -226,6 +226,78 @@ void SystemMapView::zoomToFit()
     }
 }
 
+void SystemMapView::zoomToSceneRect(const QRectF &sceneRect)
+{
+    if (!scene())
+        return;
+
+    QRectF targetRect = sceneRect;
+    if (targetRect.isNull() || targetRect.width() <= 0.0 || targetRect.height() <= 0.0)
+        targetRect = scene()->itemsBoundingRect();
+    if (targetRect.isNull() || targetRect.width() <= 0.0 || targetRect.height() <= 0.0)
+        return;
+
+    const QRectF paddedRect = withNavMapPadding(targetRect);
+    const auto previousAnchor = transformationAnchor();
+    const auto previousResizeAnchor = resizeAnchor();
+    setTransformationAnchor(QGraphicsView::AnchorViewCenter);
+    setResizeAnchor(QGraphicsView::AnchorViewCenter);
+
+    resetTransform();
+    fitInView(paddedRect, Qt::KeepAspectRatio);
+    centerOn(paddedRect.center());
+
+    setTransformationAnchor(previousAnchor);
+    setResizeAnchor(previousResizeAnchor);
+    m_minZoomScale = fitScaleForView(this, paddedRect);
+    updateItemDetailForScale();
+}
+
+void SystemMapView::focusSelection()
+{
+    if (!m_mapScene) {
+        zoomToFit();
+        return;
+    }
+
+    const auto sceneItems = m_mapScene->selectedItems();
+    if (sceneItems.isEmpty()) {
+        zoomToFit();
+        return;
+    }
+
+    QRectF selectionRect;
+    bool hasRect = false;
+    for (QGraphicsItem *item : sceneItems) {
+        if (!item)
+            continue;
+        const QRectF itemRect = item->sceneBoundingRect();
+        if (!hasRect) {
+            selectionRect = itemRect;
+            hasRect = true;
+        } else {
+            selectionRect = selectionRect.united(itemRect);
+        }
+    }
+
+    if (!hasRect) {
+        zoomToFit();
+        return;
+    }
+    zoomToSceneRect(selectionRect);
+}
+
+bool SystemMapView::hasActiveMeasurement() const
+{
+    return m_measurementStage != MeasurementStage::Inactive || m_measurementHasFinal;
+}
+
+void SystemMapView::cancelActiveMeasurement()
+{
+    if (hasActiveMeasurement())
+        cancelMeasurementMode();
+}
+
 void SystemMapView::wheelEvent(QWheelEvent *event)
 {
     // Ctrl + wheel while a tracked selection move is active adjusts the

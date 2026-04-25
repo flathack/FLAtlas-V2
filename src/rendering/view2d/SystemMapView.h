@@ -31,6 +31,8 @@ public:
     void applyTheme();
     void scheduleInitialFit();
     void zoomToFit();
+    void zoomToSceneRect(const QRectF &sceneRect);
+    void focusSelection();
     void setDisplayFilterSettings(const SystemDisplayFilterSettings &settings);
     SystemDisplayFilterSettings displayFilterSettings() const { return m_displayFilterSettings; }
 
@@ -40,6 +42,8 @@ public:
     /// right click cancels and emits placementCanceled().
     void setPlacementMode(bool enabled, const QString &helpText = QString());
     bool isPlacementModeActive() const { return m_placementMode; }
+    bool hasActiveMeasurement() const;
+    void cancelActiveMeasurement();
 
 signals:
     void objectSelected(const QString &nickname);
