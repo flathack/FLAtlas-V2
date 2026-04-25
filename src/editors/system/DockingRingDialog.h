@@ -29,6 +29,7 @@ struct DockingRingCreateRequest {
     QString idsInfoValue;
     int ringIdsName = 0;
     int ringIdsInfo = 66141;
+    bool createFixture = false;
     bool needsBase = false;
     QString baseNickname;
     int stridName = 0;
@@ -56,7 +57,10 @@ public:
                                const QString &defaultFactionDisplay,
                                const QString &idsNameText,
                                const QString &idsInfoValue,
-                               int stridNameValue);
+                               int stridNameValue,
+                               bool initialCreateFixture = false,
+                               const QString &windowTitle = QString(),
+                               const DockingRingCreateRequest *initialRequest = nullptr);
 
     DockingRingCreateRequest result() const;
 
@@ -95,6 +99,7 @@ private:
     QComboBox *m_startRoomCombo = nullptr;
     QDoubleSpinBox *m_priceVarianceSpin = nullptr;
     QComboBox *m_templateBaseCombo = nullptr;
+    QCheckBox *m_createFixtureCheck = nullptr;
 };
 
 } // namespace flatlas::editors

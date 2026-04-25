@@ -136,6 +136,7 @@ private:
     bool isPlanetLikeObject(const flatlas::domain::SolarObject &obj) const;
     bool isChildObject(const flatlas::domain::SolarObject &obj) const;
     bool canHostDockingRing(const flatlas::domain::SolarObject &obj) const;
+    flatlas::domain::SolarObject *findDockingRingObjectForSelection() const;
     flatlas::domain::SolarObject *findBaseHostForSelection() const;
     flatlas::domain::SolarObject *findRingHostForSelection() const;
     flatlas::domain::SolarObject *findRingHostAtScenePos(const QPointF &scenePos) const;
@@ -150,6 +151,7 @@ private:
     void refreshDockingRingPlacementAnimation();
     QPointF projectDockingRingScenePos(const QPointF &scenePos) const;
     bool openDockingRingDialogForPlacement();
+    bool openDockingRingDialogForEdit(flatlas::domain::SolarObject *ringObject);
     bool hasSingleObjectGroupSelection() const;
     void open3DPreviewForSelection();
     void setupUi();

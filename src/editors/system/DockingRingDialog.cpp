@@ -111,12 +111,15 @@ DockingRingDialog::DockingRingDialog(QWidget *parent,
                                      const QString &defaultFactionDisplay,
                                      const QString &idsNameText,
                                      const QString &idsInfoValue,
-                                     int stridNameValue)
+                                     int stridNameValue,
+                                     bool initialCreateFixture,
+                                     const QString &windowTitle,
+                                     const DockingRingCreateRequest *initialRequest)
     : QDialog(parent)
     , m_needsBase(needsBase)
     , m_templateRoomsByBase(templateRoomsByBase)
 {
-    setWindowTitle(QStringLiteral("Create Docking Ring"));
+    setWindowTitle(windowTitle.trimmed().isEmpty() ? QStringLiteral("Create Docking Ring") : windowTitle.trimmed());
     setMinimumWidth(540);
     buildUi(planetNickname,
             baseNickname,
@@ -129,6 +132,22 @@ DockingRingDialog::DockingRingDialog(QWidget *parent,
             idsNameText,
             idsInfoValue,
             stridNameValue);
+    if (m_createFixtureCheck)
+        m_createFixtureCheck->setChecked(initialCreateFixture);
+    if (initialRequest) {
+        m_nicknameEdit->setText(initialRequest->nickname);
+        m_archetypeCombo->setCurrentText(initialRequest->archetype);
+        m_loadoutCombo->setCurrentText(initialRequest->loadout);
+        m_factionCombo->setCurrentText(initialRequest->factionDisplay);
+        m_voiceCombo->setCurrentText(initialRequest->voice);
+        m_costumeEdit->setText(initialRequest->costume);
+        m_pilotCombo->setCurrentText(initialRequest->pilot);
+        m_difficultySpin->setValue(initialRequest->difficulty);
+        m_idsNameEdit->setText(initialRequest->idsNameText);
+        m_idsInfoEdit->setText(initialRequest->idsInfoValue);
+        if (m_createFixtureCheck)
+            m_createFixtureCheck->setChecked(initialRequest->createFixture);
+    }
 }
 
 DockingRingCreateRequest DockingRingDialog::result() const
@@ -144,6 +163,7 @@ DockingRingCreateRequest DockingRingDialog::result() const
     request.difficulty = m_difficultySpin->value();
     request.idsNameText = m_idsNameEdit->text().trimmed();
     request.idsInfoValue = m_idsInfoEdit->text().trimmed();
+    request.createFixture = m_createFixtureCheck && m_createFixtureCheck->isChecked();
     request.needsBase = m_needsBase;
 
     if (m_needsBase) {
@@ -250,6 +270,10 @@ void DockingRingDialog::buildUi(const QString &planetNickname,
 
     m_idsInfoEdit = new QLineEdit(idsInfoValue, ringGroup);
     ringLayout->addRow(QStringLiteral("ids_info:"), m_idsInfoEdit);
+
+    m_createFixtureCheck = new QCheckBox(QStringLiteral("Create docking_fixture"), ringGroup);
+    m_createFixtureCheck->setToolTip(QStringLiteral("Creates or keeps a docking_fixture above the docking ring with ids_name=261166 and ids_info=66489."));
+    ringLayout->addRow(QString(), m_createFixtureCheck);
     contentLayout->addWidget(ringGroup);
 
     if (m_needsBase) {

@@ -3805,17 +3805,20 @@ void SystemEditorPage::updateSidebarButtons()
         m_editZonePopulationButton->setEnabled(hasSingleSelection && isZone);
     if (m_editRingButton) {
         SolarObject *ringHost = nullptr;
+        SolarObject *dockingRingObject = nullptr;
         if (hasSingleSelection) {
             if (isObject) {
                 if (SolarObject *obj = findObjectByNickname(selectedNickname)) {
-                    if (RingEditService::hasRing(*obj))
+                    if (DockingRingCreationService::isDockingRingObject(*obj))
+                        dockingRingObject = obj;
+                    else if (RingEditService::hasRing(*obj))
                         ringHost = obj;
                 }
             } else if (isZone && selectedZone) {
                 ringHost = RingEditService::findHostForZone(m_document.get(), selectedZone->nickname());
             }
         }
-        m_editRingButton->setEnabled(ringHost != nullptr);
+        m_editRingButton->setEnabled(ringHost != nullptr || dockingRingObject != nullptr);
     }
     if (m_addExclusionZoneButton)
         m_addExclusionZoneButton->setEnabled(hasSingleSelection && isZone
@@ -5238,6 +5241,11 @@ void SystemEditorPage::onEditRing()
     if (!m_document)
         return;
 
+    if (SolarObject *dockingRingObject = findDockingRingObjectForSelection()) {
+        openDockingRingDialogForEdit(dockingRingObject);
+        return;
+    }
+
     SolarObject *hostObject = findRingHostForSelection();
     if (!hostObject || !RingEditService::hasRing(*hostObject)) {
         QMessageBox::information(this,
@@ -5631,7 +5639,7 @@ void SystemEditorPage::handleDockingRingPlacementClick(const QPointF &scenePos)
 
         const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
         const QPointF sceneCenter = MapScene::flToQt(planet->position().x(), planet->position().z());
-        const float orbitRadiusWorld = std::max<float>(static_cast<float>(RingEditService::resolvedHostRadius(*planet, gameRoot)), 1.0f);
+        const float orbitRadiusWorld = std::max<float>(static_cast<float>(RingEditService::resolvedHostRadius(*planet, gameRoot)) + 20.0f, 1.0f);
         const QPointF edgeScene = MapScene::flToQt(planet->position().x() + orbitRadiusWorld, planet->position().z());
 
         m_dockingRingPlacement.step = DockingRingPlacementStep::SelectPosition;
@@ -5769,13 +5777,13 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
 
     QVector<QPair<QString, QString>> existingBases;
     QHash<QString, QStringList> templateRoomsByBase;
+    QSet<QString> existingTemplateLabels;
     for (const auto &objectPtr : m_document->objects()) {
         if (!objectPtr || !BaseEditService::objectHasBase(*objectPtr))
             continue;
         const QString existingBase = objectPtr->base().trimmed();
         if (existingBase.isEmpty())
             continue;
-        existingBases.append({existingBase, existingBase});
 
         BaseEditState baseState;
         QString loadError;
@@ -5787,6 +5795,25 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
             }
             if (!roomNames.isEmpty())
                 templateRoomsByBase.insert(existingBase, roomNames);
+        }
+
+        if (!templateRoomsByBase.contains(existingBase))
+            continue;
+
+        const QString baseLabel = nicknameWithIngameName(existingBase, objectPtr->idsName(), gameRoot);
+        const QString normalizedBaseLabel = baseLabel.trimmed().toLower();
+        if (!normalizedBaseLabel.isEmpty() && !existingTemplateLabels.contains(normalizedBaseLabel)) {
+            existingBases.append({baseLabel, existingBase});
+            existingTemplateLabels.insert(normalizedBaseLabel);
+        }
+
+        if (canHostDockingRing(*objectPtr)) {
+            const QString planetLabel = nicknameWithIngameName(objectPtr->nickname(), objectPtr->idsName(), gameRoot);
+            const QString normalizedPlanetLabel = planetLabel.trimmed().toLower();
+            if (!normalizedPlanetLabel.isEmpty() && !existingTemplateLabels.contains(normalizedPlanetLabel)) {
+                existingBases.append({planetLabel, existingBase});
+                existingTemplateLabels.insert(normalizedPlanetLabel);
+            }
         }
     }
 
@@ -5808,7 +5835,9 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
                              QString(),
                              defaultIdsNameText,
                              QStringLiteral("66141"),
-                             planet->idsName());
+                             planet->idsName(),
+                             false,
+                             QStringLiteral("Create Docking Ring"));
     if (dialog.exec() != QDialog::Accepted)
         return false;
 
@@ -5897,7 +5926,15 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
     for (const BaseStagedWrite &write : createResult.stagedWrites)
         stagePendingTextWrite(write.absolutePath, write.content);
 
-    flatlas::core::UndoManager::instance().push(new AddObjectCommand(m_document.get(), createResult.createdRing, tr("Create Docking Ring")));
+    auto *undoStack = flatlas::core::UndoManager::instance().stack();
+    if (createResult.createdFixture) {
+        undoStack->beginMacro(tr("Create Docking Ring"));
+        undoStack->push(new AddObjectCommand(m_document.get(), createResult.createdRing, tr("Create Docking Ring")));
+        undoStack->push(new AddObjectCommand(m_document.get(), createResult.createdFixture, tr("Create Docking Fixture")));
+        undoStack->endMacro();
+    } else {
+        undoStack->push(new AddObjectCommand(m_document.get(), createResult.createdRing, tr("Create Docking Ring")));
+    }
     m_selectedNicknames = {createResult.createdRing->nickname()};
     refreshObjectList();
     syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -7779,6 +7816,17 @@ bool SystemEditorPage::canHostDockingRing(const SolarObject &obj) const
     return DockingRingCreationService::canHostDockingRing(obj);
 }
 
+SolarObject *SystemEditorPage::findDockingRingObjectForSelection() const
+{
+    if (!m_document || m_selectedNicknames.size() != 1)
+        return nullptr;
+
+    SolarObject *selectedObject = findObjectByNickname(primarySelectedNickname());
+    if (!selectedObject)
+        return nullptr;
+    return DockingRingCreationService::isDockingRingObject(*selectedObject) ? selectedObject : nullptr;
+}
+
 SolarObject *SystemEditorPage::findDockingRingPlanetAtScenePos(const QPointF &scenePos) const
 {
     if (!m_mapScene)
@@ -7848,6 +7896,198 @@ bool SystemEditorPage::openRingDialogForHost(SolarObject *hostObject, bool force
     m_document->setDirty(true);
     refreshObjectList();
     m_selectedNicknames = {hostObject->nickname()};
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+    updateIniEditorForSelection();
+    return true;
+}
+
+bool SystemEditorPage::openDockingRingDialogForEdit(SolarObject *ringObject)
+{
+    if (!m_document || !ringObject)
+        return false;
+
+    auto rawEntry = [](const SolarObject &object, const QString &key) {
+        for (int index = object.rawEntries().size() - 1; index >= 0; --index) {
+            if (object.rawEntries().at(index).first.compare(key, Qt::CaseInsensitive) == 0)
+                return object.rawEntries().at(index).second.trimmed();
+        }
+        return QString{};
+    };
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    const QString baseNickname = DockingRingCreationService::resolvedDockWithBase(*ringObject);
+    int fixtureMatchCount = 0;
+    const auto existingFixture = DockingRingCreationService::findAssociatedFixture(m_document.get(), *ringObject, &fixtureMatchCount);
+
+    const QString idsNameText = objectIngameName(*ringObject, gameRoot).trimmed().isEmpty()
+        ? (ringObject->idsName() > 0 ? QString::number(ringObject->idsName()) : QString())
+        : objectIngameName(*ringObject, gameRoot).trimmed();
+
+    DockingRingCreateRequest initialRequest;
+    initialRequest.nickname = ringObject->nickname();
+    initialRequest.archetype = ringObject->archetype();
+    initialRequest.loadout = ringObject->loadout().trimmed().isEmpty() ? rawEntry(*ringObject, QStringLiteral("loadout")) : ringObject->loadout().trimmed();
+    initialRequest.factionDisplay = rawEntry(*ringObject, QStringLiteral("reputation"));
+    initialRequest.voice = rawEntry(*ringObject, QStringLiteral("voice"));
+    initialRequest.costume = rawEntry(*ringObject, QStringLiteral("space_costume"));
+    if (initialRequest.costume.startsWith(QStringLiteral(",")))
+        initialRequest.costume = initialRequest.costume.mid(1).trimmed();
+    initialRequest.pilot = rawEntry(*ringObject, QStringLiteral("pilot"));
+    bool difficultyOk = false;
+    const int difficulty = rawEntry(*ringObject, QStringLiteral("difficulty_level")).toInt(&difficultyOk);
+    initialRequest.difficulty = difficultyOk ? difficulty : 1;
+    initialRequest.idsNameText = idsNameText;
+    initialRequest.idsInfoValue = rawEntry(*ringObject, QStringLiteral("ids_info"));
+    initialRequest.createFixture = fixtureMatchCount > 0;
+
+    DockingRingDialog dialog(this,
+                             ringObject->nickname(),
+                             baseNickname,
+                             loadLoadoutsMatching(gameRoot, {QStringLiteral("docking_ring")}),
+                             loadFactionDisplays(gameRoot),
+                             {},
+                             loadPilotNicknames(gameRoot),
+                             {},
+                             {},
+                             false,
+                             rawEntry(*ringObject, QStringLiteral("reputation")),
+                             idsNameText,
+                             rawEntry(*ringObject, QStringLiteral("ids_info")),
+                             0,
+                             fixtureMatchCount > 0,
+                             QStringLiteral("Edit Docking Ring"),
+                             &initialRequest);
+
+    if (dialog.exec() != QDialog::Accepted)
+        return false;
+
+    DockingRingCreateRequest request = dialog.result();
+    request.factionDisplay = factionNicknameFromDisplay(request.factionDisplay);
+    if (request.nickname.trimmed().isEmpty()) {
+        QMessageBox::warning(this, tr("Docking Ring bearbeiten"), tr("Bitte gib einen Nickname fuer den Docking Ring ein."));
+        return false;
+    }
+    for (const auto &objectPtr : m_document->objects()) {
+        if (!objectPtr || objectPtr.get() == ringObject)
+            continue;
+        if (objectPtr->nickname().compare(request.nickname.trimmed(), Qt::CaseInsensitive) == 0) {
+            QMessageBox::warning(this,
+                                 tr("Docking Ring bearbeiten"),
+                                 tr("Der Nickname '%1' existiert bereits.").arg(request.nickname.trimmed()));
+            return false;
+        }
+    }
+
+    QString idsError;
+    int resolvedIdsName = ringObject->idsName();
+    if (!resolveIdsStringInput(gameRoot,
+                               request.idsNameText,
+                               ringObject->idsName(),
+                               idsNameText,
+                               &resolvedIdsName,
+                               &idsError)) {
+        QMessageBox::warning(this,
+                             tr("Docking Ring bearbeiten"),
+                             idsError.trimmed().isEmpty()
+                                 ? tr("Der IDS-Name fuer den Docking Ring konnte nicht aufgeloest werden.")
+                                 : idsError);
+        return false;
+    }
+
+    bool idsInfoOk = false;
+    const int resolvedIdsInfo = request.idsInfoValue.trimmed().toInt(&idsInfoOk);
+
+    if (request.createFixture && fixtureMatchCount > 1) {
+        QMessageBox::warning(this,
+                             tr("Docking Ring bearbeiten"),
+                             tr("Fuer diesen Docking Ring wurden mehrere docking_fixture-Objekte mit identischem dock_with gefunden. Bitte bereinige die Daten zuerst, damit keine falschen Fixtures dupliziert oder entfernt werden."));
+        return false;
+    }
+    if (!request.createFixture && fixtureMatchCount > 1) {
+        QMessageBox::warning(this,
+                             tr("Docking Ring bearbeiten"),
+                             tr("Mehrere docking_fixture-Objekte teilen sich dieses dock_with. Automatisches Entfernen waere unsicher und wurde deshalb abgebrochen."));
+        return false;
+    }
+
+    QVector<QPair<QString, QString>> ringEntries = ringObject->rawEntries();
+    auto setEntry = [&ringEntries](const QString &key, const QString &value) {
+        for (QPair<QString, QString> &entry : ringEntries) {
+            if (entry.first.compare(key, Qt::CaseInsensitive) == 0) {
+                entry.second = value;
+                return;
+            }
+        }
+        ringEntries.append({key, value});
+    };
+    auto removeEntry = [&ringEntries](const QString &key) {
+        for (int index = ringEntries.size() - 1; index >= 0; --index) {
+            if (ringEntries.at(index).first.compare(key, Qt::CaseInsensitive) == 0)
+                ringEntries.removeAt(index);
+        }
+    };
+
+    ringObject->setNickname(request.nickname.trimmed());
+    ringObject->setArchetype(request.archetype.trimmed().isEmpty() ? QStringLiteral("dock_ring") : request.archetype.trimmed());
+    ringObject->setLoadout(request.loadout.trimmed());
+    ringObject->setIdsName(resolvedIdsName);
+    ringObject->setIdsInfo(idsInfoOk ? resolvedIdsInfo : ringObject->idsInfo());
+
+    setEntry(QStringLiteral("nickname"), ringObject->nickname());
+    setEntry(QStringLiteral("ids_name"), QString::number(ringObject->idsName()));
+    setEntry(QStringLiteral("ids_info"), QString::number(ringObject->idsInfo()));
+    setEntry(QStringLiteral("Archetype"), ringObject->archetype());
+    setEntry(QStringLiteral("dock_with"), baseNickname);
+    if (!request.loadout.trimmed().isEmpty())
+        setEntry(QStringLiteral("loadout"), request.loadout.trimmed());
+    else
+        removeEntry(QStringLiteral("loadout"));
+    if (!request.voice.trimmed().isEmpty())
+        setEntry(QStringLiteral("voice"), request.voice.trimmed());
+    else
+        removeEntry(QStringLiteral("voice"));
+    if (!request.costume.trimmed().isEmpty())
+        setEntry(QStringLiteral("space_costume"), request.costume.trimmed().contains(',') ? request.costume.trimmed() : QStringLiteral(", %1").arg(request.costume.trimmed()));
+    else
+        removeEntry(QStringLiteral("space_costume"));
+    if (!request.pilot.trimmed().isEmpty())
+        setEntry(QStringLiteral("pilot"), request.pilot.trimmed());
+    else
+        removeEntry(QStringLiteral("pilot"));
+    setEntry(QStringLiteral("difficulty_level"), QString::number(request.difficulty));
+    if (!request.factionDisplay.trimmed().isEmpty())
+        setEntry(QStringLiteral("reputation"), request.factionDisplay.trimmed());
+    else
+        removeEntry(QStringLiteral("reputation"));
+    setEntry(QStringLiteral("behavior"), QStringLiteral("NOTHING"));
+    ringObject->setRawEntries(ringEntries);
+
+    auto *undoStack = flatlas::core::UndoManager::instance().stack();
+    if (request.createFixture) {
+        if (existingFixture) {
+            DockingRingCreationService::syncExistingFixture(existingFixture.get(), *ringObject);
+        } else {
+            QString fixtureError;
+            const auto newFixture = DockingRingCreationService::buildFixtureObject(*m_document, *ringObject, &fixtureError);
+            if (!newFixture) {
+                QMessageBox::warning(this,
+                                     tr("Docking Ring bearbeiten"),
+                                     fixtureError.trimmed().isEmpty()
+                                         ? tr("Das docking_fixture konnte nicht erzeugt werden.")
+                                         : fixtureError);
+                return false;
+            }
+            undoStack->push(new AddObjectCommand(m_document.get(), newFixture, tr("Create Docking Fixture")));
+        }
+    } else if (fixtureMatchCount > 0) {
+        undoStack->push(new RemoveObjectCommand(m_document.get(), existingFixture, tr("Remove Docking Fixture")));
+    }
+
+    m_document->setDirty(true);
+    m_selectedNicknames = {ringObject->nickname()};
+    refreshObjectList();
     syncTreeSelectionFromNicknames(m_selectedNicknames);
     syncSceneSelectionFromNicknames(m_selectedNicknames);
     updateSelectionSummary();

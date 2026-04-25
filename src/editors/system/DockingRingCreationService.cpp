@@ -11,6 +11,16 @@
 
 namespace {
 
+QString rawEntryValue(const flatlas::domain::SolarObject &object, const QString &key)
+{
+    const QVector<QPair<QString, QString>> rawEntries = object.rawEntries();
+    for (int index = rawEntries.size() - 1; index >= 0; --index) {
+        if (rawEntries.at(index).first.compare(key, Qt::CaseInsensitive) == 0)
+            return rawEntries.at(index).second.trimmed();
+    }
+    return {};
+}
+
 void setOrAppendRawEntry(QVector<QPair<QString, QString>> *entries,
                          const QString &key,
                          const QString &value)
@@ -29,18 +39,70 @@ void setOrAppendRawEntry(QVector<QPair<QString, QString>> *entries,
 bool objectHasBaseNickname(const flatlas::domain::SolarObject &object, QString *outBaseNickname = nullptr)
 {
     QString baseNickname = object.base().trimmed();
-    if (baseNickname.isEmpty()) {
-        const QVector<QPair<QString, QString>> rawEntries = object.rawEntries();
-        for (const auto &entry : rawEntries) {
-            if (entry.first.compare(QStringLiteral("base"), Qt::CaseInsensitive) == 0) {
-                baseNickname = entry.second.trimmed();
-                break;
-            }
-        }
-    }
+    if (baseNickname.isEmpty())
+        baseNickname = rawEntryValue(object, QStringLiteral("base"));
     if (outBaseNickname)
         *outBaseNickname = baseNickname;
     return !baseNickname.isEmpty();
+}
+
+QString nextAvailableFixtureNickname(const flatlas::domain::SystemDocument &document)
+{
+    const QString systemNickname = QFileInfo(document.filePath()).completeBaseName().trimmed();
+    const QString prefix = QStringLiteral("%1_docking_fixture_").arg(systemNickname);
+    QSet<int> usedSuffixes;
+    for (const auto &objectPtr : document.objects()) {
+        if (!objectPtr)
+            continue;
+        const QString nickname = objectPtr->nickname().trimmed();
+        if (!nickname.startsWith(prefix, Qt::CaseInsensitive))
+            continue;
+        bool ok = false;
+        const int suffix = nickname.mid(prefix.size()).toInt(&ok);
+        if (ok)
+            usedSuffixes.insert(suffix);
+    }
+
+    int nextSuffix = 1;
+    while (usedSuffixes.contains(nextSuffix))
+        ++nextSuffix;
+    return QStringLiteral("%1%2").arg(prefix).arg(nextSuffix);
+}
+
+QVector3D fixturePositionForRing(const flatlas::domain::SolarObject &ringObject)
+{
+    const QVector3D ringPosition = ringObject.position();
+    return QVector3D(ringPosition.x(),
+                     ringPosition.y() + flatlas::editors::DockingRingCreationService::FixtureVerticalOffset,
+                     ringPosition.z());
+}
+
+QVector<QPair<QString, QString>> buildFixtureEntries(const flatlas::domain::SolarObject &ringObject,
+                                                     const QString &fixtureNickname,
+                                                     const QString &baseNickname)
+{
+    const QVector3D position = fixturePositionForRing(ringObject);
+    const QVector3D rotation = ringObject.rotation();
+    QVector<QPair<QString, QString>> entries;
+    entries.append({QStringLiteral("nickname"), fixtureNickname});
+    entries.append(QPair<QString, QString>(QStringLiteral("ids_name"), QString::number(flatlas::editors::DockingRingCreationService::FixtureIdsName)));
+    entries.append({QStringLiteral("pos"), QStringLiteral("%1, %2, %3")
+        .arg(position.x(), 0, 'f', 2)
+        .arg(position.y(), 0, 'f', 2)
+        .arg(position.z(), 0, 'f', 2)});
+    entries.append({QStringLiteral("rotate"), QStringLiteral("%1, %2, %3")
+        .arg(rotation.x(), 0, 'f', 2)
+        .arg(rotation.y(), 0, 'f', 2)
+        .arg(rotation.z(), 0, 'f', 2)});
+    entries.append({QStringLiteral("Archetype"), QStringLiteral("docking_fixture")});
+    entries.append(QPair<QString, QString>(QStringLiteral("ids_info"), QString::number(flatlas::editors::DockingRingCreationService::FixtureIdsInfo)));
+    entries.append({QStringLiteral("behavior"), QStringLiteral("NOTHING")});
+    entries.append({QStringLiteral("dock_with"), baseNickname});
+    entries.append({QStringLiteral("base"), baseNickname});
+    const QString reputation = rawEntryValue(ringObject, QStringLiteral("reputation"));
+    if (!reputation.isEmpty())
+        entries.append({QStringLiteral("reputation"), reputation});
+    return entries;
 }
 
 flatlas::editors::BaseEditState buildBaseCreateState(const flatlas::domain::SystemDocument &document,
@@ -101,6 +163,17 @@ bool DockingRingCreationService::canHostDockingRing(const flatlas::domain::Solar
         && !archetype.contains(QStringLiteral("sun"), Qt::CaseInsensitive);
 }
 
+bool DockingRingCreationService::isDockingRingObject(const flatlas::domain::SolarObject &object)
+{
+    return object.type() == flatlas::domain::SolarObject::Type::DockingRing
+        || object.archetype().contains(QStringLiteral("dock_ring"), Qt::CaseInsensitive);
+}
+
+bool DockingRingCreationService::isDockingFixtureObject(const flatlas::domain::SolarObject &object)
+{
+    return object.archetype().contains(QStringLiteral("docking_fixture"), Qt::CaseInsensitive);
+}
+
 QString DockingRingCreationService::chooseStartRoom(const QStringList &roomNames,
                                                     const QString &preferredStartRoom,
                                                     const QString &currentStartRoom)
@@ -146,6 +219,86 @@ QString DockingRingCreationService::defaultBaseNickname(const flatlas::domain::S
     while (suffixes.contains(nextSuffix))
         ++nextSuffix;
     return QStringLiteral("%1_%2_Base").arg(systemNickname, QStringLiteral("%1").arg(nextSuffix, 2, 10, QChar('0')));
+}
+
+QString DockingRingCreationService::resolvedDockWithBase(const flatlas::domain::SolarObject &object)
+{
+    QString baseNickname = rawEntryValue(object, QStringLiteral("dock_with"));
+    if (baseNickname.isEmpty())
+        baseNickname = rawEntryValue(object, QStringLiteral("base"));
+    if (baseNickname.isEmpty())
+        baseNickname = object.base().trimmed();
+    if (baseNickname.isEmpty())
+        baseNickname = object.dockWith().trimmed();
+    return baseNickname.trimmed();
+}
+
+std::shared_ptr<flatlas::domain::SolarObject> DockingRingCreationService::findAssociatedFixture(const flatlas::domain::SystemDocument *document,
+                                                                                                const flatlas::domain::SolarObject &ringObject,
+                                                                                                int *outMatchCount)
+{
+    if (outMatchCount)
+        *outMatchCount = 0;
+    if (!document)
+        return {};
+
+    const QString baseNickname = resolvedDockWithBase(ringObject);
+    if (baseNickname.isEmpty())
+        return {};
+
+    QVector<std::shared_ptr<flatlas::domain::SolarObject>> matches;
+    for (const auto &objectPtr : document->objects()) {
+        if (!objectPtr || !isDockingFixtureObject(*objectPtr))
+            continue;
+        if (resolvedDockWithBase(*objectPtr).compare(baseNickname, Qt::CaseInsensitive) != 0)
+            continue;
+        matches.append(objectPtr);
+    }
+
+    if (outMatchCount)
+        *outMatchCount = matches.size();
+    return matches.size() == 1 ? matches.first() : std::shared_ptr<flatlas::domain::SolarObject>{};
+}
+
+std::shared_ptr<flatlas::domain::SolarObject> DockingRingCreationService::buildFixtureObject(const flatlas::domain::SystemDocument &document,
+                                                                                              const flatlas::domain::SolarObject &ringObject,
+                                                                                              QString *errorMessage)
+{
+    const QString baseNickname = resolvedDockWithBase(ringObject);
+    if (baseNickname.isEmpty()) {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("The docking ring does not contain a dock_with/base target for a docking_fixture.");
+        return {};
+    }
+
+    auto fixture = std::make_shared<flatlas::domain::SolarObject>();
+    fixture->setNickname(nextAvailableFixtureNickname(document));
+    fixture->setArchetype(QStringLiteral("docking_fixture"));
+    fixture->setIdsName(FixtureIdsName);
+    fixture->setIdsInfo(FixtureIdsInfo);
+    fixture->setType(flatlas::domain::SolarObject::Type::Other);
+    fixture->setDockWith(baseNickname);
+    fixture->setBase(baseNickname);
+    fixture->setPosition(fixturePositionForRing(ringObject));
+    fixture->setRotation(ringObject.rotation());
+    fixture->setRawEntries(buildFixtureEntries(ringObject, fixture->nickname(), baseNickname));
+    return fixture;
+}
+
+void DockingRingCreationService::syncExistingFixture(flatlas::domain::SolarObject *fixtureObject,
+                                                     const flatlas::domain::SolarObject &ringObject)
+{
+    if (!fixtureObject)
+        return;
+    const QString baseNickname = resolvedDockWithBase(ringObject);
+    fixtureObject->setArchetype(QStringLiteral("docking_fixture"));
+    fixtureObject->setIdsName(FixtureIdsName);
+    fixtureObject->setIdsInfo(FixtureIdsInfo);
+    fixtureObject->setDockWith(baseNickname);
+    fixtureObject->setBase(baseNickname);
+    fixtureObject->setPosition(fixturePositionForRing(ringObject));
+    fixtureObject->setRotation(ringObject.rotation());
+    fixtureObject->setRawEntries(buildFixtureEntries(ringObject, fixtureObject->nickname(), baseNickname));
 }
 
 bool DockingRingCreationService::apply(flatlas::domain::SystemDocument *document,
@@ -244,6 +397,11 @@ bool DockingRingCreationService::apply(flatlas::domain::SystemDocument *document
 
     outResult->createdRing = createdRing;
     outResult->baseNickname = baseNickname;
+    if (request.createFixture) {
+        outResult->createdFixture = buildFixtureObject(*document, *createdRing, errorMessage);
+        if (!outResult->createdFixture)
+            return false;
+    }
     return true;
 }
 
