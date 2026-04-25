@@ -8,6 +8,7 @@
 #include <QPointer>
 #include <memory>
 
+#include "SystemPersistence.h"
 #include "domain/SystemDocument.h"
 #include "domain/SolarObject.h"
 #include "domain/ZoneItem.h"
@@ -86,6 +87,30 @@ private:
     QPointer<domain::SolarObject> m_obj;
     QVector3D m_oldRotation;
     QVector3D m_newRotation;
+};
+
+class ApplyObjectSectionCommand : public QUndoCommand {
+public:
+    explicit ApplyObjectSectionCommand(domain::SolarObject* obj,
+                                       const infrastructure::IniSection& beforeSection,
+                                       const infrastructure::IniSection& afterSection,
+                                       const QString& text = QStringLiteral("Apply Object Changes"))
+        : QUndoCommand(text), m_obj(obj), m_beforeSection(beforeSection), m_afterSection(afterSection) {}
+
+    void undo() override {
+        if (m_obj)
+            SystemPersistence::applyObjectSection(*m_obj, m_beforeSection);
+    }
+
+    void redo() override {
+        if (m_obj)
+            SystemPersistence::applyObjectSection(*m_obj, m_afterSection);
+    }
+
+private:
+    QPointer<domain::SolarObject> m_obj;
+    infrastructure::IniSection m_beforeSection;
+    infrastructure::IniSection m_afterSection;
 };
 
 class AddZoneCommand : public QUndoCommand {

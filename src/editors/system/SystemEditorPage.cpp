@@ -9318,7 +9318,15 @@ void SystemEditorPage::openBaseBuilderForSelection()
         return;
 
     const QVector<std::shared_ptr<SolarObject>> draftChildren = dialog.childObjects();
+    struct UpdatedChildChange {
+        std::shared_ptr<SolarObject> object;
+        IniSection beforeSection;
+        IniSection afterSection;
+    };
     QSet<QString> keptChildKeys;
+    QVector<UpdatedChildChange> updatedChildren;
+    QVector<std::shared_ptr<SolarObject>> addedChildren;
+    QVector<std::shared_ptr<SolarObject>> removedChildren;
     bool changedAnything = false;
 
     for (const auto &draftChild : draftChildren) {
@@ -9339,23 +9347,55 @@ void SystemEditorPage::openBaseBuilderForSelection()
             if (!existing)
                 continue;
 
+            const IniSection draftSection = SystemPersistence::serializeObjectSection(*draftChild);
             IniDocument beforeDoc;
-            beforeDoc.append(SystemPersistence::serializeObjectSection(*existing));
+            const IniSection beforeSection = SystemPersistence::serializeObjectSection(*existing);
+            beforeDoc.append(beforeSection);
             const QString beforeText = IniParser::serialize(beforeDoc).trimmed();
-            SystemPersistence::applyObjectSection(*existing, draftDoc.first());
-            changedAnything = changedAnything || (beforeText != draftText);
+
+            if (beforeText != draftText)
+                updatedChildren.append(UpdatedChildChange{existing, beforeSection, draftSection});
             continue;
         }
 
-        m_document->addObject(cloneSolarObject(draftChild));
-        changedAnything = true;
+        addedChildren.append(cloneSolarObject(draftChild));
     }
 
     for (auto it = originalChildrenByKey.constBegin(); it != originalChildrenByKey.constEnd(); ++it) {
         if (keptChildKeys.contains(it.key()) || !it.value())
             continue;
-        m_document->removeObject(it.value());
-        changedAnything = true;
+        removedChildren.append(it.value());
+    }
+
+    if (!updatedChildren.isEmpty() || !addedChildren.isEmpty() || !removedChildren.isEmpty()) {
+        auto *undoStack = flatlas::core::UndoManager::instance().stack();
+        undoStack->beginMacro(tr("Apply Base Builder Changes"));
+        for (const UpdatedChildChange &change : updatedChildren) {
+            if (!change.object)
+                continue;
+            undoStack->push(new ApplyObjectSectionCommand(change.object.get(),
+                                                          change.beforeSection,
+                                                          change.afterSection,
+                                                          tr("Update %1").arg(change.object->nickname())));
+            changedAnything = true;
+        }
+        for (const auto &addedChild : addedChildren) {
+            if (!addedChild)
+                continue;
+            undoStack->push(new AddObjectCommand(m_document.get(),
+                                                 addedChild,
+                                                 tr("Add %1").arg(addedChild->nickname())));
+            changedAnything = true;
+        }
+        for (const auto &removedChild : removedChildren) {
+            if (!removedChild)
+                continue;
+            undoStack->push(new RemoveObjectCommand(m_document.get(),
+                                                    removedChild,
+                                                    tr("Remove %1").arg(removedChild->nickname())));
+            changedAnything = true;
+        }
+        undoStack->endMacro();
     }
 
     if (!changedAnything)
