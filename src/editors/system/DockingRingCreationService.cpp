@@ -1,10 +1,13 @@
 #include "editors/system/DockingRingCreationService.h"
 
+#include "core/PathUtils.h"
 #include "domain/SolarObject.h"
 #include "domain/SystemDocument.h"
 #include "editors/system/DockingRingDialog.h"
+#include "infrastructure/freelancer/IdsStringTable.h"
 #include "rendering/view2d/MapScene.h"
 
+#include <QFile>
 #include <QFileInfo>
 #include <QSet>
 #include <QtMath>
@@ -19,6 +22,18 @@ QString rawEntryValue(const flatlas::domain::SolarObject &object, const QString 
             return rawEntries.at(index).second.trimmed();
     }
     return {};
+}
+
+QString resolvedIdsDisplayName(const QString &gameRoot, int idsName)
+{
+    if (idsName <= 0)
+        return {};
+    const QString exeDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("EXE"));
+    if (exeDir.isEmpty())
+        return {};
+    flatlas::infrastructure::IdsStringTable ids;
+    ids.loadFromFreelancerDir(exeDir);
+    return ids.getString(idsName).trimmed();
 }
 
 void setOrAppendRawEntry(QVector<QPair<QString, QString>> *entries,
@@ -122,9 +137,13 @@ flatlas::editors::BaseEditState buildBaseCreateState(const flatlas::domain::Syst
     state.reputation = request.factionDisplay.trimmed();
     state.voice = request.voice.trimmed();
     state.pilot = request.pilot.trimmed();
-    state.displayName = request.idsNameText.trimmed();
     state.idsName = request.stridName;
     state.objectNickname = planet.nickname();
+    state.displayName = resolvedIdsDisplayName(gameRoot, state.idsName);
+    if (state.displayName.isEmpty())
+        state.displayName = resolvedIdsDisplayName(gameRoot, planet.idsName());
+    if (state.displayName.isEmpty())
+        state.displayName = planet.nickname().trimmed();
 
     if (!request.templateBase.trimmed().isEmpty()) {
         flatlas::editors::BaseEditState templateState;
@@ -352,6 +371,7 @@ bool DockingRingCreationService::apply(flatlas::domain::SystemDocument *document
         setOrAppendRawEntry(&rawEntries, QStringLiteral("base"), baseNickname);
         if (!request.factionDisplay.trimmed().isEmpty())
             setOrAppendRawEntry(&rawEntries, QStringLiteral("reputation"), request.factionDisplay.trimmed());
+        setOrAppendRawEntry(&rawEntries, QStringLiteral("visit"), QStringLiteral("1"));
         planet->setBase(baseNickname);
         planet->setRawEntries(rawEntries);
     }
