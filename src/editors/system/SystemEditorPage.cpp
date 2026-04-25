@@ -1252,6 +1252,13 @@ void SystemEditorPage::setupUi()
     m_iniEditor->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     iniEditorLayout->addWidget(m_iniEditor, 1);
 
+    auto *rotationRow = new QHBoxLayout();
+    m_rotateLeftButton = new QPushButton(tr("Yaw -15°"), iniEditorHost);
+    m_rotateRightButton = new QPushButton(tr("Yaw +15°"), iniEditorHost);
+    rotationRow->addWidget(m_rotateLeftButton);
+    rotationRow->addWidget(m_rotateRightButton);
+    iniEditorLayout->addLayout(rotationRow);
+
     m_applyIniButton = new QPushButton(tr("Übernehmen"), iniEditorHost);
     iniEditorLayout->addWidget(m_applyIniButton);
 
@@ -1351,6 +1358,8 @@ void SystemEditorPage::connectSignals()
 {
     connect(m_mapScene, &MapScene::selectionNicknamesChanged, this, &SystemEditorPage::onCanvasSelectionChanged);
     connect(m_applyIniButton, &QPushButton::clicked, this, &SystemEditorPage::applyIniEditorChanges);
+    connect(m_rotateLeftButton, &QPushButton::clicked, this, [this]() { rotateSelectedObjectYaw(-15.0f); });
+    connect(m_rotateRightButton, &QPushButton::clicked, this, [this]() { rotateSelectedObjectYaw(15.0f); });
     connect(m_openSystemIniButton, &QPushButton::clicked, this, &SystemEditorPage::openSystemIniExternally);
     connect(m_preview3DButton, &QPushButton::clicked, this, &SystemEditorPage::open3DPreviewForSelection);
     connect(m_mapView, &SystemMapView::itemsMoved, this, &SystemEditorPage::onItemsMoved);
@@ -1363,6 +1372,8 @@ void SystemEditorPage::connectSignals()
             this, &SystemEditorPage::onTreeSelectionChanged);
     connect(m_objectSearchEdit, &QLineEdit::textChanged,
             this, [this]() { applyObjectListSearchFilter(); });
+        connect(m_iniEditor, &QPlainTextEdit::textChanged,
+            this, [this]() { updateSidebarButtons(); });
 }
 
 void SystemEditorPage::applyThemeStyling()
@@ -1391,6 +1402,7 @@ void SystemEditorPage::applyThemeStyling()
                            "QPushButton:hover { background-color:%3; }")
                 .arg(deleteBg.name(), border.name(), deleteHover.name()));
     }
+    updateSaveButtonAppearance();
     refreshSidebarVisibilityState();
     if (m_mapView) {
         m_mapView->setBackgroundPixmap(QPixmap(flatlas::core::Theme::instance().wallpaperResourcePath()),
@@ -1433,6 +1445,7 @@ void SystemEditorPage::loadDocumentIntoUi()
     m_pendingGeneratedZoneFiles.clear();
     m_pendingTextFileWrites.clear();
     bindDocumentSignals();
+    connectDocumentEntitySignals();
     m_selectedNicknames.clear();
     loadDisplayFilterSettings();
     emitLoadingProgress(20, tr("Preparing 2D system view..."));
@@ -1459,6 +1472,8 @@ void SystemEditorPage::loadDocumentIntoUi()
     emitLoadingProgress(94, tr("Refreshing object navigation..."));
     refreshObjectList();
     m_mapView->scheduleInitialFit();
+    captureSavedDocumentSnapshot();
+    refreshDocumentDirtyState();
     emitLoadingProgress(98, tr("Finalizing system view..."));
 }
 
@@ -1485,9 +1500,10 @@ bool SystemEditorPage::save()
     }
     bool ok = SystemPersistence::save(*m_document);
     if (ok) {
-        m_document->setDirty(false);
         m_pendingGeneratedZoneFiles.clear();
         m_pendingTextFileWrites.clear();
+        captureSavedDocumentSnapshot();
+        refreshDocumentDirtyState();
     }
     return ok;
 }
@@ -1522,6 +1538,8 @@ void SystemEditorPage::bindDocumentSignals()
 
     connect(m_document.get(), &SystemDocument::dirtyChanged,
             this, &SystemEditorPage::refreshTitle, Qt::UniqueConnection);
+    connect(m_document.get(), &SystemDocument::dirtyChanged,
+            this, &SystemEditorPage::updateSidebarButtons, Qt::UniqueConnection);
     connect(m_document.get(), &SystemDocument::nameChanged,
             this, &SystemEditorPage::refreshTitle, Qt::UniqueConnection);
 }
@@ -1537,6 +1555,119 @@ void SystemEditorPage::refreshTitle()
     if (m_document->isDirty())
         title += QLatin1Char('*');
     emit titleChanged(title);
+}
+
+void SystemEditorPage::captureSavedDocumentSnapshot()
+{
+    m_savedDocumentTextSnapshot = m_document ? SystemPersistence::serializeToText(*m_document) : QString();
+}
+
+void SystemEditorPage::refreshDocumentDirtyState()
+{
+    if (!m_document)
+        return;
+
+    const bool hasPendingWrites = !m_pendingGeneratedZoneFiles.isEmpty() || !m_pendingTextFileWrites.isEmpty();
+    const bool documentChanged = SystemPersistence::serializeToText(*m_document) != m_savedDocumentTextSnapshot;
+    m_document->setDirty(hasPendingWrites || documentChanged);
+}
+
+void SystemEditorPage::updateSaveButtonAppearance()
+{
+    if (!m_saveFileButton)
+        return;
+
+    const QPalette pal = palette();
+    const QColor border = pal.color(QPalette::Mid);
+    const QColor cleanBg = pal.color(QPalette::Button);
+    const QColor cleanText = pal.color(QPalette::ButtonText);
+    const QColor dirtyBg(212, 175, 55);
+    const QColor dirtyText(36, 28, 8);
+    const bool dirty = m_document && m_document->isDirty();
+
+    m_saveFileButton->setEnabled(dirty);
+    m_saveFileButton->setToolTip(dirty
+                                     ? tr("Ungespeicherte Änderungen vorhanden.")
+                                     : tr("Keine ausstehenden Änderungen zum Speichern."));
+    if (dirty) {
+        m_saveFileButton->setStyleSheet(
+            QStringLiteral("QPushButton { background:%1; color:%2; border:1px solid %3; border-radius:4px; font-weight:700; padding:6px 10px; }"
+                           "QPushButton:hover { background:%4; }"
+                           "QPushButton:pressed { background:%5; }")
+                .arg(dirtyBg.name(), dirtyText.name(), border.name(), QColor(228, 192, 74).name(), QColor(190, 155, 38).name()));
+    } else {
+        m_saveFileButton->setStyleSheet(
+            QStringLiteral("QPushButton { background:%1; color:%2; border:1px solid %3; border-radius:4px; font-weight:600; padding:6px 10px; }"
+                           "QPushButton:disabled { background:%4; color:%5; border:1px solid %6; }")
+                .arg(cleanBg.name(), cleanText.name(), border.name(), pal.color(QPalette::Midlight).name(), pal.color(QPalette::Disabled, QPalette::ButtonText).name(), border.name()));
+    }
+}
+
+bool SystemEditorPage::hasPendingIniEditorChangesForSelection() const
+{
+    if (!m_iniEditor || m_selectedNicknames.size() != 1)
+        return false;
+    return m_iniEditor->toPlainText().trimmed() != serializeSelectionToIni().trimmed();
+}
+
+void SystemEditorPage::rotateSelectedObjectYaw(float deltaDegrees)
+{
+    if (!m_document || m_selectedNicknames.size() != 1 || hasPendingIniEditorChangesForSelection())
+        return;
+
+    SolarObject *obj = findObjectByNickname(primarySelectedNickname());
+    if (!obj)
+        return;
+
+    QVector3D rotation = obj->rotation();
+    float yaw = std::fmod(rotation.y() + deltaDegrees, 360.0f);
+    if (yaw < 0.0f)
+        yaw += 360.0f;
+    rotation.setY(yaw);
+    obj->setRotation(rotation);
+
+    refreshObjectList();
+    onCanvasSelectionChanged({obj->nickname()});
+    refreshDocumentDirtyState();
+}
+
+void SystemEditorPage::connectDocumentEntitySignals()
+{
+    if (!m_document)
+        return;
+
+    auto connectObject = [this](const std::shared_ptr<SolarObject> &obj) {
+        if (!obj)
+            return;
+        connect(obj.get(), &SolarObject::changed, this, &SystemEditorPage::refreshDocumentDirtyState, Qt::UniqueConnection);
+    };
+    auto connectZone = [this](const std::shared_ptr<ZoneItem> &zone) {
+        if (!zone)
+            return;
+        connect(zone.get(), &ZoneItem::changed, this, &SystemEditorPage::refreshDocumentDirtyState, Qt::UniqueConnection);
+    };
+
+    for (const auto &obj : m_document->objects())
+        connectObject(obj);
+    for (const auto &zone : m_document->zones())
+        connectZone(zone);
+
+    connect(m_document.get(), &SystemDocument::objectAdded, this,
+            [this, connectObject](const std::shared_ptr<SolarObject> &obj) {
+                connectObject(obj);
+                refreshDocumentDirtyState();
+            },
+            Qt::UniqueConnection);
+    connect(m_document.get(), &SystemDocument::objectRemoved,
+            this, &SystemEditorPage::refreshDocumentDirtyState, Qt::UniqueConnection);
+    connect(m_document.get(), &SystemDocument::zoneAdded, this,
+            [this, connectZone](const std::shared_ptr<ZoneItem> &zone) {
+                connectZone(zone);
+                refreshDocumentDirtyState();
+            },
+            Qt::UniqueConnection);
+    connect(m_document.get(), &SystemDocument::zoneRemoved,
+            this, &SystemEditorPage::refreshDocumentDirtyState, Qt::UniqueConnection);
 }
 
 void SystemEditorPage::ensureSceneView3D()
@@ -2978,7 +3109,7 @@ void SystemEditorPage::applyIniEditorChanges()
             }
             extras[index] = section;
             SystemPersistence::setExtraSections(m_document.get(), extras);
-            m_document->setDirty(true);
+            refreshDocumentDirtyState();
             m_selectedNicknames = {parsedNickname};
             refreshObjectList();
             syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -3118,11 +3249,25 @@ void SystemEditorPage::updateSidebarButtons()
     if (m_baseBuilderButton)
         m_baseBuilderButton->setEnabled(hasSingleSelection && findBaseHostForSelection() != nullptr);
     if (m_saveFileButton)
-        m_saveFileButton->setEnabled(m_document != nullptr);
+        updateSaveButtonAppearance();
     if (m_objectJumpButton)
         m_objectJumpButton->setEnabled(m_objectJumpCombo && m_objectJumpCombo->count() > 0);
     if (m_preview3DButton)
         m_preview3DButton->setEnabled(hasSingleObjectGroupSelection());
+
+    const bool hasPendingEditorChanges = hasPendingIniEditorChangesForSelection();
+    const bool canRotateObject = hasSingleSelection && isObject && !hasPendingEditorChanges;
+    const QString defaultLeftTooltip = tr("Dreht das ausgewählte Objekt um 15 Grad nach links um die Yaw-Achse.");
+    const QString defaultRightTooltip = tr("Dreht das ausgewählte Objekt um 15 Grad nach rechts um die Yaw-Achse.");
+    const QString blockedTooltip = tr("Bitte zuerst die offenen Änderungen im Objekt-Editor übernehmen, bevor per Button rotiert wird.");
+    if (m_rotateLeftButton) {
+        m_rotateLeftButton->setEnabled(canRotateObject);
+        m_rotateLeftButton->setToolTip(hasPendingEditorChanges ? blockedTooltip : defaultLeftTooltip);
+    }
+    if (m_rotateRightButton) {
+        m_rotateRightButton->setEnabled(canRotateObject);
+        m_rotateRightButton->setToolTip(hasPendingEditorChanges ? blockedTooltip : defaultRightTooltip);
+    }
 }
 
 void SystemEditorPage::refreshObjectJumpList()
@@ -3902,7 +4047,7 @@ void SystemEditorPage::onCreateLightSource()
         };
         extras.append(section);
         SystemPersistence::setExtraSections(m_document.get(), extras);
-        m_document->setDirty(true);
+        refreshDocumentDirtyState();
         refreshObjectList();
         m_selectedNicknames = {request.nickname};
         syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -4880,12 +5025,14 @@ void SystemEditorPage::stageFieldIniText(const QString &relativeFilePath,
         PendingGeneratedZoneFile updated = m_pendingGeneratedZoneFiles.value(relativeKey);
         updated.content = content;
         m_pendingGeneratedZoneFiles.insert(relativeKey, updated);
+        refreshDocumentDirtyState();
         return;
     }
 
     const QString absoluteKey = normalizedPathKey(absoluteFilePath);
     if (!absoluteKey.isEmpty())
         m_pendingTextFileWrites.insert(absoluteKey, PendingTextFileWrite{absoluteFilePath, content});
+    refreshDocumentDirtyState();
 }
 
 bool SystemEditorPage::resolveLinkedFieldInfoForExclusion(const QString &exclusionZoneNickname,
@@ -6265,6 +6412,7 @@ void SystemEditorPage::addLinkedFieldSection(const QString &sectionName,
     linkedSection.entries.append({QStringLiteral("zone"), zoneNickname});
     extras.append(linkedSection);
     SystemPersistence::setExtraSections(m_document.get(), extras);
+    refreshDocumentDirtyState();
 }
 
 void SystemEditorPage::removeLinkedFieldSectionsForNicknames(const QStringList &zoneNicknames)
@@ -6302,6 +6450,7 @@ void SystemEditorPage::removeLinkedFieldSectionsForNicknames(const QStringList &
     }
 
     SystemPersistence::setExtraSections(m_document.get(), filtered);
+    refreshDocumentDirtyState();
 }
 
 bool SystemEditorPage::writePendingGeneratedZoneFiles(QString *errorMessage)
@@ -6361,6 +6510,7 @@ void SystemEditorPage::stagePendingTextWrite(const QString &absolutePath, const 
 {
     const QString key = QDir::cleanPath(absolutePath).toLower();
     m_pendingTextFileWrites.insert(key, PendingTextFileWrite{absolutePath, content});
+    refreshDocumentDirtyState();
 }
 
 SolarObject *SystemEditorPage::findObjectByNickname(const QString &nickname) const

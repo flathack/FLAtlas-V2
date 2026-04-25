@@ -108,6 +108,12 @@ private:
     void ensureSceneView3D();
     void bindDocumentSignals();
     void refreshTitle();
+    void refreshDocumentDirtyState();
+    void captureSavedDocumentSnapshot();
+    void updateSaveButtonAppearance();
+    bool hasPendingIniEditorChangesForSelection() const;
+    void rotateSelectedObjectYaw(float deltaDegrees);
+    void connectDocumentEntitySignals();
     void set3DViewEnabled(bool enabled);
     void openDisplayFilterDialog();
     void loadDisplayFilterSettings();
@@ -245,6 +251,8 @@ private:
     QWidget *m_singleEditorPage = nullptr;
     IniCodeEditor *m_iniEditor = nullptr;
     IniSyntaxHighlighter *m_iniEditorHighlighter = nullptr;
+    QPushButton *m_rotateLeftButton = nullptr;
+    QPushButton *m_rotateRightButton = nullptr;
     QPushButton *m_applyIniButton = nullptr;
     QPushButton *m_openSystemIniButton = nullptr;
     QPushButton *m_preview3DButton = nullptr;
@@ -289,6 +297,7 @@ private:
     QLabel *m_systemFileInfoLabel = nullptr;
     QLabel *m_systemStatsLabel = nullptr;
     QPushButton *m_saveFileButton = nullptr;
+    QString m_savedDocumentTextSnapshot;
     bool m_isShuttingDown = false;
     bool m_syncingSelection = false;
 

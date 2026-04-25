@@ -953,23 +953,7 @@ bool SystemPersistence::save(const SystemDocument &doc, const QString &filePath)
     const IniDocument currentSections = buildCurrentSections(doc, extras, systemInfoSection);
     const IniDocument layoutSections = s_layoutSections.value(&doc);
     const IniDocument orderedSections = mergeSectionsWithLayout(layoutSections, currentSections);
-
-    QString text;
-    for (const IniSection &section : orderedSections) {
-        QString leadingComment;
-        if (normalizedSectionName(section.name) == QStringLiteral("zone")) {
-            if (findEntryIndex(section.entries, QStringLiteral("comment")) < 0) {
-                const QString zoneNickname = section.value(QStringLiteral("nickname")).trimmed();
-                for (const auto &zone : doc.zones()) {
-                    if (zone && zone->nickname().compare(zoneNickname, Qt::CaseInsensitive) == 0) {
-                        leadingComment = zone->comment();
-                        break;
-                    }
-                }
-            }
-        }
-        appendSerializedSection(text, section, leadingComment);
-    }
+    const QString text = serializeToText(doc);
 
     QFile file(filePath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
@@ -990,6 +974,33 @@ bool SystemPersistence::save(const SystemDocument &doc, const QString &filePath)
 bool SystemPersistence::save(const SystemDocument &doc)
 {
     return save(doc, doc.filePath());
+}
+
+QString SystemPersistence::serializeToText(const SystemDocument &doc)
+{
+    const IniDocument extras = s_extras.value(&doc);
+    const IniSection systemInfoSection = s_systemInfoSections.value(&doc);
+    const IniDocument currentSections = buildCurrentSections(doc, extras, systemInfoSection);
+    const IniDocument layoutSections = s_layoutSections.value(&doc);
+    const IniDocument orderedSections = mergeSectionsWithLayout(layoutSections, currentSections);
+
+    QString text;
+    for (const IniSection &section : orderedSections) {
+        QString leadingComment;
+        if (normalizedSectionName(section.name) == QStringLiteral("zone")) {
+            if (findEntryIndex(section.entries, QStringLiteral("comment")) < 0) {
+                const QString zoneNickname = section.value(QStringLiteral("nickname")).trimmed();
+                for (const auto &zone : doc.zones()) {
+                    if (zone && zone->nickname().compare(zoneNickname, Qt::CaseInsensitive) == 0) {
+                        leadingComment = zone->comment();
+                        break;
+                    }
+                }
+            }
+        }
+        appendSerializedSection(text, section, leadingComment);
+    }
+    return text;
 }
 
 // ─── extras management ────────────────────────────────────────────────────────
