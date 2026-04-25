@@ -64,6 +64,7 @@
 #include <QPushButton>
 #include <QComboBox>
 #include <QGroupBox>
+#include <QHeaderView>
 #include <QSet>
 #include <QBrush>
 #include <QFrame>
@@ -648,6 +649,22 @@ QString nicknameWithIngameName(const QString &nickname, int idsName, const QStri
         : QStringLiteral("%1 - %2").arg(trimmedNickname, ingameName);
 }
 
+QString ingameNameForIds(int idsName, const QString &gameRoot)
+{
+    return idsDisplayTextFromTable(selectionDisplayIdsTable(gameRoot), idsName);
+}
+
+QString objectIngameName(const SolarObject &obj, const QString &gameRoot)
+{
+    const int idsName = obj.idsName() > 0 ? obj.idsName() : idsNameFromRawEntries(obj.rawEntries());
+    return ingameNameForIds(idsName, gameRoot);
+}
+
+QString zoneIngameName(const ZoneItem &zone, const QString &gameRoot)
+{
+    return ingameNameForIds(idsNameFromRawEntries(zone.rawEntries()), gameRoot);
+}
+
 QString objectHeaderDisplayTitle(const SolarObject &obj, const QString &gameRoot)
 {
     const int idsName = obj.idsName() > 0 ? obj.idsName() : idsNameFromRawEntries(obj.rawEntries());
@@ -1191,9 +1208,12 @@ void SystemEditorPage::setupUi()
     objectListLayout->addWidget(m_objectSearchHintLabel);
 
     m_objectTree = new QTreeWidget(objectListHost);
-    m_objectTree->setHeaderLabels({tr("Nickname"), tr("Type")});
+    m_objectTree->setHeaderLabels({tr("Nickname"), tr("Ingame Name")});
     m_objectTree->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_objectTree->setMinimumWidth(200);
+    m_objectTree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_objectTree->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+    m_objectTree->header()->setStretchLastSection(true);
     objectListLayout->addWidget(m_objectTree, 1);
     m_leftSidebarSplitter->addWidget(objectListHost);
 
@@ -1873,6 +1893,8 @@ void SystemEditorPage::refreshObjectList()
             groupChildCounts[rootNickname] += 1;
     }
 
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+
     auto *objRoot = new QTreeWidgetItem(m_objectTree, {tr("Objects")});
     objRoot->setFlags(objRoot->flags() & ~Qt::ItemIsSelectable);
     objRoot->setExpanded(true);
@@ -1883,11 +1905,9 @@ void SystemEditorPage::refreshObjectList()
             continue;
         auto *item = new QTreeWidgetItem(objRoot);
         item->setText(0, obj->nickname());
-        const int childCount = groupChildCounts.value(obj->nickname(), 0);
-        QString typeText = solarObjectTypeLabel(obj->type());
-        if (childCount > 0)
-            typeText = tr("%1 (%2 parts)").arg(typeText).arg(childCount + 1);
-        item->setText(1, typeText);
+        item->setText(1, objectIngameName(*obj, gameRoot));
+        item->setToolTip(0, obj->nickname());
+        item->setToolTip(1, item->text(1));
     }
 
     auto *zoneRoot = new QTreeWidgetItem(m_objectTree, {tr("Zones")});
@@ -1896,7 +1916,9 @@ void SystemEditorPage::refreshObjectList()
     for (const auto &zone : m_document->zones()) {
         auto *item = new QTreeWidgetItem(zoneRoot);
         item->setText(0, zone->nickname());
-        item->setText(1, zone->zoneType());
+        item->setText(1, zoneIngameName(*zone, gameRoot));
+        item->setToolTip(0, zone->nickname());
+        item->setToolTip(1, item->text(1));
     }
 
     auto *lightRoot = new QTreeWidgetItem(m_objectTree, {tr("LightSources")});
@@ -1907,9 +1929,17 @@ void SystemEditorPage::refreshObjectList()
         if (section.name.compare(QStringLiteral("LightSource"), Qt::CaseInsensitive) != 0)
             continue;
         auto *item = new QTreeWidgetItem(lightRoot);
-        item->setText(0, section.value(QStringLiteral("nickname")).trimmed());
-        item->setText(1, QStringLiteral("LightSource"));
+        const QString lightNickname = section.value(QStringLiteral("nickname")).trimmed();
+        const int idsName = idsNameFromRawEntries(section.entries);
+        item->setText(0, lightNickname);
+        item->setText(1, ingameNameForIds(idsName, gameRoot));
+        item->setToolTip(0, lightNickname);
+        item->setToolTip(1, item->text(1));
     }
+
+    m_objectTree->resizeColumnToContents(0);
+    if (m_objectTree->columnWidth(0) < 260)
+        m_objectTree->setColumnWidth(0, 260);
 
     syncLightSourcesInScene();
 
@@ -2728,7 +2758,9 @@ void SystemEditorPage::applyObjectListSearchFilter()
             if (!child)
                 continue;
 
-            const bool matches = !hasSearch || child->text(0).contains(needle, Qt::CaseInsensitive);
+            const bool matches = !hasSearch
+                || child->text(0).contains(needle, Qt::CaseInsensitive)
+                || child->text(1).contains(needle, Qt::CaseInsensitive);
             child->setHidden(!matches);
             for (int column = 0; column < child->columnCount(); ++column)
                 child->setBackground(column, matches && hasSearch ? QBrush(hitBackground) : QBrush());
