@@ -2475,22 +2475,28 @@ void SystemEditorPage::connectDocumentEntitySignals()
     for (const auto &zone : m_document->zones())
         connectZone(zone);
 
-    connect(m_document.get(), &SystemDocument::objectAdded, this,
-            [this, connectObject](const std::shared_ptr<SolarObject> &obj) {
-                connectObject(obj);
-                refreshDocumentDirtyState();
-            },
-            Qt::UniqueConnection);
+    connect(m_document.get(), &SystemDocument::objectAdded,
+            this, &SystemEditorPage::onDocumentObjectAdded, Qt::UniqueConnection);
     connect(m_document.get(), &SystemDocument::objectRemoved,
             this, &SystemEditorPage::refreshDocumentDirtyState, Qt::UniqueConnection);
-    connect(m_document.get(), &SystemDocument::zoneAdded, this,
-            [this, connectZone](const std::shared_ptr<ZoneItem> &zone) {
-                connectZone(zone);
-                refreshDocumentDirtyState();
-            },
-            Qt::UniqueConnection);
+    connect(m_document.get(), &SystemDocument::zoneAdded,
+            this, &SystemEditorPage::onDocumentZoneAdded, Qt::UniqueConnection);
     connect(m_document.get(), &SystemDocument::zoneRemoved,
             this, &SystemEditorPage::refreshDocumentDirtyState, Qt::UniqueConnection);
+}
+
+void SystemEditorPage::onDocumentObjectAdded(const std::shared_ptr<SolarObject> &obj)
+{
+    if (obj)
+        connect(obj.get(), &SolarObject::changed, this, &SystemEditorPage::refreshDocumentDirtyState, Qt::UniqueConnection);
+    refreshDocumentDirtyState();
+}
+
+void SystemEditorPage::onDocumentZoneAdded(const std::shared_ptr<ZoneItem> &zone)
+{
+    if (zone)
+        connect(zone.get(), &ZoneItem::changed, this, &SystemEditorPage::refreshDocumentDirtyState, Qt::UniqueConnection);
+    refreshDocumentDirtyState();
 }
 
 void SystemEditorPage::ensureSceneView3D()

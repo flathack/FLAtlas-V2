@@ -181,6 +181,8 @@ private:
     bool isMapCanvasFocusWidget(QWidget *widget) const;
     QString uniqueNicknameForCopy(const QString &baseNickname) const;
     void connectDocumentEntitySignals();
+    void onDocumentObjectAdded(const std::shared_ptr<flatlas::domain::SolarObject> &obj);
+    void onDocumentZoneAdded(const std::shared_ptr<flatlas::domain::ZoneItem> &zone);
     void set3DViewEnabled(bool enabled);
     void openDisplayFilterDialog();
     void loadDisplayFilterSettings();
