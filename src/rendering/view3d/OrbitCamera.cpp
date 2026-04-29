@@ -54,8 +54,8 @@ void OrbitCamera::handleMouseMove(QMouseEvent *event)
     m_lastMousePos = event->pos();
 
     if (m_rotating) {
-        m_azimuth += delta.x() * 0.3f;
-        m_elevation = qBound(-89.0f, m_elevation - delta.y() * 0.3f, 89.0f);
+        m_azimuth -= delta.x() * 0.3f;
+        m_elevation = qBound(-89.0f, m_elevation + delta.y() * 0.3f, 89.0f);
         updateCamera();
     } else if (m_panning) {
         // Pan in camera-local XY plane

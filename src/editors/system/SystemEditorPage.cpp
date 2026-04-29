@@ -1381,9 +1381,10 @@ QVector<QPair<QString, QString>> buildBaseBuilderPartEntries(const QString &pare
                                                              const QString &partNickname,
                                                              const QString &archetype,
                                                              const QVector3D &position,
-                                                             const QVector3D &rotation = QVector3D())
+                                                             const QVector3D &rotation = QVector3D(),
+                                                             const QString &reputation = QString())
 {
-    return {
+    QVector<QPair<QString, QString>> entries = {
         {QStringLiteral("nickname"), partNickname.trimmed()},
         {QStringLiteral("archetype"), archetype.trimmed()},
         {QStringLiteral("pos"), vector3ToIniString(position)},
@@ -1391,6 +1392,18 @@ QVector<QPair<QString, QString>> buildBaseBuilderPartEntries(const QString &pare
         {QStringLiteral("parent"), parentNickname.trimmed()},
         {QStringLiteral("visit"), QStringLiteral("0")},
     };
+    if (!reputation.trimmed().isEmpty())
+        entries.append({QStringLiteral("reputation"), reputation.trimmed()});
+    return entries;
+}
+
+QString rawEntryValue(const QVector<QPair<QString, QString>> &entries, const QString &key)
+{
+    for (const auto &entry : entries) {
+        if (entry.first.compare(key, Qt::CaseInsensitive) == 0)
+            return entry.second.trimmed();
+    }
+    return {};
 }
 
 QString solarObjectTypeLabel(SolarObject::Type type)
@@ -2039,6 +2052,7 @@ private:
         if (cancelActiveDrag && m_axisDragging)
             cancelAxisDrag();
 
+        m_axisDragPreviewDirty = false;
         m_axisDragging = false;
         m_axisDragKind = AxisTransformKind::None;
         m_axisDragAxis = -1;
@@ -2072,6 +2086,11 @@ private:
                 amount = static_cast<float>(std::round(amount / snapStep) * snapStep);
         }
         return amount;
+    }
+
+    void requestAxisDragPreviewRebuild()
+    {
+        m_axisDragPreviewDirty = true;
     }
 
     void beginAxisDrag(const QPointF &mousePosition)
@@ -2132,8 +2151,7 @@ private:
                                       .arg(rotation.z(), 0, 'f', 1);
         }
 
-        syncSerializedEntries(child.get());
-        rebuildAssemblyPreview();
+        requestAxisDragPreviewRebuild();
         updateAxisDragUi();
     }
 
@@ -2146,6 +2164,7 @@ private:
         const QString label = m_axisDragKind == AxisTransformKind::Move
                                   ? tr("Move %1").arg(m_axisDragNickname)
                                   : tr("Rotate %1").arg(m_axisDragNickname);
+        m_axisDragPreviewDirty = false;
         m_axisDragging = false;
         if (child && child->nickname().compare(m_axisDragNickname, Qt::CaseInsensitive) == 0) {
             syncSerializedEntries(child.get());
@@ -2166,6 +2185,7 @@ private:
             child->setRotation(m_axisDragStartRotation);
             syncSerializedEntries(child.get());
         }
+        m_axisDragPreviewDirty = false;
         m_axisDragging = false;
         m_axisDragValueText = tr("Canceled");
         rebuildAssemblyPreview();
@@ -2315,7 +2335,8 @@ private:
                                                      nickname,
                                                      archetype,
                                                      m_rootObject->position(),
-                                                     QVector3D());
+                                                     QVector3D(),
+                                                     rawEntryValue(m_rootObject->rawEntries(), QStringLiteral("reputation")));
 
         auto child = std::make_shared<SolarObject>();
         SystemPersistence::applyObjectSection(*child, section);
@@ -2487,10 +2508,10 @@ private:
     QVector<QPushButton *> m_rotateButtons;
     QVector<QPushButton *> m_moveAxisButtons;
     QVector<QPushButton *> m_rotateAxisButtons;
-
     AxisTransformKind m_axisDragKind = AxisTransformKind::None;
     int m_axisDragAxis = -1;
     bool m_axisDragging = false;
+    bool m_axisDragPreviewDirty = false;
     QString m_axisDragNickname;
     QPointF m_axisDragStartMouse;
     QVector3D m_axisDragStartPosition;
