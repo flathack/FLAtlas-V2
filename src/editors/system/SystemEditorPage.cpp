@@ -94,7 +94,9 @@
 #include <QGraphicsPolygonItem>
 #include <QMouseEvent>
 #include <QKeyEvent>
+#include <QPainter>
 #include <QPen>
+#include <QResizeEvent>
 #include <QRegularExpression>
 #include <QFile>
 #include <QTimer>
@@ -1457,6 +1459,127 @@ struct BaseBuilderSnapshot {
 
 class SystemBaseBuilderDialog final : public QDialog {
 public:
+    enum class AxisTransformKind {
+        None,
+        Move,
+        Rotate,
+    };
+
+    class AxisDragButton final : public QPushButton {
+    public:
+        AxisDragButton(const QString &text, AxisTransformKind kind, int axis, SystemBaseBuilderDialog *owner)
+            : QPushButton(text, owner)
+            , m_owner(owner)
+            , m_kind(kind)
+            , m_axis(axis)
+        {
+            setMinimumWidth(34);
+        }
+
+    protected:
+        void mousePressEvent(QMouseEvent *event) override
+        {
+            QPushButton::mousePressEvent(event);
+            if (!m_owner || !event || event->button() != Qt::LeftButton)
+                return;
+            m_dragStarted = false;
+            m_owner->armAxisDrag(m_kind, m_axis);
+            m_owner->beginAxisDrag(event->position());
+            event->accept();
+        }
+
+        void mouseMoveEvent(QMouseEvent *event) override
+        {
+            QPushButton::mouseMoveEvent(event);
+            if (!m_owner || !event || !event->buttons().testFlag(Qt::LeftButton))
+                return;
+            m_dragStarted = true;
+            m_owner->updateAxisDrag(event->position(), event->modifiers());
+            event->accept();
+        }
+
+        void mouseReleaseEvent(QMouseEvent *event) override
+        {
+            QPushButton::mouseReleaseEvent(event);
+            if (!m_owner || !event || event->button() != Qt::LeftButton)
+                return;
+            if (m_dragStarted)
+                m_owner->commitAxisDrag();
+            else
+                m_owner->cancelAxisDrag();
+            m_owner->clearAxisDrag(false);
+            m_dragStarted = false;
+            event->accept();
+        }
+
+        void keyPressEvent(QKeyEvent *event) override
+        {
+            if (m_owner && event && event->key() == Qt::Key_Escape) {
+                m_owner->clearAxisDrag(true);
+                event->accept();
+                return;
+            }
+            QPushButton::keyPressEvent(event);
+        }
+
+    private:
+        SystemBaseBuilderDialog *m_owner = nullptr;
+        AxisTransformKind m_kind = AxisTransformKind::None;
+        int m_axis = -1;
+        bool m_dragStarted = false;
+    };
+
+    class AxisDragOverlay final : public QWidget {
+    public:
+        explicit AxisDragOverlay(SystemBaseBuilderDialog *owner)
+            : QWidget(owner)
+            , m_owner(owner)
+        {
+            setAttribute(Qt::WA_TranslucentBackground, true);
+            setMouseTracking(true);
+            setFocusPolicy(Qt::StrongFocus);
+            setCursor(Qt::SizeAllCursor);
+            hide();
+        }
+
+    protected:
+        void mousePressEvent(QMouseEvent *event) override
+        {
+            if (m_owner)
+                m_owner->handleAxisOverlayMousePress(event);
+        }
+
+        void mouseMoveEvent(QMouseEvent *event) override
+        {
+            if (m_owner)
+                m_owner->handleAxisOverlayMouseMove(event);
+        }
+
+        void mouseReleaseEvent(QMouseEvent *event) override
+        {
+            if (m_owner)
+                m_owner->handleAxisOverlayMouseRelease(event);
+        }
+
+        void keyPressEvent(QKeyEvent *event) override
+        {
+            if (m_owner)
+                m_owner->handleAxisOverlayKeyPress(event);
+        }
+
+        void paintEvent(QPaintEvent *) override
+        {
+            QPainter painter(this);
+            painter.fillRect(rect(), QColor(30, 120, 180, 24));
+            painter.setRenderHint(QPainter::Antialiasing, true);
+            painter.setPen(QPen(QColor(120, 210, 255, 180), 2));
+            painter.drawRect(rect().adjusted(1, 1, -2, -2));
+        }
+
+    private:
+        SystemBaseBuilderDialog *m_owner = nullptr;
+    };
+
     SystemBaseBuilderDialog(const std::shared_ptr<SolarObject> &rootObject,
                             const QVector<std::shared_ptr<SolarObject>> &childObjects,
                             const QStringList &libraryArchetypes,
@@ -1496,6 +1619,12 @@ public:
     }
 
 protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QDialog::resizeEvent(event);
+        updateAxisDragOverlayGeometry();
+    }
+
     void reject() override
     {
         if (!hasChanges()) {
@@ -1527,26 +1656,26 @@ private:
 
         auto *transformGroup = new QGroupBox(tr("Transform"), this);
         auto *transformLayout = new QVBoxLayout(transformGroup);
-        transformLayout->setContentsMargins(8, 8, 8, 8);
-        transformLayout->setSpacing(6);
+        transformLayout->setContentsMargins(8, 6, 8, 6);
+        transformLayout->setSpacing(4);
 
         m_selectionLabel = new QLabel(transformGroup);
         transformLayout->addWidget(m_selectionLabel);
 
-        auto *moveRow = new QHBoxLayout();
-        moveRow->setSpacing(4);
-        moveRow->addWidget(new QLabel(tr("Move step"), transformGroup));
+        auto *commandRow = new QHBoxLayout();
+        commandRow->setSpacing(10);
+
+        auto *moveCommandRow = new QHBoxLayout();
+        moveCommandRow->setSpacing(4);
+        moveCommandRow->addWidget(new QLabel(tr("Move"), transformGroup));
         m_moveStepSpin = new QDoubleSpinBox(transformGroup);
         m_moveStepSpin->setRange(0.1, 50000.0);
         m_moveStepSpin->setDecimals(1);
         m_moveStepSpin->setValue(10.0);
         m_moveStepSpin->setSuffix(tr(" m"));
-        moveRow->addWidget(m_moveStepSpin);
-        moveRow->addStretch(1);
-        transformLayout->addLayout(moveRow);
+        m_moveStepSpin->setMaximumWidth(92);
+        moveCommandRow->addWidget(m_moveStepSpin);
 
-        auto *moveButtonsRow = new QHBoxLayout();
-        moveButtonsRow->setSpacing(4);
         m_moveButtons.append(createTransformButton(tr("X-"), [this]() { applyMoveDelta(0, -m_moveStepSpin->value()); }));
         m_moveButtons.append(createTransformButton(tr("X+"), [this]() { applyMoveDelta(0, m_moveStepSpin->value()); }));
         m_moveButtons.append(createTransformButton(tr("Y-"), [this]() { applyMoveDelta(1, -m_moveStepSpin->value()); }));
@@ -1554,42 +1683,62 @@ private:
         m_moveButtons.append(createTransformButton(tr("Z-"), [this]() { applyMoveDelta(2, -m_moveStepSpin->value()); }));
         m_moveButtons.append(createTransformButton(tr("Z+"), [this]() { applyMoveDelta(2, m_moveStepSpin->value()); }));
         for (QPushButton *button : std::as_const(m_moveButtons))
-            moveButtonsRow->addWidget(button);
-        moveButtonsRow->addStretch(1);
-        transformLayout->addLayout(moveButtonsRow);
+            moveCommandRow->addWidget(button);
 
-        auto *rotateRow = new QHBoxLayout();
-        rotateRow->setSpacing(4);
-        rotateRow->addWidget(new QLabel(tr("Rotate step"), transformGroup));
+        moveCommandRow->addSpacing(4);
+        moveCommandRow->addWidget(new QLabel(tr("Drag"), transformGroup));
+        m_moveAxisButtons.append(createAxisDragButton(tr("X"), AxisTransformKind::Move, 0));
+        m_moveAxisButtons.append(createAxisDragButton(tr("Y"), AxisTransformKind::Move, 1));
+        m_moveAxisButtons.append(createAxisDragButton(tr("Z"), AxisTransformKind::Move, 2));
+        for (QPushButton *button : std::as_const(m_moveAxisButtons))
+            moveCommandRow->addWidget(button);
+        commandRow->addLayout(moveCommandRow);
+
+        auto *rotateCommandRow = new QHBoxLayout();
+        rotateCommandRow->setSpacing(4);
+        rotateCommandRow->addWidget(new QLabel(tr("Rotate"), transformGroup));
         m_rotateStepSpin = new QDoubleSpinBox(transformGroup);
         m_rotateStepSpin->setRange(1.0, 360.0);
         m_rotateStepSpin->setDecimals(1);
         m_rotateStepSpin->setValue(15.0);
         m_rotateStepSpin->setSuffix(QStringLiteral("°"));
-        rotateRow->addWidget(m_rotateStepSpin);
-        rotateRow->addStretch(1);
-        transformLayout->addLayout(rotateRow);
+        m_rotateStepSpin->setMaximumWidth(82);
+        rotateCommandRow->addWidget(m_rotateStepSpin);
 
-        auto *rotateButtonsRow = new QHBoxLayout();
-        rotateButtonsRow->setSpacing(4);
-        m_rotateButtons.append(createTransformButton(tr("Pitch-"), [this]() { applyRotationDelta(0, -m_rotateStepSpin->value()); }));
-        m_rotateButtons.append(createTransformButton(tr("Pitch+"), [this]() { applyRotationDelta(0, m_rotateStepSpin->value()); }));
-        m_rotateButtons.append(createTransformButton(tr("Yaw-"), [this]() { applyRotationDelta(1, -m_rotateStepSpin->value()); }));
-        m_rotateButtons.append(createTransformButton(tr("Yaw+"), [this]() { applyRotationDelta(1, m_rotateStepSpin->value()); }));
-        m_rotateButtons.append(createTransformButton(tr("Roll-"), [this]() { applyRotationDelta(2, -m_rotateStepSpin->value()); }));
-        m_rotateButtons.append(createTransformButton(tr("Roll+"), [this]() { applyRotationDelta(2, m_rotateStepSpin->value()); }));
+        m_rotateButtons.append(createTransformButton(tr("P-"), [this]() { applyRotationDelta(0, -m_rotateStepSpin->value()); }));
+        m_rotateButtons.append(createTransformButton(tr("P+"), [this]() { applyRotationDelta(0, m_rotateStepSpin->value()); }));
+        m_rotateButtons.append(createTransformButton(tr("Y-"), [this]() { applyRotationDelta(1, -m_rotateStepSpin->value()); }));
+        m_rotateButtons.append(createTransformButton(tr("Y+"), [this]() { applyRotationDelta(1, m_rotateStepSpin->value()); }));
+        m_rotateButtons.append(createTransformButton(tr("R-"), [this]() { applyRotationDelta(2, -m_rotateStepSpin->value()); }));
+        m_rotateButtons.append(createTransformButton(tr("R+"), [this]() { applyRotationDelta(2, m_rotateStepSpin->value()); }));
         for (QPushButton *button : std::as_const(m_rotateButtons))
-            rotateButtonsRow->addWidget(button);
-        rotateButtonsRow->addStretch(1);
-        transformLayout->addLayout(rotateButtonsRow);
+            rotateCommandRow->addWidget(button);
+
+        rotateCommandRow->addSpacing(4);
+        rotateCommandRow->addWidget(new QLabel(tr("Drag"), transformGroup));
+        m_rotateAxisButtons.append(createAxisDragButton(tr("X"), AxisTransformKind::Rotate, 0));
+        m_rotateAxisButtons.append(createAxisDragButton(tr("Y"), AxisTransformKind::Rotate, 1));
+        m_rotateAxisButtons.append(createAxisDragButton(tr("Z"), AxisTransformKind::Rotate, 2));
+        for (QPushButton *button : std::as_const(m_rotateAxisButtons))
+            rotateCommandRow->addWidget(button);
+        commandRow->addLayout(rotateCommandRow);
+        commandRow->addStretch(1);
+        transformLayout->addLayout(commandRow);
 
         m_transformHintLabel = new QLabel(transformGroup);
         m_transformHintLabel->setWordWrap(true);
+        m_transformHintLabel->hide();
         transformLayout->addWidget(m_transformHintLabel);
+        m_axisDragStatusLabel = new QLabel(transformGroup);
+        m_axisDragStatusLabel->setWordWrap(false);
+        transformLayout->addWidget(m_axisDragStatusLabel);
         leftColumn->addWidget(transformGroup);
 
         m_assemblyViewport = new ModelViewport3D(this);
         leftColumn->addWidget(m_assemblyViewport, 1);
+
+        m_axisDragOverlay = new AxisDragOverlay(this);
+        m_axisDragOverlay->raise();
 
         auto *tabGroup = new QGroupBox(tr("Placed Parts"), this);
         auto *tabLayout = new QVBoxLayout(tabGroup);
@@ -1665,11 +1814,21 @@ private:
     QPushButton *createTransformButton(const QString &text, std::function<void()> handler)
     {
         auto *button = new QPushButton(text, this);
-        button->setMinimumWidth(56);
+        button->setMinimumWidth(42);
         connect(button, &QPushButton::clicked, this, [handler = std::move(handler)]() {
             if (handler)
                 handler();
         });
+        return button;
+    }
+
+    QPushButton *createAxisDragButton(const QString &text, AxisTransformKind kind, int axis)
+    {
+        auto *button = new AxisDragButton(text, kind, axis, this);
+        button->setCheckable(true);
+        button->setToolTip(kind == AxisTransformKind::Move
+                               ? tr("Hold and drag to move on %1.").arg(text)
+                               : tr("Hold and drag to rotate around %1.").arg(text));
         return button;
     }
 
@@ -1771,14 +1930,20 @@ private:
         m_selectionLabel->setText(childSelected
                                       ? tr("Selected child: %1").arg(selectedName)
                                       : tr("Selected root: %1").arg(selectedName));
-        m_transformHintLabel->setText(childSelected
-                                          ? tr("Move and rotate act on the selected child part. The root object stays protected.")
-                                          : tr("The root object is protected. Select a child tab to move, rotate or delete that part."));
+        m_transformHintLabel->clear();
+        m_transformHintLabel->hide();
 
         for (QPushButton *button : std::as_const(m_moveButtons))
             button->setEnabled(childSelected);
         for (QPushButton *button : std::as_const(m_rotateButtons))
             button->setEnabled(childSelected);
+        for (QPushButton *button : std::as_const(m_moveAxisButtons))
+            button->setEnabled(childSelected);
+        for (QPushButton *button : std::as_const(m_rotateAxisButtons))
+            button->setEnabled(childSelected);
+
+        if (!childSelected && m_axisDragKind != AxisTransformKind::None)
+            clearAxisDrag(false);
 
         if (m_deletePartButton)
             m_deletePartButton->setEnabled(childSelected);
@@ -1788,6 +1953,270 @@ private:
             m_saveButton->setEnabled(dirty);
 
         rebuildAssemblyPreview();
+        updateAxisDragUi();
+    }
+
+    QString axisName(int axis) const
+    {
+        if (axis == 0)
+            return QStringLiteral("X");
+        if (axis == 1)
+            return QStringLiteral("Y");
+        return QStringLiteral("Z");
+    }
+
+    void updateAxisDragOverlayGeometry()
+    {
+        if (!m_axisDragOverlay || !m_assemblyViewport)
+            return;
+        const QPoint topLeft = m_assemblyViewport->mapTo(this, QPoint(0, 0));
+        m_axisDragOverlay->setGeometry(QRect(topLeft, m_assemblyViewport->size()));
+        if (m_axisDragKind != AxisTransformKind::None)
+            m_axisDragOverlay->raise();
+    }
+
+    void updateAxisDragUi()
+    {
+        const auto updateButtons = [this](const QVector<QPushButton *> &buttons, AxisTransformKind kind) {
+            for (int axis = 0; axis < buttons.size(); ++axis) {
+                QPushButton *button = buttons[axis];
+                if (!button)
+                    continue;
+                const bool active = m_axisDragKind == kind && m_axisDragAxis == axis;
+                QSignalBlocker blocker(button);
+                button->setChecked(active);
+                button->setProperty("activeAxisDrag", active);
+                button->setStyleSheet(active ? QStringLiteral("font-weight: 700; background: #2f7fb8; color: white;") : QString());
+            }
+        };
+
+        updateButtons(m_moveAxisButtons, AxisTransformKind::Move);
+        updateButtons(m_rotateAxisButtons, AxisTransformKind::Rotate);
+
+        if (m_axisDragOverlay) {
+            updateAxisDragOverlayGeometry();
+            m_axisDragOverlay->setVisible(m_axisDragKind != AxisTransformKind::None);
+            if (m_axisDragKind != AxisTransformKind::None)
+                m_axisDragOverlay->setFocus(Qt::MouseFocusReason);
+        }
+
+        if (!m_axisDragStatusLabel)
+            return;
+
+        if (m_axisDragKind == AxisTransformKind::None) {
+            m_axisDragStatusLabel->setText(tr("Click +/- or hold X/Y/Z and drag. Shift fine, Ctrl snap, Esc cancel."));
+            return;
+        }
+
+        const QString kindText = m_axisDragKind == AxisTransformKind::Move ? tr("Move") : tr("Rotate");
+        QString status = tr("%1 %2 active. Drag now. Shift fine, Ctrl snap, Esc cancel.")
+                             .arg(kindText, axisName(m_axisDragAxis));
+        if (m_axisDragging) {
+            status = tr("%1 %2: %3. Release commits, Esc cancels.")
+                         .arg(kindText, axisName(m_axisDragAxis), m_axisDragValueText);
+        }
+        m_axisDragStatusLabel->setText(status);
+    }
+
+    void armAxisDrag(AxisTransformKind kind, int axis)
+    {
+        if (!selectedChildObject() || axis < 0 || axis > 2) {
+            clearAxisDrag(false);
+            return;
+        }
+
+        if (m_axisDragging)
+            commitAxisDrag();
+
+        m_axisDragKind = kind;
+        m_axisDragAxis = axis;
+        m_axisDragValueText.clear();
+        updateAxisDragUi();
+    }
+
+    void clearAxisDrag(bool cancelActiveDrag)
+    {
+        if (cancelActiveDrag && m_axisDragging)
+            cancelAxisDrag();
+
+        m_axisDragging = false;
+        m_axisDragKind = AxisTransformKind::None;
+        m_axisDragAxis = -1;
+        m_axisDragValueText.clear();
+        updateAxisDragUi();
+    }
+
+    float axisDragAmountFromMouse(const QPointF &currentPosition) const
+    {
+        const QPointF delta = currentPosition - m_axisDragStartMouse;
+        const float combinedPixels = static_cast<float>(delta.y() - delta.x());
+        float amount = 0.0f;
+        if (m_axisDragKind == AxisTransformKind::Move) {
+            amount = combinedPixels * static_cast<float>(m_moveStepSpin ? m_moveStepSpin->value() / 10.0 : 1.0);
+        } else if (m_axisDragKind == AxisTransformKind::Rotate) {
+            amount = combinedPixels * static_cast<float>(m_rotateStepSpin ? m_rotateStepSpin->value() / 30.0 : 0.5);
+        }
+        return amount;
+    }
+
+    float adjustedAxisDragAmount(float amount, Qt::KeyboardModifiers modifiers) const
+    {
+        if (modifiers.testFlag(Qt::ShiftModifier))
+            amount *= 0.2f;
+
+        if (modifiers.testFlag(Qt::ControlModifier)) {
+            const double snapStep = m_axisDragKind == AxisTransformKind::Move
+                                        ? (m_moveStepSpin ? m_moveStepSpin->value() : 10.0)
+                                        : (m_rotateStepSpin ? m_rotateStepSpin->value() : 15.0);
+            if (snapStep > 0.0)
+                amount = static_cast<float>(std::round(amount / snapStep) * snapStep);
+        }
+        return amount;
+    }
+
+    void beginAxisDrag(const QPointF &mousePosition)
+    {
+        const auto child = selectedChildObject();
+        if (!child || m_axisDragKind == AxisTransformKind::None || m_axisDragAxis < 0)
+            return;
+
+        m_axisDragging = true;
+        m_axisDragStartMouse = mousePosition;
+        m_axisDragNickname = child->nickname();
+        m_axisDragStartPosition = child->position();
+        m_axisDragStartRotation = child->rotation();
+        m_axisDragValueText = m_axisDragKind == AxisTransformKind::Move
+                                  ? tr("%1, %2, %3")
+                                        .arg(m_axisDragStartPosition.x(), 0, 'f', 1)
+                                        .arg(m_axisDragStartPosition.y(), 0, 'f', 1)
+                                        .arg(m_axisDragStartPosition.z(), 0, 'f', 1)
+                                  : tr("%1°, %2°, %3°")
+                                        .arg(m_axisDragStartRotation.x(), 0, 'f', 1)
+                                        .arg(m_axisDragStartRotation.y(), 0, 'f', 1)
+                                        .arg(m_axisDragStartRotation.z(), 0, 'f', 1);
+        updateAxisDragUi();
+    }
+
+    void updateAxisDrag(const QPointF &mousePosition, Qt::KeyboardModifiers modifiers)
+    {
+        const auto child = selectedChildObject();
+        if (!m_axisDragging || !child || child->nickname().compare(m_axisDragNickname, Qt::CaseInsensitive) != 0)
+            return;
+
+        const float amount = adjustedAxisDragAmount(axisDragAmountFromMouse(mousePosition), modifiers);
+        if (m_axisDragKind == AxisTransformKind::Move) {
+            QVector3D position = m_axisDragStartPosition;
+            if (m_axisDragAxis == 0)
+                position.setX(m_axisDragStartPosition.x() + amount);
+            else if (m_axisDragAxis == 1)
+                position.setY(m_axisDragStartPosition.y() + amount);
+            else
+                position.setZ(m_axisDragStartPosition.z() + amount);
+            child->setPosition(position);
+            m_axisDragValueText = tr("%1, %2, %3")
+                                      .arg(position.x(), 0, 'f', 1)
+                                      .arg(position.y(), 0, 'f', 1)
+                                      .arg(position.z(), 0, 'f', 1);
+        } else if (m_axisDragKind == AxisTransformKind::Rotate) {
+            QVector3D rotation = m_axisDragStartRotation;
+            if (m_axisDragAxis == 0)
+                rotation.setX(m_axisDragStartRotation.x() + amount);
+            else if (m_axisDragAxis == 1)
+                rotation.setY(m_axisDragStartRotation.y() + amount);
+            else
+                rotation.setZ(m_axisDragStartRotation.z() + amount);
+            child->setRotation(rotation);
+            m_axisDragValueText = tr("%1°, %2°, %3°")
+                                      .arg(rotation.x(), 0, 'f', 1)
+                                      .arg(rotation.y(), 0, 'f', 1)
+                                      .arg(rotation.z(), 0, 'f', 1);
+        }
+
+        syncSerializedEntries(child.get());
+        rebuildAssemblyPreview();
+        updateAxisDragUi();
+    }
+
+    void commitAxisDrag()
+    {
+        if (!m_axisDragging)
+            return;
+
+        const auto child = selectedChildObject();
+        const QString label = m_axisDragKind == AxisTransformKind::Move
+                                  ? tr("Move %1").arg(m_axisDragNickname)
+                                  : tr("Rotate %1").arg(m_axisDragNickname);
+        m_axisDragging = false;
+        if (child && child->nickname().compare(m_axisDragNickname, Qt::CaseInsensitive) == 0) {
+            syncSerializedEntries(child.get());
+            pushHistory(label);
+        }
+        updateAxisDragUi();
+        refreshUi();
+    }
+
+    void cancelAxisDrag()
+    {
+        if (!m_axisDragging)
+            return;
+
+        const auto child = selectedChildObject();
+        if (child && child->nickname().compare(m_axisDragNickname, Qt::CaseInsensitive) == 0) {
+            child->setPosition(m_axisDragStartPosition);
+            child->setRotation(m_axisDragStartRotation);
+            syncSerializedEntries(child.get());
+        }
+        m_axisDragging = false;
+        m_axisDragValueText = tr("Canceled");
+        rebuildAssemblyPreview();
+        updateAxisDragUi();
+    }
+
+    void handleAxisOverlayMousePress(QMouseEvent *event)
+    {
+        if (!event || m_axisDragKind == AxisTransformKind::None || event->button() != Qt::LeftButton) {
+            if (event)
+                event->ignore();
+            return;
+        }
+        beginAxisDrag(event->position());
+        event->accept();
+    }
+
+    void handleAxisOverlayMouseMove(QMouseEvent *event)
+    {
+        if (!event || !m_axisDragging) {
+            if (event)
+                event->ignore();
+            return;
+        }
+        updateAxisDrag(event->position(), event->modifiers());
+        event->accept();
+    }
+
+    void handleAxisOverlayMouseRelease(QMouseEvent *event)
+    {
+        if (!event || event->button() != Qt::LeftButton || !m_axisDragging) {
+            if (event)
+                event->ignore();
+            return;
+        }
+        commitAxisDrag();
+        event->accept();
+    }
+
+    void handleAxisOverlayKeyPress(QKeyEvent *event)
+    {
+        if (!event)
+            return;
+        if (event->key() == Qt::Key_Escape) {
+            if (m_axisDragging)
+                cancelAxisDrag();
+            clearAxisDrag(false);
+            event->accept();
+            return;
+        }
+        event->ignore();
     }
 
     void rebuildAssemblyPreview()
@@ -2040,7 +2469,9 @@ private:
 
     QLabel *m_selectionLabel = nullptr;
     QLabel *m_transformHintLabel = nullptr;
+    QLabel *m_axisDragStatusLabel = nullptr;
     ModelViewport3D *m_assemblyViewport = nullptr;
+    AxisDragOverlay *m_axisDragOverlay = nullptr;
     QTabBar *m_partTabs = nullptr;
     QLineEdit *m_libraryFilterEdit = nullptr;
     QListWidget *m_libraryList = nullptr;
@@ -2054,6 +2485,17 @@ private:
     QPushButton *m_saveButton = nullptr;
     QVector<QPushButton *> m_moveButtons;
     QVector<QPushButton *> m_rotateButtons;
+    QVector<QPushButton *> m_moveAxisButtons;
+    QVector<QPushButton *> m_rotateAxisButtons;
+
+    AxisTransformKind m_axisDragKind = AxisTransformKind::None;
+    int m_axisDragAxis = -1;
+    bool m_axisDragging = false;
+    QString m_axisDragNickname;
+    QPointF m_axisDragStartMouse;
+    QVector3D m_axisDragStartPosition;
+    QVector3D m_axisDragStartRotation;
+    QString m_axisDragValueText;
 };
 
 }
