@@ -4,6 +4,13 @@
 #include "SystemDisplayFilterDialog.h"
 #include "SystemPersistence.h"
 #include "SystemSettingsDialog.h"
+#include "SystemSettingsService.h"
+#include "BaseEditDialog.h"
+#include "BaseEditService.h"
+#include "DockingRingCreationService.h"
+#include "DockingRingDialog.h"
+#include "PlanetCreationService.h"
+#include "RingEditService.h"
 #include "SystemUndoCommands.h"
 #include "CreateObjectDialog.h"
 #include "SystemCreationDialogs.h"
@@ -11,6 +18,7 @@
 #include "CreateExclusionZoneDialog.h"
 #include "ExclusionZoneUtils.h"
 #include "JumpConnectionService.h"
+#include "TradeLaneEditService.h"
 #include "editors/jump/JumpConnectionDialog.h"
 #include "editors/universe/UniverseSerializer.h"
 #include "core/Theme.h"
@@ -36,8 +44,10 @@
 #include "rendering/view3d/ModelViewport3D.h"
 #include "rendering/view3d/SceneView3D.h"
 #include "core/UndoManager.h"
+#include "ui/MainWindow.h"
 
 #include <QDialog>
+#include <QApplication>
 #include <QEvent>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -48,6 +58,8 @@
 #include <QToolBar>
 #include <QTreeWidget>
 #include <QAction>
+#include <QActionGroup>
+#include <QMenu>
 #include <QMessageBox>
 #include <QInputDialog>
 #include <QMetaEnum>
@@ -56,31 +68,45 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QComboBox>
+#include <QAbstractSpinBox>
+#include <QDoubleSpinBox>
+#include <QPlainTextEdit>
+#include <QTextEdit>
 #include <QGroupBox>
+#include <QHeaderView>
+#include <QListWidget>
 #include <QSet>
 #include <QBrush>
 #include <QFrame>
 #include <QFileInfo>
 #include <QDesktopServices>
+#include <QDebug>
 #include <QFont>
 #include <QPalette>
+#include <QSaveFile>
 #include <QDir>
 #include <QDirIterator>
 #include <QSignalBlocker>
+#include <QTabBar>
 #include <QUrl>
 #include <QGraphicsEllipseItem>
 #include <QGraphicsLineItem>
 #include <QGraphicsPolygonItem>
 #include <QMouseEvent>
 #include <QKeyEvent>
+#include <QPainter>
 #include <QPen>
+#include <QResizeEvent>
 #include <QRegularExpression>
+#include <QFile>
+#include <QTimer>
 #include <QtMath>
 
 #include <QQuaternion>
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 using namespace flatlas::domain;
 using namespace flatlas::rendering;
@@ -221,6 +247,36 @@ QStringList loadFactionDisplays(const QString &gameRoot)
     IdsStringTable ids;
     if (!exeDir.isEmpty())
         ids.loadFromFreelancerDir(exeDir);
+
+    const IniDocument doc = IniParser::parseFile(initialWorldPath);
+    QSet<QString> seen;
+    for (const IniSection &section : doc) {
+        if (section.name.compare(QStringLiteral("Group"), Qt::CaseInsensitive) != 0)
+            continue;
+        const QString nickname = section.value(QStringLiteral("nickname")).trimmed();
+        if (nickname.isEmpty())
+            continue;
+        const QString key = nickname.toLower();
+        if (seen.contains(key))
+            continue;
+        seen.insert(key);
+        bool ok = false;
+        const int idsName = section.value(QStringLiteral("ids_name")).trimmed().toInt(&ok);
+        const QString ingameName = ok && idsName > 0 ? ids.getString(idsName).trimmed() : QString();
+        values.append(ingameName.isEmpty() ? nickname : QStringLiteral("%1 - %2").arg(nickname, ingameName));
+    }
+    std::sort(values.begin(), values.end(), [](const QString &a, const QString &b) {
+        return a.compare(b, Qt::CaseInsensitive) < 0;
+    });
+    return values;
+}
+
+QStringList loadFactionDisplaysWithIds(const QString &gameRoot, const IdsStringTable &ids)
+{
+    QStringList values;
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
+    const QString initialWorldPath =
+        flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("initialworld.ini"));
 
     const IniDocument doc = IniParser::parseFile(initialWorldPath);
     QSet<QString> seen;
@@ -409,6 +465,358 @@ QString suggestIndexedNickname(const QString &prefix, const QStringList &existin
             return candidate;
         ++number;
     }
+}
+
+QString buoyNicknameSystemToken(const QString &systemFilePath)
+{
+    QString token = QFileInfo(systemFilePath).completeBaseName().trimmed();
+    if (token.isEmpty())
+        token = QStringLiteral("System");
+    token = token.toLower();
+    if (!token.isEmpty())
+        token[0] = token.at(0).toUpper();
+    return token;
+}
+
+QString nextIndexedNickname(const QString &prefix, QSet<QString> *usedNicknames, int width = 3)
+{
+    if (!usedNicknames)
+        return QStringLiteral("%1001").arg(prefix);
+
+    int number = 1;
+    while (true) {
+        const QString candidate = QStringLiteral("%1%2").arg(prefix).arg(number, width, 10, QLatin1Char('0'));
+        const QString key = candidate.toLower();
+        if (!usedNicknames->contains(key)) {
+            usedNicknames->insert(key);
+            return candidate;
+        }
+        ++number;
+    }
+}
+
+int buoyIdsNameForArchetype(const QString &archetype)
+{
+    const QString normalized = archetype.trimmed().toLower();
+    if (normalized == QLatin1String("nav_buoy"))
+        return 261162;
+    if (normalized == QLatin1String("hazard_buoy"))
+        return 261163;
+    return 0;
+}
+
+int buoyIdsInfoForArchetype(const QString &archetype)
+{
+    const QString normalized = archetype.trimmed().toLower();
+    if (normalized == QLatin1String("nav_buoy"))
+        return 66147;
+    if (normalized == QLatin1String("hazard_buoy"))
+        return 66144;
+    return 0;
+}
+
+int derivedBuoyCountForLine(qreal lineLengthScene, int spacingMeters)
+{
+    const qreal spacingScene = std::max<qreal>(static_cast<qreal>(spacingMeters) / 100.0, 1.0);
+    return std::max(2, qRound(lineLengthScene / spacingScene) + 1);
+}
+
+double derivedBuoySpacingMetersForLine(qreal lineLengthScene, int count)
+{
+    if (count <= 1)
+        return 0.0;
+    const double lineLengthMeters = static_cast<double>(lineLengthScene) * 100.0;
+    return std::max(lineLengthMeters / static_cast<double>(count - 1), 1.0);
+}
+
+int nextTradeLaneRingNumber(flatlas::domain::SystemDocument *document, const QString &systemNickname)
+{
+    if (!document)
+        return 1;
+
+    const QString prefix = QStringLiteral("%1_Trade_Lane_Ring_").arg(systemNickname).toLower();
+    int maxNumber = 0;
+    for (const auto &obj : document->objects()) {
+        if (!obj)
+            continue;
+        const QString nickname = obj->nickname().trimmed();
+        if (!nickname.toLower().startsWith(prefix))
+            continue;
+        bool ok = false;
+        const int number = nickname.mid(prefix.size()).toInt(&ok);
+        if (ok)
+            maxNumber = std::max(maxNumber, number);
+    }
+    return maxNumber + 1;
+}
+
+double tradeLaneYawDegrees(const QPointF &startScenePos, const QPointF &endScenePos)
+{
+    const double dx = static_cast<double>(endScenePos.x() - startScenePos.x());
+    const double dz = static_cast<double>(endScenePos.y() - startScenePos.y());
+    double angleDeg = qRadiansToDegrees(std::atan2(dx, dz)) + 180.0;
+    if (angleDeg > 180.0)
+        angleDeg -= 360.0;
+    return angleDeg;
+}
+
+bool resolveIdsStringInput(const QString &gameRoot,
+                           const QString &rawValue,
+                           int currentGlobalId,
+                           const QString &currentText,
+                           int *outId,
+                           QString *errorMessage)
+{
+    if (!outId)
+        return false;
+
+    const QString trimmed = rawValue.trimmed();
+    if (trimmed.isEmpty() || trimmed == QLatin1String("0")) {
+        *outId = 0;
+        return true;
+    }
+
+    bool ok = false;
+    const int numericValue = trimmed.toInt(&ok);
+    if (ok && numericValue >= 0) {
+        *outId = numericValue;
+        return true;
+    }
+
+    if (currentGlobalId > 0 && trimmed == currentText.trimmed()) {
+        *outId = currentGlobalId;
+        return true;
+    }
+
+    const auto dataset = flatlas::infrastructure::IdsDataService::loadFromGameRoot(gameRoot);
+    const QString targetDll = flatlas::infrastructure::IdsDataService::defaultCreationDllName(dataset);
+    int rewriteId = 0;
+    if (currentGlobalId > 0) {
+        const auto it = std::find_if(dataset.entries.cbegin(), dataset.entries.cend(),
+                                     [currentGlobalId](const flatlas::infrastructure::IdsEntryRecord &entry) {
+                                         return entry.globalId == currentGlobalId;
+                                     });
+        if (it != dataset.entries.cend() && it->editable
+            && it->dllName.compare(targetDll, Qt::CaseInsensitive) == 0) {
+            rewriteId = currentGlobalId;
+        }
+    }
+    QString idsError;
+    int newGlobalId = 0;
+    if (!flatlas::infrastructure::IdsDataService::writeStringEntry(
+            dataset, targetDll, rewriteId, trimmed, &newGlobalId, &idsError)) {
+        if (errorMessage) {
+            *errorMessage = idsError.trimmed().isEmpty()
+                ? QObject::tr("Der IDS-Text konnte nicht geschrieben werden.")
+                : idsError;
+        }
+        return false;
+    }
+
+    *outId = newGlobalId;
+    return true;
+}
+
+QString idsDisplayTextFromTable(const IdsStringTable &ids, int globalId)
+{
+    return globalId > 0 ? ids.getString(globalId).trimmed() : QString();
+}
+
+const IdsStringTable &selectionDisplayIdsTable(const QString &gameRoot)
+{
+    static QString cachedGameRoot;
+    static IdsStringTable cachedIds;
+
+    if (cachedGameRoot == gameRoot)
+        return cachedIds;
+
+    cachedGameRoot = gameRoot;
+    cachedIds = IdsStringTable();
+
+    const QString exeDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("EXE"));
+    if (!exeDir.isEmpty())
+        cachedIds.loadFromFreelancerDir(exeDir);
+
+    return cachedIds;
+}
+
+int idsNameFromRawEntries(const QVector<QPair<QString, QString>> &entries)
+{
+    for (int index = entries.size() - 1; index >= 0; --index) {
+        if (entries[index].first.compare(QStringLiteral("ids_name"), Qt::CaseInsensitive) != 0)
+            continue;
+        bool ok = false;
+        const int value = entries[index].second.trimmed().toInt(&ok);
+        if (ok && value > 0)
+            return value;
+    }
+    return 0;
+}
+
+QString nicknameWithIngameName(const QString &nickname, int idsName, const QString &gameRoot)
+{
+    const QString trimmedNickname = nickname.trimmed();
+    if (trimmedNickname.isEmpty())
+        return {};
+
+    const QString ingameName = idsDisplayTextFromTable(selectionDisplayIdsTable(gameRoot), idsName);
+    return ingameName.isEmpty()
+        ? trimmedNickname
+        : QStringLiteral("%1 - %2").arg(trimmedNickname, ingameName);
+}
+
+QString ingameNameForIds(int idsName, const QString &gameRoot)
+{
+    return idsDisplayTextFromTable(selectionDisplayIdsTable(gameRoot), idsName);
+}
+
+QString objectIngameName(const SolarObject &obj, const QString &gameRoot)
+{
+    const int idsName = obj.idsName() > 0 ? obj.idsName() : idsNameFromRawEntries(obj.rawEntries());
+    return ingameNameForIds(idsName, gameRoot);
+}
+
+QString zoneIngameName(const ZoneItem &zone, const QString &gameRoot)
+{
+    return ingameNameForIds(idsNameFromRawEntries(zone.rawEntries()), gameRoot);
+}
+
+QString objectHeaderDisplayTitle(const SolarObject &obj, const QString &gameRoot)
+{
+    const int idsName = obj.idsName() > 0 ? obj.idsName() : idsNameFromRawEntries(obj.rawEntries());
+    return nicknameWithIngameName(obj.nickname(), idsName, gameRoot);
+}
+
+QString zoneHeaderDisplayTitle(const ZoneItem &zone, const QString &gameRoot)
+{
+    return nicknameWithIngameName(zone.nickname(), idsNameFromRawEntries(zone.rawEntries()), gameRoot);
+}
+
+std::shared_ptr<SolarObject> cloneSolarObject(const std::shared_ptr<SolarObject> &source)
+{
+    if (!source)
+        return {};
+
+    auto clone = std::make_shared<SolarObject>();
+    clone->setNickname(source->nickname());
+    clone->setArchetype(source->archetype());
+    clone->setPosition(source->position());
+    clone->setRotation(source->rotation());
+    clone->setType(source->type());
+    clone->setBase(source->base());
+    clone->setDockWith(source->dockWith());
+    clone->setGotoTarget(source->gotoTarget());
+    clone->setLoadout(source->loadout());
+    clone->setComment(source->comment());
+    clone->setIdsName(source->idsName());
+    clone->setIdsInfo(source->idsInfo());
+    clone->setRawEntries(source->rawEntries());
+    return clone;
+}
+
+std::shared_ptr<ZoneItem> cloneZoneItem(const std::shared_ptr<ZoneItem> &source)
+{
+    if (!source)
+        return {};
+
+    auto clone = std::make_shared<ZoneItem>();
+    clone->setNickname(source->nickname());
+    clone->setPosition(source->position());
+    clone->setSize(source->size());
+    clone->setShape(source->shape());
+    clone->setRotation(source->rotation());
+    clone->setZoneType(source->zoneType());
+    clone->setUsage(source->usage());
+    clone->setPopType(source->popType());
+    clone->setPathLabel(source->pathLabel());
+    clone->setComment(source->comment());
+    clone->setTightnessXyz(source->tightnessXyz());
+    clone->setDamage(source->damage());
+    clone->setInterference(source->interference());
+    clone->setDragScale(source->dragScale());
+    clone->setSortKey(source->sortKey());
+    clone->setRawEntries(source->rawEntries());
+    return clone;
+}
+
+void updateRawNicknameEntry(QVector<QPair<QString, QString>> *entries, const QString &nickname)
+{
+    if (!entries)
+        return;
+    bool updated = false;
+    for (auto &entry : *entries) {
+        if (entry.first.compare(QStringLiteral("nickname"), Qt::CaseInsensitive) == 0) {
+            entry.second = nickname;
+            updated = true;
+        }
+    }
+    if (!updated)
+        entries->append({QStringLiteral("nickname"), nickname});
+}
+
+void updateRawParentEntries(QVector<QPair<QString, QString>> *entries, const QHash<QString, QString> &renameMap)
+{
+    if (!entries)
+        return;
+    for (auto &entry : *entries) {
+        if (entry.first.compare(QStringLiteral("parent"), Qt::CaseInsensitive) != 0)
+            continue;
+        entry.second = renameMap.value(entry.second.trimmed(), entry.second);
+    }
+}
+
+float normalizedYawDegrees(float degrees)
+{
+    float yaw = std::fmod(degrees, 360.0f);
+    if (yaw < 0.0f)
+        yaw += 360.0f;
+    return yaw;
+}
+
+QVector<QPair<QString, QString>> removeRawEntriesByKey(const QVector<QPair<QString, QString>> &entries,
+                                                       const QString &key)
+{
+    QVector<QPair<QString, QString>> filtered;
+    filtered.reserve(entries.size());
+    for (const auto &entry : entries) {
+        if (entry.first.compare(key, Qt::CaseInsensitive) != 0)
+            filtered.append(entry);
+    }
+    return filtered;
+}
+
+struct TradeLaneDialogCatalog {
+    QString gameRoot;
+    QStringList archetypes;
+    QStringList loadouts;
+    QStringList factions;
+    QStringList pilots;
+    QSet<QString> factionDisplays;
+    IdsStringTable ids;
+};
+
+const TradeLaneDialogCatalog &tradeLaneDialogCatalog(const QString &gameRoot)
+{
+    static QString cachedGameRoot;
+    static TradeLaneDialogCatalog cachedCatalog;
+
+    if (cachedGameRoot == gameRoot)
+        return cachedCatalog;
+
+    cachedGameRoot = gameRoot;
+    cachedCatalog = {};
+    cachedCatalog.gameRoot = gameRoot;
+
+    const QString exeDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("EXE"));
+    if (!exeDir.isEmpty())
+        cachedCatalog.ids.loadFromFreelancerDir(exeDir);
+
+    cachedCatalog.archetypes = loadSolarArchetypesMatching(gameRoot, {QStringLiteral("trade_lane_ring")});
+    cachedCatalog.loadouts = loadLoadoutsMatching(gameRoot, {QStringLiteral("trade_lane_ring")});
+    cachedCatalog.factions = loadFactionDisplaysWithIds(gameRoot, cachedCatalog.ids);
+    cachedCatalog.pilots = loadPilotNicknames(gameRoot);
+    cachedCatalog.factionDisplays = QSet<QString>(cachedCatalog.factions.cbegin(), cachedCatalog.factions.cend());
+    return cachedCatalog;
 }
 
 QStringList collectEncounterNicknames(flatlas::domain::SystemDocument *document, const QString &gameRoot)
@@ -621,6 +1029,88 @@ QString parentNicknameForObject(const SolarObject &obj)
     return rawObjectEntryValue(obj, QStringLiteral("parent"));
 }
 
+QString resolvedObjectBaseNickname(const SolarObject &obj)
+{
+    QString baseNickname = obj.base().trimmed();
+    if (baseNickname.isEmpty())
+        baseNickname = rawObjectEntryValue(obj, QStringLiteral("base"));
+    return baseNickname.trimmed();
+}
+
+double horizontalDistanceMeters(const QVector3D &lhs, const QVector3D &rhs)
+{
+    const double dx = static_cast<double>(lhs.x()) - static_cast<double>(rhs.x());
+    const double dz = static_cast<double>(lhs.z()) - static_cast<double>(rhs.z());
+    return std::sqrt(dx * dx + dz * dz);
+}
+
+SolarObject *findDockingRingHostPlanet(SystemDocument *document, const SolarObject &ringObject)
+{
+    if (!document)
+        return nullptr;
+
+    const QString baseNickname = DockingRingCreationService::resolvedDockWithBase(ringObject);
+    SolarObject *bestMatch = nullptr;
+    double bestDistance = std::numeric_limits<double>::max();
+
+    auto considerCandidate = [&](SolarObject *candidate) {
+        if (!candidate || !DockingRingCreationService::canHostDockingRing(*candidate))
+            return;
+        const double distance = horizontalDistanceMeters(candidate->position(), ringObject.position());
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestMatch = candidate;
+        }
+    };
+
+    if (!baseNickname.isEmpty()) {
+        for (const auto &objectPtr : document->objects()) {
+            if (!objectPtr)
+                continue;
+            if (resolvedObjectBaseNickname(*objectPtr).compare(baseNickname, Qt::CaseInsensitive) != 0)
+                continue;
+            considerCandidate(objectPtr.get());
+        }
+    }
+
+    if (bestMatch)
+        return bestMatch;
+
+    for (const auto &objectPtr : document->objects())
+        considerCandidate(objectPtr.get());
+
+    return bestMatch;
+}
+
+QVector3D dockingRingPositionForDistance(const SolarObject &planetObject,
+                                         const QVector3D &currentRingPosition,
+                                         double distanceToPlanetCore)
+{
+    const QVector3D planetPosition = planetObject.position();
+    double dx = static_cast<double>(currentRingPosition.x()) - static_cast<double>(planetPosition.x());
+    double dz = static_cast<double>(currentRingPosition.z()) - static_cast<double>(planetPosition.z());
+    const double currentDistance = std::sqrt(dx * dx + dz * dz);
+    if (currentDistance <= 0.001) {
+        dx = 1.0;
+        dz = 0.0;
+    } else {
+        dx /= currentDistance;
+        dz /= currentDistance;
+    }
+
+    return QVector3D(static_cast<float>(static_cast<double>(planetPosition.x()) + dx * distanceToPlanetCore),
+                     currentRingPosition.y(),
+                     static_cast<float>(static_cast<double>(planetPosition.z()) + dz * distanceToPlanetCore));
+}
+
+QString formatObjectPositionEntry(const QVector3D &position)
+{
+    return QStringLiteral("%1, %2, %3")
+        .arg(position.x(), 0, 'f', 2)
+        .arg(position.y(), 0, 'f', 2)
+        .arg(position.z(), 0, 'f', 2);
+}
+
 QString normalizedPathKey(const QString &value)
 {
     QString normalized = QDir::fromNativeSeparators(value).trimmed();
@@ -628,6 +1118,76 @@ QString normalizedPathKey(const QString &value)
     normalized = normalized.toLower();
 #endif
     return normalized;
+}
+
+QString textForAbsolutePath(const QString &absolutePath, const QHash<QString, QString> &textOverrides)
+{
+    const QString normalizedTarget = normalizedPathKey(absolutePath);
+    for (auto it = textOverrides.cbegin(); it != textOverrides.cend(); ++it) {
+        if (normalizedPathKey(it.key()) == normalizedTarget)
+            return it.value();
+    }
+
+    QFile file(absolutePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return {};
+    return QString::fromUtf8(file.readAll());
+}
+
+QVector<QPair<QString, QString>> loadGlobalBaseTemplateChoices(const QString &gameRoot,
+                                                               const QHash<QString, QString> &textOverrides,
+                                                               QHash<QString, QStringList> *outTemplateRoomsByBase)
+{
+    QVector<QPair<QString, QString>> baseChoices;
+    if (outTemplateRoomsByBase)
+        outTemplateRoomsByBase->clear();
+
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
+    const QString universePath = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("UNIVERSE/universe.ini"));
+    if (universePath.isEmpty())
+        return baseChoices;
+
+    const QString universeText = textForAbsolutePath(universePath, textOverrides);
+    if (universeText.trimmed().isEmpty())
+        return baseChoices;
+
+    const IniDocument doc = IniParser::parseText(universeText);
+    QSet<QString> seenBases;
+    for (const IniSection &section : doc) {
+        if (section.name.compare(QStringLiteral("Base"), Qt::CaseInsensitive) != 0)
+            continue;
+
+        const QString baseNickname = section.value(QStringLiteral("nickname")).trimmed();
+        const QString baseKey = baseNickname.toLower();
+        if (baseNickname.isEmpty() || seenBases.contains(baseKey))
+            continue;
+
+        BaseEditState templateState;
+        QString loadError;
+        if (!BaseEditService::loadTemplateState(baseNickname, gameRoot, textOverrides, &templateState, &loadError))
+            continue;
+
+        QStringList roomNames;
+        for (const BaseRoomState &room : templateState.rooms) {
+            if (room.enabled && !room.roomName.trimmed().isEmpty())
+                roomNames.append(room.roomName.trimmed());
+        }
+        roomNames.removeDuplicates();
+        if (roomNames.isEmpty())
+            continue;
+
+        bool ok = false;
+        const int idsName = section.value(QStringLiteral("strid_name")).trimmed().toInt(&ok);
+        baseChoices.append({nicknameWithIngameName(baseNickname, ok ? idsName : 0, gameRoot), baseNickname});
+        if (outTemplateRoomsByBase)
+            outTemplateRoomsByBase->insert(baseNickname, roomNames);
+        seenBases.insert(baseKey);
+    }
+
+    std::sort(baseChoices.begin(), baseChoices.end(), [](const auto &left, const auto &right) {
+        return left.first.compare(right.first, Qt::CaseInsensitive) < 0;
+    });
+    return baseChoices;
 }
 
 QString normalizedNameToken(const QString &value)
@@ -755,6 +1315,97 @@ QQuaternion quaternionFromFreelancerRotation(const QVector3D &rotation)
     return QQuaternion::fromEulerAngles(rotation.x(), rotation.y(), rotation.z());
 }
 
+QString vector3ToIniString(const QVector3D &value)
+{
+    return QStringLiteral("%1, %2, %3")
+        .arg(static_cast<double>(value.x()), 0, 'f', -1)
+        .arg(static_cast<double>(value.y()), 0, 'f', -1)
+        .arg(static_cast<double>(value.z()), 0, 'f', -1);
+}
+
+bool verifySavedTextFile(const QString &absolutePath,
+                         const QString &expectedContent,
+                         QString *errorMessage)
+{
+    QFile verifyFile(absolutePath);
+    if (!verifyFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        if (errorMessage) {
+            *errorMessage = QObject::tr("Die geschriebene Datei konnte nicht erneut gelesen werden:\n%1")
+                                .arg(absolutePath);
+        }
+        return false;
+    }
+
+    if (verifyFile.readAll() != expectedContent.toUtf8()) {
+        if (errorMessage) {
+            *errorMessage = QObject::tr("Die geschriebene Datei stimmt nach dem Speichern nicht mit den erwarteten Daten ueberein:\n%1")
+                                .arg(absolutePath);
+        }
+        return false;
+    }
+    return true;
+}
+
+QString suggestBaseBuilderPartNickname(const QString &rootNickname,
+                                       const QStringList &existingNicknames)
+{
+    QString base = rootNickname.trimmed();
+    if (base.isEmpty())
+        base = QStringLiteral("base");
+
+    base.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9_]+")), QStringLiteral("_"));
+    base.remove(QRegularExpression(QStringLiteral("^_+|_+$")));
+    if (base.isEmpty())
+        base = QStringLiteral("base");
+
+    const QString prefix = QStringLiteral("%1_part_").arg(base);
+    QRegularExpression pattern(QStringLiteral("^%1(\\d+)$")
+                                   .arg(QRegularExpression::escape(prefix)),
+                               QRegularExpression::CaseInsensitiveOption);
+
+    int highest = 0;
+    for (const QString &nickname : existingNicknames) {
+        const QRegularExpressionMatch match = pattern.match(nickname.trimmed());
+        if (!match.hasMatch())
+            continue;
+        bool ok = false;
+        const int number = match.captured(1).toInt(&ok);
+        if (ok)
+            highest = std::max(highest, number);
+    }
+
+    return QStringLiteral("%1%2").arg(prefix).arg(highest + 1, 3, 10, QLatin1Char('0'));
+}
+
+QVector<QPair<QString, QString>> buildBaseBuilderPartEntries(const QString &parentNickname,
+                                                             const QString &partNickname,
+                                                             const QString &archetype,
+                                                             const QVector3D &position,
+                                                             const QVector3D &rotation = QVector3D(),
+                                                             const QString &reputation = QString())
+{
+    QVector<QPair<QString, QString>> entries = {
+        {QStringLiteral("nickname"), partNickname.trimmed()},
+        {QStringLiteral("archetype"), archetype.trimmed()},
+        {QStringLiteral("pos"), vector3ToIniString(position)},
+        {QStringLiteral("rotate"), vector3ToIniString(rotation)},
+        {QStringLiteral("parent"), parentNickname.trimmed()},
+        {QStringLiteral("visit"), QStringLiteral("0")},
+    };
+    if (!reputation.trimmed().isEmpty())
+        entries.append({QStringLiteral("reputation"), reputation.trimmed()});
+    return entries;
+}
+
+QString rawEntryValue(const QVector<QPair<QString, QString>> &entries, const QString &key)
+{
+    for (const auto &entry : entries) {
+        if (entry.first.compare(key, Qt::CaseInsensitive) == 0)
+            return entry.second.trimmed();
+    }
+    return {};
+}
+
 QString solarObjectTypeLabel(SolarObject::Type type)
 {
     const QMetaEnum typeEnum = QMetaEnum::fromType<SolarObject::Type>();
@@ -812,6 +1463,1062 @@ private:
     ModelViewport3D *m_viewport = nullptr;
 };
 
+struct BaseBuilderSnapshot {
+    QString label;
+    QString selectedNickname;
+    std::shared_ptr<SolarObject> rootObject;
+    QVector<std::shared_ptr<SolarObject>> childObjects;
+};
+
+class SystemBaseBuilderDialog final : public QDialog {
+public:
+    enum class AxisTransformKind {
+        None,
+        Move,
+        Rotate,
+    };
+
+    class AxisDragButton final : public QPushButton {
+    public:
+        AxisDragButton(const QString &text, AxisTransformKind kind, int axis, SystemBaseBuilderDialog *owner)
+            : QPushButton(text, owner)
+            , m_owner(owner)
+            , m_kind(kind)
+            , m_axis(axis)
+        {
+            setMinimumWidth(34);
+        }
+
+    protected:
+        void mousePressEvent(QMouseEvent *event) override
+        {
+            QPushButton::mousePressEvent(event);
+            if (!m_owner || !event || event->button() != Qt::LeftButton)
+                return;
+            m_dragStarted = false;
+            m_owner->armAxisDrag(m_kind, m_axis);
+            m_owner->beginAxisDrag(event->position());
+            event->accept();
+        }
+
+        void mouseMoveEvent(QMouseEvent *event) override
+        {
+            QPushButton::mouseMoveEvent(event);
+            if (!m_owner || !event || !event->buttons().testFlag(Qt::LeftButton))
+                return;
+            m_dragStarted = true;
+            m_owner->updateAxisDrag(event->position(), event->modifiers());
+            event->accept();
+        }
+
+        void mouseReleaseEvent(QMouseEvent *event) override
+        {
+            QPushButton::mouseReleaseEvent(event);
+            if (!m_owner || !event || event->button() != Qt::LeftButton)
+                return;
+            if (m_dragStarted)
+                m_owner->commitAxisDrag();
+            else
+                m_owner->cancelAxisDrag();
+            m_owner->clearAxisDrag(false);
+            m_dragStarted = false;
+            event->accept();
+        }
+
+        void keyPressEvent(QKeyEvent *event) override
+        {
+            if (m_owner && event && event->key() == Qt::Key_Escape) {
+                m_owner->clearAxisDrag(true);
+                event->accept();
+                return;
+            }
+            QPushButton::keyPressEvent(event);
+        }
+
+    private:
+        SystemBaseBuilderDialog *m_owner = nullptr;
+        AxisTransformKind m_kind = AxisTransformKind::None;
+        int m_axis = -1;
+        bool m_dragStarted = false;
+    };
+
+    class AxisDragOverlay final : public QWidget {
+    public:
+        explicit AxisDragOverlay(SystemBaseBuilderDialog *owner)
+            : QWidget(owner)
+            , m_owner(owner)
+        {
+            setAttribute(Qt::WA_TranslucentBackground, true);
+            setMouseTracking(true);
+            setFocusPolicy(Qt::StrongFocus);
+            setCursor(Qt::SizeAllCursor);
+            hide();
+        }
+
+    protected:
+        void mousePressEvent(QMouseEvent *event) override
+        {
+            if (m_owner)
+                m_owner->handleAxisOverlayMousePress(event);
+        }
+
+        void mouseMoveEvent(QMouseEvent *event) override
+        {
+            if (m_owner)
+                m_owner->handleAxisOverlayMouseMove(event);
+        }
+
+        void mouseReleaseEvent(QMouseEvent *event) override
+        {
+            if (m_owner)
+                m_owner->handleAxisOverlayMouseRelease(event);
+        }
+
+        void keyPressEvent(QKeyEvent *event) override
+        {
+            if (m_owner)
+                m_owner->handleAxisOverlayKeyPress(event);
+        }
+
+        void paintEvent(QPaintEvent *) override
+        {
+            QPainter painter(this);
+            painter.fillRect(rect(), QColor(30, 120, 180, 24));
+            painter.setRenderHint(QPainter::Antialiasing, true);
+            painter.setPen(QPen(QColor(120, 210, 255, 180), 2));
+            painter.drawRect(rect().adjusted(1, 1, -2, -2));
+        }
+
+    private:
+        SystemBaseBuilderDialog *m_owner = nullptr;
+    };
+
+    SystemBaseBuilderDialog(const std::shared_ptr<SolarObject> &rootObject,
+                            const QVector<std::shared_ptr<SolarObject>> &childObjects,
+                            const QStringList &libraryArchetypes,
+                            const QHash<QString, QString> &modelPaths,
+                            const QStringList &reservedNicknames,
+                            QWidget *parent = nullptr)
+        : QDialog(parent)
+        , m_rootObject(cloneSolarObject(rootObject))
+        , m_modelPaths(modelPaths)
+        , m_libraryArchetypes(libraryArchetypes)
+        , m_reservedNicknames(reservedNicknames)
+    {
+        for (const auto &child : childObjects)
+            m_childObjects.append(cloneSolarObject(child));
+
+        m_selectedNickname = m_rootObject ? m_rootObject->nickname() : QString();
+        setWindowTitle(tr("Base Builder - %1").arg(m_rootObject ? m_rootObject->nickname() : tr("Base")));
+        resize(1460, 900);
+        setupUi();
+        resetHistory();
+        rebuildLibraryList();
+        refreshUi();
+    }
+
+    QVector<std::shared_ptr<SolarObject>> childObjects() const
+    {
+        QVector<std::shared_ptr<SolarObject>> clones;
+        clones.reserve(m_childObjects.size());
+        for (const auto &child : m_childObjects)
+            clones.append(cloneSolarObject(child));
+        return clones;
+    }
+
+    bool hasChanges() const
+    {
+        return m_historyIndex >= 0 && m_historyIndex != m_savedHistoryIndex;
+    }
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QDialog::resizeEvent(event);
+        updateAxisDragOverlayGeometry();
+    }
+
+    void reject() override
+    {
+        if (!hasChanges()) {
+            QDialog::reject();
+            return;
+        }
+
+        const auto result = QMessageBox::question(this,
+                                                  tr("Base Builder schließen"),
+                                                  tr("Die Änderungen im Base Builder sind noch nicht übernommen. Verwerfen?"));
+        if (result == QMessageBox::Yes)
+            QDialog::reject();
+    }
+
+private:
+    void setupUi()
+    {
+        auto *rootLayout = new QVBoxLayout(this);
+        rootLayout->setContentsMargins(10, 10, 10, 10);
+        rootLayout->setSpacing(8);
+
+        auto *contentLayout = new QHBoxLayout();
+        contentLayout->setSpacing(10);
+        rootLayout->addLayout(contentLayout, 1);
+
+        auto *leftColumn = new QVBoxLayout();
+        leftColumn->setSpacing(8);
+        contentLayout->addLayout(leftColumn, 3);
+
+        auto *transformGroup = new QGroupBox(tr("Transform"), this);
+        auto *transformLayout = new QVBoxLayout(transformGroup);
+        transformLayout->setContentsMargins(8, 6, 8, 6);
+        transformLayout->setSpacing(4);
+
+        m_selectionLabel = new QLabel(transformGroup);
+        transformLayout->addWidget(m_selectionLabel);
+
+        auto *commandRow = new QHBoxLayout();
+        commandRow->setSpacing(10);
+
+        auto *moveCommandRow = new QHBoxLayout();
+        moveCommandRow->setSpacing(4);
+        moveCommandRow->addWidget(new QLabel(tr("Move"), transformGroup));
+        m_moveStepSpin = new QDoubleSpinBox(transformGroup);
+        m_moveStepSpin->setRange(0.1, 50000.0);
+        m_moveStepSpin->setDecimals(1);
+        m_moveStepSpin->setValue(10.0);
+        m_moveStepSpin->setSuffix(tr(" m"));
+        m_moveStepSpin->setMaximumWidth(92);
+        moveCommandRow->addWidget(m_moveStepSpin);
+
+        m_moveButtons.append(createTransformButton(tr("X-"), [this]() { applyMoveDelta(0, -m_moveStepSpin->value()); }));
+        m_moveButtons.append(createTransformButton(tr("X+"), [this]() { applyMoveDelta(0, m_moveStepSpin->value()); }));
+        m_moveButtons.append(createTransformButton(tr("Y-"), [this]() { applyMoveDelta(1, -m_moveStepSpin->value()); }));
+        m_moveButtons.append(createTransformButton(tr("Y+"), [this]() { applyMoveDelta(1, m_moveStepSpin->value()); }));
+        m_moveButtons.append(createTransformButton(tr("Z-"), [this]() { applyMoveDelta(2, -m_moveStepSpin->value()); }));
+        m_moveButtons.append(createTransformButton(tr("Z+"), [this]() { applyMoveDelta(2, m_moveStepSpin->value()); }));
+        for (QPushButton *button : std::as_const(m_moveButtons))
+            moveCommandRow->addWidget(button);
+
+        moveCommandRow->addSpacing(4);
+        moveCommandRow->addWidget(new QLabel(tr("Drag"), transformGroup));
+        m_moveAxisButtons.append(createAxisDragButton(tr("X"), AxisTransformKind::Move, 0));
+        m_moveAxisButtons.append(createAxisDragButton(tr("Y"), AxisTransformKind::Move, 1));
+        m_moveAxisButtons.append(createAxisDragButton(tr("Z"), AxisTransformKind::Move, 2));
+        for (QPushButton *button : std::as_const(m_moveAxisButtons))
+            moveCommandRow->addWidget(button);
+        commandRow->addLayout(moveCommandRow);
+
+        auto *rotateCommandRow = new QHBoxLayout();
+        rotateCommandRow->setSpacing(4);
+        rotateCommandRow->addWidget(new QLabel(tr("Rotate"), transformGroup));
+        m_rotateStepSpin = new QDoubleSpinBox(transformGroup);
+        m_rotateStepSpin->setRange(1.0, 360.0);
+        m_rotateStepSpin->setDecimals(1);
+        m_rotateStepSpin->setValue(15.0);
+        m_rotateStepSpin->setSuffix(QStringLiteral("°"));
+        m_rotateStepSpin->setMaximumWidth(82);
+        rotateCommandRow->addWidget(m_rotateStepSpin);
+
+        m_rotateButtons.append(createTransformButton(tr("P-"), [this]() { applyRotationDelta(0, -m_rotateStepSpin->value()); }));
+        m_rotateButtons.append(createTransformButton(tr("P+"), [this]() { applyRotationDelta(0, m_rotateStepSpin->value()); }));
+        m_rotateButtons.append(createTransformButton(tr("Y-"), [this]() { applyRotationDelta(1, -m_rotateStepSpin->value()); }));
+        m_rotateButtons.append(createTransformButton(tr("Y+"), [this]() { applyRotationDelta(1, m_rotateStepSpin->value()); }));
+        m_rotateButtons.append(createTransformButton(tr("R-"), [this]() { applyRotationDelta(2, -m_rotateStepSpin->value()); }));
+        m_rotateButtons.append(createTransformButton(tr("R+"), [this]() { applyRotationDelta(2, m_rotateStepSpin->value()); }));
+        for (QPushButton *button : std::as_const(m_rotateButtons))
+            rotateCommandRow->addWidget(button);
+
+        rotateCommandRow->addSpacing(4);
+        rotateCommandRow->addWidget(new QLabel(tr("Drag"), transformGroup));
+        m_rotateAxisButtons.append(createAxisDragButton(tr("X"), AxisTransformKind::Rotate, 0));
+        m_rotateAxisButtons.append(createAxisDragButton(tr("Y"), AxisTransformKind::Rotate, 1));
+        m_rotateAxisButtons.append(createAxisDragButton(tr("Z"), AxisTransformKind::Rotate, 2));
+        for (QPushButton *button : std::as_const(m_rotateAxisButtons))
+            rotateCommandRow->addWidget(button);
+        commandRow->addLayout(rotateCommandRow);
+        commandRow->addStretch(1);
+        transformLayout->addLayout(commandRow);
+
+        m_transformHintLabel = new QLabel(transformGroup);
+        m_transformHintLabel->setWordWrap(true);
+        m_transformHintLabel->hide();
+        transformLayout->addWidget(m_transformHintLabel);
+        m_axisDragStatusLabel = new QLabel(transformGroup);
+        m_axisDragStatusLabel->setWordWrap(false);
+        transformLayout->addWidget(m_axisDragStatusLabel);
+        leftColumn->addWidget(transformGroup);
+
+        m_assemblyViewport = new ModelViewport3D(this);
+        leftColumn->addWidget(m_assemblyViewport, 1);
+
+        m_axisDragOverlay = new AxisDragOverlay(this);
+        m_axisDragOverlay->raise();
+
+        auto *tabGroup = new QGroupBox(tr("Placed Parts"), this);
+        auto *tabLayout = new QVBoxLayout(tabGroup);
+        tabLayout->setContentsMargins(8, 8, 8, 8);
+        tabLayout->setSpacing(4);
+        m_partTabs = new QTabBar(tabGroup);
+        m_partTabs->setExpanding(false);
+        m_partTabs->setUsesScrollButtons(true);
+        connect(m_partTabs, &QTabBar::currentChanged, this, [this](int index) {
+            if (index < 0)
+                return;
+            setSelectedNickname(m_partTabs->tabData(index).toString());
+        });
+        tabLayout->addWidget(m_partTabs);
+        leftColumn->addWidget(tabGroup);
+
+        auto *rightColumn = new QVBoxLayout();
+        rightColumn->setSpacing(8);
+        contentLayout->addLayout(rightColumn, 1);
+
+        auto *libraryGroup = new QGroupBox(tr("Object Library"), this);
+        auto *libraryLayout = new QVBoxLayout(libraryGroup);
+        libraryLayout->setContentsMargins(8, 8, 8, 8);
+        libraryLayout->setSpacing(6);
+
+        m_libraryFilterEdit = new QLineEdit(libraryGroup);
+        m_libraryFilterEdit->setPlaceholderText(tr("Filter by archetype"));
+        connect(m_libraryFilterEdit, &QLineEdit::textChanged, this, [this]() { rebuildLibraryList(); });
+        libraryLayout->addWidget(m_libraryFilterEdit);
+
+        m_libraryList = new QListWidget(libraryGroup);
+        connect(m_libraryList, &QListWidget::currentItemChanged, this, [this]() { updateLibraryPreview(); });
+        connect(m_libraryList, &QListWidget::itemDoubleClicked, this, [this]() { addSelectedLibraryPart(); });
+        libraryLayout->addWidget(m_libraryList, 1);
+        rightColumn->addWidget(libraryGroup, 2);
+
+        auto *previewGroup = new QGroupBox(tr("Library Preview"), this);
+        auto *previewLayout = new QVBoxLayout(previewGroup);
+        previewLayout->setContentsMargins(8, 8, 8, 8);
+        previewLayout->setSpacing(6);
+        m_libraryPreviewLabel = new QLabel(previewGroup);
+        m_libraryPreviewLabel->setWordWrap(true);
+        previewLayout->addWidget(m_libraryPreviewLabel);
+        m_libraryViewport = new ModelViewport3D(previewGroup);
+        previewLayout->addWidget(m_libraryViewport, 1);
+        rightColumn->addWidget(previewGroup, 2);
+
+        auto *buttonRow = new QHBoxLayout();
+        buttonRow->setSpacing(6);
+        m_addPartButton = new QPushButton(tr("Add"), this);
+        connect(m_addPartButton, &QPushButton::clicked, this, [this]() { addSelectedLibraryPart(); });
+        buttonRow->addWidget(m_addPartButton);
+        m_deletePartButton = new QPushButton(tr("Delete Child"), this);
+        connect(m_deletePartButton, &QPushButton::clicked, this, [this]() { deleteSelectedChild(); });
+        buttonRow->addWidget(m_deletePartButton);
+        rightColumn->addLayout(buttonRow);
+
+        auto *bottomButtons = new QHBoxLayout();
+        bottomButtons->setSpacing(6);
+        m_undoButton = new QPushButton(tr("Undo"), this);
+        connect(m_undoButton, &QPushButton::clicked, this, [this]() { undoLastChange(); });
+        bottomButtons->addWidget(m_undoButton);
+        bottomButtons->addStretch(1);
+        m_saveButton = new QPushButton(tr("Apply to System"), this);
+        connect(m_saveButton, &QPushButton::clicked, this, &QDialog::accept);
+        bottomButtons->addWidget(m_saveButton);
+        auto *closeButton = new QPushButton(tr("Close"), this);
+        connect(closeButton, &QPushButton::clicked, this, &QDialog::reject);
+        bottomButtons->addWidget(closeButton);
+        rootLayout->addLayout(bottomButtons);
+    }
+
+    QPushButton *createTransformButton(const QString &text, std::function<void()> handler)
+    {
+        auto *button = new QPushButton(text, this);
+        button->setMinimumWidth(42);
+        connect(button, &QPushButton::clicked, this, [handler = std::move(handler)]() {
+            if (handler)
+                handler();
+        });
+        return button;
+    }
+
+    QPushButton *createAxisDragButton(const QString &text, AxisTransformKind kind, int axis)
+    {
+        auto *button = new AxisDragButton(text, kind, axis, this);
+        button->setCheckable(true);
+        button->setToolTip(kind == AxisTransformKind::Move
+                               ? tr("Hold and drag to move on %1.").arg(text)
+                               : tr("Hold and drag to rotate around %1.").arg(text));
+        return button;
+    }
+
+    void rebuildLibraryList()
+    {
+        const QString filter = m_libraryFilterEdit ? m_libraryFilterEdit->text().trimmed() : QString();
+        QString previousArchetype;
+        if (auto *item = m_libraryList ? m_libraryList->currentItem() : nullptr)
+            previousArchetype = item->data(Qt::UserRole).toString();
+
+        QSignalBlocker blocker(m_libraryList);
+        m_libraryList->clear();
+
+        for (const QString &archetype : m_libraryArchetypes) {
+            if (!filter.isEmpty() && !archetype.contains(filter, Qt::CaseInsensitive))
+                continue;
+            auto *item = new QListWidgetItem(archetype, m_libraryList);
+            item->setData(Qt::UserRole, archetype);
+            item->setData(Qt::UserRole + 1, m_modelPaths.value(normalizedPathKey(archetype)));
+        }
+
+        if (!previousArchetype.isEmpty()) {
+            for (int index = 0; index < m_libraryList->count(); ++index) {
+                auto *item = m_libraryList->item(index);
+                if (item && item->data(Qt::UserRole).toString().compare(previousArchetype, Qt::CaseInsensitive) == 0) {
+                    m_libraryList->setCurrentRow(index);
+                    break;
+                }
+            }
+        }
+        if (m_libraryList->currentRow() < 0 && m_libraryList->count() > 0)
+            m_libraryList->setCurrentRow(0);
+
+        updateLibraryPreview();
+    }
+
+    void updateLibraryPreview()
+    {
+        QListWidgetItem *item = m_libraryList ? m_libraryList->currentItem() : nullptr;
+        const QString archetype = item ? item->data(Qt::UserRole).toString() : QString();
+        const QString modelPath = item ? item->data(Qt::UserRole + 1).toString() : QString();
+
+        m_addPartButton->setEnabled(item != nullptr && !archetype.trimmed().isEmpty());
+        if (archetype.isEmpty()) {
+            m_libraryPreviewLabel->setText(tr("Select an archetype to preview and add it."));
+            if (m_libraryViewport)
+                m_libraryViewport->clearModel();
+            return;
+        }
+
+        if (modelPath.isEmpty()) {
+            m_libraryPreviewLabel->setText(tr("%1\nNo 3D model could be resolved for this archetype.").arg(archetype));
+            if (m_libraryViewport)
+                m_libraryViewport->clearModel();
+            return;
+        }
+
+        QString errorMessage;
+        const bool loaded = m_libraryViewport && m_libraryViewport->loadModelFile(modelPath, &errorMessage);
+        m_libraryPreviewLabel->setText(loaded
+                                           ? tr("%1").arg(archetype)
+                                           : tr("%1\n%2").arg(archetype, errorMessage));
+    }
+
+    void rebuildPartTabs()
+    {
+        QSignalBlocker blocker(m_partTabs);
+        while (m_partTabs->count() > 0)
+            m_partTabs->removeTab(m_partTabs->count() - 1);
+        if (m_rootObject) {
+            const int rootIndex = m_partTabs->addTab(tr("Root: %1").arg(m_rootObject->nickname()));
+            m_partTabs->setTabData(rootIndex, m_rootObject->nickname());
+        }
+        for (const auto &child : m_childObjects) {
+            if (!child)
+                continue;
+            const int index = m_partTabs->addTab(child->nickname());
+            m_partTabs->setTabData(index, child->nickname());
+        }
+
+        for (int index = 0; index < m_partTabs->count(); ++index) {
+            if (m_partTabs->tabData(index).toString().compare(m_selectedNickname, Qt::CaseInsensitive) == 0) {
+                m_partTabs->setCurrentIndex(index);
+                return;
+            }
+        }
+
+        if (m_partTabs->count() > 0)
+            m_partTabs->setCurrentIndex(0);
+    }
+
+    void refreshUi()
+    {
+        rebuildPartTabs();
+
+        const bool childSelected = selectedChildObject() != nullptr;
+        const bool dirty = hasChanges();
+        const QString selectedName = m_selectedNickname.trimmed().isEmpty() ? tr("none") : m_selectedNickname;
+        m_selectionLabel->setText(childSelected
+                                      ? tr("Selected child: %1").arg(selectedName)
+                                      : tr("Selected root: %1").arg(selectedName));
+        m_transformHintLabel->clear();
+        m_transformHintLabel->hide();
+
+        for (QPushButton *button : std::as_const(m_moveButtons))
+            button->setEnabled(childSelected);
+        for (QPushButton *button : std::as_const(m_rotateButtons))
+            button->setEnabled(childSelected);
+        for (QPushButton *button : std::as_const(m_moveAxisButtons))
+            button->setEnabled(childSelected);
+        for (QPushButton *button : std::as_const(m_rotateAxisButtons))
+            button->setEnabled(childSelected);
+
+        if (!childSelected && m_axisDragKind != AxisTransformKind::None)
+            clearAxisDrag(false);
+
+        if (m_deletePartButton)
+            m_deletePartButton->setEnabled(childSelected);
+        if (m_undoButton)
+            m_undoButton->setEnabled(m_historyIndex > 0);
+        if (m_saveButton)
+            m_saveButton->setEnabled(dirty);
+
+        rebuildAssemblyPreview();
+        updateAxisDragUi();
+    }
+
+    QString axisName(int axis) const
+    {
+        if (axis == 0)
+            return QStringLiteral("X");
+        if (axis == 1)
+            return QStringLiteral("Y");
+        return QStringLiteral("Z");
+    }
+
+    void updateAxisDragOverlayGeometry()
+    {
+        if (!m_axisDragOverlay || !m_assemblyViewport)
+            return;
+        const QPoint topLeft = m_assemblyViewport->mapTo(this, QPoint(0, 0));
+        m_axisDragOverlay->setGeometry(QRect(topLeft, m_assemblyViewport->size()));
+        if (m_axisDragKind != AxisTransformKind::None)
+            m_axisDragOverlay->raise();
+    }
+
+    void updateAxisDragUi()
+    {
+        const auto updateButtons = [this](const QVector<QPushButton *> &buttons, AxisTransformKind kind) {
+            for (int axis = 0; axis < buttons.size(); ++axis) {
+                QPushButton *button = buttons[axis];
+                if (!button)
+                    continue;
+                const bool active = m_axisDragKind == kind && m_axisDragAxis == axis;
+                QSignalBlocker blocker(button);
+                button->setChecked(active);
+                button->setProperty("activeAxisDrag", active);
+                button->setStyleSheet(active ? QStringLiteral("font-weight: 700; background: #2f7fb8; color: white;") : QString());
+            }
+        };
+
+        updateButtons(m_moveAxisButtons, AxisTransformKind::Move);
+        updateButtons(m_rotateAxisButtons, AxisTransformKind::Rotate);
+
+        if (m_axisDragOverlay) {
+            updateAxisDragOverlayGeometry();
+            m_axisDragOverlay->setVisible(m_axisDragKind != AxisTransformKind::None);
+            if (m_axisDragKind != AxisTransformKind::None)
+                m_axisDragOverlay->setFocus(Qt::MouseFocusReason);
+        }
+
+        if (!m_axisDragStatusLabel)
+            return;
+
+        if (m_axisDragKind == AxisTransformKind::None) {
+            m_axisDragStatusLabel->setText(tr("Click +/- or hold X/Y/Z and drag. Shift fine, Ctrl snap, Esc cancel."));
+            return;
+        }
+
+        const QString kindText = m_axisDragKind == AxisTransformKind::Move ? tr("Move") : tr("Rotate");
+        QString status = tr("%1 %2 active. Drag now. Shift fine, Ctrl snap, Esc cancel.")
+                             .arg(kindText, axisName(m_axisDragAxis));
+        if (m_axisDragging) {
+            status = tr("%1 %2: %3. Release commits, Esc cancels.")
+                         .arg(kindText, axisName(m_axisDragAxis), m_axisDragValueText);
+        }
+        m_axisDragStatusLabel->setText(status);
+    }
+
+    void armAxisDrag(AxisTransformKind kind, int axis)
+    {
+        if (!selectedChildObject() || axis < 0 || axis > 2) {
+            clearAxisDrag(false);
+            return;
+        }
+
+        if (m_axisDragging)
+            commitAxisDrag();
+
+        m_axisDragKind = kind;
+        m_axisDragAxis = axis;
+        m_axisDragValueText.clear();
+        updateAxisDragUi();
+    }
+
+    void clearAxisDrag(bool cancelActiveDrag)
+    {
+        if (cancelActiveDrag && m_axisDragging)
+            cancelAxisDrag();
+
+        m_axisDragPreviewDirty = false;
+        m_axisDragging = false;
+        m_axisDragKind = AxisTransformKind::None;
+        m_axisDragAxis = -1;
+        m_axisDragValueText.clear();
+        updateAxisDragUi();
+    }
+
+    float axisDragAmountFromMouse(const QPointF &currentPosition) const
+    {
+        const QPointF delta = currentPosition - m_axisDragStartMouse;
+        const float combinedPixels = static_cast<float>(delta.y() - delta.x());
+        float amount = 0.0f;
+        if (m_axisDragKind == AxisTransformKind::Move) {
+            amount = combinedPixels * static_cast<float>(m_moveStepSpin ? m_moveStepSpin->value() / 10.0 : 1.0);
+        } else if (m_axisDragKind == AxisTransformKind::Rotate) {
+            amount = combinedPixels * static_cast<float>(m_rotateStepSpin ? m_rotateStepSpin->value() / 30.0 : 0.5);
+        }
+        return amount;
+    }
+
+    float adjustedAxisDragAmount(float amount, Qt::KeyboardModifiers modifiers) const
+    {
+        if (modifiers.testFlag(Qt::ShiftModifier))
+            amount *= 0.2f;
+
+        if (modifiers.testFlag(Qt::ControlModifier)) {
+            const double snapStep = m_axisDragKind == AxisTransformKind::Move
+                                        ? (m_moveStepSpin ? m_moveStepSpin->value() : 10.0)
+                                        : (m_rotateStepSpin ? m_rotateStepSpin->value() : 15.0);
+            if (snapStep > 0.0)
+                amount = static_cast<float>(std::round(amount / snapStep) * snapStep);
+        }
+        return amount;
+    }
+
+    void requestAxisDragPreviewRebuild()
+    {
+        m_axisDragPreviewDirty = true;
+    }
+
+    void beginAxisDrag(const QPointF &mousePosition)
+    {
+        const auto child = selectedChildObject();
+        if (!child || m_axisDragKind == AxisTransformKind::None || m_axisDragAxis < 0)
+            return;
+
+        m_axisDragging = true;
+        m_axisDragStartMouse = mousePosition;
+        m_axisDragNickname = child->nickname();
+        m_axisDragStartPosition = child->position();
+        m_axisDragStartRotation = child->rotation();
+        m_axisDragValueText = m_axisDragKind == AxisTransformKind::Move
+                                  ? tr("%1, %2, %3")
+                                        .arg(m_axisDragStartPosition.x(), 0, 'f', 1)
+                                        .arg(m_axisDragStartPosition.y(), 0, 'f', 1)
+                                        .arg(m_axisDragStartPosition.z(), 0, 'f', 1)
+                                  : tr("%1°, %2°, %3°")
+                                        .arg(m_axisDragStartRotation.x(), 0, 'f', 1)
+                                        .arg(m_axisDragStartRotation.y(), 0, 'f', 1)
+                                        .arg(m_axisDragStartRotation.z(), 0, 'f', 1);
+        updateAxisDragUi();
+    }
+
+    void updateAxisDrag(const QPointF &mousePosition, Qt::KeyboardModifiers modifiers)
+    {
+        const auto child = selectedChildObject();
+        if (!m_axisDragging || !child || child->nickname().compare(m_axisDragNickname, Qt::CaseInsensitive) != 0)
+            return;
+
+        const float amount = adjustedAxisDragAmount(axisDragAmountFromMouse(mousePosition), modifiers);
+        if (m_axisDragKind == AxisTransformKind::Move) {
+            QVector3D position = m_axisDragStartPosition;
+            if (m_axisDragAxis == 0)
+                position.setX(m_axisDragStartPosition.x() + amount);
+            else if (m_axisDragAxis == 1)
+                position.setY(m_axisDragStartPosition.y() + amount);
+            else
+                position.setZ(m_axisDragStartPosition.z() + amount);
+            child->setPosition(position);
+            m_axisDragValueText = tr("%1, %2, %3")
+                                      .arg(position.x(), 0, 'f', 1)
+                                      .arg(position.y(), 0, 'f', 1)
+                                      .arg(position.z(), 0, 'f', 1);
+        } else if (m_axisDragKind == AxisTransformKind::Rotate) {
+            QVector3D rotation = m_axisDragStartRotation;
+            if (m_axisDragAxis == 0)
+                rotation.setX(m_axisDragStartRotation.x() + amount);
+            else if (m_axisDragAxis == 1)
+                rotation.setY(m_axisDragStartRotation.y() + amount);
+            else
+                rotation.setZ(m_axisDragStartRotation.z() + amount);
+            child->setRotation(rotation);
+            m_axisDragValueText = tr("%1°, %2°, %3°")
+                                      .arg(rotation.x(), 0, 'f', 1)
+                                      .arg(rotation.y(), 0, 'f', 1)
+                                      .arg(rotation.z(), 0, 'f', 1);
+        }
+
+        requestAxisDragPreviewRebuild();
+        updateAxisDragUi();
+    }
+
+    void commitAxisDrag()
+    {
+        if (!m_axisDragging)
+            return;
+
+        const auto child = selectedChildObject();
+        const QString label = m_axisDragKind == AxisTransformKind::Move
+                                  ? tr("Move %1").arg(m_axisDragNickname)
+                                  : tr("Rotate %1").arg(m_axisDragNickname);
+        m_axisDragPreviewDirty = false;
+        m_axisDragging = false;
+        if (child && child->nickname().compare(m_axisDragNickname, Qt::CaseInsensitive) == 0) {
+            syncSerializedEntries(child.get());
+            pushHistory(label);
+        }
+        updateAxisDragUi();
+        refreshUi();
+    }
+
+    void cancelAxisDrag()
+    {
+        if (!m_axisDragging)
+            return;
+
+        const auto child = selectedChildObject();
+        if (child && child->nickname().compare(m_axisDragNickname, Qt::CaseInsensitive) == 0) {
+            child->setPosition(m_axisDragStartPosition);
+            child->setRotation(m_axisDragStartRotation);
+            syncSerializedEntries(child.get());
+        }
+        m_axisDragPreviewDirty = false;
+        m_axisDragging = false;
+        m_axisDragValueText = tr("Canceled");
+        rebuildAssemblyPreview();
+        updateAxisDragUi();
+    }
+
+    void handleAxisOverlayMousePress(QMouseEvent *event)
+    {
+        if (!event || m_axisDragKind == AxisTransformKind::None || event->button() != Qt::LeftButton) {
+            if (event)
+                event->ignore();
+            return;
+        }
+        beginAxisDrag(event->position());
+        event->accept();
+    }
+
+    void handleAxisOverlayMouseMove(QMouseEvent *event)
+    {
+        if (!event || !m_axisDragging) {
+            if (event)
+                event->ignore();
+            return;
+        }
+        updateAxisDrag(event->position(), event->modifiers());
+        event->accept();
+    }
+
+    void handleAxisOverlayMouseRelease(QMouseEvent *event)
+    {
+        if (!event || event->button() != Qt::LeftButton || !m_axisDragging) {
+            if (event)
+                event->ignore();
+            return;
+        }
+        commitAxisDrag();
+        event->accept();
+    }
+
+    void handleAxisOverlayKeyPress(QKeyEvent *event)
+    {
+        if (!event)
+            return;
+        if (event->key() == Qt::Key_Escape) {
+            if (m_axisDragging)
+                cancelAxisDrag();
+            clearAxisDrag(false);
+            event->accept();
+            return;
+        }
+        event->ignore();
+    }
+
+    void rebuildAssemblyPreview()
+    {
+        if (!m_assemblyViewport || !m_rootObject)
+            return;
+
+        flatlas::infrastructure::ModelNode sceneRoot;
+        sceneRoot.name = m_rootObject->nickname();
+        const QVector3D rootPosition = m_rootObject->position();
+        int renderableCount = 0;
+
+        const auto appendObjectNode = [this, &sceneRoot, &rootPosition, &renderableCount](const std::shared_ptr<SolarObject> &object) {
+            if (!object)
+                return;
+
+            const QString modelPath = m_modelPaths.value(normalizedPathKey(object->archetype()));
+            if (modelPath.isEmpty())
+                return;
+
+            const auto decoded = flatlas::rendering::ModelCache::instance().load(modelPath);
+            if (!decoded.isValid())
+                return;
+
+            flatlas::infrastructure::ModelNode wrapper;
+            wrapper.name = object->nickname();
+            wrapper.origin = object->position() - rootPosition;
+            wrapper.rotation = quaternionFromFreelancerRotation(object->rotation());
+            wrapper.children.append(decoded.rootNode);
+            sceneRoot.children.append(wrapper);
+            ++renderableCount;
+        };
+
+        appendObjectNode(m_rootObject);
+        for (const auto &child : m_childObjects)
+            appendObjectNode(child);
+
+        if (renderableCount <= 0) {
+            m_assemblyViewport->clearModel();
+            return;
+        }
+
+        const flatlas::rendering::OrbitCameraState previousCamera = m_assemblyViewport->cameraState();
+        QString errorMessage;
+        if (m_assemblyViewport->loadModelNode(sceneRoot, &errorMessage) && previousCamera.valid)
+            m_assemblyViewport->setCameraState(previousCamera);
+    }
+
+    void setSelectedNickname(const QString &nickname)
+    {
+        m_selectedNickname = nickname.trimmed();
+        refreshUi();
+    }
+
+    std::shared_ptr<SolarObject> selectedChildObject() const
+    {
+        const QString target = m_selectedNickname.trimmed();
+        if (target.isEmpty())
+            return {};
+        for (const auto &child : m_childObjects) {
+            if (child && child->nickname().compare(target, Qt::CaseInsensitive) == 0)
+                return child;
+        }
+        return {};
+    }
+
+    void syncSerializedEntries(SolarObject *object)
+    {
+        if (!object)
+            return;
+        object->setRawEntries(SystemPersistence::serializeObjectSection(*object).entries);
+    }
+
+    void addSelectedLibraryPart()
+    {
+        QListWidgetItem *item = m_libraryList ? m_libraryList->currentItem() : nullptr;
+        if (!item || !m_rootObject)
+            return;
+
+        const QString archetype = item->data(Qt::UserRole).toString().trimmed();
+        if (archetype.isEmpty())
+            return;
+
+        QStringList usedNicknames = m_reservedNicknames;
+        if (m_rootObject)
+            usedNicknames.append(m_rootObject->nickname());
+        for (const auto &child : m_childObjects) {
+            if (child)
+                usedNicknames.append(child->nickname());
+        }
+
+        const QString nickname = suggestBaseBuilderPartNickname(m_rootObject->nickname(), usedNicknames);
+        flatlas::infrastructure::IniSection section;
+        section.name = QStringLiteral("Object");
+        section.entries = buildBaseBuilderPartEntries(m_rootObject->nickname(),
+                                                     nickname,
+                                                     archetype,
+                                                     m_rootObject->position(),
+                                                     QVector3D(),
+                                                     rawEntryValue(m_rootObject->rawEntries(), QStringLiteral("reputation")));
+
+        auto child = std::make_shared<SolarObject>();
+        SystemPersistence::applyObjectSection(*child, section);
+        m_childObjects.append(child);
+        m_selectedNickname = child->nickname();
+        pushHistory(tr("Add %1").arg(child->nickname()));
+        refreshUi();
+    }
+
+    void deleteSelectedChild()
+    {
+        const auto child = selectedChildObject();
+        if (!child)
+            return;
+
+        for (int index = 0; index < m_childObjects.size(); ++index) {
+            if (m_childObjects[index] == child) {
+                const QString deletedNickname = child->nickname();
+                m_childObjects.removeAt(index);
+                m_selectedNickname = m_rootObject ? m_rootObject->nickname() : QString();
+                pushHistory(tr("Delete %1").arg(deletedNickname));
+                refreshUi();
+                return;
+            }
+        }
+    }
+
+    void applyMoveDelta(int axis, double delta)
+    {
+        const auto child = selectedChildObject();
+        if (!child)
+            return;
+
+        QVector3D position = child->position();
+        if (axis == 0)
+            position.setX(position.x() + static_cast<float>(delta));
+        else if (axis == 1)
+            position.setY(position.y() + static_cast<float>(delta));
+        else
+            position.setZ(position.z() + static_cast<float>(delta));
+
+        child->setPosition(position);
+        syncSerializedEntries(child.get());
+        pushHistory(tr("Move %1").arg(child->nickname()));
+        refreshUi();
+    }
+
+    void applyRotationDelta(int axis, double delta)
+    {
+        const auto child = selectedChildObject();
+        if (!child)
+            return;
+
+        QVector3D rotation = child->rotation();
+        if (axis == 0)
+            rotation.setX(rotation.x() + static_cast<float>(delta));
+        else if (axis == 1)
+            rotation.setY(rotation.y() + static_cast<float>(delta));
+        else
+            rotation.setZ(rotation.z() + static_cast<float>(delta));
+
+        child->setRotation(rotation);
+        syncSerializedEntries(child.get());
+        pushHistory(tr("Rotate %1").arg(child->nickname()));
+        refreshUi();
+    }
+
+    BaseBuilderSnapshot captureSnapshot(const QString &label) const
+    {
+        BaseBuilderSnapshot snapshot;
+        snapshot.label = label;
+        snapshot.selectedNickname = m_selectedNickname;
+        snapshot.rootObject = cloneSolarObject(m_rootObject);
+        for (const auto &child : m_childObjects)
+            snapshot.childObjects.append(cloneSolarObject(child));
+        return snapshot;
+    }
+
+    void restoreSnapshot(const BaseBuilderSnapshot &snapshot)
+    {
+        m_rootObject = cloneSolarObject(snapshot.rootObject);
+        m_childObjects.clear();
+        for (const auto &child : snapshot.childObjects)
+            m_childObjects.append(cloneSolarObject(child));
+        m_selectedNickname = snapshot.selectedNickname;
+        if (m_selectedNickname.trimmed().isEmpty() && m_rootObject)
+            m_selectedNickname = m_rootObject->nickname();
+    }
+
+    void resetHistory()
+    {
+        m_history.clear();
+        m_history.append(captureSnapshot(tr("Initial state")));
+        m_historyIndex = 0;
+        m_savedHistoryIndex = 0;
+    }
+
+    void pushHistory(const QString &label)
+    {
+        BaseBuilderSnapshot snapshot = captureSnapshot(label);
+        if (m_historyIndex >= 0 && m_historyIndex < m_history.size()) {
+            const BaseBuilderSnapshot &current = m_history[m_historyIndex];
+            if (current.selectedNickname == snapshot.selectedNickname
+                && IniParser::serialize({SystemPersistence::serializeObjectSection(*snapshot.rootObject)}).trimmed()
+                       == IniParser::serialize({SystemPersistence::serializeObjectSection(*current.rootObject)}).trimmed()
+                && snapshot.childObjects.size() == current.childObjects.size()) {
+                bool childrenEqual = true;
+                for (int index = 0; index < snapshot.childObjects.size(); ++index) {
+                    IniDocument left;
+                    left.append(SystemPersistence::serializeObjectSection(*snapshot.childObjects[index]));
+                    IniDocument right;
+                    right.append(SystemPersistence::serializeObjectSection(*current.childObjects[index]));
+                    if (IniParser::serialize(left).trimmed() != IniParser::serialize(right).trimmed()) {
+                        childrenEqual = false;
+                        break;
+                    }
+                }
+                if (childrenEqual)
+                    return;
+            }
+        }
+
+        const int nextIndex = m_historyIndex + 1;
+        if (nextIndex < m_history.size()) {
+            m_history.resize(nextIndex);
+            if (m_savedHistoryIndex >= nextIndex)
+                m_savedHistoryIndex = nextIndex - 1;
+        }
+        m_history.append(snapshot);
+        m_historyIndex = m_history.size() - 1;
+    }
+
+    void undoLastChange()
+    {
+        if (m_historyIndex <= 0)
+            return;
+        --m_historyIndex;
+        restoreSnapshot(m_history[m_historyIndex]);
+        refreshUi();
+    }
+
+    std::shared_ptr<SolarObject> m_rootObject;
+    QVector<std::shared_ptr<SolarObject>> m_childObjects;
+    QHash<QString, QString> m_modelPaths;
+    QStringList m_libraryArchetypes;
+    QStringList m_reservedNicknames;
+    QString m_selectedNickname;
+    QVector<BaseBuilderSnapshot> m_history;
+    int m_historyIndex = -1;
+    int m_savedHistoryIndex = -1;
+
+    QLabel *m_selectionLabel = nullptr;
+    QLabel *m_transformHintLabel = nullptr;
+    QLabel *m_axisDragStatusLabel = nullptr;
+    ModelViewport3D *m_assemblyViewport = nullptr;
+    AxisDragOverlay *m_axisDragOverlay = nullptr;
+    QTabBar *m_partTabs = nullptr;
+    QLineEdit *m_libraryFilterEdit = nullptr;
+    QListWidget *m_libraryList = nullptr;
+    QLabel *m_libraryPreviewLabel = nullptr;
+    ModelViewport3D *m_libraryViewport = nullptr;
+    QDoubleSpinBox *m_moveStepSpin = nullptr;
+    QDoubleSpinBox *m_rotateStepSpin = nullptr;
+    QPushButton *m_addPartButton = nullptr;
+    QPushButton *m_deletePartButton = nullptr;
+    QPushButton *m_undoButton = nullptr;
+    QPushButton *m_saveButton = nullptr;
+    QVector<QPushButton *> m_moveButtons;
+    QVector<QPushButton *> m_rotateButtons;
+    QVector<QPushButton *> m_moveAxisButtons;
+    QVector<QPushButton *> m_rotateAxisButtons;
+    AxisTransformKind m_axisDragKind = AxisTransformKind::None;
+    int m_axisDragAxis = -1;
+    bool m_axisDragging = false;
+    bool m_axisDragPreviewDirty = false;
+    QString m_axisDragNickname;
+    QPointF m_axisDragStartMouse;
+    QVector3D m_axisDragStartPosition;
+    QVector3D m_axisDragStartRotation;
+    QString m_axisDragValueText;
+};
+
 }
 
 SystemEditorPage::SystemEditorPage(QWidget *parent)
@@ -819,6 +2526,10 @@ SystemEditorPage::SystemEditorPage(QWidget *parent)
 {
     setupUi();
     applyThemeStyling();
+    m_dockingRingPreviewTimer = new QTimer(this);
+    m_dockingRingPreviewTimer->setInterval(50);
+    connect(m_dockingRingPreviewTimer, &QTimer::timeout, this, &SystemEditorPage::refreshDockingRingPlacementAnimation);
+    qApp->installEventFilter(this);
     connect(&flatlas::core::Theme::instance(), &flatlas::core::Theme::themeChanged,
             this, [this](const QString &) { applyThemeStyling(); });
 }
@@ -826,6 +2537,16 @@ SystemEditorPage::SystemEditorPage(QWidget *parent)
 SystemEditorPage::~SystemEditorPage()
 {
     m_isShuttingDown = true;
+    cancelDockingRingPlacement();
+    qApp->removeEventFilter(this);
+    if (m_sceneView3D)
+        m_sceneView3D->loadDocument(nullptr);
+    if (m_mapView)
+        m_mapView->setMapScene(nullptr);
+    if (m_mapScene)
+        m_mapScene->clear();
+    if (m_mapView)
+        m_mapView->setMoveGroupResolver({});
     if (m_mapScene)
         disconnect(m_mapScene, nullptr, this, nullptr);
     if (m_mapView)
@@ -875,9 +2596,12 @@ void SystemEditorPage::setupUi()
     objectListLayout->addWidget(m_objectSearchHintLabel);
 
     m_objectTree = new QTreeWidget(objectListHost);
-    m_objectTree->setHeaderLabels({tr("Nickname"), tr("Type")});
+    m_objectTree->setHeaderLabels({tr("Nickname"), tr("Ingame Name")});
     m_objectTree->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_objectTree->setMinimumWidth(200);
+    m_objectTree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_objectTree->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+    m_objectTree->header()->setStretchLastSection(true);
     objectListLayout->addWidget(m_objectTree, 1);
     m_leftSidebarSplitter->addWidget(objectListHost);
 
@@ -915,6 +2639,13 @@ void SystemEditorPage::setupUi()
     m_iniEditor->setLineWrapMode(QPlainTextEdit::NoWrap);
     m_iniEditor->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     iniEditorLayout->addWidget(m_iniEditor, 1);
+
+    auto *rotationRow = new QHBoxLayout();
+    m_rotateLeftButton = new QPushButton(tr("Yaw -15°"), iniEditorHost);
+    m_rotateRightButton = new QPushButton(tr("Yaw +15°"), iniEditorHost);
+    rotationRow->addWidget(m_rotateLeftButton);
+    rotationRow->addWidget(m_rotateRightButton);
+    iniEditorLayout->addLayout(rotationRow);
 
     m_applyIniButton = new QPushButton(tr("Übernehmen"), iniEditorHost);
     iniEditorLayout->addWidget(m_applyIniButton);
@@ -956,7 +2687,11 @@ void SystemEditorPage::setupUi()
     // Map view (center)
     m_mapScene = new MapScene(this);
     m_mapView = new SystemMapView(this);
+    m_mapView->setFocusPolicy(Qt::StrongFocus);
     m_mapView->setMapScene(m_mapScene);
+    m_mapView->setMoveGroupResolver([this](const QString &nickname) {
+        return expandSelectionNicknamesForScene({nickname});
+    });
     m_mapView->setBackgroundPixmap(QPixmap(flatlas::core::Theme::instance().wallpaperResourcePath()),
                                    palette().color(QPalette::Base));
     loadDisplayFilterSettings();
@@ -973,6 +2708,7 @@ void SystemEditorPage::setupUi()
 
     mainLayout->addWidget(m_splitter);
 
+    setupShortcutActions();
     connectSignals();
     updateSelectionSummary();
     updateSidebarButtons();
@@ -986,15 +2722,33 @@ void SystemEditorPage::setupToolBar()
     auto *displayFiltersAction = m_toolBar->addAction(tr("Display Filters"));
     connect(displayFiltersAction, &QAction::triggered, this, &SystemEditorPage::openDisplayFilterDialog);
 
-    auto *moveAction = m_toolBar->addAction(tr("MOVE"));
-    moveAction->setCheckable(true);
-    moveAction->setChecked(false);
-    connect(moveAction, &QAction::toggled, this, [this](bool enabled) {
-        if (m_mapScene)
-            m_mapScene->setMoveEnabled(enabled);
-    });
+    auto *toolGroup = new QActionGroup(this);
+    toolGroup->setExclusive(true);
+
+    m_selectToolAction = m_toolBar->addAction(tr("SELECT"));
+    m_selectToolAction->setCheckable(true);
+    toolGroup->addAction(m_selectToolAction);
+    connect(m_selectToolAction, &QAction::triggered, this, [this]() { setCurrentEditorTool(EditorTool::Selection); });
+
+    m_moveToolAction = m_toolBar->addAction(tr("MOVE"));
+    m_moveToolAction->setCheckable(true);
+    toolGroup->addAction(m_moveToolAction);
+    connect(m_moveToolAction, &QAction::triggered, this, [this]() { setCurrentEditorTool(EditorTool::Move); });
+
+    m_rotateToolAction = m_toolBar->addAction(tr("ROTATE"));
+    m_rotateToolAction->setCheckable(true);
+    toolGroup->addAction(m_rotateToolAction);
+    connect(m_rotateToolAction, &QAction::triggered, this, [this]() { setCurrentEditorTool(EditorTool::Rotate); });
+
+    m_scaleToolAction = m_toolBar->addAction(tr("SCALE"));
+    m_scaleToolAction->setCheckable(true);
+    toolGroup->addAction(m_scaleToolAction);
+    connect(m_scaleToolAction, &QAction::triggered, this, [this]() { setCurrentEditorTool(EditorTool::Scale); });
 
     m_toolBar->addSeparator();
+
+    m_focusSelectionAction = m_toolBar->addAction(tr("Focus"));
+    connect(m_focusSelectionAction, &QAction::triggered, this, &SystemEditorPage::focusCurrentSelectionInView);
 
     auto *zoomFitAction = m_toolBar->addAction(tr("Zoom Fit"));
     connect(zoomFitAction, &QAction::triggered, this, [this]() {
@@ -1002,21 +2756,204 @@ void SystemEditorPage::setupToolBar()
             m_mapView->zoomToFit();
     });
 
-    auto *gridAction = m_toolBar->addAction(tr("Grid"));
-    gridAction->setCheckable(true);
-    gridAction->setChecked(true);
-    connect(gridAction, &QAction::toggled, this, [this](bool checked) {
+    m_toggleGridAction = m_toolBar->addAction(tr("Grid"));
+    m_toggleGridAction->setCheckable(true);
+    m_toggleGridAction->setChecked(true);
+    connect(m_toggleGridAction, &QAction::toggled, this, [this](bool checked) {
         if (m_mapScene)
             m_mapScene->setGridVisible(checked);
     });
+
+    setCurrentEditorTool(EditorTool::Selection);
+}
+
+void SystemEditorPage::setupShortcutActions()
+{
+    auto registerAction = [this](QAction *action, const QList<QKeySequence> &shortcuts) {
+        if (!action)
+            return;
+        action->setShortcuts(shortcuts);
+        action->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+        addAction(action);
+    };
+
+    auto registerShortcutProxy = [this, &registerAction](const QList<QKeySequence> &shortcuts,
+                                                         const std::function<void()> &handler) {
+        auto *action = new QAction(this);
+        connect(action, &QAction::triggered, this, [handler]() { handler(); });
+        registerAction(action, shortcuts);
+    };
+
+    registerShortcutProxy({QKeySequence(Qt::Key_Q), QKeySequence(Qt::Key_V)}, [this]() {
+        if (canTriggerEditorShortcut(true) && m_selectToolAction)
+            m_selectToolAction->trigger();
+    });
+    registerShortcutProxy({QKeySequence(Qt::Key_W)}, [this]() {
+        if (canTriggerEditorShortcut(true) && m_moveToolAction)
+            m_moveToolAction->trigger();
+    });
+    registerShortcutProxy({QKeySequence(Qt::Key_E)}, [this]() {
+        if (canTriggerEditorShortcut(true) && m_rotateToolAction)
+            m_rotateToolAction->trigger();
+    });
+    registerShortcutProxy({QKeySequence(Qt::Key_R)}, [this]() {
+        if (canTriggerEditorShortcut(true) && m_scaleToolAction)
+            m_scaleToolAction->trigger();
+    });
+    registerShortcutProxy({QKeySequence(Qt::Key_G)}, [this]() {
+        if (canTriggerEditorShortcut(true) && m_toggleGridAction)
+            m_toggleGridAction->trigger();
+    });
+    registerShortcutProxy({QKeySequence(Qt::Key_F)}, [this]() {
+        if (canTriggerEditorShortcut(true) && m_focusSelectionAction)
+            m_focusSelectionAction->trigger();
+    });
+
+    m_deleteSelectionAction = new QAction(this);
+    connect(m_deleteSelectionAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut())
+            onDeleteSelected();
+    });
+    registerAction(m_deleteSelectionAction, {QKeySequence(Qt::Key_Delete)});
+
+    m_duplicateSelectionAction = new QAction(this);
+    connect(m_duplicateSelectionAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut())
+            onDuplicateSelected();
+    });
+    registerAction(m_duplicateSelectionAction, {QKeySequence(Qt::CTRL | Qt::Key_D)});
+
+    m_copySelectionAction = new QAction(this);
+    connect(m_copySelectionAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut())
+            copySelectedToClipboard();
+    });
+    registerAction(m_copySelectionAction, {QKeySequence::Copy});
+
+    m_pasteSelectionAction = new QAction(this);
+    connect(m_pasteSelectionAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut())
+            pasteClipboardSelection();
+    });
+    registerAction(m_pasteSelectionAction, {QKeySequence::Paste});
+
+    m_undoAction = new QAction(this);
+    connect(m_undoAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut())
+            flatlas::core::UndoManager::instance().undo();
+    });
+    registerAction(m_undoAction, {QKeySequence::Undo});
+
+    m_redoAction = new QAction(this);
+    connect(m_redoAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut())
+            flatlas::core::UndoManager::instance().redo();
+    });
+    registerAction(m_redoAction, {QKeySequence::Redo,
+                                  QKeySequence(Qt::CTRL | Qt::Key_Y),
+                                  QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z)});
+
+    m_selectAllAction = new QAction(this);
+    connect(m_selectAllAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut())
+            selectAllEligibleEntries();
+    });
+    registerAction(m_selectAllAction, {QKeySequence::SelectAll});
+
+    m_saveAction = new QAction(this);
+    connect(m_saveAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut())
+            save();
+    });
+    registerAction(m_saveAction, {QKeySequence::Save});
+
+    m_cancelAction = new QAction(this);
+    connect(m_cancelAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            cancelCurrentEditorInteraction();
+    });
+    registerAction(m_cancelAction, {QKeySequence(Qt::Key_Escape)});
+
+    m_moveLeftAction = new QAction(this);
+    connect(m_moveLeftAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            moveSelectedEntries(QVector3D(-100.0f, 0.0f, 0.0f), tr("Nudge Selection"));
+    });
+    registerAction(m_moveLeftAction, {QKeySequence(Qt::Key_Left)});
+
+    m_moveRightAction = new QAction(this);
+    connect(m_moveRightAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            moveSelectedEntries(QVector3D(100.0f, 0.0f, 0.0f), tr("Nudge Selection"));
+    });
+    registerAction(m_moveRightAction, {QKeySequence(Qt::Key_Right)});
+
+    m_moveUpAction = new QAction(this);
+    connect(m_moveUpAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            moveSelectedEntries(QVector3D(0.0f, 0.0f, -100.0f), tr("Nudge Selection"));
+    });
+    registerAction(m_moveUpAction, {QKeySequence(Qt::Key_Up)});
+
+    m_moveDownAction = new QAction(this);
+    connect(m_moveDownAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            moveSelectedEntries(QVector3D(0.0f, 0.0f, 100.0f), tr("Nudge Selection"));
+    });
+    registerAction(m_moveDownAction, {QKeySequence(Qt::Key_Down)});
+
+    m_moveLeftLargeAction = new QAction(this);
+    connect(m_moveLeftLargeAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            moveSelectedEntries(QVector3D(-1000.0f, 0.0f, 0.0f), tr("Move Selection"));
+    });
+    registerAction(m_moveLeftLargeAction, {QKeySequence(Qt::SHIFT | Qt::Key_Left)});
+
+    m_moveRightLargeAction = new QAction(this);
+    connect(m_moveRightLargeAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            moveSelectedEntries(QVector3D(1000.0f, 0.0f, 0.0f), tr("Move Selection"));
+    });
+    registerAction(m_moveRightLargeAction, {QKeySequence(Qt::SHIFT | Qt::Key_Right)});
+
+    m_moveUpLargeAction = new QAction(this);
+    connect(m_moveUpLargeAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            moveSelectedEntries(QVector3D(0.0f, 0.0f, -1000.0f), tr("Move Selection"));
+    });
+    registerAction(m_moveUpLargeAction, {QKeySequence(Qt::SHIFT | Qt::Key_Up)});
+
+    m_moveDownLargeAction = new QAction(this);
+    connect(m_moveDownLargeAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            moveSelectedEntries(QVector3D(0.0f, 0.0f, 1000.0f), tr("Move Selection"));
+    });
+    registerAction(m_moveDownLargeAction, {QKeySequence(Qt::SHIFT | Qt::Key_Down)});
+
+    m_rotateLeftAction = new QAction(this);
+    connect(m_rotateLeftAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            rotateSelectedEntriesYaw(-15.0f, tr("Rotate Selection"));
+    });
+    registerAction(m_rotateLeftAction, {QKeySequence(Qt::Key_Z)});
+
+    m_rotateRightAction = new QAction(this);
+    connect(m_rotateRightAction, &QAction::triggered, this, [this]() {
+        if (canTriggerEditorShortcut(true))
+            rotateSelectedEntriesYaw(15.0f, tr("Rotate Selection"));
+    });
+    registerAction(m_rotateRightAction, {QKeySequence(Qt::Key_X)});
 }
 
 void SystemEditorPage::connectSignals()
 {
     connect(m_mapScene, &MapScene::selectionNicknamesChanged, this, &SystemEditorPage::onCanvasSelectionChanged);
     connect(m_applyIniButton, &QPushButton::clicked, this, &SystemEditorPage::applyIniEditorChanges);
+    connect(m_rotateLeftButton, &QPushButton::clicked, this, [this]() { rotateSelectedObjectYaw(-15.0f); });
+    connect(m_rotateRightButton, &QPushButton::clicked, this, [this]() { rotateSelectedObjectYaw(15.0f); });
     connect(m_openSystemIniButton, &QPushButton::clicked, this, &SystemEditorPage::openSystemIniExternally);
     connect(m_preview3DButton, &QPushButton::clicked, this, &SystemEditorPage::open3DPreviewForSelection);
+    connect(m_mapView, &SystemMapView::contextMenuRequested, this, &SystemEditorPage::showMapContextMenu);
     connect(m_mapView, &SystemMapView::itemsMoved, this, &SystemEditorPage::onItemsMoved);
     connect(m_mapView, &SystemMapView::itemsMoveStarted, this, &SystemEditorPage::onItemsMoveStarted);
     connect(m_mapView, &SystemMapView::itemsMoving, this, &SystemEditorPage::onItemsMoving);
@@ -1027,7 +2964,415 @@ void SystemEditorPage::connectSignals()
             this, &SystemEditorPage::onTreeSelectionChanged);
     connect(m_objectSearchEdit, &QLineEdit::textChanged,
             this, [this]() { applyObjectListSearchFilter(); });
+        connect(m_iniEditor, &QPlainTextEdit::textChanged,
+            this, [this]() { updateSidebarButtons(); });
 }
+
+    bool SystemEditorPage::isEditableShortcutTarget(QWidget *widget) const
+    {
+        if (!widget)
+            return false;
+        if (qobject_cast<QLineEdit *>(widget))
+            return true;
+        if (qobject_cast<QAbstractSpinBox *>(widget))
+            return true;
+        if (qobject_cast<QPlainTextEdit *>(widget))
+            return true;
+        if (qobject_cast<QTextEdit *>(widget))
+            return true;
+        if (auto *comboBox = qobject_cast<QComboBox *>(widget))
+            return comboBox->isEditable();
+        return false;
+    }
+
+    bool SystemEditorPage::isMapCanvasFocusWidget(QWidget *widget) const
+    {
+        return widget && m_mapView && (widget == m_mapView || m_mapView->isAncestorOf(widget));
+    }
+
+    bool SystemEditorPage::canTriggerEditorShortcut(bool requiresCanvasFocus) const
+    {
+        if (!isVisible() || !window() || !window()->isActiveWindow())
+            return false;
+
+        QWidget *focusWidget = QApplication::focusWidget();
+        if (!focusWidget || (focusWidget != this && !isAncestorOf(focusWidget)))
+            return false;
+        if (isEditableShortcutTarget(focusWidget))
+            return false;
+        if (requiresCanvasFocus && !isMapCanvasFocusWidget(focusWidget))
+            return false;
+        return true;
+    }
+
+    bool SystemEditorPage::shouldConsumeShortcutOverride(QKeyEvent *event) const
+    {
+        if (!event)
+            return false;
+
+        QWidget *focusWidget = QApplication::focusWidget();
+        if (!focusWidget || (focusWidget != this && !isAncestorOf(focusWidget)))
+            return false;
+        if (!isEditableShortcutTarget(focusWidget))
+            return false;
+
+        const Qt::KeyboardModifiers mods = event->modifiers();
+        const int key = event->key();
+        if (mods == Qt::NoModifier) {
+            switch (key) {
+            case Qt::Key_Q:
+            case Qt::Key_V:
+            case Qt::Key_W:
+            case Qt::Key_E:
+            case Qt::Key_R:
+            case Qt::Key_G:
+            case Qt::Key_F:
+            case Qt::Key_Escape:
+            case Qt::Key_Delete:
+            case Qt::Key_Left:
+            case Qt::Key_Right:
+            case Qt::Key_Up:
+            case Qt::Key_Down:
+            case Qt::Key_Z:
+            case Qt::Key_X:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        if (mods == Qt::ShiftModifier) {
+            switch (key) {
+            case Qt::Key_Left:
+            case Qt::Key_Right:
+            case Qt::Key_Up:
+            case Qt::Key_Down:
+            case Qt::Key_Z:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        if (mods == Qt::ControlModifier) {
+            switch (key) {
+            case Qt::Key_A:
+            case Qt::Key_C:
+            case Qt::Key_D:
+            case Qt::Key_S:
+            case Qt::Key_V:
+            case Qt::Key_Y:
+            case Qt::Key_Z:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        if (mods == (Qt::ControlModifier | Qt::ShiftModifier))
+            return key == Qt::Key_Z;
+
+        return false;
+    }
+
+    void SystemEditorPage::setCurrentEditorTool(EditorTool tool)
+    {
+        m_currentEditorTool = tool;
+        if (m_selectToolAction)
+            m_selectToolAction->setChecked(tool == EditorTool::Selection);
+        if (m_moveToolAction)
+            m_moveToolAction->setChecked(tool == EditorTool::Move);
+        if (m_rotateToolAction)
+            m_rotateToolAction->setChecked(tool == EditorTool::Rotate);
+        if (m_scaleToolAction)
+            m_scaleToolAction->setChecked(tool == EditorTool::Scale);
+        if (m_mapScene)
+            m_mapScene->setMoveEnabled(tool == EditorTool::Move);
+    }
+
+    QString SystemEditorPage::uniqueNicknameForCopy(const QString &baseNickname) const
+    {
+        const QString trimmed = baseNickname.trimmed();
+        QString candidate = trimmed.endsWith(QStringLiteral("_copy"), Qt::CaseInsensitive)
+            ? trimmed
+            : trimmed + QStringLiteral("_copy");
+        if (!findObjectByNickname(candidate) && !findZoneByNickname(candidate)
+            && findLightSourceSectionIndexByNickname(candidate) < 0) {
+            return candidate;
+        }
+
+        for (int index = 1; index < 10000; ++index) {
+            const QString numbered = QStringLiteral("%1_%2").arg(candidate).arg(index, 3, 10, QLatin1Char('0'));
+            if (!findObjectByNickname(numbered) && !findZoneByNickname(numbered)
+                && findLightSourceSectionIndexByNickname(numbered) < 0) {
+                return numbered;
+            }
+        }
+        return candidate + QStringLiteral("_new");
+    }
+
+    void SystemEditorPage::focusCurrentSelectionInView()
+    {
+        if (!m_mapView)
+            return;
+        if (m_selectedNicknames.isEmpty()) {
+            m_mapView->zoomToFit();
+        } else {
+            m_mapView->focusSelection();
+        }
+        m_mapView->setFocus();
+    }
+
+    void SystemEditorPage::selectAllEligibleEntries()
+    {
+        if (!m_document || !m_objectTree)
+            return;
+
+        QStringList nicknames;
+        for (int i = 0; i < m_objectTree->topLevelItemCount(); ++i) {
+            QTreeWidgetItem *root = m_objectTree->topLevelItem(i);
+            if (!root)
+                continue;
+            for (int childIndex = 0; childIndex < root->childCount(); ++childIndex) {
+                QTreeWidgetItem *child = root->child(childIndex);
+                if (!child || child->isHidden())
+                    continue;
+                nicknames.append(child->text(0));
+            }
+        }
+        nicknames = normalizeSelectionNicknames(nicknames);
+        if (nicknames.isEmpty())
+            return;
+
+        m_selectedNicknames = nicknames;
+        syncTreeSelectionFromNicknames(m_selectedNicknames);
+        syncSceneSelectionFromNicknames(m_selectedNicknames);
+        updateSelectionSummary();
+        updateIniEditorForSelection();
+        updateSidebarButtons();
+    }
+
+    bool SystemEditorPage::cancelCurrentEditorInteraction()
+    {
+        if (m_pendingFieldZoneRequest) {
+            cancelFieldZonePlacement();
+            return true;
+        }
+        if (m_pendingExclusionZoneRequest) {
+            cancelExclusionZonePlacement();
+            return true;
+        }
+        if (m_pendingSimpleZoneRequest) {
+            cancelSimpleZonePlacement();
+            return true;
+        }
+        if (m_pendingPatrolZoneRequest) {
+            cancelPatrolZonePlacement();
+            return true;
+        }
+        if (m_pendingBuoyRequest) {
+            cancelBuoyPlacement();
+            return true;
+        }
+        if (m_pendingTradeLaneHasStart) {
+            cancelTradeLanePlacement();
+            return true;
+        }
+        if (m_mapView && m_mapView->hasActiveMeasurement()) {
+            m_mapView->cancelActiveMeasurement();
+            return true;
+        }
+        if (m_currentEditorTool != EditorTool::Selection) {
+            setCurrentEditorTool(EditorTool::Selection);
+            return true;
+        }
+        return false;
+    }
+
+    void SystemEditorPage::moveSelectedEntries(const QVector3D &delta, const QString &undoText)
+    {
+        if (!m_document || m_selectedNicknames.isEmpty())
+            return;
+        if (m_selectedNicknames.size() == 1 && hasPendingIniEditorChangesForSelection())
+            return;
+
+        const QStringList expandedNicknames = expandMoveNicknames(m_selectedNicknames);
+        if (expandedNicknames.isEmpty())
+            return;
+
+        auto *stack = flatlas::core::UndoManager::instance().stack();
+        stack->beginMacro(undoText);
+        bool changedAnything = false;
+
+        for (const auto &obj : m_document->objects()) {
+            if (!expandedNicknames.contains(obj->nickname()))
+                continue;
+            const QVector3D oldPos = obj->position();
+            const QVector3D newPos = oldPos + delta;
+            stack->push(new MoveObjectCommand(obj.get(), oldPos, newPos, undoText));
+            changedAnything = true;
+        }
+        for (const auto &zone : m_document->zones()) {
+            if (!expandedNicknames.contains(zone->nickname()))
+                continue;
+            const QVector3D oldPos = zone->position();
+            const QVector3D newPos = oldPos + delta;
+            stack->push(new MoveZoneCommand(zone.get(), oldPos, newPos, undoText));
+            changedAnything = true;
+        }
+
+        stack->endMacro();
+        if (!changedAnything)
+            return;
+
+        updateIniEditorForSelection();
+        updateSidebarButtons();
+    }
+
+    void SystemEditorPage::rotateSelectedEntriesYaw(float deltaDegrees, const QString &undoText)
+    {
+        if (!m_document || m_selectedNicknames.isEmpty())
+            return;
+        if (m_selectedNicknames.size() == 1 && hasPendingIniEditorChangesForSelection())
+            return;
+
+        const QStringList expandedNicknames = expandMoveNicknames(m_selectedNicknames);
+        if (expandedNicknames.isEmpty())
+            return;
+
+        auto *stack = flatlas::core::UndoManager::instance().stack();
+        stack->beginMacro(undoText);
+        bool changedAnything = false;
+
+        for (const auto &obj : m_document->objects()) {
+            if (!expandedNicknames.contains(obj->nickname()))
+                continue;
+            const QVector3D oldRotation = obj->rotation();
+            QVector3D newRotation = oldRotation;
+            newRotation.setY(normalizedYawDegrees(oldRotation.y() + deltaDegrees));
+            stack->push(new RotateObjectCommand(obj.get(), oldRotation, newRotation, undoText));
+            changedAnything = true;
+        }
+        for (const auto &zone : m_document->zones()) {
+            if (!expandedNicknames.contains(zone->nickname()))
+                continue;
+            const QVector3D oldRotation = zone->rotation();
+            QVector3D newRotation = oldRotation;
+            newRotation.setY(normalizedYawDegrees(oldRotation.y() + deltaDegrees));
+            stack->push(new RotateZoneCommand(zone.get(), oldRotation, newRotation, undoText));
+            changedAnything = true;
+        }
+
+        stack->endMacro();
+        if (!changedAnything)
+            return;
+
+        updateIniEditorForSelection();
+        updateSidebarButtons();
+    }
+
+    void SystemEditorPage::copySelectedToClipboard()
+    {
+        m_clipboardPayload.clear();
+        m_clipboardPasteSequence = 0;
+        if (!m_document || m_selectedNicknames.isEmpty())
+            return;
+
+        QSet<QString> copiedObjects;
+        QSet<QString> copiedZones;
+        for (const QString &nickname : m_selectedNicknames) {
+            if (SolarObject *rootObject = findObjectByNickname(nickname)) {
+                for (const QString &groupNickname : objectGroupNicknames(rootObject->nickname())) {
+                    if (copiedObjects.contains(groupNickname.toLower()))
+                        continue;
+                    for (const auto &obj : m_document->objects()) {
+                        if (obj->nickname() != groupNickname)
+                            continue;
+                        m_clipboardPayload.objects.append(cloneSolarObject(obj));
+                        copiedObjects.insert(groupNickname.toLower());
+                        break;
+                    }
+                }
+                continue;
+            }
+            if (ZoneItem *zone = findZoneByNickname(nickname)) {
+                const QString key = zone->nickname().toLower();
+                if (copiedZones.contains(key))
+                    continue;
+                for (const auto &candidate : m_document->zones()) {
+                    if (candidate->nickname() != zone->nickname())
+                        continue;
+                    m_clipboardPayload.zones.append(cloneZoneItem(candidate));
+                    copiedZones.insert(key);
+                    break;
+                }
+            }
+        }
+    }
+
+    void SystemEditorPage::pasteClipboardSelection()
+    {
+        if (!m_document || m_clipboardPayload.isEmpty())
+            return;
+
+        const QVector3D pasteOffset(500.0f * static_cast<float>(m_clipboardPasteSequence + 1), 0.0f, 0.0f);
+        QHash<QString, QString> renameMap;
+        QStringList newSelectionNicknames;
+
+        for (const auto &source : m_clipboardPayload.objects) {
+            if (!source)
+                continue;
+            renameMap.insert(source->nickname(), uniqueNicknameForCopy(source->nickname()));
+        }
+
+        auto *stack = flatlas::core::UndoManager::instance().stack();
+        stack->beginMacro(tr("Paste Selection"));
+        bool pastedAnything = false;
+
+        for (const auto &source : m_clipboardPayload.objects) {
+            if (!source)
+                continue;
+            auto clone = cloneSolarObject(source);
+            const QString newNickname = renameMap.value(source->nickname(), uniqueNicknameForCopy(source->nickname()));
+            clone->setNickname(newNickname);
+            clone->setPosition(source->position() + pasteOffset);
+            QVector<QPair<QString, QString>> entries = clone->rawEntries();
+            updateRawNicknameEntry(&entries, newNickname);
+            updateRawParentEntries(&entries, renameMap);
+            clone->setRawEntries(entries);
+            stack->push(new AddObjectCommand(m_document.get(), clone, tr("Paste Selection")));
+            newSelectionNicknames.append(newNickname);
+            pastedAnything = true;
+        }
+
+        for (const auto &source : m_clipboardPayload.zones) {
+            if (!source)
+                continue;
+            auto clone = cloneZoneItem(source);
+            const QString newNickname = uniqueNicknameForCopy(source->nickname());
+            clone->setNickname(newNickname);
+            clone->setPosition(source->position() + pasteOffset);
+            QVector<QPair<QString, QString>> entries = clone->rawEntries();
+            updateRawNicknameEntry(&entries, newNickname);
+            clone->setRawEntries(entries);
+            stack->push(new AddZoneCommand(m_document.get(), clone, tr("Paste Selection")));
+            newSelectionNicknames.append(newNickname);
+            pastedAnything = true;
+        }
+
+        stack->endMacro();
+        if (!pastedAnything)
+            return;
+
+        ++m_clipboardPasteSequence;
+        m_selectedNicknames = normalizeSelectionNicknames(newSelectionNicknames);
+        refreshObjectList();
+        syncTreeSelectionFromNicknames(m_selectedNicknames);
+        syncSceneSelectionFromNicknames(m_selectedNicknames);
+        updateSelectionSummary();
+        updateIniEditorForSelection();
+        updateSidebarButtons();
+    }
 
 void SystemEditorPage::applyThemeStyling()
 {
@@ -1055,6 +3400,7 @@ void SystemEditorPage::applyThemeStyling()
                            "QPushButton:hover { background-color:%3; }")
                 .arg(deleteBg.name(), border.name(), deleteHover.name()));
     }
+    updateSaveButtonAppearance();
     refreshSidebarVisibilityState();
     if (m_mapView) {
         m_mapView->setBackgroundPixmap(QPixmap(flatlas::core::Theme::instance().wallpaperResourcePath()),
@@ -1097,6 +3443,7 @@ void SystemEditorPage::loadDocumentIntoUi()
     m_pendingGeneratedZoneFiles.clear();
     m_pendingTextFileWrites.clear();
     bindDocumentSignals();
+    connectDocumentEntitySignals();
     m_selectedNicknames.clear();
     loadDisplayFilterSettings();
     emitLoadingProgress(20, tr("Preparing 2D system view..."));
@@ -1123,6 +3470,8 @@ void SystemEditorPage::loadDocumentIntoUi()
     emitLoadingProgress(94, tr("Refreshing object navigation..."));
     refreshObjectList();
     m_mapView->scheduleInitialFit();
+    captureSavedDocumentSnapshot();
+    refreshDocumentDirtyState();
     emitLoadingProgress(98, tr("Finalizing system view..."));
 }
 
@@ -1133,25 +3482,35 @@ void SystemEditorPage::emitLoadingProgress(int percent, const QString &message)
 
 bool SystemEditorPage::save()
 {
-    if (!m_document || m_document->filePath().isEmpty())
+    m_lastSaveError.clear();
+    if (!m_document || m_document->filePath().isEmpty()) {
+        m_lastSaveError = tr("Die Systemdatei besitzt keinen gueltigen Dateipfad.");
         return false;
+    }
     QString generatedFileError;
     if (!writePendingGeneratedZoneFiles(&generatedFileError)) {
+        m_lastSaveError = generatedFileError;
         if (!generatedFileError.isEmpty())
             QMessageBox::warning(this, tr("Speichern fehlgeschlagen"), generatedFileError);
         return false;
     }
     QString pendingTextError;
     if (!writePendingTextFiles(&pendingTextError)) {
+        m_lastSaveError = pendingTextError;
         if (!pendingTextError.isEmpty())
             QMessageBox::warning(this, tr("Speichern fehlgeschlagen"), pendingTextError);
         return false;
     }
     bool ok = SystemPersistence::save(*m_document);
+    if (!ok && m_lastSaveError.isEmpty()) {
+        m_lastSaveError = tr("Die System-INI konnte nicht auf den Datentraeger geschrieben werden:\n%1")
+                              .arg(m_document->filePath());
+    }
     if (ok) {
-        m_document->setDirty(false);
         m_pendingGeneratedZoneFiles.clear();
         m_pendingTextFileWrites.clear();
+        captureSavedDocumentSnapshot();
+        refreshDocumentDirtyState();
     }
     return ok;
 }
@@ -1186,6 +3545,8 @@ void SystemEditorPage::bindDocumentSignals()
 
     connect(m_document.get(), &SystemDocument::dirtyChanged,
             this, &SystemEditorPage::refreshTitle, Qt::UniqueConnection);
+    connect(m_document.get(), &SystemDocument::dirtyChanged,
+            this, &SystemEditorPage::updateSidebarButtons, Qt::UniqueConnection);
     connect(m_document.get(), &SystemDocument::nameChanged,
             this, &SystemEditorPage::refreshTitle, Qt::UniqueConnection);
 }
@@ -1201,6 +3562,116 @@ void SystemEditorPage::refreshTitle()
     if (m_document->isDirty())
         title += QLatin1Char('*');
     emit titleChanged(title);
+}
+
+void SystemEditorPage::captureSavedDocumentSnapshot()
+{
+    m_savedDocumentTextSnapshot = m_document ? SystemPersistence::serializeToText(*m_document) : QString();
+}
+
+void SystemEditorPage::refreshDocumentDirtyState()
+{
+    if (!m_document)
+        return;
+
+    const bool hasPendingWrites = !m_pendingGeneratedZoneFiles.isEmpty() || !m_pendingTextFileWrites.isEmpty();
+    const bool documentChanged = SystemPersistence::serializeToText(*m_document) != m_savedDocumentTextSnapshot;
+    m_document->setDirty(hasPendingWrites || documentChanged);
+}
+
+void SystemEditorPage::updateSaveButtonAppearance()
+{
+    if (!m_saveFileButton)
+        return;
+
+    const QPalette pal = palette();
+    const QColor border = pal.color(QPalette::Mid);
+    const QColor cleanBg = pal.color(QPalette::Button);
+    const QColor cleanText = pal.color(QPalette::ButtonText);
+    const QColor dirtyBg(212, 175, 55);
+    const QColor dirtyText(36, 28, 8);
+    const bool dirty = m_document && m_document->isDirty();
+
+    m_saveFileButton->setEnabled(dirty);
+    m_saveFileButton->setToolTip(dirty
+                                     ? tr("Ungespeicherte Änderungen vorhanden.")
+                                     : tr("Keine ausstehenden Änderungen zum Speichern."));
+    if (dirty) {
+        m_saveFileButton->setStyleSheet(
+            QStringLiteral("QPushButton { background:%1; color:%2; border:1px solid %3; border-radius:4px; font-weight:700; padding:6px 10px; }"
+                           "QPushButton:hover { background:%4; }"
+                           "QPushButton:pressed { background:%5; }")
+                .arg(dirtyBg.name(), dirtyText.name(), border.name(), QColor(228, 192, 74).name(), QColor(190, 155, 38).name()));
+    } else {
+        m_saveFileButton->setStyleSheet(
+            QStringLiteral("QPushButton { background:%1; color:%2; border:1px solid %3; border-radius:4px; font-weight:600; padding:6px 10px; }"
+                           "QPushButton:disabled { background:%4; color:%5; border:1px solid %6; }")
+                .arg(cleanBg.name(), cleanText.name(), border.name(), pal.color(QPalette::Midlight).name(), pal.color(QPalette::Disabled, QPalette::ButtonText).name(), border.name()));
+    }
+}
+
+bool SystemEditorPage::hasPendingIniEditorChangesForSelection() const
+{
+    if (!m_iniEditor || m_selectedNicknames.size() != 1)
+        return false;
+    return m_iniEditor->toPlainText().trimmed() != serializeSelectionToIni().trimmed();
+}
+
+void SystemEditorPage::rotateSelectedObjectYaw(float deltaDegrees)
+{
+    if (!m_document || m_selectedNicknames.size() != 1 || hasPendingIniEditorChangesForSelection())
+        return;
+
+    SolarObject *obj = findObjectByNickname(primarySelectedNickname());
+    if (!obj)
+        return;
+
+    rotateSelectedEntriesYaw(deltaDegrees, tr("Rotate Selection"));
+}
+
+void SystemEditorPage::connectDocumentEntitySignals()
+{
+    if (!m_document)
+        return;
+
+    auto connectObject = [this](const std::shared_ptr<SolarObject> &obj) {
+        if (!obj)
+            return;
+        connect(obj.get(), &SolarObject::changed, this, &SystemEditorPage::refreshDocumentDirtyState, Qt::UniqueConnection);
+    };
+    auto connectZone = [this](const std::shared_ptr<ZoneItem> &zone) {
+        if (!zone)
+            return;
+        connect(zone.get(), &ZoneItem::changed, this, &SystemEditorPage::refreshDocumentDirtyState, Qt::UniqueConnection);
+    };
+
+    for (const auto &obj : m_document->objects())
+        connectObject(obj);
+    for (const auto &zone : m_document->zones())
+        connectZone(zone);
+
+    connect(m_document.get(), &SystemDocument::objectAdded,
+            this, &SystemEditorPage::onDocumentObjectAdded, Qt::UniqueConnection);
+    connect(m_document.get(), &SystemDocument::objectRemoved,
+            this, &SystemEditorPage::refreshDocumentDirtyState, Qt::UniqueConnection);
+    connect(m_document.get(), &SystemDocument::zoneAdded,
+            this, &SystemEditorPage::onDocumentZoneAdded, Qt::UniqueConnection);
+    connect(m_document.get(), &SystemDocument::zoneRemoved,
+            this, &SystemEditorPage::refreshDocumentDirtyState, Qt::UniqueConnection);
+}
+
+void SystemEditorPage::onDocumentObjectAdded(const std::shared_ptr<SolarObject> &obj)
+{
+    if (obj)
+        connect(obj.get(), &SolarObject::changed, this, &SystemEditorPage::refreshDocumentDirtyState, Qt::UniqueConnection);
+    refreshDocumentDirtyState();
+}
+
+void SystemEditorPage::onDocumentZoneAdded(const std::shared_ptr<ZoneItem> &zone)
+{
+    if (zone)
+        connect(zone.get(), &ZoneItem::changed, this, &SystemEditorPage::refreshDocumentDirtyState, Qt::UniqueConnection);
+    refreshDocumentDirtyState();
 }
 
 void SystemEditorPage::ensureSceneView3D()
@@ -1380,9 +3851,7 @@ void SystemEditorPage::setupRightSidebar()
     creationLayout->addWidget(m_createDockingRingButton);
 
     m_createRingButton = makeSidebarButton(tr("Ring"), creationGroup);
-    connect(m_createRingButton, &QPushButton::clicked, this, [this]() {
-        showNotYetPorted(tr("Ring"), QStringLiteral("FLAtlas/fl_editor/main_window.py::_start_ring_attach"));
-    });
+    connect(m_createRingButton, &QPushButton::clicked, this, &SystemEditorPage::onCreateRing);
     creationLayout->addWidget(m_createRingButton);
     creationLayout->addStretch(1);
 
@@ -1392,9 +3861,7 @@ void SystemEditorPage::setupRightSidebar()
     editingLayout->setSpacing(4);
 
     m_editTradelaneButton = makeSidebarButton(tr("Tradelane"), editingGroup);
-    connect(m_editTradelaneButton, &QPushButton::clicked, this, [this]() {
-        showNotYetPorted(tr("Tradelane bearbeiten"), QStringLiteral("FLAtlas/fl_editor/main_window.py::_edit_tradelane"));
-    });
+    connect(m_editTradelaneButton, &QPushButton::clicked, this, &SystemEditorPage::onEditTradeLane);
     editingLayout->addWidget(m_editTradelaneButton);
 
     m_editZonePopulationButton = makeSidebarButton(tr("Zone Population"), editingGroup);
@@ -1404,9 +3871,7 @@ void SystemEditorPage::setupRightSidebar()
     editingLayout->addWidget(m_editZonePopulationButton);
 
     m_editRingButton = makeSidebarButton(tr("Ring"), editingGroup);
-    connect(m_editRingButton, &QPushButton::clicked, this, [this]() {
-        showNotYetPorted(tr("Ring bearbeiten"), QStringLiteral("FLAtlas/fl_editor/main_window.py::_open_ring_manager_dialog"));
-    });
+    connect(m_editRingButton, &QPushButton::clicked, this, &SystemEditorPage::onEditRing);
     editingLayout->addWidget(m_editRingButton);
 
     m_addExclusionZoneButton = makeSidebarButton(tr("Exclusion Zone hinzufügen..."), editingGroup);
@@ -1416,14 +3881,78 @@ void SystemEditorPage::setupRightSidebar()
 
     m_editBaseButton = makeSidebarButton(tr("Base"), editingGroup);
     connect(m_editBaseButton, &QPushButton::clicked, this, [this]() {
-        showNotYetPorted(tr("Base bearbeiten"), QStringLiteral("FLAtlas/fl_editor/main_window.py::_edit_base"));
+        if (!m_document)
+            return;
+
+        SolarObject *hostObject = findBaseHostForSelection();
+        if (!hostObject) {
+            QMessageBox::information(this,
+                                     tr("Base bearbeiten"),
+                                     tr("Bitte waehle ein Objekt mit verknuepfter Base aus."));
+            return;
+        }
+
+        QHash<QString, QString> overrides;
+        for (auto it = m_pendingTextFileWrites.constBegin(); it != m_pendingTextFileWrites.constEnd(); ++it)
+            overrides.insert(it.key(), it.value().content);
+
+        BaseEditState state;
+        QString errorMessage;
+        if (!BaseEditService::loadState(*m_document,
+                                        *hostObject,
+                                        flatlas::core::EditingContext::instance().primaryGamePath(),
+                                        overrides,
+                                        &state,
+                                        &errorMessage)) {
+            QMessageBox::warning(this,
+                                 tr("Base bearbeiten"),
+                                 errorMessage.trimmed().isEmpty()
+                                     ? tr("Die Base-Daten konnten nicht geladen werden.")
+                                     : errorMessage);
+            return;
+        }
+
+        BaseEditDialog dialog(state, overrides, this);
+        connect(&dialog, &BaseEditDialog::roomActivationRequested, this, [this](const QString &roomName, const QString &modelPath) {
+            auto *mainWindow = qobject_cast<MainWindow *>(window());
+            if (!mainWindow || !mainWindow->showModelInViewer(modelPath, tr("Room Preview: %1").arg(roomName))) {
+                QMessageBox::warning(this,
+                                     tr("Room Preview"),
+                                     tr("Der ausgewaehlte Room konnte nicht im Haupt-3D-Viewer angezeigt werden."));
+            }
+        });
+        if (dialog.exec() != QDialog::Accepted)
+            return;
+
+        BaseApplyResult applyResult;
+        if (!BaseEditService::applyEdit(*hostObject,
+                                        dialog.state(),
+                                        flatlas::core::EditingContext::instance().primaryGamePath(),
+                                        overrides,
+                                        &applyResult,
+                                        &errorMessage)) {
+            QMessageBox::warning(this,
+                                 tr("Base bearbeiten"),
+                                 errorMessage.trimmed().isEmpty()
+                                     ? tr("Die Base konnte nicht aktualisiert werden.")
+                                     : errorMessage);
+            return;
+        }
+
+        for (const BaseStagedWrite &write : applyResult.stagedWrites)
+            stagePendingTextWrite(write.absolutePath, write.content);
+
+        m_document->setDirty(true);
+        refreshObjectList();
+        syncTreeSelectionFromNicknames({hostObject->nickname()});
+        syncSceneSelectionFromNicknames({hostObject->nickname()});
+        updateSelectionSummary();
+        updateIniEditorForSelection();
     });
     editingLayout->addWidget(m_editBaseButton);
 
     m_baseBuilderButton = makeSidebarButton(tr("Base Builder"), editingGroup);
-    connect(m_baseBuilderButton, &QPushButton::clicked, this, [this]() {
-        showNotYetPorted(tr("Base Builder"), QStringLiteral("FLAtlas/fl_editor/main_window.py::_open_base_builder_for_object"));
-    });
+    connect(m_baseBuilderButton, &QPushButton::clicked, this, &SystemEditorPage::openBaseBuilderForSelection);
     editingLayout->addWidget(m_baseBuilderButton);
 
     editingLayout->addSpacing(12);
@@ -1497,6 +4026,8 @@ void SystemEditorPage::refreshObjectList()
             groupChildCounts[rootNickname] += 1;
     }
 
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+
     auto *objRoot = new QTreeWidgetItem(m_objectTree, {tr("Objects")});
     objRoot->setFlags(objRoot->flags() & ~Qt::ItemIsSelectable);
     objRoot->setExpanded(true);
@@ -1507,11 +4038,9 @@ void SystemEditorPage::refreshObjectList()
             continue;
         auto *item = new QTreeWidgetItem(objRoot);
         item->setText(0, obj->nickname());
-        const int childCount = groupChildCounts.value(obj->nickname(), 0);
-        QString typeText = solarObjectTypeLabel(obj->type());
-        if (childCount > 0)
-            typeText = tr("%1 (%2 parts)").arg(typeText).arg(childCount + 1);
-        item->setText(1, typeText);
+        item->setText(1, objectIngameName(*obj, gameRoot));
+        item->setToolTip(0, obj->nickname());
+        item->setToolTip(1, item->text(1));
     }
 
     auto *zoneRoot = new QTreeWidgetItem(m_objectTree, {tr("Zones")});
@@ -1520,7 +4049,9 @@ void SystemEditorPage::refreshObjectList()
     for (const auto &zone : m_document->zones()) {
         auto *item = new QTreeWidgetItem(zoneRoot);
         item->setText(0, zone->nickname());
-        item->setText(1, zone->zoneType());
+        item->setText(1, zoneIngameName(*zone, gameRoot));
+        item->setToolTip(0, zone->nickname());
+        item->setToolTip(1, item->text(1));
     }
 
     auto *lightRoot = new QTreeWidgetItem(m_objectTree, {tr("LightSources")});
@@ -1531,9 +4062,17 @@ void SystemEditorPage::refreshObjectList()
         if (section.name.compare(QStringLiteral("LightSource"), Qt::CaseInsensitive) != 0)
             continue;
         auto *item = new QTreeWidgetItem(lightRoot);
-        item->setText(0, section.value(QStringLiteral("nickname")).trimmed());
-        item->setText(1, QStringLiteral("LightSource"));
+        const QString lightNickname = section.value(QStringLiteral("nickname")).trimmed();
+        const int idsName = idsNameFromRawEntries(section.entries);
+        item->setText(0, lightNickname);
+        item->setText(1, ingameNameForIds(idsName, gameRoot));
+        item->setToolTip(0, lightNickname);
+        item->setToolTip(1, item->text(1));
     }
+
+    m_objectTree->resizeColumnToContents(0);
+    if (m_objectTree->columnWidth(0) < 260)
+        m_objectTree->setColumnWidth(0, 260);
 
     syncLightSourcesInScene();
 
@@ -1643,6 +4182,119 @@ void SystemEditorPage::onTreeSelectionChanged()
     updateSidebarButtons();
 }
 
+void SystemEditorPage::showMapContextMenu(const QPoint &globalPos,
+                                          const QPointF &scenePos,
+                                          const QStringList &zoneNicknames)
+{
+    Q_UNUSED(scenePos)
+
+    if (!m_mapView)
+        return;
+
+    QMenu menu(this);
+    QAction *measureAction = nullptr;
+    QAction *restartMeasureAction = nullptr;
+    QAction *clearMeasureAction = nullptr;
+    QAction *cancelMeasureAction = nullptr;
+
+    if (!m_mapView->isPlacementModeActive()) {
+        if (m_mapView->hasActiveMeasurement()) {
+            restartMeasureAction = menu.addAction(tr("Restart ruler"));
+            cancelMeasureAction = menu.addAction(tr("Cancel ruler"));
+            clearMeasureAction = menu.addAction(tr("Clear measurement"));
+        } else {
+            measureAction = menu.addAction(tr("Measure distance"));
+        }
+
+        if (measureAction || restartMeasureAction || cancelMeasureAction || clearMeasureAction)
+            menu.addSeparator();
+    }
+
+    struct ZoneMenuEntry {
+        QString nickname;
+        QString label;
+    };
+
+    QVector<ZoneMenuEntry> zoneEntries;
+    zoneEntries.reserve(zoneNicknames.size());
+    for (const QString &nickname : zoneNicknames) {
+        ZoneItem *zone = findZoneByNickname(nickname);
+        if (!zone)
+            continue;
+        zoneEntries.push_back({zone->nickname(), zoneContextLabel(*zone)});
+    }
+
+    std::sort(zoneEntries.begin(), zoneEntries.end(), [](const ZoneMenuEntry &left, const ZoneMenuEntry &right) {
+        const int labelCompare = left.label.compare(right.label, Qt::CaseInsensitive);
+        if (labelCompare != 0)
+            return labelCompare < 0;
+        return left.nickname.compare(right.nickname, Qt::CaseInsensitive) < 0;
+    });
+
+    QHash<QAction *, QString> editTargets;
+    QHash<QAction *, QString> deleteTargets;
+    if (!zoneEntries.isEmpty()) {
+        if (zoneEntries.size() == 1) {
+            QAction *zoneHeader = menu.addAction(zoneEntries.first().label);
+            zoneHeader->setEnabled(false);
+            editTargets.insert(menu.addAction(tr("Edit Object")), zoneEntries.first().nickname);
+            deleteTargets.insert(menu.addAction(tr("Delete Object")), zoneEntries.first().nickname);
+        } else {
+            QMenu *zonesMenu = menu.addMenu(tr("Zones under cursor"));
+            for (const ZoneMenuEntry &entry : std::as_const(zoneEntries)) {
+                QMenu *zoneMenu = zonesMenu->addMenu(entry.label);
+                editTargets.insert(zoneMenu->addAction(tr("Edit Object")), entry.nickname);
+                deleteTargets.insert(zoneMenu->addAction(tr("Delete Object")), entry.nickname);
+            }
+        }
+        menu.addSeparator();
+    }
+
+    QAction *addObjectAction = menu.addAction(tr("Add Object..."));
+    QAction *deleteSelectionAction = menu.addAction(tr("Delete"));
+    QAction *propertiesAction = menu.addAction(tr("Properties..."));
+    deleteSelectionAction->setEnabled(!m_selectedNicknames.isEmpty());
+    propertiesAction->setEnabled(m_selectedNicknames.size() == 1);
+
+    QAction *selectedAction = menu.exec(globalPos);
+    if (!selectedAction)
+        return;
+
+    if (selectedAction == measureAction || selectedAction == restartMeasureAction) {
+        m_mapView->startMeasurement();
+        return;
+    }
+    if (selectedAction == cancelMeasureAction) {
+        m_mapView->cancelActiveMeasurement();
+        return;
+    }
+    if (selectedAction == clearMeasureAction) {
+        m_mapView->clearMeasurementResults();
+        return;
+    }
+    if (selectedAction == addObjectAction) {
+        onAddObject();
+        return;
+    }
+    if (selectedAction == deleteSelectionAction) {
+        onDeleteSelected();
+        return;
+    }
+    if (selectedAction == propertiesAction) {
+        if (!m_selectedNicknames.isEmpty())
+            editContextTarget(m_selectedNicknames.first());
+        return;
+    }
+    if (editTargets.contains(selectedAction)) {
+        editContextTarget(editTargets.value(selectedAction));
+        return;
+    }
+    if (deleteTargets.contains(selectedAction)) {
+        deleteContextTarget(deleteTargets.value(selectedAction));
+        return;
+    }
+}
+
 void SystemEditorPage::onAddObject()
 {
     if (!m_document)
@@ -1691,7 +4343,8 @@ void SystemEditorPage::onAddObject()
             type = SolarObject::Planet;
         else if (archetypeLower.contains(QLatin1String("satellite")))
             type = SolarObject::Satellite;
-        else if (archetypeLower.contains(QLatin1String("waypoint")))
+        else if (archetypeLower.contains(QLatin1String("waypoint"))
+                 || archetypeLower.contains(QLatin1String("buoy")))
             type = SolarObject::Waypoint;
         else if (archetypeLower.contains(QLatin1String("weapons_platform")))
             type = SolarObject::Weapons_Platform;
@@ -1930,117 +4583,108 @@ void SystemEditorPage::onDeleteSelected()
             filtered.append(section);
         }
         SystemPersistence::setExtraSections(m_document.get(), filtered);
-        m_document->setDirty(true);
+        refreshDocumentDirtyState();
     }
 
     m_selectedNicknames.clear();
     refreshObjectList();
 }
 
+bool SystemEditorPage::selectSingleContextTarget(const QString &nickname)
+{
+    const QString trimmedNickname = nickname.trimmed();
+    if (trimmedNickname.isEmpty() || !m_mapScene)
+        return false;
+
+    if (!findObjectByNickname(trimmedNickname)
+        && !findZoneByNickname(trimmedNickname)
+        && findLightSourceSectionIndexByNickname(trimmedNickname) < 0) {
+        QMessageBox::warning(this,
+                             tr("Target no longer available"),
+                             tr("The selected target '%1' no longer exists.").arg(trimmedNickname));
+        return false;
+    }
+
+    m_mapScene->selectNicknames({trimmedNickname});
+    if (m_mapView)
+        m_mapView->setFocus(Qt::OtherFocusReason);
+    return true;
+}
+
+void SystemEditorPage::editContextTarget(const QString &nickname)
+{
+    if (!selectSingleContextTarget(nickname))
+        return;
+
+    if (m_iniEditor)
+        m_iniEditor->setFocus(Qt::OtherFocusReason);
+}
+
+void SystemEditorPage::deleteContextTarget(const QString &nickname)
+{
+    if (!selectSingleContextTarget(nickname))
+        return;
+
+    onDeleteSelected();
+}
+
+QString SystemEditorPage::zoneContextLabel(const ZoneItem &zone) const
+{
+    const QString nickname = zone.nickname().trimmed().isEmpty() ? tr("Unnamed zone") : zone.nickname().trimmed();
+
+    QStringList details;
+    details.append(zoneShapeLabel(zone.shape()));
+
+    const QString zoneType = zone.zoneType().trimmed();
+    if (!zoneType.isEmpty())
+        details.append(zoneType);
+
+    const QString usage = zone.usage().trimmed();
+    if (!usage.isEmpty() && !details.contains(usage, Qt::CaseInsensitive))
+        details.append(usage);
+
+    const QString popType = zone.popType().trimmed();
+    if (!popType.isEmpty() && !details.contains(popType, Qt::CaseInsensitive))
+        details.append(popType);
+
+    const QString pathLabel = zone.pathLabel().trimmed();
+    if (!pathLabel.isEmpty() && !details.contains(pathLabel, Qt::CaseInsensitive))
+        details.append(pathLabel);
+
+    if (details.isEmpty())
+        return nickname;
+    return QStringLiteral("%1 | %2").arg(nickname, details.join(QStringLiteral(" | ")));
+}
+
+QString SystemEditorPage::zoneShapeLabel(ZoneItem::Shape shape) const
+{
+    switch (shape) {
+    case ZoneItem::Sphere:
+        return tr("Sphere");
+    case ZoneItem::Ellipsoid:
+        return tr("Ellipsoid");
+    case ZoneItem::Cylinder:
+        return tr("Cylinder");
+    case ZoneItem::Box:
+        return tr("Box");
+    case ZoneItem::Ring:
+        return tr("Ring");
+    }
+
+    return tr("Zone");
+}
+
 void SystemEditorPage::onDuplicateSelected()
 {
-    if (!m_document || m_selectedNicknames.size() != 1)
+    if (!m_document || m_selectedNicknames.isEmpty())
         return;
-    const QString nickname = m_selectedNicknames.first();
 
-    if (SolarObject *rootObject = findObjectByNickname(nickname)) {
-        const QStringList groupNicknames = objectGroupNicknames(rootObject->nickname());
-        if (groupNicknames.size() > 1) {
-            QHash<QString, QString> renameMap;
-            for (const QString &groupNickname : groupNicknames)
-                renameMap.insert(groupNickname, groupNickname + QStringLiteral("_copy"));
-
-            auto *stack = flatlas::core::UndoManager::instance().stack();
-            stack->beginMacro(tr("Duplicate Object Group"));
-            for (const QString &groupNickname : groupNicknames) {
-                SolarObject *source = findObjectByNickname(groupNickname);
-                if (!source)
-                    continue;
-
-                auto dup = std::make_shared<SolarObject>();
-                dup->setNickname(renameMap.value(groupNickname, groupNickname + QStringLiteral("_copy")));
-                dup->setArchetype(source->archetype());
-                dup->setPosition(source->position() + QVector3D(500, 0, 0));
-                dup->setRotation(source->rotation());
-                dup->setType(source->type());
-                dup->setBase(source->base());
-                dup->setDockWith(source->dockWith());
-                dup->setGotoTarget(source->gotoTarget());
-                dup->setLoadout(source->loadout());
-                dup->setComment(source->comment());
-                dup->setIdsName(source->idsName());
-                dup->setIdsInfo(source->idsInfo());
-
-                QVector<QPair<QString, QString>> entries = source->rawEntries();
-                for (auto &entry : entries) {
-                    if (entry.first.compare(QStringLiteral("nickname"), Qt::CaseInsensitive) == 0)
-                        entry.second = dup->nickname();
-                    else if (entry.first.compare(QStringLiteral("parent"), Qt::CaseInsensitive) == 0)
-                        entry.second = renameMap.value(entry.second.trimmed(), entry.second);
-                }
-                dup->setRawEntries(entries);
-
-                stack->push(new AddObjectCommand(m_document.get(), dup, tr("Duplicate Object Group")));
-            }
-            stack->endMacro();
-            m_selectedNicknames = {renameMap.value(rootObject->nickname(), rootObject->nickname())};
-            refreshObjectList();
-            return;
-        }
-    }
-
-    for (const auto &obj : m_document->objects()) {
-        if (obj->nickname() == nickname) {
-            auto dup = std::make_shared<SolarObject>();
-            dup->setNickname(nickname + QStringLiteral("_copy"));
-            dup->setArchetype(obj->archetype());
-            dup->setPosition(obj->position() + QVector3D(500, 0, 0));
-            dup->setRotation(obj->rotation());
-            dup->setType(obj->type());
-            dup->setBase(obj->base());
-            dup->setDockWith(obj->dockWith());
-            dup->setGotoTarget(obj->gotoTarget());
-            dup->setLoadout(obj->loadout());
-            dup->setComment(obj->comment());
-            dup->setIdsName(obj->idsName());
-            dup->setIdsInfo(obj->idsInfo());
-            dup->setRawEntries(obj->rawEntries());
-
-            auto *cmd = new AddObjectCommand(m_document.get(), dup,
-                                              tr("Duplicate Object"));
-            flatlas::core::UndoManager::instance().push(cmd);
-            refreshObjectList();
-            return;
-        }
-    }
-
-    for (const auto &zone : m_document->zones()) {
-        if (zone->nickname() == nickname) {
-            auto dup = std::make_shared<ZoneItem>();
-            dup->setNickname(nickname + QStringLiteral("_copy"));
-            dup->setPosition(zone->position() + QVector3D(500, 0, 0));
-            dup->setSize(zone->size());
-            dup->setShape(zone->shape());
-            dup->setRotation(zone->rotation());
-            dup->setZoneType(zone->zoneType());
-            dup->setComment(zone->comment());
-            dup->setUsage(zone->usage());
-            dup->setPopType(zone->popType());
-            dup->setPathLabel(zone->pathLabel());
-            dup->setTightnessXyz(zone->tightnessXyz());
-            dup->setDamage(zone->damage());
-            dup->setInterference(zone->interference());
-            dup->setDragScale(zone->dragScale());
-            dup->setSortKey(zone->sortKey());
-            dup->setRawEntries(zone->rawEntries());
-
-            auto *cmd = new AddZoneCommand(m_document.get(), dup,
-                                            tr("Duplicate Zone"));
-            flatlas::core::UndoManager::instance().push(cmd);
-            refreshObjectList();
-            return;
-        }
-    }
+    const ClipboardPayload savedClipboard = m_clipboardPayload;
+    const int savedPasteSequence = m_clipboardPasteSequence;
+    copySelectedToClipboard();
+    pasteClipboardSelection();
+    m_clipboardPayload = savedClipboard;
+    m_clipboardPasteSequence = savedPasteSequence;
 }
 
 void SystemEditorPage::showObjectProperties(SolarObject *obj)
@@ -2351,7 +4995,9 @@ void SystemEditorPage::applyObjectListSearchFilter()
             if (!child)
                 continue;
 
-            const bool matches = !hasSearch || child->text(0).contains(needle, Qt::CaseInsensitive);
+            const bool matches = !hasSearch
+                || child->text(0).contains(needle, Qt::CaseInsensitive)
+                || child->text(1).contains(needle, Qt::CaseInsensitive);
             child->setHidden(!matches);
             for (int column = 0; column < child->columnCount(); ++column)
                 child->setBackground(column, matches && hasSearch ? QBrush(hitBackground) : QBrush());
@@ -2569,7 +5215,7 @@ void SystemEditorPage::applyIniEditorChanges()
             }
             extras[index] = section;
             SystemPersistence::setExtraSections(m_document.get(), extras);
-            m_document->setDirty(true);
+            refreshDocumentDirtyState();
             m_selectedNicknames = {parsedNickname};
             refreshObjectList();
             syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -2619,8 +5265,9 @@ void SystemEditorPage::updateSelectionSummary()
     }
 
     const QString nickname = m_selectedNicknames.first();
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
     if (SolarObject *obj = findObjectByNickname(nickname)) {
-        m_selectionTitleLabel->setText(obj->nickname());
+        m_selectionTitleLabel->setText(objectHeaderDisplayTitle(*obj, gameRoot));
         const int groupCount = objectGroupNicknames(obj->nickname()).size();
         QString subtitle = tr("Objekt · %1").arg(solarObjectTypeLabel(obj->type()));
         if (groupCount > 1)
@@ -2632,7 +5279,7 @@ void SystemEditorPage::updateSelectionSummary()
 
     for (const auto &zone : m_document->zones()) {
         if (zone->nickname() == nickname) {
-            m_selectionTitleLabel->setText(zone->nickname());
+            m_selectionTitleLabel->setText(zoneHeaderDisplayTitle(*zone, gameRoot));
             const QString zoneType = zone->zoneType().trimmed().isEmpty() ? tr("Zone") : zone->zoneType().trimmed();
             m_selectionSubtitleLabel->setText(tr("Zone · %1").arg(zoneType));
             emit selectionStatusChanged(tr("1 Objekt markiert"));
@@ -2685,22 +5332,51 @@ void SystemEditorPage::updateSidebarButtons()
         m_deleteSidebarButton->setEnabled(!m_selectedNicknames.isEmpty());
     if (m_editZonePopulationButton)
         m_editZonePopulationButton->setEnabled(hasSingleSelection && isZone);
-    if (m_editRingButton)
-        m_editRingButton->setEnabled(hasSingleSelection && isObject && (objectType == SolarObject::Planet || objectType == SolarObject::DockingRing));
+    if (m_editRingButton) {
+        SolarObject *ringHost = nullptr;
+        SolarObject *dockingRingObject = nullptr;
+        if (hasSingleSelection) {
+            if (isObject) {
+                if (SolarObject *obj = findObjectByNickname(selectedNickname)) {
+                    if (DockingRingCreationService::isDockingRingObject(*obj))
+                        dockingRingObject = obj;
+                    else if (RingEditService::hasRing(*obj))
+                        ringHost = obj;
+                }
+            } else if (isZone && selectedZone) {
+                ringHost = RingEditService::findHostForZone(m_document.get(), selectedZone->nickname());
+            }
+        }
+        m_editRingButton->setEnabled(ringHost != nullptr || dockingRingObject != nullptr);
+    }
     if (m_addExclusionZoneButton)
         m_addExclusionZoneButton->setEnabled(hasSingleSelection && isZone
                                              && selectedZone
                                              && isFieldZone(*selectedZone));
     if (m_editBaseButton)
-        m_editBaseButton->setEnabled(hasSingleSelection && isObject && objectType == SolarObject::Station);
+        m_editBaseButton->setEnabled(hasSingleSelection && findBaseHostForSelection() != nullptr);
     if (m_baseBuilderButton)
-        m_baseBuilderButton->setEnabled(hasSingleSelection && isObject && objectType == SolarObject::Station);
+        m_baseBuilderButton->setEnabled(hasSingleSelection && findBaseHostForSelection() != nullptr);
     if (m_saveFileButton)
-        m_saveFileButton->setEnabled(m_document != nullptr);
+        updateSaveButtonAppearance();
     if (m_objectJumpButton)
         m_objectJumpButton->setEnabled(m_objectJumpCombo && m_objectJumpCombo->count() > 0);
     if (m_preview3DButton)
         m_preview3DButton->setEnabled(hasSingleObjectGroupSelection());
+
+    const bool hasPendingEditorChanges = hasPendingIniEditorChangesForSelection();
+    const bool canRotateObject = hasSingleSelection && isObject && !hasPendingEditorChanges;
+    const QString defaultLeftTooltip = tr("Dreht das ausgewählte Objekt um 15 Grad nach links um die Yaw-Achse.");
+    const QString defaultRightTooltip = tr("Dreht das ausgewählte Objekt um 15 Grad nach rechts um die Yaw-Achse.");
+    const QString blockedTooltip = tr("Bitte zuerst die offenen Änderungen im Objekt-Editor übernehmen, bevor per Button rotiert wird.");
+    if (m_rotateLeftButton) {
+        m_rotateLeftButton->setEnabled(canRotateObject);
+        m_rotateLeftButton->setToolTip(hasPendingEditorChanges ? blockedTooltip : defaultLeftTooltip);
+    }
+    if (m_rotateRightButton) {
+        m_rotateRightButton->setEnabled(canRotateObject);
+        m_rotateRightButton->setToolTip(hasPendingEditorChanges ? blockedTooltip : defaultRightTooltip);
+    }
 }
 
 void SystemEditorPage::refreshObjectJumpList()
@@ -2784,17 +5460,24 @@ void SystemEditorPage::onItemsMoved(const QHash<QString, QPointF> &oldPositions,
     auto *stack = flatlas::core::UndoManager::instance().stack();
     stack->beginMacro(tr("Move Selection"));
     bool movedAnything = false;
+    const QStringList expandedNicknames = expandMoveNicknames(oldPositions.keys() + newPositions.keys());
 
     for (const auto &obj : m_document->objects()) {
-        if (!oldPositions.contains(obj->nickname()) || !newPositions.contains(obj->nickname()))
+        if (!expandedNicknames.contains(obj->nickname()))
             continue;
-        const QPointF oldFl = MapScene::qtToFl(oldPositions.value(obj->nickname()).x(), oldPositions.value(obj->nickname()).y());
-        const QPointF newFl = MapScene::qtToFl(newPositions.value(obj->nickname()).x(), newPositions.value(obj->nickname()).y());
-        const double startY = m_liveMoveStartWorld.contains(obj->nickname())
-                                  ? m_liveMoveStartWorld.value(obj->nickname()).y()
-                                  : obj->position().y();
-        const QVector3D oldPos(oldFl.x(), startY, oldFl.y());
-        const QVector3D newPos(newFl.x(), startY + verticalOffsetMeters, newFl.y());
+        QVector3D oldPos = m_liveMoveStartWorld.value(obj->nickname(), obj->position());
+        QVector3D newPos = m_liveMoveCurrentWorld.value(obj->nickname(), oldPos);
+        if (!m_liveMoveCurrentWorld.contains(obj->nickname())
+            && oldPositions.contains(obj->nickname())
+            && newPositions.contains(obj->nickname())) {
+            const QPointF oldFl = MapScene::qtToFl(oldPositions.value(obj->nickname()).x(), oldPositions.value(obj->nickname()).y());
+            const QPointF newFl = MapScene::qtToFl(newPositions.value(obj->nickname()).x(), newPositions.value(obj->nickname()).y());
+            const double startY = m_liveMoveStartWorld.contains(obj->nickname())
+                                      ? m_liveMoveStartWorld.value(obj->nickname()).y()
+                                      : obj->position().y();
+            oldPos = QVector3D(oldFl.x(), startY, oldFl.y());
+            newPos = QVector3D(newFl.x(), startY + verticalOffsetMeters, newFl.y());
+        }
         if (qFuzzyCompare(oldPos.x() + 1.0, newPos.x() + 1.0)
             && qFuzzyCompare(oldPos.y() + 1.0, newPos.y() + 1.0)
             && qFuzzyCompare(oldPos.z() + 1.0, newPos.z() + 1.0))
@@ -2804,15 +5487,21 @@ void SystemEditorPage::onItemsMoved(const QHash<QString, QPointF> &oldPositions,
     }
 
     for (const auto &zone : m_document->zones()) {
-        if (!oldPositions.contains(zone->nickname()) || !newPositions.contains(zone->nickname()))
+        if (!expandedNicknames.contains(zone->nickname()))
             continue;
-        const QPointF oldFl = MapScene::qtToFl(oldPositions.value(zone->nickname()).x(), oldPositions.value(zone->nickname()).y());
-        const QPointF newFl = MapScene::qtToFl(newPositions.value(zone->nickname()).x(), newPositions.value(zone->nickname()).y());
-        const double startY = m_liveMoveStartWorld.contains(zone->nickname())
-                                  ? m_liveMoveStartWorld.value(zone->nickname()).y()
-                                  : zone->position().y();
-        const QVector3D oldPos(oldFl.x(), startY, oldFl.y());
-        const QVector3D newPos(newFl.x(), startY + verticalOffsetMeters, newFl.y());
+        QVector3D oldPos = m_liveMoveStartWorld.value(zone->nickname(), zone->position());
+        QVector3D newPos = m_liveMoveCurrentWorld.value(zone->nickname(), oldPos);
+        if (!m_liveMoveCurrentWorld.contains(zone->nickname())
+            && oldPositions.contains(zone->nickname())
+            && newPositions.contains(zone->nickname())) {
+            const QPointF oldFl = MapScene::qtToFl(oldPositions.value(zone->nickname()).x(), oldPositions.value(zone->nickname()).y());
+            const QPointF newFl = MapScene::qtToFl(newPositions.value(zone->nickname()).x(), newPositions.value(zone->nickname()).y());
+            const double startY = m_liveMoveStartWorld.contains(zone->nickname())
+                                      ? m_liveMoveStartWorld.value(zone->nickname()).y()
+                                      : zone->position().y();
+            oldPos = QVector3D(oldFl.x(), startY, oldFl.y());
+            newPos = QVector3D(newFl.x(), startY + verticalOffsetMeters, newFl.y());
+        }
         if (qFuzzyCompare(oldPos.x() + 1.0, newPos.x() + 1.0)
             && qFuzzyCompare(oldPos.y() + 1.0, newPos.y() + 1.0)
             && qFuzzyCompare(oldPos.z() + 1.0, newPos.z() + 1.0))
@@ -2856,6 +5545,21 @@ void SystemEditorPage::onItemsMoveStarted(const QHash<QString, QPointF> &startSc
             }
         }
     }
+
+    const QStringList expandedNicknames = expandMoveNicknames(startScenePositions.keys());
+    for (const QString &nickname : expandedNicknames) {
+        if (m_liveMoveStartWorld.contains(nickname))
+            continue;
+        if (SolarObject *obj = findObjectByNickname(nickname)) {
+            m_liveMoveStartWorld.insert(nickname, obj->position());
+            m_liveMoveCurrentWorld.insert(nickname, obj->position());
+            continue;
+        }
+        if (ZoneItem *zone = findZoneByNickname(nickname)) {
+            m_liveMoveStartWorld.insert(nickname, zone->position());
+            m_liveMoveCurrentWorld.insert(nickname, zone->position());
+        }
+    }
 }
 
 void SystemEditorPage::onItemsMoving(const QHash<QString, QPointF> &currentScenePositions,
@@ -2863,16 +5567,29 @@ void SystemEditorPage::onItemsMoving(const QHash<QString, QPointF> &currentScene
 {
     if (!m_document || !m_liveMoveActive)
         return;
+
+    QHash<QString, QVector3D> rootDeltas;
     for (auto it = currentScenePositions.constBegin(); it != currentScenePositions.constEnd(); ++it) {
         const QString &nickname = it.key();
         if (!m_liveMoveStartWorld.contains(nickname))
             continue;
         const QPointF fl = MapScene::qtToFl(it.value().x(), it.value().y());
         const double startY = m_liveMoveStartWorld.value(nickname).y();
-        m_liveMoveCurrentWorld.insert(nickname,
-                                      QVector3D(static_cast<float>(fl.x()),
-                                                static_cast<float>(startY + verticalOffsetMeters),
-                                                static_cast<float>(fl.y())));
+        const QVector3D newPos(static_cast<float>(fl.x()),
+                               static_cast<float>(startY + verticalOffsetMeters),
+                               static_cast<float>(fl.y()));
+        m_liveMoveCurrentWorld.insert(nickname, newPos);
+        if (findObjectByNickname(nickname))
+            rootDeltas.insert(normalizeObjectNicknameToGroupRoot(nickname), newPos - m_liveMoveStartWorld.value(nickname));
+    }
+
+    for (auto it = rootDeltas.constBegin(); it != rootDeltas.constEnd(); ++it) {
+        const QStringList linkedNicknames = expandMoveNicknames({it.key()});
+        for (const QString &nickname : linkedNicknames) {
+            if (!m_liveMoveStartWorld.contains(nickname) || currentScenePositions.contains(nickname))
+                continue;
+            m_liveMoveCurrentWorld.insert(nickname, m_liveMoveStartWorld.value(nickname) + it.value());
+        }
     }
     // Refresh the ini editor so "pos = ..." reflects the live position.
     updateIniEditorForSelection();
@@ -2880,6 +5597,46 @@ void SystemEditorPage::onItemsMoving(const QHash<QString, QPointF> &currentScene
 
 bool SystemEditorPage::eventFilter(QObject *watched, QEvent *event)
 {
+    if (event && event->type() == QEvent::ShortcutOverride) {
+        auto *keyEvent = static_cast<QKeyEvent *>(event);
+        if (shouldConsumeShortcutOverride(keyEvent)) {
+            event->accept();
+            return true;
+        }
+    }
+
+    if (m_dockingRingPlacement.isActive() && m_mapView && watched == m_mapView->viewport()) {
+        switch (event->type()) {
+        case QEvent::MouseMove: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            updateDockingRingPlacementPreview(m_mapView->mapToScene(mouseEvent->pos()));
+            return true;
+        }
+        case QEvent::MouseButtonPress: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (mouseEvent->button() == Qt::RightButton || mouseEvent->button() == Qt::MiddleButton) {
+                cancelDockingRingPlacement();
+                return true;
+            }
+            if (mouseEvent->button() == Qt::LeftButton) {
+                handleDockingRingPlacementClick(m_mapView->mapToScene(mouseEvent->pos()));
+                return true;
+            }
+            break;
+        }
+        case QEvent::KeyPress: {
+            auto *keyEvent = static_cast<QKeyEvent *>(event);
+            if (keyEvent->key() == Qt::Key_Escape) {
+                cancelDockingRingPlacement();
+                return true;
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
     if (m_pendingFieldZoneRequest && m_mapView && watched == m_mapView->viewport()) {
         switch (event->type()) {
         case QEvent::MouseMove: {
@@ -3038,6 +5795,70 @@ bool SystemEditorPage::eventFilter(QObject *watched, QEvent *event)
         }
     }
 
+    if (m_pendingBuoyRequest && m_mapView && watched == m_mapView->viewport()) {
+        switch (event->type()) {
+        case QEvent::MouseMove: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            updateBuoyPlacementPreview(m_mapView->mapToScene(mouseEvent->pos()));
+            return true;
+        }
+        case QEvent::MouseButtonPress: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (mouseEvent->button() == Qt::RightButton || mouseEvent->button() == Qt::MiddleButton) {
+                cancelBuoyPlacement();
+                return true;
+            }
+            if (mouseEvent->button() == Qt::LeftButton && m_pendingBuoyHasAnchor) {
+                finalizeBuoyPlacement(m_mapView->mapToScene(mouseEvent->pos()));
+                return true;
+            }
+            break;
+        }
+        case QEvent::KeyPress: {
+            auto *keyEvent = static_cast<QKeyEvent *>(event);
+            if (keyEvent->key() == Qt::Key_Escape) {
+                cancelBuoyPlacement();
+                return true;
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
+    if (m_pendingTradeLaneHasStart && m_mapView && watched == m_mapView->viewport()) {
+        switch (event->type()) {
+        case QEvent::MouseMove: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            updateTradeLanePlacementPreview(m_mapView->mapToScene(mouseEvent->pos()));
+            return true;
+        }
+        case QEvent::MouseButtonPress: {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (mouseEvent->button() == Qt::RightButton || mouseEvent->button() == Qt::MiddleButton) {
+                cancelTradeLanePlacement();
+                return true;
+            }
+            if (mouseEvent->button() == Qt::LeftButton) {
+                finalizeTradeLanePlacement(m_mapView->mapToScene(mouseEvent->pos()));
+                return true;
+            }
+            break;
+        }
+        case QEvent::KeyPress: {
+            auto *keyEvent = static_cast<QKeyEvent *>(event);
+            if (keyEvent->key() == Qt::Key_Escape) {
+                cancelTradeLanePlacement();
+                return true;
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
     return QWidget::eventFilter(watched, event);
 }
 
@@ -3123,23 +5944,45 @@ void SystemEditorPage::openSystemSettingsDialog()
     if (!m_document)
         return;
 
-    SystemSettingsDialog dialog(m_document.get(),
+    const bool hadDirtyStateBefore = m_document->isDirty();
+    const SystemSettingsState currentSettings = SystemSettingsService::load(m_document.get());
+    const SystemSettingsOptions options = SystemSettingsService::loadOptions(
+        flatlas::core::EditingContext::instance().primaryGamePath());
+
+    SystemSettingsDialog dialog(currentSettings,
+                                options,
                                 SystemPersistence::hasNonStandardSectionOrder(m_document.get()),
                                 this);
     if (dialog.exec() != QDialog::Accepted)
         return;
 
-    const QString trimmedName = dialog.systemNickname().trimmed();
-    if (!trimmedName.isEmpty() && trimmedName != m_document->name()) {
-        m_document->setName(trimmedName);
-        m_document->setDirty(true);
-        refreshTitle();
+    const SystemSettingsState editedSettings = dialog.result();
+    const bool settingsChanged = editedSettings.musicSpace != currentSettings.musicSpace
+        || editedSettings.musicDanger != currentSettings.musicDanger
+        || editedSettings.musicBattle != currentSettings.musicBattle
+        || editedSettings.spaceColor != currentSettings.spaceColor
+        || editedSettings.localFaction != SystemSettingsService::factionDisplayForNickname(currentSettings.localFaction,
+                                                                                           options.factionDisplayOptions)
+        || editedSettings.ambientColor != currentSettings.ambientColor
+        || editedSettings.dust != currentSettings.dust
+        || editedSettings.backgroundBasicStars != currentSettings.backgroundBasicStars
+        || editedSettings.backgroundComplexStars != currentSettings.backgroundComplexStars
+        || editedSettings.backgroundNebulae != currentSettings.backgroundNebulae;
+
+    if (dialog.shouldNormalizeSectionOrder() && (hadDirtyStateBefore || settingsChanged)) {
+        QMessageBox::warning(this, tr("System-Einstellungen"),
+                             tr("Die Section-Reihenfolge kann nur ohne ungespeicherte Aenderungen standardisiert werden.\n"
+                                "Bitte speichere oder verwerfe zuerst bestehende Aenderungen und starte die Standardisierung danach separat."));
+        return;
     }
 
-    if (!qFuzzyCompare(static_cast<float>(dialog.navMapScale() + 1.0),
-                       static_cast<float>(m_document->navMapScale() + 1.0))) {
-        m_document->setNavMapScale(dialog.navMapScale());
-        m_document->setDirty(true);
+    QString errorMessage;
+    if (settingsChanged && !SystemSettingsService::apply(m_document.get(), editedSettings, &errorMessage)) {
+        QMessageBox::warning(this, tr("System-Einstellungen"),
+                             errorMessage.trimmed().isEmpty()
+                                 ? tr("Die System-Einstellungen konnten nicht uebernommen werden.")
+                                 : errorMessage);
+        return;
     }
 
     if (dialog.shouldNormalizeSectionOrder()) {
@@ -3353,7 +6196,7 @@ void SystemEditorPage::onCreateLightSource()
         };
         extras.append(section);
         SystemPersistence::setExtraSections(m_document.get(), extras);
-        m_document->setDirty(true);
+        refreshDocumentDirtyState();
         refreshObjectList();
         m_selectedNicknames = {request.nickname};
         syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -3617,12 +6460,157 @@ void SystemEditorPage::onCreateJumpConnection()
 
 void SystemEditorPage::onCreatePlanet()
 {
-    createQuickObject(SolarObject::Planet, QStringLiteral("new_planet"), QStringLiteral("planet_earthgrncld_3000"));
+    if (!m_document || !m_mapView || !m_mapScene || m_mapView->isPlacementModeActive())
+        return;
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    QStringList existingObjectNicknames;
+    for (const auto &obj : m_document->objects()) {
+        if (obj)
+            existingObjectNicknames.append(obj->nickname());
+    }
+
+    const QString systemToken = QFileInfo(m_document->filePath()).completeBaseName().toUpper();
+    const QString suggested =
+        suggestIndexedNickname(QStringLiteral("%1_planet_").arg(systemToken.isEmpty() ? QStringLiteral("SYSTEM") : systemToken),
+                               existingObjectNicknames);
+
+    const PlanetCreationCatalog catalog = PlanetCreationService::loadCatalog(m_document.get(), gameRoot);
+    CreatePlanetDialog dialog(suggested, catalog, this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const CreatePlanetRequest request = dialog.result();
+    if (request.nickname.isEmpty() || request.archetype.isEmpty() || request.ingameName.isEmpty())
+        return;
+
+    auto finalizePlacement = [this, request, gameRoot](const QPointF &scenePos) {
+        if (!m_document)
+            return;
+
+        const QString deathZoneNickname = QStringLiteral("Zone_%1_death").arg(request.nickname);
+        if (findObjectByNickname(request.nickname) || findZoneByNickname(deathZoneNickname)) {
+            QMessageBox::warning(this, tr("Planet erstellen"),
+                                 tr("Im aktuellen System existiert bereits ein Eintrag mit diesem Nickname."));
+            return;
+        }
+
+        const QPointF worldXZ = MapScene::qtToFl(scenePos.x(), scenePos.y());
+        const auto dataset = flatlas::infrastructure::IdsDataService::loadFromGameRoot(gameRoot);
+        const QString targetDll = flatlas::infrastructure::IdsDataService::defaultCreationDllName(dataset);
+
+        int assignedIdsName = 0;
+        QString idsError;
+        if (!flatlas::infrastructure::IdsDataService::writeStringEntry(
+                dataset, targetDll, 0, request.ingameName, &assignedIdsName, &idsError)) {
+            QMessageBox::warning(this, tr("Planet erstellen"),
+                                 tr("Der Planetenname konnte nicht in die IDS-Daten geschrieben werden.\n%1")
+                                     .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
+            return;
+        }
+
+        const QString infocardXml = PlanetCreationService::wrapInfocardXml(request.infoCardText);
+        int assignedIdsInfo = 0;
+        if (!flatlas::infrastructure::IdsDataService::writeInfocardEntry(
+                dataset, targetDll, 0, infocardXml, &assignedIdsInfo, &idsError)) {
+            QMessageBox::warning(this, tr("Planet erstellen"),
+                                 tr("Der Infocard-Text konnte nicht als neuer ids_info-Eintrag gespeichert werden.\n%1")
+                                     .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
+            return;
+        }
+
+        auto planet = std::make_shared<SolarObject>();
+        planet->setNickname(request.nickname);
+        planet->setType(SolarObject::Planet);
+        planet->setArchetype(request.archetype);
+        planet->setPosition(QVector3D(static_cast<float>(worldXZ.x()), 0.0f, static_cast<float>(worldXZ.y())));
+        planet->setRotation(QVector3D());
+        planet->setIdsName(assignedIdsName);
+        planet->setIdsInfo(assignedIdsInfo);
+        planet->setRawEntries({
+            {QStringLiteral("nickname"), request.nickname},
+            {QStringLiteral("pos"), QStringLiteral("%1, 0, %2").arg(worldXZ.x(), 0, 'f', 0).arg(worldXZ.y(), 0, 'f', 0)},
+            {QStringLiteral("rotate"), QStringLiteral("0, 0, 0")},
+            {QStringLiteral("archetype"), request.archetype},
+            {QStringLiteral("spin"), QStringLiteral("0, 0, 0")},
+            {QStringLiteral("atmosphere_range"), QString::number(request.atmosphereRange)},
+            {QStringLiteral("ids_name"), QString::number(assignedIdsName)},
+            {QStringLiteral("ids_info"), QString::number(assignedIdsInfo)},
+        });
+
+        auto deathZone = std::make_shared<ZoneItem>();
+        deathZone->setNickname(deathZoneNickname);
+        deathZone->setPosition(QVector3D(static_cast<float>(worldXZ.x()), 0.0f, static_cast<float>(worldXZ.y())));
+        deathZone->setRotation(QVector3D());
+        deathZone->setShape(ZoneItem::Sphere);
+        deathZone->setSize(QVector3D(static_cast<float>(request.deathZoneRadius), 0.0f, 0.0f));
+        deathZone->setDamage(request.deathZoneDamage);
+        deathZone->setSortKey(99);
+        deathZone->setRawEntries({
+            {QStringLiteral("nickname"), deathZoneNickname},
+            {QStringLiteral("pos"), QStringLiteral("%1, 0, %2").arg(worldXZ.x(), 0, 'f', 0).arg(worldXZ.y(), 0, 'f', 0)},
+            {QStringLiteral("rotate"), QStringLiteral("0, 0, 0")},
+            {QStringLiteral("shape"), QStringLiteral("SPHERE")},
+            {QStringLiteral("size"), QString::number(request.deathZoneRadius)},
+            {QStringLiteral("damage"), QString::number(request.deathZoneDamage)},
+            {QStringLiteral("sort"), QStringLiteral("99.5")},
+            {QStringLiteral("density"), QStringLiteral("0")},
+            {QStringLiteral("relief_time"), QStringLiteral("0")},
+            {QStringLiteral("ids_info"), QStringLiteral("0")},
+        });
+
+        auto *stack = flatlas::core::UndoManager::instance().stack();
+        stack->beginMacro(tr("Planet erstellen"));
+        stack->push(new AddObjectCommand(m_document.get(), planet, tr("Create Planet")));
+        stack->push(new AddZoneCommand(m_document.get(), deathZone, tr("Create Planet Death Zone")));
+        stack->endMacro();
+        refreshObjectList();
+        m_selectedNicknames = {planet->nickname()};
+        syncTreeSelectionFromNicknames(m_selectedNicknames);
+        syncSceneSelectionFromNicknames(m_selectedNicknames);
+        updateIniEditorForSelection();
+    };
+
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [placementGuard, finalizePlacement](const QPointF &scenePos) {
+        finalizePlacement(scenePos);
+        placementGuard->deleteLater();
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [placementGuard]() { placementGuard->deleteLater(); });
+    m_mapView->setPlacementMode(true,
+                                tr("Klicke auf die Map, um '%1' zu platzieren. [Esc] oder Rechtsklick bricht ab.")
+                                    .arg(request.nickname));
 }
 
 void SystemEditorPage::onCreateBuoy()
 {
-    createQuickObject(SolarObject::Waypoint, QStringLiteral("new_buoy"), QStringLiteral("space_arch_buoy"));
+    if (!m_document || !m_mapView || !m_mapScene || m_mapView->isPlacementModeActive())
+        return;
+
+    CreateBuoyDialog dialog(this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const CreateBuoyRequest request = dialog.result();
+    const int minimumCount = request.mode == CreateBuoyRequest::Mode::Line ? 2 : 3;
+    if (request.count < minimumCount) {
+        QMessageBox::warning(this, tr("Bojen erstellen"),
+                             request.mode == CreateBuoyRequest::Mode::Line
+                                 ? tr("Es muessen mindestens zwei Bojen erstellt werden.")
+                                 : tr("Es muessen mindestens drei Bojen fuer einen Kreis erstellt werden."));
+        return;
+    }
+    if (request.mode == CreateBuoyRequest::Mode::Line
+        && request.lineConstraint == CreateBuoyRequest::LineConstraint::FixedSpacing
+        && request.spacingMeters < 100) {
+        QMessageBox::warning(this, tr("Bojen erstellen"),
+                             tr("Der Abstand zwischen Bojen ist ungueltig."));
+        return;
+    }
+
+    beginBuoyPlacement(request);
 }
 
 void SystemEditorPage::onCreateWeaponPlatform()
@@ -3741,17 +6729,783 @@ void SystemEditorPage::onCreateDepot()
 
 void SystemEditorPage::onCreateTradeLane()
 {
-    createQuickObject(SolarObject::TradeLane, QStringLiteral("new_tradelane"), QStringLiteral("trade_lane_ring"));
+    if (!m_document || !m_mapView || !m_mapScene || m_mapView->isPlacementModeActive())
+        return;
+
+    beginTradeLanePlacement();
+}
+
+void SystemEditorPage::onCreateRing()
+{
+    if (!m_document || !m_mapView || !m_mapScene || m_mapView->isPlacementModeActive())
+        return;
+
+    if (SolarObject *selectedHost = findRingHostForSelection()) {
+        openRingDialogForHost(selectedHost, true);
+        return;
+    }
+
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [this, placementGuard](const QPointF &scenePos) {
+        SolarObject *hostObject = findRingHostAtScenePos(scenePos);
+        placementGuard->deleteLater();
+        if (!hostObject) {
+            QMessageBox::information(this,
+                                     tr("Ring erstellen"),
+                                     tr("Bitte klicke auf einen Planeten oder eine Sonne, um einen Ring anzuhaengen."));
+            onCreateRing();
+            return;
+        }
+        openRingDialogForHost(hostObject, true);
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [placementGuard]() { placementGuard->deleteLater(); });
+    m_mapView->setPlacementMode(true,
+                                tr("Klicke auf einen Planeten oder eine Sonne, um den Ring-Host auszuwaehlen."));
+}
+
+void SystemEditorPage::onEditRing()
+{
+    if (!m_document)
+        return;
+
+    if (SolarObject *dockingRingObject = findDockingRingObjectForSelection()) {
+        openDockingRingDialogForEdit(dockingRingObject);
+        return;
+    }
+
+    SolarObject *hostObject = findRingHostForSelection();
+    if (!hostObject || !RingEditService::hasRing(*hostObject)) {
+        QMessageBox::information(this,
+                                 tr("Ring bearbeiten"),
+                                 tr("Bitte waehle ein Objekt mit vorhandenem Ring oder direkt die Ring-Zone aus."));
+        return;
+    }
+
+    openRingDialogForHost(hostObject, false);
+}
+
+void SystemEditorPage::onEditTradeLane()
+{
+    if (!m_document)
+        return;
+
+    const TradeLaneChainDetection detection = TradeLaneEditService::inspectChain(*m_document, primarySelectedNickname());
+    if (!detection.chain.has_value()) {
+        QMessageBox::warning(this,
+                             tr("Trade Lane bearbeiten"),
+                             detection.errorMessage.trimmed().isEmpty()
+                                 ? tr("Die ausgewaehlte Trade Lane konnte nicht erkannt werden.")
+                                 : detection.errorMessage);
+        return;
+    }
+
+    if (detection.issue == TradeLaneChainIssue::MissingPrevRing
+        || detection.issue == TradeLaneChainIssue::MissingNextRing) {
+        const QString brokenKey = detection.issue == TradeLaneChainIssue::MissingPrevRing
+            ? QStringLiteral("prev_ring")
+            : QStringLiteral("next_ring");
+        const int answer = QMessageBox::question(
+            this,
+            tr("Trade Lane reparieren"),
+            tr("Die Trade Lane referenziert einen fehlenden Ring '%1'.\n\n"
+               "Soll der defekte %2-Verweis automatisch entfernt werden, damit die vorhandene Kette bearbeitet werden kann?")
+                .arg(detection.referencedNickname, brokenKey),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::Yes);
+        if (answer != QMessageBox::Yes)
+            return;
+
+        auto repairedRing = cloneSolarObject(detection.boundaryRing);
+        if (!repairedRing) {
+            QMessageBox::warning(this,
+                                 tr("Trade Lane reparieren"),
+                                 tr("Der defekte Ring konnte nicht fuer die Reparatur vorbereitet werden."));
+            return;
+        }
+        repairedRing->setRawEntries(removeRawEntriesByKey(repairedRing->rawEntries(), brokenKey));
+
+        auto *stack = flatlas::core::UndoManager::instance().stack();
+        stack->beginMacro(tr("Trade Lane reparieren"));
+        stack->push(new RemoveObjectCommand(m_document.get(), detection.boundaryRing, tr("Remove Broken Trade Lane Ring")));
+        stack->push(new AddObjectCommand(m_document.get(), repairedRing, tr("Add Repaired Trade Lane Ring")));
+        stack->endMacro();
+
+        refreshObjectList();
+        m_selectedNicknames = {repairedRing->nickname()};
+        syncTreeSelectionFromNicknames(m_selectedNicknames);
+        syncSceneSelectionFromNicknames(m_selectedNicknames);
+        updateSelectionSummary();
+        onEditTradeLane();
+        return;
+    }
+
+    const TradeLaneChain chain = *detection.chain;
+    m_selectedNicknames = TradeLaneEditService::memberNicknames(chain);
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    const auto &dialogCatalog = tradeLaneDialogCatalog(gameRoot);
+    EditTradeLaneRequest initial;
+    initial.startX = chain.startPosition.x();
+    initial.startZ = chain.startPosition.z();
+    initial.endX = chain.endPosition.x();
+    initial.endZ = chain.endPosition.z();
+    initial.ringCount = chain.rings.size();
+    initial.archetype = chain.archetype;
+    initial.loadout = chain.loadout;
+    initial.reputationDisplay = chain.reputation;
+    initial.difficultyLevel = chain.difficultyLevel;
+    initial.pilot = chain.pilot;
+    initial.routeName = idsDisplayTextFromTable(dialogCatalog.ids, chain.routeIdsName);
+    initial.startSpaceName = idsDisplayTextFromTable(dialogCatalog.ids, chain.startSpaceNameId);
+    initial.endSpaceName = idsDisplayTextFromTable(dialogCatalog.ids, chain.endSpaceNameId);
+
+    const QString reputationDisplay = initial.reputationDisplay.isEmpty()
+        ? QString()
+        : dialogCatalog.factionDisplays.contains(initial.reputationDisplay)
+            ? initial.reputationDisplay
+            : QStringLiteral("%1 - %2").arg(initial.reputationDisplay, initial.reputationDisplay);
+    initial.reputationDisplay = reputationDisplay;
+
+    const QString laneSummary = tr("Lane: %1 -> %2\nRinge: %3")
+        .arg(chain.rings.first()->nickname(), chain.rings.last()->nickname())
+        .arg(chain.rings.size());
+    EditTradeLaneDialog dialog(laneSummary,
+                               dialogCatalog.archetypes,
+                               dialogCatalog.loadouts,
+                               dialogCatalog.factions,
+                               dialogCatalog.pilots,
+                               initial,
+                               this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    if (dialog.deleteRequested()) {
+        const auto answer = QMessageBox::question(
+            this,
+            tr("Trade Lane loeschen"),
+            tr("Soll die komplette Trade Lane mit %1 Ringen wirklich geloescht werden?")
+                .arg(chain.rings.size()),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::No);
+        if (answer != QMessageBox::Yes)
+            return;
+
+        auto *stack = flatlas::core::UndoManager::instance().stack();
+        stack->beginMacro(tr("Trade Lane loeschen"));
+        for (const auto &ring : chain.rings)
+            stack->push(new RemoveObjectCommand(m_document.get(), ring, tr("Remove Trade Lane Ring")));
+        stack->endMacro();
+
+        refreshObjectList();
+        m_selectedNicknames.clear();
+        syncTreeSelectionFromNicknames(m_selectedNicknames);
+        syncSceneSelectionFromNicknames(m_selectedNicknames);
+        updateSelectionSummary();
+        updateIniEditorForSelection();
+        return;
+    }
+
+    const EditTradeLaneRequest edited = dialog.result();
+    TradeLaneEditRequest request;
+    request.systemNickname = chain.systemNickname.trimmed().isEmpty()
+        ? QFileInfo(m_document->filePath()).completeBaseName()
+        : chain.systemNickname;
+    request.startNumber = chain.startNumber;
+    request.startPosition = QVector3D(static_cast<float>(edited.startX), 0.0f, static_cast<float>(edited.startZ));
+    request.endPosition = QVector3D(static_cast<float>(edited.endX), 0.0f, static_cast<float>(edited.endZ));
+    request.ringCount = edited.ringCount;
+    request.archetype = edited.archetype.trimmed();
+    request.loadout = edited.loadout.trimmed();
+    request.reputation = factionNicknameFromDisplay(edited.reputationDisplay);
+    request.behavior = chain.behavior;
+    request.pilot = edited.pilot.trimmed();
+    request.difficultyLevel = edited.difficultyLevel;
+    request.idsInfo = chain.idsInfo;
+
+    QString idsError;
+    if (!resolveIdsStringInput(gameRoot,
+                               edited.routeName,
+                               chain.routeIdsName,
+                               initial.routeName,
+                               &request.routeIdsName,
+                               &idsError)
+        || !resolveIdsStringInput(gameRoot,
+                                  edited.startSpaceName,
+                                  chain.startSpaceNameId,
+                                  initial.startSpaceName,
+                                  &request.startSpaceNameId,
+                                  &idsError)
+        || !resolveIdsStringInput(gameRoot,
+                                  edited.endSpaceName,
+                                  chain.endSpaceNameId,
+                                  initial.endSpaceName,
+                                  &request.endSpaceNameId,
+                                  &idsError)) {
+        QMessageBox::warning(this,
+                             tr("Trade Lane bearbeiten"),
+                             idsError.trimmed().isEmpty()
+                                 ? tr("Die IDS-Texte der Trade Lane konnten nicht aktualisiert werden.")
+                                 : idsError);
+        return;
+    }
+
+    QSet<QString> occupiedNicknames;
+    QSet<QString> laneMembers;
+    for (const QString &nickname : m_selectedNicknames)
+        laneMembers.insert(nickname.trimmed().toLower());
+    for (const auto &obj : m_document->objects()) {
+        if (!obj)
+            continue;
+        const QString key = obj->nickname().trimmed().toLower();
+        if (!laneMembers.contains(key))
+            occupiedNicknames.insert(key);
+    }
+
+    QVector<std::shared_ptr<SolarObject>> replacementObjects;
+    QString rebuildError;
+    if (!TradeLaneEditService::buildReplacementObjects(chain,
+                                                       request,
+                                                       occupiedNicknames,
+                                                       &replacementObjects,
+                                                       &rebuildError)) {
+        QMessageBox::warning(this,
+                             tr("Trade Lane bearbeiten"),
+                             rebuildError.trimmed().isEmpty()
+                                 ? tr("Die Trade Lane konnte nicht neu aufgebaut werden.")
+                                 : rebuildError);
+        return;
+    }
+
+    auto *stack = flatlas::core::UndoManager::instance().stack();
+    stack->beginMacro(tr("Trade Lane bearbeiten"));
+    for (const auto &ring : chain.rings)
+        stack->push(new RemoveObjectCommand(m_document.get(), ring, tr("Remove Trade Lane Ring")));
+    for (const auto &ring : replacementObjects)
+        stack->push(new AddObjectCommand(m_document.get(), ring, tr("Add Trade Lane Ring")));
+    stack->endMacro();
+
+    refreshObjectList();
+    m_selectedNicknames.clear();
+    for (const auto &ring : replacementObjects)
+        m_selectedNicknames.append(ring->nickname());
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+    updateIniEditorForSelection();
 }
 
 void SystemEditorPage::onCreateBase()
 {
-    createQuickObject(SolarObject::Station, QStringLiteral("new_base"), QStringLiteral("station"));
+    if (!m_document || !m_mapView || !m_mapScene || m_mapView->isPlacementModeActive())
+        return;
+
+    QString errorMessage;
+    BaseEditState initialState = BaseEditService::makeCreateState(*m_document,
+                                                                  flatlas::core::EditingContext::instance().primaryGamePath(),
+                                                                  &errorMessage);
+    if (!errorMessage.trimmed().isEmpty()) {
+        QMessageBox::warning(this, tr("Base erstellen"), errorMessage);
+        return;
+    }
+
+    QHash<QString, QString> overrides;
+    for (auto it = m_pendingTextFileWrites.constBegin(); it != m_pendingTextFileWrites.constEnd(); ++it)
+        overrides.insert(it.key(), it.value().content);
+
+    BaseEditDialog dialog(initialState, overrides, this);
+    connect(&dialog, &BaseEditDialog::roomActivationRequested, this, [this](const QString &roomName, const QString &modelPath) {
+        auto *mainWindow = qobject_cast<MainWindow *>(window());
+        if (!mainWindow || !mainWindow->showModelInViewer(modelPath, tr("Room Preview: %1").arg(roomName))) {
+            QMessageBox::warning(this,
+                                 tr("Room Preview"),
+                                 tr("Der ausgewaehlte Room konnte nicht im Haupt-3D-Viewer angezeigt werden."));
+        }
+    });
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const BaseEditState requestState = dialog.state();
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [this, placementGuard, requestState](const QPointF &scenePos) {
+        placementGuard->deleteLater();
+        QString errorMessage;
+        BaseApplyResult applyResult;
+        QHash<QString, QString> overrides;
+        for (auto it = m_pendingTextFileWrites.constBegin(); it != m_pendingTextFileWrites.constEnd(); ++it)
+            overrides.insert(it.key(), it.value().content);
+        if (!BaseEditService::applyCreate(requestState,
+                                          scenePos,
+                                          flatlas::core::EditingContext::instance().primaryGamePath(),
+                                          overrides,
+                                          &applyResult,
+                                          &errorMessage)) {
+            QMessageBox::warning(this,
+                                 tr("Base erstellen"),
+                                 errorMessage.trimmed().isEmpty()
+                                     ? tr("Die Base konnte nicht erstellt werden.")
+                                     : errorMessage);
+            return;
+        }
+
+        for (const BaseStagedWrite &write : applyResult.stagedWrites)
+            stagePendingTextWrite(write.absolutePath, write.content);
+
+        auto *cmd = new AddObjectCommand(m_document.get(), applyResult.createdObject, tr("Create Base"));
+        flatlas::core::UndoManager::instance().push(cmd);
+        m_selectedNicknames = {applyResult.createdObject->nickname()};
+        refreshObjectList();
+        syncTreeSelectionFromNicknames(m_selectedNicknames);
+        syncSceneSelectionFromNicknames(m_selectedNicknames);
+        updateSelectionSummary();
+        updateIniEditorForSelection();
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [placementGuard]() { placementGuard->deleteLater(); });
+    m_mapView->setPlacementMode(true,
+                                tr("Klicke auf die Map, um die neue Base zu platzieren."));
 }
 
 void SystemEditorPage::onCreateDockingRing()
 {
-    createQuickObject(SolarObject::DockingRing, QStringLiteral("new_docking_ring"), QStringLiteral("docking_ring"));
+    if (!m_document || !m_mapView || !m_mapScene || m_mapView->isPlacementModeActive())
+        return;
+
+    beginDockingRingPlacement();
+}
+
+void SystemEditorPage::beginDockingRingPlacement()
+{
+    cancelDockingRingPlacement();
+    if (!m_mapView || !m_mapScene)
+        return;
+
+    m_dockingRingPlacement = DockingRingPlacementState{};
+    m_dockingRingPlacement.step = DockingRingPlacementStep::SelectPlanet;
+    m_mapView->viewport()->installEventFilter(this);
+    m_mapView->setPlacementMode(true,
+                                tr("1. Klick waehlt den Planeten. 2. Klick waehlt die Ringposition. 3. Klick bestaetigt und oeffnet den Dialog."));
+    emit selectionStatusChanged(tr("Docking-Ring: Waehle einen Planeten als Host."));
+}
+
+QPointF SystemEditorPage::projectDockingRingScenePos(const QPointF &scenePos) const
+{
+    if (!m_dockingRingPlacement.isActive() || m_dockingRingPlacement.planetRadiusScene <= 0.0)
+        return scenePos;
+
+    const QPointF center = m_dockingRingPlacement.planetSceneCenter;
+    const QLineF direction(center, scenePos);
+    if (direction.length() <= 0.001) {
+        return QPointF(center.x() + m_dockingRingPlacement.planetRadiusScene, center.y());
+    }
+
+    const QPointF unit((scenePos.x() - center.x()) / direction.length(),
+                       (scenePos.y() - center.y()) / direction.length());
+    return center + QPointF(unit.x() * m_dockingRingPlacement.planetRadiusScene,
+                            unit.y() * m_dockingRingPlacement.planetRadiusScene);
+}
+
+void SystemEditorPage::updateDockingRingPlacementPreview(const QPointF &scenePos)
+{
+    if (!m_mapScene || !m_dockingRingPlacement.isActive())
+        return;
+    if (m_dockingRingPlacement.step != DockingRingPlacementStep::SelectPosition)
+        return;
+
+    m_dockingRingPlacement.currentProjectedScenePos = projectDockingRingScenePos(scenePos);
+
+    if (!m_dockingRingOrbitPreview) {
+        m_dockingRingOrbitPreview = new QGraphicsEllipseItem();
+        m_dockingRingOrbitPreview->setZValue(9997.0);
+        m_mapScene->addItem(m_dockingRingOrbitPreview);
+    }
+    if (!m_dockingRingPlanetPreview) {
+        m_dockingRingPlanetPreview = new QGraphicsEllipseItem();
+        m_dockingRingPlanetPreview->setZValue(9996.0);
+        m_mapScene->addItem(m_dockingRingPlanetPreview);
+    }
+    if (!m_dockingRingGuidePreview) {
+        m_dockingRingGuidePreview = new QGraphicsLineItem();
+        m_dockingRingGuidePreview->setZValue(9998.0);
+        m_mapScene->addItem(m_dockingRingGuidePreview);
+    }
+    if (!m_dockingRingDotPreview) {
+        m_dockingRingDotPreview = new QGraphicsEllipseItem();
+        m_dockingRingDotPreview->setZValue(9999.0);
+        m_mapScene->addItem(m_dockingRingDotPreview);
+    }
+
+    const QPointF center = m_dockingRingPlacement.planetSceneCenter;
+    const qreal radius = m_dockingRingPlacement.planetRadiusScene;
+    m_dockingRingOrbitPreview->setRect(center.x() - radius,
+                                       center.y() - radius,
+                                       radius * 2.0,
+                                       radius * 2.0);
+    m_dockingRingGuidePreview->setLine(QLineF(center, m_dockingRingPlacement.currentProjectedScenePos));
+    refreshDockingRingPlacementAnimation();
+
+    m_mapView->setPlacementMode(true,
+                                tr("2. Klick legt die genaue Ringposition am Planetenrand fest. [Esc] oder Rechtsklick bricht ab."));
+    emit selectionStatusChanged(tr("Docking-Ring: Ziehe auf den Planetenrand und bestaetige die Position."));
+}
+
+void SystemEditorPage::handleDockingRingPlacementClick(const QPointF &scenePos)
+{
+    if (!m_dockingRingPlacement.isActive())
+        return;
+
+    if (m_dockingRingPlacement.step == DockingRingPlacementStep::SelectPlanet) {
+        SolarObject *planet = findDockingRingPlanetAtScenePos(scenePos);
+        if (!planet) {
+            emit selectionStatusChanged(tr("Docking-Ring: Nur Planeten koennen als Host verwendet werden."));
+            return;
+        }
+
+        const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+        const QPointF sceneCenter = MapScene::flToQt(planet->position().x(), planet->position().z());
+        const float orbitRadiusWorld = std::max<float>(static_cast<float>(RingEditService::resolvedHostRadius(*planet, gameRoot)) + 40.0f, 1.0f);
+        const QPointF edgeScene = MapScene::flToQt(planet->position().x() + orbitRadiusWorld, planet->position().z());
+
+        m_dockingRingPlacement.step = DockingRingPlacementStep::SelectPosition;
+        m_dockingRingPlacement.planetNickname = planet->nickname();
+        m_dockingRingPlacement.planetSceneCenter = sceneCenter;
+        m_dockingRingPlacement.planetWorldCenter = planet->position();
+        m_dockingRingPlacement.orbitRadiusWorld = orbitRadiusWorld;
+        m_dockingRingPlacement.planetRadiusScene = std::max<qreal>(QLineF(sceneCenter, edgeScene).length(), 4.0);
+        m_dockingRingPlacement.currentProjectedScenePos = QPointF(sceneCenter.x() + m_dockingRingPlacement.planetRadiusScene,
+                                                                  sceneCenter.y());
+        if (m_dockingRingPreviewTimer)
+            m_dockingRingPreviewTimer->start();
+        updateDockingRingPlacementPreview(scenePos);
+        return;
+    }
+
+    if (m_dockingRingPlacement.step == DockingRingPlacementStep::SelectPosition) {
+        m_dockingRingPlacement.currentProjectedScenePos = projectDockingRingScenePos(scenePos);
+        m_dockingRingPlacement.step = DockingRingPlacementStep::ConfirmPosition;
+        refreshDockingRingPlacementAnimation();
+        m_mapView->setPlacementMode(true,
+                                    tr("3. Klick bestaetigt die Ringposition und oeffnet den Docking-Ring-Dialog. [Esc] oder Rechtsklick bricht ab."));
+        emit selectionStatusChanged(tr("Docking-Ring: Position fixiert. Bestaetige jetzt mit dem dritten Klick."));
+        return;
+    }
+
+    if (m_dockingRingPlacement.step == DockingRingPlacementStep::ConfirmPosition)
+        confirmDockingRingPlacement();
+}
+
+void SystemEditorPage::confirmDockingRingPlacement()
+{
+    openDockingRingDialogForPlacement();
+    cancelDockingRingPlacement();
+}
+
+void SystemEditorPage::cancelDockingRingPlacement()
+{
+    clearDockingRingPlacementPreview();
+    m_dockingRingPlacement = DockingRingPlacementState{};
+    if (m_mapView)
+        m_mapView->setPlacementMode(false);
+}
+
+void SystemEditorPage::clearDockingRingPlacementPreview()
+{
+    if (m_dockingRingPreviewTimer)
+        m_dockingRingPreviewTimer->stop();
+    m_dockingRingPreviewPulse = 0.0;
+
+    auto removeItem = [this](QGraphicsItem *item) {
+        if (!item || !m_mapScene)
+            return;
+        m_mapScene->removeItem(item);
+        delete item;
+    };
+    removeItem(m_dockingRingPlanetPreview);
+    removeItem(m_dockingRingOrbitPreview);
+    removeItem(m_dockingRingDotPreview);
+    removeItem(m_dockingRingGuidePreview);
+    m_dockingRingPlanetPreview = nullptr;
+    m_dockingRingOrbitPreview = nullptr;
+    m_dockingRingDotPreview = nullptr;
+    m_dockingRingGuidePreview = nullptr;
+}
+
+void SystemEditorPage::refreshDockingRingPlacementAnimation()
+{
+    if (!m_dockingRingPlacement.isActive())
+        return;
+
+    m_dockingRingPreviewPulse = std::fmod(m_dockingRingPreviewPulse + 0.18, 2.0 * M_PI);
+    const qreal pulse = 0.5 + 0.5 * std::sin(m_dockingRingPreviewPulse);
+    const QColor orbitStroke(255, 210, 96, 180 + static_cast<int>(pulse * 60.0));
+    const QColor orbitFill(255, 210, 96, 18 + static_cast<int>(pulse * 18.0));
+    const QColor guideStroke(255, 230, 150, 180 + static_cast<int>(pulse * 50.0));
+    const QColor dotStroke(255, 245, 185, 240);
+    const QColor dotFill(255, 219, 111, 140 + static_cast<int>(pulse * 70.0));
+
+    const QPointF center = m_dockingRingPlacement.planetSceneCenter;
+    const qreal orbitRadius = m_dockingRingPlacement.planetRadiusScene;
+    const qreal pulseRadius = orbitRadius + 3.0 + pulse * 4.0;
+    if (m_dockingRingPlanetPreview) {
+        m_dockingRingPlanetPreview->setRect(center.x() - pulseRadius,
+                                            center.y() - pulseRadius,
+                                            pulseRadius * 2.0,
+                                            pulseRadius * 2.0);
+        m_dockingRingPlanetPreview->setPen(QPen(orbitStroke, 1.5));
+        m_dockingRingPlanetPreview->setBrush(Qt::NoBrush);
+    }
+    if (m_dockingRingOrbitPreview) {
+        m_dockingRingOrbitPreview->setPen(QPen(orbitStroke, 2.0, Qt::DashLine));
+        m_dockingRingOrbitPreview->setBrush(orbitFill);
+    }
+    if (m_dockingRingGuidePreview)
+        m_dockingRingGuidePreview->setPen(QPen(guideStroke, 2.0, Qt::DashLine));
+    if (m_dockingRingDotPreview) {
+        const qreal dotRadius = 4.0 + pulse * 1.5;
+        const QPointF pos = m_dockingRingPlacement.currentProjectedScenePos;
+        m_dockingRingDotPreview->setRect(pos.x() - dotRadius,
+                                         pos.y() - dotRadius,
+                                         dotRadius * 2.0,
+                                         dotRadius * 2.0);
+        m_dockingRingDotPreview->setPen(QPen(dotStroke, 1.5));
+        m_dockingRingDotPreview->setBrush(dotFill);
+    }
+}
+
+bool SystemEditorPage::openDockingRingDialogForPlacement()
+{
+    if (!m_document)
+        return false;
+
+    SolarObject *planet = findObjectByNickname(m_dockingRingPlacement.planetNickname);
+    if (!planet)
+        return false;
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    const bool needsBase = !BaseEditService::objectHasBase(*planet);
+    QString baseNickname = planet->base().trimmed();
+    if (baseNickname.isEmpty()) {
+        for (const auto &entry : planet->rawEntries()) {
+            if (entry.first.compare(QStringLiteral("base"), Qt::CaseInsensitive) == 0) {
+                baseNickname = entry.second.trimmed();
+                break;
+            }
+        }
+    }
+    if (needsBase)
+        baseNickname = DockingRingCreationService::defaultBaseNickname(*m_document);
+
+    QHash<QString, QString> overrides;
+    for (auto it = m_pendingTextFileWrites.constBegin(); it != m_pendingTextFileWrites.constEnd(); ++it)
+        overrides.insert(it.key(), it.value().content);
+
+    QHash<QString, QStringList> templateRoomsByBase;
+    QVector<QPair<QString, QString>> existingBases = loadGlobalBaseTemplateChoices(gameRoot, overrides, &templateRoomsByBase);
+    QSet<QString> existingTemplateLabels;
+    for (const auto &existingBase : existingBases) {
+        const QString normalizedBaseLabel = existingBase.first.trimmed().toLower();
+        if (!normalizedBaseLabel.isEmpty())
+            existingTemplateLabels.insert(normalizedBaseLabel);
+    }
+
+    for (const auto &objectPtr : m_document->objects()) {
+        if (!objectPtr || !BaseEditService::objectHasBase(*objectPtr))
+            continue;
+        const QString existingBase = objectPtr->base().trimmed();
+        if (existingBase.isEmpty())
+            continue;
+
+        if (!templateRoomsByBase.contains(existingBase)) {
+            BaseEditState baseState;
+            QString loadError;
+            if (BaseEditService::loadState(*m_document, *objectPtr, gameRoot, overrides, &baseState, &loadError)) {
+                QStringList roomNames;
+                for (const BaseRoomState &room : baseState.rooms) {
+                    if (room.enabled)
+                        roomNames.append(room.roomName);
+                }
+                if (!roomNames.isEmpty())
+                    templateRoomsByBase.insert(existingBase, roomNames);
+            }
+        }
+
+        if (!templateRoomsByBase.contains(existingBase))
+            continue;
+
+        const QString baseLabel = nicknameWithIngameName(existingBase, objectPtr->idsName(), gameRoot);
+        const QString normalizedBaseLabel = baseLabel.trimmed().toLower();
+        if (!normalizedBaseLabel.isEmpty() && !existingTemplateLabels.contains(normalizedBaseLabel)) {
+            existingBases.append({baseLabel, existingBase});
+            existingTemplateLabels.insert(normalizedBaseLabel);
+        }
+
+        if (canHostDockingRing(*objectPtr)) {
+            const QString planetLabel = nicknameWithIngameName(objectPtr->nickname(), objectPtr->idsName(), gameRoot);
+            const QString normalizedPlanetLabel = planetLabel.trimmed().toLower();
+            if (!normalizedPlanetLabel.isEmpty() && !existingTemplateLabels.contains(normalizedPlanetLabel)) {
+                existingBases.append({planetLabel, existingBase});
+                existingTemplateLabels.insert(normalizedPlanetLabel);
+            }
+        }
+    }
+
+    std::sort(existingBases.begin(), existingBases.end(), [](const auto &left, const auto &right) {
+        return left.first.compare(right.first, Qt::CaseInsensitive) < 0;
+    });
+
+    const QString planetName = objectIngameName(*planet, gameRoot).trimmed().isEmpty()
+        ? planet->nickname()
+        : objectIngameName(*planet, gameRoot).trimmed();
+    const QString defaultIdsNameText = QStringLiteral("%1 Docking Ring").arg(planetName);
+    const double defaultDistanceToPlanetCore = std::max<double>(1.0, m_dockingRingPlacement.orbitRadiusWorld);
+
+    DockingRingDialog dialog(this,
+                             planet->nickname(),
+                             baseNickname,
+                             loadLoadoutsMatching(gameRoot, {QStringLiteral("docking_ring")}),
+                             loadFactionDisplays(gameRoot),
+                             existingBases,
+                             loadPilotNicknames(gameRoot),
+                             {},
+                             templateRoomsByBase,
+                             needsBase,
+                             QString(),
+                             defaultIdsNameText,
+                             QStringLiteral("66141"),
+                             defaultDistanceToPlanetCore,
+                             planet->idsName(),
+                             false,
+                             QStringLiteral("Create Docking Ring"));
+    if (dialog.exec() != QDialog::Accepted)
+        return false;
+
+    DockingRingCreateRequest request = dialog.result();
+    request.factionDisplay = factionNicknameFromDisplay(request.factionDisplay);
+
+    if (request.nickname.trimmed().isEmpty()) {
+        QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Bitte gib einen Nickname fuer den Docking Ring ein."));
+        return false;
+    }
+    for (const auto &objectPtr : m_document->objects()) {
+        if (objectPtr && objectPtr->nickname().compare(request.nickname.trimmed(), Qt::CaseInsensitive) == 0) {
+            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Der Nickname '%1' existiert bereits.").arg(request.nickname.trimmed()));
+            return false;
+        }
+    }
+    if (request.needsBase) {
+        if (request.baseNickname.trimmed().isEmpty()) {
+            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Bitte gib einen Base-Nickname fuer den Planeten an."));
+            return false;
+        }
+        if (request.roomNames.isEmpty()) {
+            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Fuer eine neue planetare Base muss mindestens ein Room aktiviert sein."));
+            return false;
+        }
+        request.startRoom = DockingRingCreationService::chooseStartRoom(request.roomNames, request.startRoom);
+        if (!request.roomNames.contains(request.startRoom, Qt::CaseInsensitive)) {
+            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Der Start-Room muss einer der aktivierten Rooms sein."));
+            return false;
+        }
+    }
+
+    QString idsError;
+    int resolvedIdsName = 0;
+    if (!resolveIdsStringInput(gameRoot,
+                               request.idsNameText,
+                               0,
+                               QString(),
+                               &resolvedIdsName,
+                               &idsError)) {
+        QMessageBox::warning(this,
+                             tr("Docking Ring erstellen"),
+                             idsError.trimmed().isEmpty()
+                                 ? tr("Der IDS-Name fuer den Docking Ring konnte nicht aufgeloest werden.")
+                                 : idsError);
+        return false;
+    }
+    request.ringIdsName = resolvedIdsName;
+
+    bool idsInfoOk = false;
+    request.ringIdsInfo = request.idsInfoValue.trimmed().toInt(&idsInfoOk);
+    if (!idsInfoOk)
+        request.ringIdsInfo = 66141;
+
+    if (request.distanceToPlanetCore <= 0.0) {
+        QMessageBox::warning(this,
+                             tr("Docking Ring erstellen"),
+                             tr("Der Abstand zum Planetenkern muss groesser als 0 sein."));
+        return false;
+    }
+
+    const QPointF currentRingWorldPos = MapScene::qtToFl(m_dockingRingPlacement.currentProjectedScenePos.x(),
+                                                         m_dockingRingPlacement.currentProjectedScenePos.y());
+    double radialX = currentRingWorldPos.x() - planet->position().x();
+    double radialZ = currentRingWorldPos.y() - planet->position().z();
+    const double radialLength = std::sqrt(radialX * radialX + radialZ * radialZ);
+    if (radialLength > 0.001) {
+        radialX /= radialLength;
+        radialZ /= radialLength;
+    } else {
+        radialX = 1.0;
+        radialZ = 0.0;
+    }
+    const QPointF ringScenePos = MapScene::flToQt(planet->position().x() + radialX * request.distanceToPlanetCore,
+                                                  planet->position().z() + radialZ * request.distanceToPlanetCore);
+    const QLineF radial(m_dockingRingPlacement.planetSceneCenter, ringScenePos);
+    const double angleDegrees = radial.angle();
+    float yawDegrees = static_cast<float>(90.0 - std::atan2(ringScenePos.y() - m_dockingRingPlacement.planetSceneCenter.y(),
+                                                            ringScenePos.x() - m_dockingRingPlacement.planetSceneCenter.x())
+                                                     * 180.0 / M_PI);
+    Q_UNUSED(angleDegrees);
+    while (yawDegrees > 180.0f)
+        yawDegrees -= 360.0f;
+    while (yawDegrees < -180.0f)
+        yawDegrees += 360.0f;
+
+    DockingRingCreationResult createResult;
+    QString errorMessage;
+    if (!DockingRingCreationService::apply(m_document.get(),
+                                           planet,
+                                           request,
+                                           ringScenePos,
+                                           yawDegrees,
+                                           gameRoot,
+                                           overrides,
+                                           &createResult,
+                                           &errorMessage)) {
+        QMessageBox::warning(this,
+                             tr("Docking Ring erstellen"),
+                             errorMessage.trimmed().isEmpty()
+                                 ? tr("Der Docking Ring konnte nicht erstellt werden.")
+                                 : errorMessage);
+        return false;
+    }
+
+    for (const BaseStagedWrite &write : createResult.stagedWrites)
+        stagePendingTextWrite(write.absolutePath, write.content);
+
+    auto *undoStack = flatlas::core::UndoManager::instance().stack();
+    if (createResult.createdFixture) {
+        undoStack->beginMacro(tr("Create Docking Ring"));
+        undoStack->push(new AddObjectCommand(m_document.get(), createResult.createdRing, tr("Create Docking Ring")));
+        undoStack->push(new AddObjectCommand(m_document.get(), createResult.createdFixture, tr("Create Docking Fixture")));
+        undoStack->endMacro();
+    } else {
+        undoStack->push(new AddObjectCommand(m_document.get(), createResult.createdRing, tr("Create Docking Ring")));
+    }
+    m_selectedNicknames = {createResult.createdRing->nickname()};
+    refreshObjectList();
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+    updateIniEditorForSelection();
+    emit selectionStatusChanged(tr("Docking-Ring '%1' wurde fuer '%2' vorbereitet.").arg(createResult.createdRing->nickname(), planet->nickname()));
+    return true;
 }
 
 void SystemEditorPage::onCreateAsteroidNebulaZone()
@@ -3857,12 +7611,14 @@ void SystemEditorPage::stageFieldIniText(const QString &relativeFilePath,
         PendingGeneratedZoneFile updated = m_pendingGeneratedZoneFiles.value(relativeKey);
         updated.content = content;
         m_pendingGeneratedZoneFiles.insert(relativeKey, updated);
+        refreshDocumentDirtyState();
         return;
     }
 
     const QString absoluteKey = normalizedPathKey(absoluteFilePath);
     if (!absoluteKey.isEmpty())
         m_pendingTextFileWrites.insert(absoluteKey, PendingTextFileWrite{absoluteFilePath, content});
+    refreshDocumentDirtyState();
 }
 
 bool SystemEditorPage::resolveLinkedFieldInfoForExclusion(const QString &exclusionZoneNickname,
@@ -4057,6 +7813,204 @@ void SystemEditorPage::beginPatrolZonePlacement(const CreatePatrolZoneRequest &r
     m_mapView->setPlacementMode(true,
                                 tr("1. Klick Startpunkt fuer '%1'. 2. Klick Endpunkt. 3. Klick Breite. 4. Klick speichert.")
                                     .arg(request.nickname));
+}
+
+void SystemEditorPage::beginBuoyPlacement(const CreateBuoyRequest &request)
+{
+    cancelBuoyPlacement();
+    m_pendingBuoyRequest = std::make_unique<CreateBuoyRequest>(request);
+    m_pendingBuoyHasAnchor = false;
+    m_pendingBuoyAnchorScenePos = QPointF();
+    m_pendingBuoyStep = 1;
+
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [this, placementGuard](const QPointF &scenePos) {
+        if (!m_pendingBuoyRequest || !m_mapView)
+            return;
+        m_pendingBuoyHasAnchor = true;
+        m_pendingBuoyAnchorScenePos = scenePos;
+        m_pendingBuoyStep = 2;
+        m_mapView->viewport()->installEventFilter(this);
+        m_mapView->viewport()->setMouseTracking(true);
+        updateBuoyPlacementPreview(scenePos);
+        m_mapView->setPlacementMode(true,
+                                    m_pendingBuoyRequest->mode == CreateBuoyRequest::Mode::Line
+                                        ? tr("2. Klick bestimmt die Richtung fuer das Bojenmuster. [Esc] oder Rechtsklick bricht ab.")
+                                        : tr("2. Klick bestimmt den Radius fuer das Bojenmuster. [Esc] oder Rechtsklick bricht ab."));
+        placementGuard->deleteLater();
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [this, placementGuard]() {
+        cancelBuoyPlacement();
+        placementGuard->deleteLater();
+    });
+
+    m_mapView->setPlacementMode(true,
+                                request.mode == CreateBuoyRequest::Mode::Line
+                                    ? (request.lineConstraint == CreateBuoyRequest::LineConstraint::FixedCount
+                                           ? tr("1. Klick setzt den Startpunkt. Linienmodus: feste Anzahl, Abstand wird waehrend der Platzierung berechnet.")
+                                           : tr("1. Klick setzt den Startpunkt. Linienmodus: fester Abstand, Anzahl wird waehrend der Platzierung berechnet."))
+                                    : tr("1. Klick setzt den Mittelpunkt des Bojenkreises."));
+}
+
+void SystemEditorPage::updateBuoyPlacementPreview(const QPointF &currentScenePos)
+{
+    if (!m_pendingBuoyRequest || !m_pendingBuoyHasAnchor || !m_mapScene)
+        return;
+
+    QVector<QPointF> previewPositions;
+    const auto mode = m_pendingBuoyRequest->mode;
+    const int count = std::max(m_pendingBuoyRequest->count,
+                               mode == CreateBuoyRequest::Mode::Line ? 2 : 3);
+
+    if (mode == CreateBuoyRequest::Mode::Line) {
+        if (!m_buoyLinePreview) {
+            const QColor stroke(120, 200, 255, 220);
+            m_buoyLinePreview = new QGraphicsLineItem();
+            m_buoyLinePreview->setPen(QPen(stroke, 2.0, Qt::DashLine));
+            m_buoyLinePreview->setZValue(9998.0);
+            m_mapScene->addItem(m_buoyLinePreview);
+        }
+
+        const QLineF directionLine(m_pendingBuoyAnchorScenePos, currentScenePos);
+        const qreal directionLength = directionLine.length();
+        if (directionLength > 0.001) {
+            int countForPreview = std::max(m_pendingBuoyRequest->count, 2);
+            qreal spacingScene = std::max<qreal>(static_cast<qreal>(m_pendingBuoyRequest->spacingMeters) / 100.0, 1.0);
+            double derivedSpacingMeters = 0.0;
+            if (m_pendingBuoyRequest->lineConstraint == CreateBuoyRequest::LineConstraint::FixedCount) {
+                derivedSpacingMeters = derivedBuoySpacingMetersForLine(directionLength, countForPreview);
+                spacingScene = std::max<qreal>(directionLength / std::max(countForPreview - 1, 1), 1.0);
+            } else {
+                countForPreview = derivedBuoyCountForLine(directionLength, m_pendingBuoyRequest->spacingMeters);
+            }
+            const QPointF unit((currentScenePos.x() - m_pendingBuoyAnchorScenePos.x()) / directionLength,
+                               (currentScenePos.y() - m_pendingBuoyAnchorScenePos.y()) / directionLength);
+            const QPointF lineEnd = m_pendingBuoyAnchorScenePos
+                                    + QPointF(unit.x() * spacingScene * (countForPreview - 1),
+                                              unit.y() * spacingScene * (countForPreview - 1));
+            m_buoyLinePreview->setLine(QLineF(m_pendingBuoyAnchorScenePos, lineEnd));
+            previewPositions.reserve(countForPreview);
+            for (int index = 0; index < countForPreview; ++index) {
+                previewPositions.append(m_pendingBuoyAnchorScenePos
+                                        + QPointF(unit.x() * spacingScene * index,
+                                                  unit.y() * spacingScene * index));
+            }
+            const QString helpText =
+                m_pendingBuoyRequest->lineConstraint == CreateBuoyRequest::LineConstraint::FixedCount
+                    ? tr("2. Klick bestaetigt die Linie. Feste Anzahl: %1, berechneter Abstand: %2 m. [Esc] oder Rechtsklick bricht ab.")
+                          .arg(countForPreview)
+                          .arg(QString::number(derivedSpacingMeters, 'f', 0))
+                    : tr("2. Klick bestaetigt die Linie. Fester Abstand: %1 m, berechnete Anzahl: %2. [Esc] oder Rechtsklick bricht ab.")
+                          .arg(m_pendingBuoyRequest->spacingMeters)
+                          .arg(countForPreview);
+            m_mapView->setPlacementMode(true, helpText);
+            emit selectionStatusChanged(
+                m_pendingBuoyRequest->lineConstraint == CreateBuoyRequest::LineConstraint::FixedCount
+                    ? tr("Bojenlinie: %1 Bojen, Abstand %2 m").arg(countForPreview).arg(QString::number(derivedSpacingMeters, 'f', 0))
+                    : tr("Bojenlinie: Abstand %1 m, %2 Bojen").arg(m_pendingBuoyRequest->spacingMeters).arg(countForPreview));
+        } else {
+            m_buoyLinePreview->setLine(QLineF(m_pendingBuoyAnchorScenePos, currentScenePos));
+        }
+        if (m_buoyCirclePreview)
+            m_buoyCirclePreview->setVisible(false);
+    } else {
+        if (!m_buoyCirclePreview) {
+            const QColor stroke(120, 200, 255, 220);
+            const QColor fill(120, 200, 255, 22);
+            m_buoyCirclePreview = new QGraphicsEllipseItem();
+            m_buoyCirclePreview->setPen(QPen(stroke, 2.0, Qt::DashLine));
+            m_buoyCirclePreview->setBrush(fill);
+            m_buoyCirclePreview->setZValue(9998.0);
+            m_mapScene->addItem(m_buoyCirclePreview);
+        }
+
+        const qreal radius = std::max<qreal>(QLineF(m_pendingBuoyAnchorScenePos, currentScenePos).length(), 1.0);
+        m_buoyCirclePreview->setVisible(true);
+        m_buoyCirclePreview->setRect(m_pendingBuoyAnchorScenePos.x() - radius,
+                                     m_pendingBuoyAnchorScenePos.y() - radius,
+                                     radius * 2.0,
+                                     radius * 2.0);
+        previewPositions.reserve(count);
+        for (int index = 0; index < count; ++index) {
+            const double angle = (2.0 * M_PI * static_cast<double>(index)) / static_cast<double>(count);
+            previewPositions.append(QPointF(m_pendingBuoyAnchorScenePos.x() + std::cos(angle) * radius,
+                                            m_pendingBuoyAnchorScenePos.y() + std::sin(angle) * radius));
+        }
+        if (m_buoyLinePreview)
+            m_buoyLinePreview->setVisible(false);
+    }
+
+    while (m_buoyMarkerPreviews.size() < previewPositions.size()) {
+        auto *marker = new QGraphicsEllipseItem();
+        marker->setPen(QPen(QColor(120, 200, 255, 230), 1.5));
+        marker->setBrush(QColor(120, 200, 255, 80));
+        marker->setZValue(10000.0);
+        m_mapScene->addItem(marker);
+        m_buoyMarkerPreviews.append(marker);
+    }
+
+    constexpr qreal kMarkerRadius = 4.0;
+    for (int index = 0; index < m_buoyMarkerPreviews.size(); ++index) {
+        auto *marker = m_buoyMarkerPreviews[index];
+        if (index < previewPositions.size()) {
+            const QPointF pos = previewPositions[index];
+            marker->setRect(pos.x() - kMarkerRadius,
+                            pos.y() - kMarkerRadius,
+                            kMarkerRadius * 2.0,
+                            kMarkerRadius * 2.0);
+            marker->setVisible(true);
+        } else {
+            marker->setVisible(false);
+        }
+    }
+}
+
+void SystemEditorPage::beginTradeLanePlacement()
+{
+    cancelTradeLanePlacement();
+    m_pendingTradeLaneHasStart = false;
+    m_pendingTradeLaneStartScenePos = QPointF();
+
+    auto *placementGuard = new QObject(this);
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
+            placementGuard, [this, placementGuard](const QPointF &scenePos) {
+        if (!m_mapView)
+            return;
+        m_pendingTradeLaneHasStart = true;
+        m_pendingTradeLaneStartScenePos = scenePos;
+        m_mapView->viewport()->installEventFilter(this);
+        m_mapView->viewport()->setMouseTracking(true);
+        updateTradeLanePlacementPreview(scenePos);
+        m_mapView->setPlacementMode(
+            true,
+            tr("2. Klick setzt das Ende der Trade Lane. Die Ring-Kette wird danach konfiguriert. [Esc] oder Rechtsklick bricht ab."));
+        placementGuard->deleteLater();
+    });
+    connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
+            placementGuard, [this, placementGuard]() {
+        cancelTradeLanePlacement();
+        placementGuard->deleteLater();
+    });
+
+    m_mapView->setPlacementMode(true, tr("1. Klick setzt den Startpunkt der Trade Lane."));
+}
+
+void SystemEditorPage::updateTradeLanePlacementPreview(const QPointF &currentScenePos)
+{
+    if (!m_pendingTradeLaneHasStart || !m_mapScene)
+        return;
+
+    if (!m_tradeLanePlacementPreview) {
+        const QColor stroke(120, 190, 255, 230);
+        m_tradeLanePlacementPreview = new QGraphicsLineItem();
+        m_tradeLanePlacementPreview->setPen(QPen(stroke, 2.0, Qt::DashLine));
+        m_tradeLanePlacementPreview->setZValue(9998.0);
+        m_mapScene->addItem(m_tradeLanePlacementPreview);
+    }
+
+    m_tradeLanePlacementPreview->setLine(QLineF(m_pendingTradeLaneStartScenePos, currentScenePos));
 }
 
 void SystemEditorPage::updateFieldZonePlacementPreview(const QPointF &currentScenePos)
@@ -4628,6 +8582,282 @@ void SystemEditorPage::finalizePatrolZonePlacement(const QPointF &endScenePos)
     cancelPatrolZonePlacement();
 }
 
+void SystemEditorPage::finalizeBuoyPlacement(const QPointF &scenePos)
+{
+    if (!m_document || !m_pendingBuoyRequest || !m_pendingBuoyHasAnchor)
+        return;
+
+    const QString archetype = m_pendingBuoyRequest->archetype.trimmed().toLower();
+    if (archetype.isEmpty()) {
+        QMessageBox::warning(this, tr("Bojen erstellen"),
+                             tr("Es wurde kein gueltiger Bojentyp ausgewaehlt."));
+        cancelBuoyPlacement();
+        return;
+    }
+
+    QVector<QPointF> positionsScene;
+    const int count = std::max(m_pendingBuoyRequest->count,
+                               m_pendingBuoyRequest->mode == CreateBuoyRequest::Mode::Line ? 2 : 3);
+    if (m_pendingBuoyRequest->mode == CreateBuoyRequest::Mode::Line) {
+        const QLineF directionLine(m_pendingBuoyAnchorScenePos, scenePos);
+        const qreal directionLength = directionLine.length();
+        if (directionLength <= 0.001) {
+            QMessageBox::warning(this, tr("Bojen erstellen"),
+                                 tr("Die Richtung fuer die Bojenlinie ist ungueltig."));
+            m_mapView->setPlacementMode(true,
+                                        tr("2. Klick bestimmt die Richtung fuer das Bojenmuster. [Esc] oder Rechtsklick bricht ab."));
+            return;
+        }
+
+        int finalCount = std::max(m_pendingBuoyRequest->count, 2);
+        qreal spacingScene = std::max<qreal>(static_cast<qreal>(m_pendingBuoyRequest->spacingMeters) / 100.0, 1.0);
+        if (m_pendingBuoyRequest->lineConstraint == CreateBuoyRequest::LineConstraint::FixedCount) {
+            spacingScene = std::max<qreal>(directionLength / std::max(finalCount - 1, 1), 1.0);
+        } else {
+            finalCount = derivedBuoyCountForLine(directionLength, m_pendingBuoyRequest->spacingMeters);
+        }
+        const QPointF unit((scenePos.x() - m_pendingBuoyAnchorScenePos.x()) / directionLength,
+                           (scenePos.y() - m_pendingBuoyAnchorScenePos.y()) / directionLength);
+        positionsScene.reserve(finalCount);
+        for (int index = 0; index < finalCount; ++index) {
+            positionsScene.append(m_pendingBuoyAnchorScenePos
+                                  + QPointF(unit.x() * spacingScene * index,
+                                            unit.y() * spacingScene * index));
+        }
+    } else {
+        const qreal radius = QLineF(m_pendingBuoyAnchorScenePos, scenePos).length();
+        if (radius <= 0.001) {
+            QMessageBox::warning(this, tr("Bojen erstellen"),
+                                 tr("Der Radius fuer den Bojenkreis ist ungueltig."));
+            m_mapView->setPlacementMode(true,
+                                        tr("2. Klick bestimmt den Radius fuer das Bojenmuster. [Esc] oder Rechtsklick bricht ab."));
+            return;
+        }
+
+        positionsScene.reserve(count);
+        for (int index = 0; index < count; ++index) {
+            const double angle = (2.0 * M_PI * static_cast<double>(index)) / static_cast<double>(count);
+            positionsScene.append(QPointF(m_pendingBuoyAnchorScenePos.x() + std::cos(angle) * radius,
+                                          m_pendingBuoyAnchorScenePos.y() + std::sin(angle) * radius));
+        }
+    }
+
+    QStringList existingNicknames;
+    existingNicknames.reserve(m_document->objects().size());
+    for (const auto &obj : m_document->objects()) {
+        if (obj)
+            existingNicknames.append(obj->nickname());
+    }
+    QSet<QString> usedNicknames;
+    for (const QString &nickname : std::as_const(existingNicknames))
+        usedNicknames.insert(nickname.toLower());
+
+    const QString prefix = QStringLiteral("%1_%2_")
+                               .arg(buoyNicknameSystemToken(m_document->filePath()))
+                               .arg(archetype);
+    const int idsName = buoyIdsNameForArchetype(archetype);
+    const int idsInfo = buoyIdsInfoForArchetype(archetype);
+
+    auto *stack = flatlas::core::UndoManager::instance().stack();
+    stack->beginMacro(tr("Create Buoys"));
+
+    QStringList createdNicknames;
+    createdNicknames.reserve(positionsScene.size());
+    for (const QPointF &scenePoint : std::as_const(positionsScene)) {
+        const QPointF worldXZ = MapScene::qtToFl(scenePoint.x(), scenePoint.y());
+        auto obj = std::make_shared<SolarObject>();
+        const QString nickname = nextIndexedNickname(prefix, &usedNicknames);
+        obj->setNickname(nickname);
+        obj->setType(SolarObject::Waypoint);
+        obj->setArchetype(archetype);
+        obj->setPosition(QVector3D(static_cast<float>(worldXZ.x()), 0.0f, static_cast<float>(worldXZ.y())));
+        if (idsName > 0)
+            obj->setIdsName(idsName);
+        if (idsInfo > 0)
+            obj->setIdsInfo(idsInfo);
+
+        QVector<QPair<QString, QString>> rawEntries{
+            {QStringLiteral("nickname"), nickname},
+            {QStringLiteral("pos"),
+             QStringLiteral("%1, 0, %2").arg(worldXZ.x(), 0, 'f', 0).arg(worldXZ.y(), 0, 'f', 0)},
+            {QStringLiteral("archetype"), archetype},
+        };
+        if (idsName > 0)
+            rawEntries.append({QStringLiteral("ids_name"), QString::number(idsName)});
+        if (idsInfo > 0)
+            rawEntries.append({QStringLiteral("ids_info"), QString::number(idsInfo)});
+        obj->setRawEntries(rawEntries);
+
+        stack->push(new AddObjectCommand(m_document.get(), obj, tr("Create Buoys")));
+        createdNicknames.append(nickname);
+    }
+    stack->endMacro();
+
+    refreshObjectList();
+    m_selectedNicknames = createdNicknames;
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+    updateIniEditorForSelection();
+    cancelBuoyPlacement();
+}
+
+void SystemEditorPage::finalizeTradeLanePlacement(const QPointF &endScenePos)
+{
+    if (!m_document || !m_pendingTradeLaneHasStart || !m_mapView)
+        return;
+
+    const QLineF laneLine(m_pendingTradeLaneStartScenePos, endScenePos);
+    const qreal laneLengthScene = laneLine.length();
+    if (laneLengthScene <= 0.001) {
+        QMessageBox::warning(this, tr("Trade Lane erstellen"),
+                             tr("Start- und Endpunkt der Trade Lane sind ungueltig."));
+        m_mapView->setPlacementMode(true,
+                                    tr("2. Klick setzt das Ende der Trade Lane. [Esc] oder Rechtsklick bricht ab."));
+        return;
+    }
+
+    if (m_tradeLanePlacementPreview && m_mapScene)
+        m_tradeLanePlacementPreview->setLine(laneLine);
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    const QString systemNickname = QFileInfo(m_document->filePath()).completeBaseName();
+    CreateTradeLaneDialog dialog(systemNickname,
+                                 nextTradeLaneRingNumber(m_document.get(), systemNickname),
+                                 std::max(2, qRound((laneLengthScene * 100.0) / 7500.0) + 1),
+                                 laneLengthScene * 100.0,
+                                 loadLoadoutsMatching(gameRoot, {QStringLiteral("trade_lane_ring")}),
+                                 loadFactionDisplays(gameRoot),
+                                 loadPilotNicknames(gameRoot),
+                                 this);
+    if (dialog.exec() != QDialog::Accepted) {
+        cancelTradeLanePlacement();
+        return;
+    }
+
+    const CreateTradeLaneRequest request = dialog.result();
+    if (request.ringCount < 2) {
+        QMessageBox::warning(this, tr("Trade Lane erstellen"),
+                             tr("Es muessen mindestens zwei Trade-Lane-Ringe erstellt werden."));
+        cancelTradeLanePlacement();
+        return;
+    }
+    if (request.loadout.trimmed().isEmpty()) {
+        QMessageBox::warning(this, tr("Trade Lane erstellen"),
+                             tr("Bitte waehle ein gueltiges Loadout fuer die Trade Lane."));
+        cancelTradeLanePlacement();
+        return;
+    }
+
+    QSet<QString> usedNicknames;
+    for (const auto &obj : m_document->objects()) {
+        if (obj)
+            usedNicknames.insert(obj->nickname().trimmed().toLower());
+    }
+
+    QStringList plannedNicknames;
+    plannedNicknames.reserve(request.ringCount);
+    for (int index = 0; index < request.ringCount; ++index) {
+        const QString nickname =
+            QStringLiteral("%1_Trade_Lane_Ring_%2").arg(systemNickname).arg(request.startNumber + index);
+        const QString key = nickname.trimmed().toLower();
+        if (usedNicknames.contains(key)) {
+            QMessageBox::warning(this, tr("Trade Lane erstellen"),
+                                 tr("Der Ring-Nickname '%1' existiert bereits. Bitte waehle eine andere Startnummer.")
+                                     .arg(nickname));
+            cancelTradeLanePlacement();
+            return;
+        }
+        usedNicknames.insert(key);
+        plannedNicknames.append(nickname);
+    }
+
+    int routeIdsName = 0;
+    int startSpaceNameId = 0;
+    int endSpaceNameId = 0;
+    QString idsError;
+    if (!resolveIdsStringInput(gameRoot, request.routeName, 0, QString(), &routeIdsName, &idsError)
+        || !resolveIdsStringInput(gameRoot, request.startSpaceName, 0, QString(), &startSpaceNameId, &idsError)
+        || !resolveIdsStringInput(gameRoot, request.endSpaceName, 0, QString(), &endSpaceNameId, &idsError)) {
+        QMessageBox::warning(this, tr("Trade Lane erstellen"),
+                             idsError.trimmed().isEmpty()
+                                 ? tr("Die IDS-Texte fuer die Trade Lane konnten nicht geschrieben werden.")
+                                 : tr("Die IDS-Texte fuer die Trade Lane konnten nicht geschrieben werden:\n%1")
+                                       .arg(idsError));
+        cancelTradeLanePlacement();
+        return;
+    }
+
+    const QString reputation = factionNicknameFromDisplay(request.reputationDisplay);
+    const double yawDegrees = tradeLaneYawDegrees(m_pendingTradeLaneStartScenePos, endScenePos);
+
+    auto *stack = flatlas::core::UndoManager::instance().stack();
+    stack->beginMacro(tr("Trade Lane erstellen"));
+
+    QStringList createdNicknames;
+    createdNicknames.reserve(request.ringCount);
+    for (int index = 0; index < request.ringCount; ++index) {
+        const double t = request.ringCount <= 1
+            ? 0.0
+            : static_cast<double>(index) / static_cast<double>(request.ringCount - 1);
+        const QPointF scenePos(
+            m_pendingTradeLaneStartScenePos.x()
+                + (endScenePos.x() - m_pendingTradeLaneStartScenePos.x()) * t,
+            m_pendingTradeLaneStartScenePos.y()
+                + (endScenePos.y() - m_pendingTradeLaneStartScenePos.y()) * t);
+        const QPointF worldXZ = MapScene::qtToFl(scenePos.x(), scenePos.y());
+
+        auto obj = std::make_shared<SolarObject>();
+        const QString nickname = plannedNicknames[index];
+        obj->setNickname(nickname);
+        obj->setType(SolarObject::TradeLane);
+        obj->setArchetype(QStringLiteral("Trade_Lane_Ring"));
+        obj->setPosition(QVector3D(static_cast<float>(worldXZ.x()), 0.0f, static_cast<float>(worldXZ.y())));
+        obj->setRotation(QVector3D(0.0f, static_cast<float>(yawDegrees), 0.0f));
+        obj->setIdsInfo(66170);
+        obj->setLoadout(request.loadout);
+        if (routeIdsName > 0)
+            obj->setIdsName(routeIdsName);
+
+        QVector<QPair<QString, QString>> entries{
+            {QStringLiteral("nickname"), nickname},
+            {QStringLiteral("pos"), QStringLiteral("%1, 0, %2").arg(worldXZ.x(), 0, 'f', 0).arg(worldXZ.y(), 0, 'f', 0)},
+            {QStringLiteral("rotate"), QStringLiteral("0, %1, 0").arg(yawDegrees, 0, 'f', 0)},
+            {QStringLiteral("archetype"), QStringLiteral("Trade_Lane_Ring")},
+            {QStringLiteral("ids_name"), QString::number(routeIdsName)},
+        };
+        if (index > 0)
+            entries.append({QStringLiteral("prev_ring"), plannedNicknames[index - 1]});
+        if (index < request.ringCount - 1)
+            entries.append({QStringLiteral("next_ring"), plannedNicknames[index + 1]});
+        entries.append({QStringLiteral("ids_info"), QStringLiteral("66170")});
+        if (!reputation.isEmpty())
+            entries.append({QStringLiteral("reputation"), reputation});
+        if (index == 0 && startSpaceNameId > 0)
+            entries.append({QStringLiteral("tradelane_space_name"), QString::number(startSpaceNameId)});
+        else if (index == request.ringCount - 1 && endSpaceNameId > 0)
+            entries.append({QStringLiteral("tradelane_space_name"), QString::number(endSpaceNameId)});
+        entries.append({QStringLiteral("behavior"), QStringLiteral("NOTHING")});
+        entries.append({QStringLiteral("difficulty_level"), QString::number(request.difficultyLevel)});
+        entries.append({QStringLiteral("loadout"), request.loadout});
+        if (!request.pilot.trimmed().isEmpty())
+            entries.append({QStringLiteral("pilot"), request.pilot.trimmed()});
+        obj->setRawEntries(entries);
+
+        stack->push(new AddObjectCommand(m_document.get(), obj, tr("Create Trade Lane")));
+        createdNicknames.append(nickname);
+    }
+    stack->endMacro();
+
+    refreshObjectList();
+    m_selectedNicknames = createdNicknames;
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+    updateIniEditorForSelection();
+    cancelTradeLanePlacement();
+}
+
 void SystemEditorPage::cancelFieldZonePlacement()
 {
     clearFieldZonePlacementPreview();
@@ -4684,6 +8914,51 @@ void SystemEditorPage::cancelPatrolZonePlacement()
     m_pendingPatrolZoneStep = 0;
 }
 
+void SystemEditorPage::cancelBuoyPlacement()
+{
+    if (m_buoyLinePreview && m_mapScene) {
+        m_mapScene->removeItem(m_buoyLinePreview);
+        delete m_buoyLinePreview;
+        m_buoyLinePreview = nullptr;
+    }
+    if (m_buoyCirclePreview && m_mapScene) {
+        m_mapScene->removeItem(m_buoyCirclePreview);
+        delete m_buoyCirclePreview;
+        m_buoyCirclePreview = nullptr;
+    }
+    for (QGraphicsEllipseItem *marker : std::as_const(m_buoyMarkerPreviews)) {
+        if (marker && m_mapScene)
+            m_mapScene->removeItem(marker);
+        delete marker;
+    }
+    m_buoyMarkerPreviews.clear();
+    if (m_mapView && m_mapView->viewport()) {
+        m_mapView->setPlacementMode(false);
+        m_mapView->viewport()->removeEventFilter(this);
+        m_mapView->viewport()->setToolTip(QString());
+    }
+    m_pendingBuoyRequest.reset();
+    m_pendingBuoyHasAnchor = false;
+    m_pendingBuoyAnchorScenePos = QPointF();
+    m_pendingBuoyStep = 0;
+}
+
+void SystemEditorPage::cancelTradeLanePlacement()
+{
+    if (m_tradeLanePlacementPreview && m_mapScene) {
+        m_mapScene->removeItem(m_tradeLanePlacementPreview);
+        delete m_tradeLanePlacementPreview;
+        m_tradeLanePlacementPreview = nullptr;
+    }
+    if (m_mapView && m_mapView->viewport()) {
+        m_mapView->setPlacementMode(false);
+        m_mapView->viewport()->removeEventFilter(this);
+        m_mapView->viewport()->setToolTip(QString());
+    }
+    m_pendingTradeLaneHasStart = false;
+    m_pendingTradeLaneStartScenePos = QPointF();
+}
+
 void SystemEditorPage::cancelExclusionZonePlacement()
 {
     if (m_exclusionZonePlacementPreview && m_mapScene) {
@@ -4723,6 +8998,7 @@ void SystemEditorPage::addLinkedFieldSection(const QString &sectionName,
     linkedSection.entries.append({QStringLiteral("zone"), zoneNickname});
     extras.append(linkedSection);
     SystemPersistence::setExtraSections(m_document.get(), extras);
+    refreshDocumentDirtyState();
 }
 
 void SystemEditorPage::removeLinkedFieldSectionsForNicknames(const QStringList &zoneNicknames)
@@ -4760,17 +9036,23 @@ void SystemEditorPage::removeLinkedFieldSectionsForNicknames(const QStringList &
     }
 
     SystemPersistence::setExtraSections(m_document.get(), filtered);
+    refreshDocumentDirtyState();
 }
 
 bool SystemEditorPage::writePendingGeneratedZoneFiles(QString *errorMessage)
 {
     for (auto it = m_pendingGeneratedZoneFiles.constBegin(); it != m_pendingGeneratedZoneFiles.constEnd(); ++it) {
         const PendingGeneratedZoneFile &fileData = it.value();
-        if (fileData.absolutePath.trimmed().isEmpty())
-            continue;
+        if (fileData.absolutePath.trimmed().isEmpty()) {
+            if (errorMessage) {
+                *errorMessage = tr("Eine generierte Referenzdatei hat keinen gueltigen Zielpfad und konnte deshalb nicht gespeichert werden.");
+            }
+            qWarning() << "SystemEditorPage::writePendingGeneratedZoneFiles missing path";
+            return false;
+        }
 
         QDir().mkpath(QFileInfo(fileData.absolutePath).absolutePath());
-        QFile file(fileData.absolutePath);
+        QSaveFile file(fileData.absolutePath);
         if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
             if (errorMessage) {
                 *errorMessage = tr("Die generierte Referenzdatei konnte nicht geschrieben werden:\n%1")
@@ -4778,7 +9060,27 @@ bool SystemEditorPage::writePendingGeneratedZoneFiles(QString *errorMessage)
             }
             return false;
         }
-        file.write(fileData.content.toUtf8());
+        const QByteArray bytes = fileData.content.toUtf8();
+        if (file.write(bytes) != bytes.size()) {
+            if (errorMessage) {
+                *errorMessage = tr("Die generierte Referenzdatei konnte nicht vollstaendig geschrieben werden:\n%1")
+                                    .arg(fileData.absolutePath);
+            }
+            qWarning() << "SystemEditorPage::writePendingGeneratedZoneFiles short write" << fileData.absolutePath;
+            file.cancelWriting();
+            return false;
+        }
+        if (!file.commit()) {
+            if (errorMessage) {
+                *errorMessage = tr("Die generierte Referenzdatei konnte nicht geschrieben werden:\n%1")
+                                    .arg(fileData.absolutePath);
+            }
+            return false;
+        }
+        if (!verifySavedTextFile(fileData.absolutePath, fileData.content, errorMessage)) {
+            qWarning() << "SystemEditorPage::writePendingGeneratedZoneFiles verification failed" << fileData.absolutePath;
+            return false;
+        }
     }
     return true;
 }
@@ -4787,19 +9089,53 @@ bool SystemEditorPage::writePendingTextFiles(QString *errorMessage)
 {
     for (auto it = m_pendingTextFileWrites.constBegin(); it != m_pendingTextFileWrites.constEnd(); ++it) {
         const PendingTextFileWrite &fileData = it.value();
-        if (fileData.absolutePath.trimmed().isEmpty())
-            continue;
+        if (fileData.absolutePath.trimmed().isEmpty()) {
+            if (errorMessage)
+                *errorMessage = tr("Eine verknuepfte Datei hat keinen gueltigen Zielpfad und konnte deshalb nicht gespeichert werden.");
+            qWarning() << "SystemEditorPage::writePendingTextFiles missing path";
+            return false;
+        }
         QDir().mkpath(QFileInfo(fileData.absolutePath).absolutePath());
-        QFile file(fileData.absolutePath);
+        QSaveFile file(fileData.absolutePath);
         if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
             if (errorMessage)
-                *errorMessage = tr("Die verknüpfte Feld-INI konnte nicht geschrieben werden:\n%1")
+                *errorMessage = tr("Die verknuepfte Datei konnte nicht geschrieben werden:\n%1")
                                     .arg(fileData.absolutePath);
             return false;
         }
-        file.write(fileData.content.toUtf8());
+        const QByteArray bytes = fileData.content.toUtf8();
+        if (file.write(bytes) != bytes.size()) {
+            if (errorMessage)
+                *errorMessage = tr("Die verknuepfte Datei konnte nicht vollstaendig geschrieben werden:\n%1")
+                                    .arg(fileData.absolutePath);
+            qWarning() << "SystemEditorPage::writePendingTextFiles short write" << fileData.absolutePath;
+            file.cancelWriting();
+            return false;
+        }
+        if (!file.commit()) {
+            if (errorMessage)
+                *errorMessage = tr("Die verknuepfte Datei konnte nicht geschrieben werden:\n%1")
+                                    .arg(fileData.absolutePath);
+            return false;
+        }
+        if (!verifySavedTextFile(fileData.absolutePath, fileData.content, errorMessage)) {
+            qWarning() << "SystemEditorPage::writePendingTextFiles verification failed" << fileData.absolutePath;
+            return false;
+        }
     }
     return true;
+}
+
+QString SystemEditorPage::lastSaveError() const
+{
+    return m_lastSaveError;
+}
+
+void SystemEditorPage::stagePendingTextWrite(const QString &absolutePath, const QString &content)
+{
+    const QString key = QDir::cleanPath(absolutePath).toLower();
+    m_pendingTextFileWrites.insert(key, PendingTextFileWrite{absolutePath, content});
+    refreshDocumentDirtyState();
 }
 
 SolarObject *SystemEditorPage::findObjectByNickname(const QString &nickname) const
@@ -4822,6 +9158,17 @@ ZoneItem *SystemEditorPage::findZoneByNickname(const QString &nickname) const
             return zone.get();
     }
     return nullptr;
+}
+
+SolarObject *SystemEditorPage::findBaseHostForSelection() const
+{
+    if (!m_document || m_selectedNicknames.size() != 1)
+        return nullptr;
+
+    SolarObject *object = findObjectByNickname(primarySelectedNickname());
+    if (!object)
+        return nullptr;
+    return BaseEditService::objectHasBase(*object) ? object : nullptr;
 }
 
 int SystemEditorPage::findLightSourceSectionIndexByNickname(const QString &nickname) const
@@ -4913,6 +9260,59 @@ QStringList SystemEditorPage::expandSelectionNicknamesForScene(const QStringList
     return expanded;
 }
 
+QStringList SystemEditorPage::expandMoveNicknames(const QStringList &nicknames) const
+{
+    QStringList expanded;
+    for (const QString &nickname : nicknames) {
+        SolarObject *object = findObjectByNickname(nickname);
+        if (object) {
+            const QString rootNickname = normalizeObjectNicknameToGroupRoot(nickname);
+            const QStringList groupNicknames = objectGroupNicknames(rootNickname);
+            expanded.append(groupNicknames);
+            for (const QString &groupNickname : groupNicknames) {
+                SolarObject *groupObject = findObjectByNickname(groupNickname);
+                if (!groupObject || !isPlanetLikeObject(*groupObject))
+                    continue;
+
+                const QString deathZoneNickname = QStringLiteral("Zone_%1_death").arg(groupObject->nickname());
+                if (findZoneByNickname(deathZoneNickname))
+                    expanded.append(deathZoneNickname);
+
+                const QString ringZoneNickname = RingEditService::linkedZoneNickname(*groupObject);
+                if (!ringZoneNickname.isEmpty() && findZoneByNickname(ringZoneNickname))
+                    expanded.append(ringZoneNickname);
+            }
+            continue;
+        }
+
+        if (ZoneItem *zone = findZoneByNickname(nickname)) {
+            expanded.append(zone->nickname());
+            if (SolarObject *hostObject = RingEditService::findHostForZone(m_document.get(), zone->nickname())) {
+                const QString rootNickname = normalizeObjectNicknameToGroupRoot(hostObject->nickname());
+                const QStringList groupNicknames = objectGroupNicknames(rootNickname);
+                expanded.append(groupNicknames);
+                for (const QString &groupNickname : groupNicknames) {
+                    SolarObject *groupObject = findObjectByNickname(groupNickname);
+                    if (!groupObject || !isPlanetLikeObject(*groupObject))
+                        continue;
+
+                    const QString deathZoneNickname = QStringLiteral("Zone_%1_death").arg(groupObject->nickname());
+                    if (findZoneByNickname(deathZoneNickname))
+                        expanded.append(deathZoneNickname);
+
+                    const QString ringZoneNickname = RingEditService::linkedZoneNickname(*groupObject);
+                    if (!ringZoneNickname.isEmpty() && findZoneByNickname(ringZoneNickname))
+                        expanded.append(ringZoneNickname);
+                }
+            }
+        } else if (findLightSourceSectionIndexByNickname(nickname) >= 0) {
+            expanded.append(nickname);
+        }
+    }
+    expanded.removeDuplicates();
+    return expanded;
+}
+
 void SystemEditorPage::syncLightSourcesInScene()
 {
     if (!m_mapScene) {
@@ -4970,6 +9370,356 @@ QStringList SystemEditorPage::objectGroupNicknames(const QString &rootNickname) 
     return ordered;
 }
 
+bool SystemEditorPage::isPlanetLikeObject(const SolarObject &obj) const
+{
+    if (obj.type() == SolarObject::Planet)
+        return true;
+    if (obj.type() == SolarObject::Sun)
+        return true;
+    return obj.archetype().contains(QStringLiteral("planet"), Qt::CaseInsensitive);
+}
+
+SolarObject *SystemEditorPage::findRingHostForSelection() const
+{
+    if (!m_document || m_selectedNicknames.size() != 1)
+        return nullptr;
+
+    const QString selectedNickname = m_selectedNicknames.first();
+    if (SolarObject *selectedObject = findObjectByNickname(selectedNickname)) {
+        if (RingEditService::canHostRing(*selectedObject))
+            return selectedObject;
+    }
+
+    if (ZoneItem *selectedZone = findZoneByNickname(selectedNickname))
+        return RingEditService::findHostForZone(m_document.get(), selectedZone->nickname());
+
+    return nullptr;
+}
+
+SolarObject *SystemEditorPage::findRingHostAtScenePos(const QPointF &scenePos) const
+{
+    if (!m_mapScene)
+        return nullptr;
+
+    const auto sceneItems = m_mapScene->items(scenePos);
+    for (QGraphicsItem *item : sceneItems) {
+        auto *solarItem = dynamic_cast<flatlas::rendering::SolarObjectItem *>(item);
+        if (!solarItem)
+            continue;
+        SolarObject *hostObject = findObjectByNickname(solarItem->nickname());
+        if (hostObject && RingEditService::canHostRing(*hostObject))
+            return hostObject;
+    }
+    return nullptr;
+}
+
+bool SystemEditorPage::canHostDockingRing(const SolarObject &obj) const
+{
+    return DockingRingCreationService::canHostDockingRing(obj);
+}
+
+SolarObject *SystemEditorPage::findDockingRingObjectForSelection() const
+{
+    if (!m_document || m_selectedNicknames.size() != 1)
+        return nullptr;
+
+    SolarObject *selectedObject = findObjectByNickname(primarySelectedNickname());
+    if (!selectedObject)
+        return nullptr;
+    return DockingRingCreationService::isDockingRingObject(*selectedObject) ? selectedObject : nullptr;
+}
+
+SolarObject *SystemEditorPage::findDockingRingPlanetAtScenePos(const QPointF &scenePos) const
+{
+    if (!m_mapScene)
+        return nullptr;
+
+    const auto sceneItems = m_mapScene->items(scenePos);
+    for (QGraphicsItem *item : sceneItems) {
+        auto *solarItem = dynamic_cast<flatlas::rendering::SolarObjectItem *>(item);
+        if (!solarItem)
+            continue;
+        SolarObject *hostObject = findObjectByNickname(solarItem->nickname());
+        if (hostObject && canHostDockingRing(*hostObject))
+            return hostObject;
+    }
+    return nullptr;
+}
+
+bool SystemEditorPage::openRingDialogForHost(SolarObject *hostObject, bool forceEnableForCreate)
+{
+    if (!m_document || !hostObject)
+        return false;
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    const RingEditOptions options = RingEditService::loadOptions(gameRoot);
+    RingEditState initialState = RingEditService::loadState(m_document.get(), *hostObject, gameRoot);
+    if (forceEnableForCreate && !RingEditService::hasRing(*hostObject))
+        initialState.enabled = true;
+
+    const bool showHostRadiusSphere = hostObject->type() == SolarObject::Planet || hostObject->type() == SolarObject::Sun;
+    const bool hostRadiusSphereIsSun = hostObject->type() == SolarObject::Sun;
+    const double hostRadius = showHostRadiusSphere
+        ? static_cast<double>(RingEditService::resolvedHostRadius(*hostObject, gameRoot))
+        : 0.0;
+
+    ObjectRingDialog dialog(hostObject->nickname(),
+                            hostObject->archetype(),
+                            showHostRadiusSphere,
+                            hostRadius,
+                            hostRadiusSphereIsSun,
+                            options,
+                            initialState,
+                            this);
+    if (dialog.exec() != QDialog::Accepted)
+        return false;
+
+    const RingEditRequest request = dialog.result();
+    RingEditState newState;
+    newState.enabled = request.enabled;
+    newState.ringIni = request.ringIni;
+    newState.zoneNickname = request.zoneNickname;
+    newState.outerRadius = request.outerRadius;
+    newState.innerRadius = request.innerRadius;
+    newState.thickness = request.thickness;
+    newState.rotateX = request.rotateX;
+    newState.rotateY = request.rotateY;
+    newState.rotateZ = request.rotateZ;
+    newState.sortValue = initialState.sortValue;
+
+    QString errorMessage;
+    if (!RingEditService::apply(m_document.get(), hostObject, newState, &errorMessage)) {
+        QMessageBox::warning(this,
+                             newState.enabled ? tr("Ring erstellen") : tr("Ring entfernen"),
+                             errorMessage.trimmed().isEmpty() ? tr("Der Ring konnte nicht gespeichert werden.") : errorMessage);
+        return false;
+    }
+
+    m_document->setDirty(true);
+    refreshObjectList();
+    m_selectedNicknames = {hostObject->nickname()};
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+    updateIniEditorForSelection();
+    return true;
+}
+
+bool SystemEditorPage::openDockingRingDialogForEdit(SolarObject *ringObject)
+{
+    if (!m_document || !ringObject)
+        return false;
+
+    auto rawEntry = [](const SolarObject &object, const QString &key) {
+        for (int index = object.rawEntries().size() - 1; index >= 0; --index) {
+            if (object.rawEntries().at(index).first.compare(key, Qt::CaseInsensitive) == 0)
+                return object.rawEntries().at(index).second.trimmed();
+        }
+        return QString{};
+    };
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    const QString baseNickname = DockingRingCreationService::resolvedDockWithBase(*ringObject);
+    SolarObject *planetObject = findDockingRingHostPlanet(m_document.get(), *ringObject);
+    const double currentDistanceToPlanetCore = planetObject
+        ? horizontalDistanceMeters(planetObject->position(), ringObject->position())
+        : 0.0;
+    int fixtureMatchCount = 0;
+    const auto existingFixture = DockingRingCreationService::findAssociatedFixture(m_document.get(), *ringObject, &fixtureMatchCount);
+
+    const QString idsNameText = objectIngameName(*ringObject, gameRoot).trimmed().isEmpty()
+        ? (ringObject->idsName() > 0 ? QString::number(ringObject->idsName()) : QString())
+        : objectIngameName(*ringObject, gameRoot).trimmed();
+
+    DockingRingCreateRequest initialRequest;
+    initialRequest.nickname = ringObject->nickname();
+    initialRequest.archetype = ringObject->archetype();
+    initialRequest.loadout = ringObject->loadout().trimmed().isEmpty() ? rawEntry(*ringObject, QStringLiteral("loadout")) : ringObject->loadout().trimmed();
+    initialRequest.factionDisplay = rawEntry(*ringObject, QStringLiteral("reputation"));
+    initialRequest.voice = rawEntry(*ringObject, QStringLiteral("voice"));
+    initialRequest.costume = rawEntry(*ringObject, QStringLiteral("space_costume"));
+    if (initialRequest.costume.startsWith(QStringLiteral(",")))
+        initialRequest.costume = initialRequest.costume.mid(1).trimmed();
+    initialRequest.pilot = rawEntry(*ringObject, QStringLiteral("pilot"));
+    bool difficultyOk = false;
+    const int difficulty = rawEntry(*ringObject, QStringLiteral("difficulty_level")).toInt(&difficultyOk);
+    initialRequest.difficulty = difficultyOk ? difficulty : 1;
+    initialRequest.idsNameText = idsNameText;
+    initialRequest.idsInfoValue = rawEntry(*ringObject, QStringLiteral("ids_info"));
+    initialRequest.distanceToPlanetCore = currentDistanceToPlanetCore;
+    initialRequest.createFixture = fixtureMatchCount > 0;
+
+    DockingRingDialog dialog(this,
+                             planetObject ? planetObject->nickname() : ringObject->nickname(),
+                             baseNickname,
+                             loadLoadoutsMatching(gameRoot, {QStringLiteral("docking_ring")}),
+                             loadFactionDisplays(gameRoot),
+                             {},
+                             loadPilotNicknames(gameRoot),
+                             {},
+                             {},
+                             false,
+                             rawEntry(*ringObject, QStringLiteral("reputation")),
+                             idsNameText,
+                             rawEntry(*ringObject, QStringLiteral("ids_info")),
+                             std::max(1.0, currentDistanceToPlanetCore),
+                             0,
+                             fixtureMatchCount > 0,
+                             QStringLiteral("Edit Docking Ring"),
+                             &initialRequest);
+
+    if (dialog.exec() != QDialog::Accepted)
+        return false;
+
+    DockingRingCreateRequest request = dialog.result();
+    request.factionDisplay = factionNicknameFromDisplay(request.factionDisplay);
+    if (request.nickname.trimmed().isEmpty()) {
+        QMessageBox::warning(this, tr("Docking Ring bearbeiten"), tr("Bitte gib einen Nickname fuer den Docking Ring ein."));
+        return false;
+    }
+    for (const auto &objectPtr : m_document->objects()) {
+        if (!objectPtr || objectPtr.get() == ringObject)
+            continue;
+        if (objectPtr->nickname().compare(request.nickname.trimmed(), Qt::CaseInsensitive) == 0) {
+            QMessageBox::warning(this,
+                                 tr("Docking Ring bearbeiten"),
+                                 tr("Der Nickname '%1' existiert bereits.").arg(request.nickname.trimmed()));
+            return false;
+        }
+    }
+
+    QString idsError;
+    int resolvedIdsName = ringObject->idsName();
+    if (!resolveIdsStringInput(gameRoot,
+                               request.idsNameText,
+                               ringObject->idsName(),
+                               idsNameText,
+                               &resolvedIdsName,
+                               &idsError)) {
+        QMessageBox::warning(this,
+                             tr("Docking Ring bearbeiten"),
+                             idsError.trimmed().isEmpty()
+                                 ? tr("Der IDS-Name fuer den Docking Ring konnte nicht aufgeloest werden.")
+                                 : idsError);
+        return false;
+    }
+
+    bool idsInfoOk = false;
+    const int resolvedIdsInfo = request.idsInfoValue.trimmed().toInt(&idsInfoOk);
+
+    if (request.distanceToPlanetCore <= 0.0) {
+        QMessageBox::warning(this,
+                             tr("Docking Ring bearbeiten"),
+                             tr("Der Abstand zum Planetenkern muss groesser als 0 sein."));
+        return false;
+    }
+    if (!planetObject) {
+        QMessageBox::warning(this,
+                             tr("Docking Ring bearbeiten"),
+                             tr("Der Host-Planet fuer diesen Docking Ring konnte nicht eindeutig ermittelt werden."));
+        return false;
+    }
+
+    if (request.createFixture && fixtureMatchCount > 1) {
+        QMessageBox::warning(this,
+                             tr("Docking Ring bearbeiten"),
+                             tr("Fuer diesen Docking Ring wurden mehrere docking_fixture-Objekte mit identischem dock_with gefunden. Bitte bereinige die Daten zuerst, damit keine falschen Fixtures dupliziert oder entfernt werden."));
+        return false;
+    }
+    if (!request.createFixture && fixtureMatchCount > 1) {
+        QMessageBox::warning(this,
+                             tr("Docking Ring bearbeiten"),
+                             tr("Mehrere docking_fixture-Objekte teilen sich dieses dock_with. Automatisches Entfernen waere unsicher und wurde deshalb abgebrochen."));
+        return false;
+    }
+
+    QVector<QPair<QString, QString>> ringEntries = ringObject->rawEntries();
+    auto setEntry = [&ringEntries](const QString &key, const QString &value) {
+        for (QPair<QString, QString> &entry : ringEntries) {
+            if (entry.first.compare(key, Qt::CaseInsensitive) == 0) {
+                entry.second = value;
+                return;
+            }
+        }
+        ringEntries.append({key, value});
+    };
+    auto removeEntry = [&ringEntries](const QString &key) {
+        for (int index = ringEntries.size() - 1; index >= 0; --index) {
+            if (ringEntries.at(index).first.compare(key, Qt::CaseInsensitive) == 0)
+                ringEntries.removeAt(index);
+        }
+    };
+
+    ringObject->setNickname(request.nickname.trimmed());
+    ringObject->setArchetype(request.archetype.trimmed().isEmpty() ? QStringLiteral("dock_ring") : request.archetype.trimmed());
+    ringObject->setLoadout(request.loadout.trimmed());
+    ringObject->setIdsName(resolvedIdsName);
+    ringObject->setIdsInfo(idsInfoOk ? resolvedIdsInfo : ringObject->idsInfo());
+    ringObject->setPosition(dockingRingPositionForDistance(*planetObject,
+                                                           ringObject->position(),
+                                                           request.distanceToPlanetCore));
+
+    setEntry(QStringLiteral("nickname"), ringObject->nickname());
+    setEntry(QStringLiteral("ids_name"), QString::number(ringObject->idsName()));
+    setEntry(QStringLiteral("ids_info"), QString::number(ringObject->idsInfo()));
+    setEntry(QStringLiteral("pos"), formatObjectPositionEntry(ringObject->position()));
+    setEntry(QStringLiteral("Archetype"), ringObject->archetype());
+    setEntry(QStringLiteral("dock_with"), baseNickname);
+    if (!request.loadout.trimmed().isEmpty())
+        setEntry(QStringLiteral("loadout"), request.loadout.trimmed());
+    else
+        removeEntry(QStringLiteral("loadout"));
+    if (!request.voice.trimmed().isEmpty())
+        setEntry(QStringLiteral("voice"), request.voice.trimmed());
+    else
+        removeEntry(QStringLiteral("voice"));
+    if (!request.costume.trimmed().isEmpty())
+        setEntry(QStringLiteral("space_costume"), request.costume.trimmed().contains(',') ? request.costume.trimmed() : QStringLiteral(", %1").arg(request.costume.trimmed()));
+    else
+        removeEntry(QStringLiteral("space_costume"));
+    if (!request.pilot.trimmed().isEmpty())
+        setEntry(QStringLiteral("pilot"), request.pilot.trimmed());
+    else
+        removeEntry(QStringLiteral("pilot"));
+    setEntry(QStringLiteral("difficulty_level"), QString::number(request.difficulty));
+    if (!request.factionDisplay.trimmed().isEmpty())
+        setEntry(QStringLiteral("reputation"), request.factionDisplay.trimmed());
+    else
+        removeEntry(QStringLiteral("reputation"));
+    setEntry(QStringLiteral("behavior"), QStringLiteral("NOTHING"));
+    ringObject->setRawEntries(ringEntries);
+
+    auto *undoStack = flatlas::core::UndoManager::instance().stack();
+    if (request.createFixture) {
+        if (existingFixture) {
+            DockingRingCreationService::syncExistingFixture(existingFixture.get(), *ringObject);
+        } else {
+            QString fixtureError;
+            const auto newFixture = DockingRingCreationService::buildFixtureObject(*m_document, *ringObject, &fixtureError);
+            if (!newFixture) {
+                QMessageBox::warning(this,
+                                     tr("Docking Ring bearbeiten"),
+                                     fixtureError.trimmed().isEmpty()
+                                         ? tr("Das docking_fixture konnte nicht erzeugt werden.")
+                                         : fixtureError);
+                return false;
+            }
+            undoStack->push(new AddObjectCommand(m_document.get(), newFixture, tr("Create Docking Fixture")));
+        }
+    } else if (fixtureMatchCount > 0) {
+        undoStack->push(new RemoveObjectCommand(m_document.get(), existingFixture, tr("Remove Docking Fixture")));
+    }
+
+    m_document->setDirty(true);
+    m_selectedNicknames = {ringObject->nickname()};
+    refreshObjectList();
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+    updateIniEditorForSelection();
+    return true;
+}
+
 bool SystemEditorPage::isChildObject(const SolarObject &obj) const
 {
     return !parentNicknameForObject(obj).isEmpty();
@@ -4978,6 +9728,149 @@ bool SystemEditorPage::isChildObject(const SolarObject &obj) const
 bool SystemEditorPage::hasSingleObjectGroupSelection() const
 {
     return m_selectedNicknames.size() == 1 && findObjectByNickname(m_selectedNicknames.first()) != nullptr;
+}
+
+void SystemEditorPage::openBaseBuilderForSelection()
+{
+    if (!m_document)
+        return;
+
+    SolarObject *rootObject = findBaseHostForSelection();
+    if (!rootObject)
+        return;
+
+    std::shared_ptr<SolarObject> rootShared;
+    QVector<std::shared_ptr<SolarObject>> childShared;
+    QHash<QString, std::shared_ptr<SolarObject>> originalChildrenByKey;
+    const QStringList groupNicknames = objectGroupNicknames(rootObject->nickname());
+    for (const QString &nickname : groupNicknames) {
+        for (const auto &object : m_document->objects()) {
+            if (!object || object->nickname().compare(nickname, Qt::CaseInsensitive) != 0)
+                continue;
+            if (nickname.compare(rootObject->nickname(), Qt::CaseInsensitive) == 0)
+                rootShared = object;
+            else {
+                childShared.append(object);
+                originalChildrenByKey.insert(object->nickname().trimmed().toLower(), object);
+            }
+            break;
+        }
+    }
+
+    if (!rootShared)
+        return;
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    const QStringList libraryArchetypes = loadSolarArchetypesMatching(gameRoot, {});
+    const QHash<QString, QString> modelPaths = solarArchetypeModelPathsForPreview();
+
+    QStringList reservedNicknames;
+    reservedNicknames.reserve(m_document->objects().size());
+    for (const auto &object : m_document->objects()) {
+        if (object)
+            reservedNicknames.append(object->nickname());
+    }
+
+    SystemBaseBuilderDialog dialog(rootShared,
+                                   childShared,
+                                   libraryArchetypes,
+                                   modelPaths,
+                                   reservedNicknames,
+                                   this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const QVector<std::shared_ptr<SolarObject>> draftChildren = dialog.childObjects();
+    struct UpdatedChildChange {
+        std::shared_ptr<SolarObject> object;
+        IniSection beforeSection;
+        IniSection afterSection;
+    };
+    QSet<QString> keptChildKeys;
+    QVector<UpdatedChildChange> updatedChildren;
+    QVector<std::shared_ptr<SolarObject>> addedChildren;
+    QVector<std::shared_ptr<SolarObject>> removedChildren;
+    bool changedAnything = false;
+
+    for (const auto &draftChild : draftChildren) {
+        if (!draftChild)
+            continue;
+
+        const QString nicknameKey = draftChild->nickname().trimmed().toLower();
+        if (nicknameKey.isEmpty())
+            continue;
+        keptChildKeys.insert(nicknameKey);
+
+        IniDocument draftDoc;
+        draftDoc.append(SystemPersistence::serializeObjectSection(*draftChild));
+        const QString draftText = IniParser::serialize(draftDoc).trimmed();
+
+        if (originalChildrenByKey.contains(nicknameKey)) {
+            const auto &existing = originalChildrenByKey.value(nicknameKey);
+            if (!existing)
+                continue;
+
+            const IniSection draftSection = SystemPersistence::serializeObjectSection(*draftChild);
+            IniDocument beforeDoc;
+            const IniSection beforeSection = SystemPersistence::serializeObjectSection(*existing);
+            beforeDoc.append(beforeSection);
+            const QString beforeText = IniParser::serialize(beforeDoc).trimmed();
+
+            if (beforeText != draftText)
+                updatedChildren.append(UpdatedChildChange{existing, beforeSection, draftSection});
+            continue;
+        }
+
+        addedChildren.append(cloneSolarObject(draftChild));
+    }
+
+    for (auto it = originalChildrenByKey.constBegin(); it != originalChildrenByKey.constEnd(); ++it) {
+        if (keptChildKeys.contains(it.key()) || !it.value())
+            continue;
+        removedChildren.append(it.value());
+    }
+
+    if (!updatedChildren.isEmpty() || !addedChildren.isEmpty() || !removedChildren.isEmpty()) {
+        auto *undoStack = flatlas::core::UndoManager::instance().stack();
+        undoStack->beginMacro(tr("Apply Base Builder Changes"));
+        for (const UpdatedChildChange &change : updatedChildren) {
+            if (!change.object)
+                continue;
+            undoStack->push(new ApplyObjectSectionCommand(change.object.get(),
+                                                          change.beforeSection,
+                                                          change.afterSection,
+                                                          tr("Update %1").arg(change.object->nickname())));
+            changedAnything = true;
+        }
+        for (const auto &addedChild : addedChildren) {
+            if (!addedChild)
+                continue;
+            undoStack->push(new AddObjectCommand(m_document.get(),
+                                                 addedChild,
+                                                 tr("Add %1").arg(addedChild->nickname())));
+            changedAnything = true;
+        }
+        for (const auto &removedChild : removedChildren) {
+            if (!removedChild)
+                continue;
+            undoStack->push(new RemoveObjectCommand(m_document.get(),
+                                                    removedChild,
+                                                    tr("Remove %1").arg(removedChild->nickname())));
+            changedAnything = true;
+        }
+        undoStack->endMacro();
+    }
+
+    if (!changedAnything)
+        return;
+
+    m_document->setDirty(true);
+    m_selectedNicknames = normalizeSelectionNicknames({rootObject->nickname()});
+    refreshObjectList();
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+    updateIniEditorForSelection();
 }
 
 void SystemEditorPage::open3DPreviewForSelection()

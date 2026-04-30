@@ -22,6 +22,7 @@
 #include "tools/UpdateDownloader.h"
 #include "tools/UpdateInstaller.h"
 #include "tools/HelpBrowser.h"
+#include "tools/KeyboardShortcutOverviewDialog.h"
 #include "tools/PathFinderDialog.h"
 #include "rendering/preview/ModelViewerPage.h"
 #include "domain/SystemDocument.h"
@@ -271,6 +272,9 @@ void MainWindow::createMenus()
     helpMenu->addAction(tr("&Help Contents"), QKeySequence::HelpContents, this, [this]() {
         showContextHelp();
     });
+    helpMenu->addAction(tr("Keyboard &Shortcuts"), this, [this]() {
+        showShortcutOverview();
+    });
     helpMenu->addSeparator();
     helpMenu->addAction(tr("Check for &Updates..."), this, [this]() {
         statusBar()->showMessage(tr("Checking for updates..."), 3000);
@@ -457,6 +461,20 @@ void MainWindow::showContextHelp()
     m_helpBrowser->showTopic(topicId);
 }
 
+void MainWindow::showShortcutOverview()
+{
+    if (!m_shortcutOverviewDialog) {
+        m_shortcutOverviewDialog = new flatlas::tools::KeyboardShortcutOverviewDialog(this);
+        connect(m_shortcutOverviewDialog, &QObject::destroyed, this, [this]() {
+            m_shortcutOverviewDialog = nullptr;
+        });
+    }
+
+    m_shortcutOverviewDialog->show();
+    m_shortcutOverviewDialog->raise();
+    m_shortcutOverviewDialog->activateWindow();
+}
+
 void MainWindow::applyThemeStyling()
 {
     if (!m_centerTabs)
@@ -468,30 +486,40 @@ void MainWindow::applyThemeStyling()
     const QColor tabBg = pal.color(QPalette::Button);
     const QColor tabHover = pal.color(QPalette::AlternateBase);
     const QColor tabText = pal.color(QPalette::ButtonText);
-    const QColor selectedBg = pal.color(QPalette::Base);
-    const QColor accent = pal.color(QPalette::Highlight);
-    const QColor selectedText = pal.color(QPalette::Highlight);
+    const QColor selectedBg(230, 126, 34);
+    const QColor accent(230, 126, 34);
     const QColor border = pal.color(QPalette::Mid);
+    const QColor disabledBg = pal.color(QPalette::Midlight);
     const QColor dimText = pal.color(QPalette::PlaceholderText);
+    const QColor selectedText = selectedBg.lightness() >= 170 ? QColor(36, 28, 8) : QColor(255, 255, 255);
     const QColor dangerHover = pal.color(QPalette::Base).lightness() >= 170
         ? QColor(232, 210, 210)
         : QColor(68, 51, 51);
 
     m_centerTabs->tabBar()->setStyleSheet(
         QStringLiteral("QTabBar { background: transparent; }"
-                       "QTabBar::tab { padding: 6px 18px; margin: 0; border: none;"
+                       "QTabBar::tab {"
+                       " padding: 8px 16px;"
+                       " margin-right: 2px;"
+                       " min-width: 130px;"
+                       " border: 1px solid %3;"
+                       " border-bottom: 2px solid transparent;"
                        " background: %1; color: %2; }"
-                       "QTabBar::tab:selected { background: %3; color: %4; border-bottom: 2px solid %5; }"
-                       "QTabBar::tab:hover { background: %6; color: %2; }"
+                                             "QTabBar::tab:selected { background: %4; color: %5; border-bottom: 2px solid %6; }"
+                                             "QTabBar::tab:!selected:hover { background: %7; color: %2; }"
+                                             "QTabBar::tab:disabled { background: %8; color: %9; border: 1px solid %3; }"
                        "QTabBar::close-button { subcontrol-origin: padding; subcontrol-position: right; }"
-                       "QTabBar::close-button:hover { background: %7; border-radius: 3px; }")
-            .arg(tabBg.name(),
-                 tabText.name(),
-                 selectedBg.name(),
-                 selectedText.name(),
-                 accent.name(),
-                 tabHover.name(),
-                 dangerHover.name()));
+                                             "QTabBar::close-button:hover { background: %10; border-radius: 3px; }")
+                        .arg(tabBg.name())
+                        .arg(tabText.name())
+                        .arg(border.name())
+                        .arg(selectedBg.name())
+                        .arg(selectedText.name())
+                        .arg(accent.name())
+                        .arg(tabHover.name())
+                        .arg(disabledBg.name())
+                        .arg(dimText.name())
+                        .arg(dangerHover.name()));
 
     if (m_editingLabel) {
         m_editingLabel->setStyleSheet(
@@ -681,12 +709,20 @@ void MainWindow::saveCurrentSystem()
         if (editor->saveAs(filePath))
             statusBar()->showMessage(tr("Saved: %1").arg(filePath), 3000);
         else
-            QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
+            QMessageBox::warning(this,
+                                 tr("Error"),
+                                 editor->lastSaveError().trimmed().isEmpty()
+                                     ? tr("Could not save file.")
+                                     : editor->lastSaveError());
     } else {
         if (editor->save())
             statusBar()->showMessage(tr("Saved"), 3000);
         else
-            QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
+            QMessageBox::warning(this,
+                                 tr("Error"),
+                                 editor->lastSaveError().trimmed().isEmpty()
+                                     ? tr("Could not save file.")
+                                     : editor->lastSaveError());
     }
 }
 
@@ -1070,10 +1106,16 @@ void MainWindow::openNewsRumorEditor()
 
 void MainWindow::openModelViewer()
 {
+    if (ensureModelViewerPage())
+        statusBar()->showMessage(tr("3D Model Viewer opened"), 3000);
+}
+
+flatlas::rendering::ModelViewerPage *MainWindow::ensureModelViewerPage()
+{
     for (int i = 0; i < m_centerTabs->count(); ++i) {
         if (qobject_cast<flatlas::rendering::ModelViewerPage *>(m_centerTabs->widget(i))) {
             m_centerTabs->setCurrentIndex(i);
-            return;
+            return qobject_cast<flatlas::rendering::ModelViewerPage *>(m_centerTabs->widget(i));
         }
     }
 
@@ -1081,7 +1123,7 @@ void MainWindow::openModelViewer()
         auto *page = new flatlas::rendering::ModelViewerPage(this);
         const int idx = m_centerTabs->addTab(page, tr("3D Model Viewer"));
         m_centerTabs->setCurrentIndex(idx);
-        statusBar()->showMessage(tr("3D Model Viewer opened"), 3000);
+        return page;
     } catch (const std::exception &ex) {
         QMessageBox::critical(this,
                               tr("3D Model Viewer"),
@@ -1092,4 +1134,16 @@ void MainWindow::openModelViewer()
                               tr("3D Model Viewer"),
                               tr("The 3D Model Viewer could not be opened due to an unexpected initialization error."));
     }
+    return nullptr;
+}
+
+bool MainWindow::showModelInViewer(const QString &modelPath, const QString &displayLabel)
+{
+    auto *page = ensureModelViewerPage();
+    if (!page)
+        return false;
+    const bool scheduled = page->loadModelPath(modelPath, displayLabel);
+    if (scheduled)
+        statusBar()->showMessage(displayLabel.trimmed().isEmpty() ? tr("3D model loaded") : displayLabel.trimmed(), 3000);
+    return scheduled;
 }

@@ -22,6 +22,7 @@ using flatlas::infrastructure::XmlInfocard;
 EditSystemDialog::EditSystemDialog(const SystemInfo &systemInfo,
                                    const QString &currentResolvedName,
                                    const QString &currentInfocardXml,
+                                   const QVector<flatlas::domain::SectorDefinition> &sectors,
                                    QWidget *parent)
     : QDialog(parent)
 {
@@ -52,6 +53,25 @@ EditSystemDialog::EditSystemDialog(const SystemInfo &systemInfo,
     m_nameEdit = new QLineEdit(this);
     m_nameEdit->setText(currentResolvedName.trimmed().isEmpty() ? systemInfo.nickname : currentResolvedName.trimmed());
     form->addRow(tr("Name:"), m_nameEdit);
+
+    QString currentSector = QStringLiteral("universe");
+    for (auto it = systemInfo.sectorPositions.constBegin(); it != systemInfo.sectorPositions.constEnd(); ++it) {
+        if (it.key().compare(QStringLiteral("universe"), Qt::CaseInsensitive) != 0) {
+            currentSector = it.key();
+            break;
+        }
+    }
+    m_sectorCombo = new QComboBox(this);
+    for (const auto &sector : sectors) {
+        const QString display = sector.displayName.trimmed().isEmpty() ? sector.key : sector.displayName;
+        m_sectorCombo->addItem(display, sector.key);
+    }
+    if (m_sectorCombo->count() == 0)
+        m_sectorCombo->addItem(QStringLiteral("Sirius"), QStringLiteral("universe"));
+    const int sectorIndex = m_sectorCombo->findData(currentSector);
+    if (sectorIndex >= 0)
+        m_sectorCombo->setCurrentIndex(sectorIndex);
+    form->addRow(tr("Sektor:"), m_sectorCombo);
 
     m_navMapScaleSpin = new QDoubleSpinBox(this);
     m_navMapScaleSpin->setDecimals(6);
@@ -105,6 +125,9 @@ EditSystemRequest EditSystemDialog::request() const
     req.name = m_nameEdit->text().trimmed();
     req.infocardXml = m_infocardEdit->toPlainText().trimmed();
     req.navMapScale = m_navMapScaleSpin->value();
+    req.sectorKey = m_sectorCombo->currentData().toString().trimmed();
+    if (req.sectorKey.isEmpty())
+        req.sectorKey = QStringLiteral("universe");
     return req;
 }
 

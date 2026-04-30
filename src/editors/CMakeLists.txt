@@ -1,13 +1,21 @@
 # flatlas_editors – Alle Editor-Pages
 add_library(flatlas_editors STATIC
     system/SystemEditorPage.h system/SystemEditorPage.cpp
+    system/BaseEditService.h system/BaseEditService.cpp
+    system/BaseEditDialog.h system/BaseEditDialog.cpp
+    system/DockingRingDialog.h system/DockingRingDialog.cpp
+    system/DockingRingCreationService.h system/DockingRingCreationService.cpp
     system/SystemDisplayFilterDialog.h system/SystemDisplayFilterDialog.cpp
     system/SystemSettingsDialog.h system/SystemSettingsDialog.cpp
+    system/SystemSettingsService.h system/SystemSettingsService.cpp
+    system/PlanetCreationService.h system/PlanetCreationService.cpp
+    system/RingEditService.h system/RingEditService.cpp
     system/SystemPersistence.h system/SystemPersistence.cpp
     system/SystemCreationWizard.h system/SystemCreationWizard.cpp
     system/SystemUndoCommands.h
     system/CreateObjectDialog.h system/CreateObjectDialog.cpp
     system/SystemCreationDialogs.h system/SystemCreationDialogs.cpp
+    system/TradeLaneEditService.h system/TradeLaneEditService.cpp
     system/CreateFieldZoneDialog.h system/CreateFieldZoneDialog.cpp
     system/CreateExclusionZoneDialog.h system/CreateExclusionZoneDialog.cpp
     system/ExclusionZoneUtils.h system/ExclusionZoneUtils.cpp

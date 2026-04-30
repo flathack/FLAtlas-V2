@@ -1,9 +1,13 @@
 #pragma once
 
+#include "PlanetCreationService.h"
+#include "RingEditService.h"
+
 #include <QDialog>
 #include <QHash>
 #include <QString>
 #include <QStringList>
+#include <QVector>
 
 class QCheckBox;
 class QComboBox;
@@ -52,6 +56,52 @@ struct CreatePatrolZoneRequest {
     bool missionEligible = true;
 };
 
+struct CreateBuoyRequest {
+    enum class Mode {
+        Line,
+        Circle,
+    };
+    enum class LineConstraint {
+        FixedCount,
+        FixedSpacing,
+    };
+
+    QString archetype = QStringLiteral("nav_buoy");
+    Mode mode = Mode::Line;
+    LineConstraint lineConstraint = LineConstraint::FixedCount;
+    int count = 8;
+    int spacingMeters = 3000;
+};
+
+struct CreateTradeLaneRequest {
+    int ringCount = 2;
+    int spacingMeters = 7500;
+    int startNumber = 1;
+    QString loadout;
+    QString reputationDisplay;
+    int difficultyLevel = 1;
+    QString pilot = QStringLiteral("pilot_solar_easiest");
+    QString routeName;
+    QString startSpaceName;
+    QString endSpaceName;
+};
+
+struct EditTradeLaneRequest {
+    double startX = 0.0;
+    double startZ = 0.0;
+    double endX = 0.0;
+    double endZ = 0.0;
+    int ringCount = 2;
+    QString archetype = QStringLiteral("Trade_Lane_Ring");
+    QString loadout;
+    QString reputationDisplay;
+    int difficultyLevel = 1;
+    QString pilot = QStringLiteral("pilot_solar_easiest");
+    QString routeName;
+    QString startSpaceName;
+    QString endSpaceName;
+};
+
 struct CreateLightSourceRequest {
     QString nickname;
     QString type;
@@ -70,6 +120,29 @@ struct CreateSunRequest {
     int deathZoneDamage = 200000;
     int atmosphereRange = 5000;
     QString star = QStringLiteral("med_white_sun");
+};
+
+struct CreatePlanetRequest {
+    QString nickname;
+    QString ingameName;
+    QString infoCardText;
+    QString archetype;
+    int planetRadius = 0;
+    int deathZoneRadius = 1100;
+    int deathZoneDamage = 2000000;
+    int atmosphereRange = 1200;
+};
+
+struct RingEditRequest {
+    bool enabled = true;
+    QString ringIni;
+    QString zoneNickname;
+    double outerRadius = 3000.0;
+    double innerRadius = 1500.0;
+    double thickness = 500.0;
+    double rotateX = 0.0;
+    double rotateY = 0.0;
+    double rotateZ = 0.0;
 };
 
 struct CreateSurpriseRequest {
@@ -149,6 +222,103 @@ private:
     QCheckBox *m_missionEligibleCheck = nullptr;
 };
 
+class CreateBuoyDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit CreateBuoyDialog(QWidget *parent = nullptr);
+
+    CreateBuoyRequest result() const;
+
+private slots:
+    void updateModeUi();
+    void updateLineConstraintUi();
+
+private:
+    QComboBox *m_typeCombo = nullptr;
+    QComboBox *m_modeCombo = nullptr;
+    QComboBox *m_lineConstraintCombo = nullptr;
+    QSpinBox *m_countSpin = nullptr;
+    QLabel *m_countDerivedLabel = nullptr;
+    QLabel *m_spacingLabel = nullptr;
+    QSpinBox *m_spacingSpin = nullptr;
+    QLabel *m_spacingDerivedLabel = nullptr;
+    QLabel *m_modeHintLabel = nullptr;
+};
+
+class CreateTradeLaneDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit CreateTradeLaneDialog(const QString &systemNickname,
+                                   int startNumber,
+                                   int ringCount,
+                                   double distanceMeters,
+                                   const QStringList &loadouts,
+                                   const QStringList &factions,
+                                   const QStringList &pilots,
+                                   QWidget *parent = nullptr);
+
+    CreateTradeLaneRequest result() const;
+
+private slots:
+    void updateDerivedSpacing();
+    void updateCountFromSpacing(int spacingMeters);
+
+private:
+    double m_distanceMeters = 0.0;
+    QSpinBox *m_countSpin = nullptr;
+    QSpinBox *m_spacingSpin = nullptr;
+    QSpinBox *m_startNumberSpin = nullptr;
+    QComboBox *m_loadoutCombo = nullptr;
+    QComboBox *m_reputationCombo = nullptr;
+    QSpinBox *m_difficultySpin = nullptr;
+    QComboBox *m_pilotCombo = nullptr;
+    QLineEdit *m_routeNameEdit = nullptr;
+    QLineEdit *m_startSpaceNameEdit = nullptr;
+    QLineEdit *m_endSpaceNameEdit = nullptr;
+    QLabel *m_spacingInfoLabel = nullptr;
+    bool m_updatingSpacing = false;
+};
+
+class EditTradeLaneDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit EditTradeLaneDialog(const QString &laneSummary,
+                                 const QStringList &archetypes,
+                                 const QStringList &loadouts,
+                                 const QStringList &factions,
+                                 const QStringList &pilots,
+                                 const EditTradeLaneRequest &initial,
+                                 QWidget *parent = nullptr);
+
+    EditTradeLaneRequest result() const;
+    bool deleteRequested() const;
+
+private slots:
+    void updateDerivedSpacing();
+    void updateCountFromSpacing(int spacingMeters);
+
+private:
+    double currentLaneLengthMeters() const;
+
+    QDoubleSpinBox *m_startXSpin = nullptr;
+    QDoubleSpinBox *m_startZSpin = nullptr;
+    QDoubleSpinBox *m_endXSpin = nullptr;
+    QDoubleSpinBox *m_endZSpin = nullptr;
+    QSpinBox *m_countSpin = nullptr;
+    QSpinBox *m_spacingSpin = nullptr;
+    QComboBox *m_archetypeCombo = nullptr;
+    QComboBox *m_loadoutCombo = nullptr;
+    QComboBox *m_reputationCombo = nullptr;
+    QSpinBox *m_difficultySpin = nullptr;
+    QComboBox *m_pilotCombo = nullptr;
+    QLineEdit *m_routeNameEdit = nullptr;
+    QLineEdit *m_startSpaceNameEdit = nullptr;
+    QLineEdit *m_endSpaceNameEdit = nullptr;
+    QLabel *m_spacingInfoLabel = nullptr;
+    bool m_deleteRequested = false;
+    bool m_updatingSpacing = false;
+};
+
 class CreateLightSourceDialog : public QDialog {
     Q_OBJECT
 public:
@@ -195,6 +365,87 @@ private:
     QSpinBox *m_deathZoneDamageSpin = nullptr;
     QSpinBox *m_atmosphereRangeSpin = nullptr;
     QComboBox *m_starCombo = nullptr;
+};
+
+class CreatePlanetDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit CreatePlanetDialog(const QString &suggestedNickname,
+                                const PlanetCreationCatalog &catalog,
+                                QWidget *parent = nullptr);
+
+    CreatePlanetRequest result() const;
+
+public slots:
+    void accept() override;
+
+private slots:
+    void onArchetypeChanged(const QString &archetype);
+    void onInfocardEdited();
+    void resetInfocardSuggestion();
+
+private:
+    void applyArchetypeDefaults(const QString &archetype, bool forceInfocardRefresh);
+    void setInfocardText(const QString &text);
+
+    PlanetCreationCatalog m_catalog;
+    QString m_lastSuggestedInfocard;
+    bool m_infocardManuallyEdited = false;
+    bool m_updatingInfocardText = false;
+    QLineEdit *m_nicknameEdit = nullptr;
+    QLineEdit *m_ingameNameEdit = nullptr;
+    QComboBox *m_archetypeCombo = nullptr;
+    QLabel *m_planetRadiusLabel = nullptr;
+    QSpinBox *m_deathZoneRadiusSpin = nullptr;
+    QSpinBox *m_deathZoneDamageSpin = nullptr;
+    QSpinBox *m_atmosphereRangeSpin = nullptr;
+    QLabel *m_infocardSourceLabel = nullptr;
+    QLabel *m_infocardStateLabel = nullptr;
+    QTextEdit *m_infoCardEdit = nullptr;
+    QPushButton *m_resetInfocardButton = nullptr;
+};
+
+class ObjectRingDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit ObjectRingDialog(const QString &objectLabel,
+                              const QString &hostArchetype,
+                              bool showHostRadiusSphere,
+                              double hostRadius,
+                              bool hostRadiusSphereIsSun,
+                              const RingEditOptions &options,
+                              const RingEditState &initialState,
+                              QWidget *parent = nullptr);
+
+    RingEditRequest result() const;
+
+protected:
+    void accept() override;
+
+private slots:
+    void syncEnabledState();
+    void schedulePreviewRefresh();
+    void refreshPreview();
+
+private:
+    QString m_hostArchetype;
+    bool m_showHostRadiusSphere = false;
+    double m_hostRadius = 0.0;
+    bool m_hostRadiusSphereIsSun = false;
+    QCheckBox *m_enabledCheck = nullptr;
+    QComboBox *m_ringIniCombo = nullptr;
+    QLineEdit *m_zoneNicknameEdit = nullptr;
+    QDoubleSpinBox *m_outerRadiusSpin = nullptr;
+    QDoubleSpinBox *m_innerRadiusSpin = nullptr;
+    QDoubleSpinBox *m_thicknessSpin = nullptr;
+    QDoubleSpinBox *m_rotateXSpin = nullptr;
+    QDoubleSpinBox *m_rotateYSpin = nullptr;
+    QDoubleSpinBox *m_rotateZSpin = nullptr;
+    flatlas::rendering::ModelViewport3D *m_preview = nullptr;
+    QLabel *m_previewFallback = nullptr;
+    QStackedLayout *m_previewStack = nullptr;
+    QLabel *m_previewStatusLabel = nullptr;
+    QTimer *m_previewRefreshTimer = nullptr;
 };
 
 class CreateSurpriseDialog : public QDialog {

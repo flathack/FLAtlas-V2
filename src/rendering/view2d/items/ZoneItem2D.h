@@ -1,5 +1,6 @@
 #pragma once
 #include <QGraphicsEllipseItem>
+#include <QPainterPath>
 #include <QQuaternion>
 #include <QString>
 #include "domain/ZoneItem.h"
@@ -17,6 +18,8 @@ public:
                         QGraphicsItem *parent = nullptr);
 
     QString nickname() const { return m_nickname; }
+    QPainterPath shape() const override;
+    bool contains(const QPointF &point) const override;
     void updateFromZone(const flatlas::domain::ZoneItem &zone);
     void applyDisplayFilter(const SystemDisplayFilterSettings &settings);
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = nullptr) override;

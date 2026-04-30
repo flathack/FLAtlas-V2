@@ -594,6 +594,37 @@ private slots:
         QCOMPARE(loaded->objects().size(), 1);
         QCOMPARE(loaded->objects()[0]->nickname(), QStringLiteral("test_planet"));
     }
+
+    void savePreservesExplicitZeroRotate()
+    {
+        auto doc = std::make_unique<SystemDocument>();
+        doc->setName(QStringLiteral("Li01"));
+
+        auto obj = std::make_shared<SolarObject>();
+        obj->setNickname(QStringLiteral("li01_99_base"));
+        obj->setArchetype(QStringLiteral("space_station"));
+        obj->setBase(QStringLiteral("Li01_99_Base"));
+        obj->setDockWith(QStringLiteral("Li01_99_Base"));
+        obj->setPosition(QVector3D(10, 0, -20));
+        obj->setRawEntries({
+            {QStringLiteral("nickname"), QStringLiteral("li01_99_base")},
+            {QStringLiteral("pos"), QStringLiteral("10, 0, -20")},
+            {QStringLiteral("rotate"), QStringLiteral("0, 0, 0")},
+            {QStringLiteral("archetype"), QStringLiteral("space_station")},
+            {QStringLiteral("base"), QStringLiteral("Li01_99_Base")},
+            {QStringLiteral("dock_with"), QStringLiteral("Li01_99_Base")},
+        });
+        doc->addObject(obj);
+
+        QTemporaryDir dir;
+        QString path = dir.path() + QStringLiteral("/zero_rotate.ini");
+        QVERIFY(SystemPersistence::save(*doc, path));
+
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString written = QString::fromUtf8(file.readAll());
+        QVERIFY(written.contains(QStringLiteral("rotate = 0, 0, 0")));
+    }
 };
 
 QTEST_GUILESS_MAIN(TestSystemPersistence)

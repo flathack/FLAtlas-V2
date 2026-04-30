@@ -4,6 +4,8 @@
 #include <QStringList>
 #include <QVector>
 
+#include "domain/UniverseData.h"
+
 class QComboBox;
 class QLineEdit;
 class QLabel;
@@ -24,6 +26,8 @@ struct NewSystemDialogOptions {
     QStringList complexStarsOptions;
     QStringList nebulaeOptions;
     QVector<NewSystemFactionOption> factionOptions;
+    QVector<flatlas::domain::SectorDefinition> sectors;
+    QString activeSectorKey = QStringLiteral("universe");
 };
 
 struct NewSystemRequest {
@@ -41,6 +45,7 @@ struct NewSystemRequest {
     QString lightSourceColor = QStringLiteral("253, 230, 180");
     QString localFactionNickname = QStringLiteral("li_n_grp");
     QString localFactionDisplay;
+    QString sectorKey = QStringLiteral("universe");
 };
 
 class NewSystemDialog : public QDialog {
@@ -69,6 +74,7 @@ private:
     QComboBox *m_complexStarsCombo = nullptr;
     QComboBox *m_nebulaeCombo = nullptr;
     QComboBox *m_localFactionCombo = nullptr;
+    QComboBox *m_sectorCombo = nullptr;
 };
 
 } // namespace flatlas::editors

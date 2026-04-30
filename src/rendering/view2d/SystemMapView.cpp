@@ -18,6 +18,7 @@
 #include <QPainterPath>
 #include <QRubberBand>
 #include <QScrollBar>
+#include <QSet>
 #include <QTimer>
 #include <QPalette>
 #include <QKeyEvent>
@@ -74,6 +75,55 @@ QString itemNickname(QGraphicsItem *item)
     return {};
 }
 
+QString formatWorldDistance(double distance)
+{
+    const double safeDistance = std::max(0.0, distance);
+    if (safeDistance >= 1000.0)
+        return QStringLiteral("%1 km").arg(safeDistance / 1000.0, 0, 'f', 2);
+    return QStringLiteral("%1 m").arg(safeDistance, 0, 'f', 0);
+}
+
+double worldDistanceForScenePoints(const QPointF &startScenePos, const QPointF &endScenePos)
+{
+    const QPointF startWorld = MapScene::qtToFl(startScenePos.x(), startScenePos.y());
+    const QPointF endWorld = MapScene::qtToFl(endScenePos.x(), endScenePos.y());
+    return QLineF(startWorld, endWorld).length();
+}
+
+QPen sharedSelectionCirclePen()
+{
+    QPen pen(QColor(64, 170, 255, 230), 2.4);
+    pen.setCosmetic(true);
+    pen.setJoinStyle(Qt::RoundJoin);
+    pen.setCapStyle(Qt::RoundCap);
+    return pen;
+}
+
+void drawSelectionCircle(QPainter *painter, const QRectF &bounds, qreal padding)
+{
+    if (!painter || bounds.isNull() || bounds.width() <= 0.0 || bounds.height() <= 0.0)
+        return;
+
+    const QPointF center = bounds.center();
+    qreal radius = 0.0;
+    radius = std::max(radius, QLineF(center, bounds.topLeft()).length());
+    radius = std::max(radius, QLineF(center, bounds.topRight()).length());
+    radius = std::max(radius, QLineF(center, bounds.bottomLeft()).length());
+    radius = std::max(radius, QLineF(center, bounds.bottomRight()).length());
+    radius += padding;
+
+    painter->setPen(sharedSelectionCirclePen());
+    painter->setBrush(Qt::NoBrush);
+    painter->drawEllipse(center, radius, radius);
+}
+
+QRectF selectionBoundsInView(SolarObjectItem *item, const QGraphicsView *view)
+{
+    if (!item || !view)
+        return {};
+    return view->mapFromScene(item->mapRectToScene(item->selectionCircleLocalRect())).boundingRect();
+}
+
 }
 
 SystemMapView::SystemMapView(QWidget *parent)
@@ -123,6 +173,12 @@ void SystemMapView::setMapScene(MapScene *scene)
 {
     m_mapScene = scene;
     QGraphicsView::setScene(scene);
+    if (scene) {
+        connect(scene, &QGraphicsScene::selectionChanged, this, [this]() {
+            if (viewport())
+                viewport()->update();
+        });
+    }
     m_pendingInitialFit = true;
     m_pendingInitialFitPasses = 3;
 }
@@ -211,6 +267,93 @@ void SystemMapView::zoomToFit()
     }
 }
 
+void SystemMapView::zoomToSceneRect(const QRectF &sceneRect)
+{
+    if (!scene())
+        return;
+
+    QRectF targetRect = sceneRect;
+    if (targetRect.isNull() || targetRect.width() <= 0.0 || targetRect.height() <= 0.0)
+        targetRect = scene()->itemsBoundingRect();
+    if (targetRect.isNull() || targetRect.width() <= 0.0 || targetRect.height() <= 0.0)
+        return;
+
+    const QRectF paddedRect = withNavMapPadding(targetRect);
+    const auto previousAnchor = transformationAnchor();
+    const auto previousResizeAnchor = resizeAnchor();
+    setTransformationAnchor(QGraphicsView::AnchorViewCenter);
+    setResizeAnchor(QGraphicsView::AnchorViewCenter);
+
+    resetTransform();
+    fitInView(paddedRect, Qt::KeepAspectRatio);
+    centerOn(paddedRect.center());
+
+    setTransformationAnchor(previousAnchor);
+    setResizeAnchor(previousResizeAnchor);
+    m_minZoomScale = fitScaleForView(this, paddedRect);
+    updateItemDetailForScale();
+}
+
+void SystemMapView::setMoveGroupResolver(std::function<QStringList(const QString &)> resolver)
+{
+    m_moveGroupResolver = std::move(resolver);
+}
+
+void SystemMapView::focusSelection()
+{
+    if (!m_mapScene) {
+        zoomToFit();
+        return;
+    }
+
+    const auto sceneItems = m_mapScene->selectedItems();
+    if (sceneItems.isEmpty()) {
+        zoomToFit();
+        return;
+    }
+
+    QRectF selectionRect;
+    bool hasRect = false;
+    for (QGraphicsItem *item : sceneItems) {
+        if (!item)
+            continue;
+        const QRectF itemRect = item->sceneBoundingRect();
+        if (!hasRect) {
+            selectionRect = itemRect;
+            hasRect = true;
+        } else {
+            selectionRect = selectionRect.united(itemRect);
+        }
+    }
+
+    if (!hasRect) {
+        zoomToFit();
+        return;
+    }
+    zoomToSceneRect(selectionRect);
+}
+
+bool SystemMapView::hasActiveMeasurement() const
+{
+    return m_measurementStage != MeasurementStage::Inactive || m_measurementHasFinal;
+}
+
+void SystemMapView::startMeasurement()
+{
+    startMeasurementMode();
+}
+
+void SystemMapView::clearMeasurementResults()
+{
+    clearMeasurement();
+}
+
+void SystemMapView::cancelActiveMeasurement()
+{
+    if (hasActiveMeasurement())
+        cancelMeasurementMode();
+}
+
 void SystemMapView::wheelEvent(QWheelEvent *event)
 {
     // Ctrl + wheel while a tracked selection move is active adjusts the
@@ -266,6 +409,31 @@ void SystemMapView::wheelEvent(QWheelEvent *event)
 
 void SystemMapView::mousePressEvent(QMouseEvent *event)
 {
+    if (m_measurementStage != MeasurementStage::Inactive) {
+        if (event->button() == Qt::LeftButton) {
+            const QPointF scenePos = mapToScene(event->pos());
+            if (m_measurementStage == MeasurementStage::AwaitingStart) {
+                m_measurementStartScenePos = scenePos;
+                m_measurementEndScenePos = scenePos;
+                m_measurementHasFinal = false;
+                m_measurementStage = MeasurementStage::AwaitingEnd;
+            } else {
+                m_measurementEndScenePos = scenePos;
+                m_measurementHasFinal = true;
+                m_measurementStage = MeasurementStage::Inactive;
+            }
+            updateMeasurementCursor();
+            viewport()->update();
+            event->accept();
+            return;
+        }
+        if (event->button() == Qt::MiddleButton) {
+            cancelMeasurementMode();
+            event->accept();
+            return;
+        }
+    }
+
     if (m_placementMode) {
         if (event->button() == Qt::LeftButton) {
             const QPointF scenePos = mapToScene(event->pos());
@@ -328,6 +496,13 @@ void SystemMapView::mouseMoveEvent(QMouseEvent *event)
 {
     m_lastMouseViewportPos = event->pos();
     m_hasMouseInViewport = true;
+    if (m_measurementStage != MeasurementStage::Inactive) {
+        if (m_measurementStage == MeasurementStage::AwaitingEnd)
+            m_measurementEndScenePos = mapToScene(event->pos());
+        viewport()->update();
+        event->accept();
+        return;
+    }
     if (m_panning) {
         const QPoint delta = event->pos() - m_lastPanPosition;
         m_lastPanPosition = event->pos();
@@ -375,6 +550,12 @@ void SystemMapView::mouseMoveEvent(QMouseEvent *event)
 
 void SystemMapView::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (m_measurementStage != MeasurementStage::Inactive) {
+        if (event->button() == Qt::LeftButton || event->button() == Qt::MiddleButton) {
+            event->accept();
+            return;
+        }
+    }
     if (m_panning && event->button() == Qt::MiddleButton) {
         m_panning = false;
         unsetCursor();
@@ -417,12 +598,10 @@ void SystemMapView::mouseReleaseEvent(QMouseEvent *event)
 
 void SystemMapView::contextMenuEvent(QContextMenuEvent *event)
 {
-    QMenu menu(this);
-    menu.addAction(tr("Add Object..."));
-    menu.addSeparator();
-    menu.addAction(tr("Delete"));
-    menu.addAction(tr("Properties..."));
-    menu.exec(event->globalPos());
+    emit contextMenuRequested(event->globalPos(),
+                              mapToScene(event->pos()),
+                              zoneNicknamesAtViewportPos(event->pos()));
+    event->accept();
 }
 
 void SystemMapView::drawBackground(QPainter *painter, const QRectF &rect)
@@ -460,6 +639,56 @@ void SystemMapView::drawForeground(QPainter *painter, const QRectF &rect)
 
     painter->save();
     painter->resetTransform();
+
+    QHash<QString, SolarObjectItem *> solarItemsByNickname;
+    const auto sceneItems = scene()->items();
+    for (QGraphicsItem *item : sceneItems) {
+        auto *solarItem = dynamic_cast<SolarObjectItem *>(item);
+        if (!solarItem || !solarItem->isVisible())
+            continue;
+        solarItemsByNickname.insert(solarItem->nickname(), solarItem);
+    }
+
+    QSet<QString> renderedGroupKeys;
+    const auto selectedItems = scene()->selectedItems();
+    for (QGraphicsItem *item : selectedItems) {
+        auto *solarItem = dynamic_cast<SolarObjectItem *>(item);
+        if (!solarItem || !solarItem->isVisible())
+            continue;
+
+        QStringList resolvedGroup = m_moveGroupResolver
+            ? m_moveGroupResolver(solarItem->nickname())
+            : QStringList{solarItem->nickname()};
+        resolvedGroup.removeDuplicates();
+
+        QStringList groupMembers;
+        for (const QString &nickname : resolvedGroup) {
+            if (solarItemsByNickname.contains(nickname))
+                groupMembers.append(nickname);
+        }
+
+        if (groupMembers.size() <= 1) {
+            drawSelectionCircle(painter,
+                                selectionBoundsInView(solarItem, this),
+                                2.0);
+            continue;
+        }
+
+        const QString groupKey = groupMembers.join(QChar(0x1f));
+        if (renderedGroupKeys.contains(groupKey))
+            continue;
+        renderedGroupKeys.insert(groupKey);
+
+        QRectF unionBounds;
+        for (const QString &nickname : groupMembers) {
+            SolarObjectItem *groupItem = solarItemsByNickname.value(nickname, nullptr);
+            if (!groupItem)
+                continue;
+            const QRectF itemBounds = selectionBoundsInView(groupItem, this);
+            unionBounds = unionBounds.isNull() ? itemBounds : unionBounds.united(itemBounds);
+        }
+        drawSelectionCircle(painter, unionBounds, 4.0);
+    }
 
     QFont font(QStringLiteral("Segoe UI"), 11, QFont::Bold);
     painter->setFont(font);
@@ -723,6 +952,60 @@ void SystemMapView::drawForeground(QPainter *painter, const QRectF &rect)
         }
     }
 
+    if (m_measurementStage != MeasurementStage::Inactive || m_measurementHasFinal) {
+        const bool previewActive = m_measurementStage == MeasurementStage::AwaitingEnd;
+        const bool showStartPoint = previewActive || m_measurementHasFinal;
+        const bool showEndPoint = previewActive || m_measurementHasFinal;
+        if (showStartPoint && showEndPoint) {
+            const QPointF startView = mapFromScene(m_measurementStartScenePos);
+            const QPointF endView = mapFromScene(m_measurementEndScenePos);
+            const QColor accent(60, 210, 255, 240);
+            const QColor accentFill(60, 210, 255, previewActive ? 72 : 110);
+            QPen linePen(accent);
+            linePen.setWidth(2);
+            linePen.setStyle(previewActive ? Qt::DashLine : Qt::SolidLine);
+            painter->setPen(linePen);
+            painter->drawLine(startView, endView);
+
+            painter->setPen(QPen(accent, 2));
+            painter->setBrush(accentFill);
+            painter->drawEllipse(startView, 6, 6);
+            painter->setBrush(previewActive ? QColor(255, 255, 255, 30) : accentFill);
+            painter->drawEllipse(endView, 6, 6);
+
+            const double distanceWorld = measurementDistanceWorld();
+            const QString distanceText = tr("Distance: %1").arg(formatWorldDistance(distanceWorld));
+            const QPointF midpoint = (startView + endView) / 2.0;
+            QFont labelFont(QStringLiteral("Segoe UI"), 10, QFont::Bold);
+            painter->setFont(labelFont);
+            const QFontMetrics metrics(labelFont);
+            const int pad = 8;
+            const int boxW = metrics.horizontalAdvance(distanceText) + pad * 2;
+            const int boxH = metrics.height() + pad * 2;
+            QPoint labelPos(int(midpoint.x()) + 14, int(midpoint.y()) - boxH - 10);
+            const QRect vp = viewport()->rect();
+            if (labelPos.x() + boxW > vp.right() - 4)
+                labelPos.setX(vp.right() - boxW - 4);
+            if (labelPos.x() < vp.left() + 4)
+                labelPos.setX(vp.left() + 4);
+            if (labelPos.y() < vp.top() + 4)
+                labelPos.setY(int(midpoint.y()) + 14);
+
+            const QRect boxRect(labelPos, QSize(boxW, boxH));
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(QColor(18, 24, 34, 225));
+            painter->drawRoundedRect(boxRect, 6, 6);
+            painter->setPen(QPen(accent, 1));
+            painter->setBrush(Qt::NoBrush);
+            painter->drawRoundedRect(boxRect, 6, 6);
+            painter->setPen(QColor(235, 240, 250, 240));
+            painter->drawText(boxRect.left() + pad,
+                              boxRect.top() + pad + metrics.ascent(),
+                              distanceText);
+            painter->setFont(font);
+        }
+    }
+
     if (m_placementMode) {
         const QRect vp = viewport()->rect();
         // Yellow frame - thick enough to be unmistakable even on dark
@@ -757,6 +1040,37 @@ void SystemMapView::drawForeground(QPainter *painter, const QRectF &rect)
         painter->drawText(bannerRect.left() + bannerPadding,
                           bannerRect.top() + bannerPadding / 2 + bannerMetrics.ascent(),
                           helpText);
+    }
+
+    if (m_measurementStage != MeasurementStage::Inactive) {
+        const QRect vp = viewport()->rect();
+        constexpr int kFrameThickness = 4;
+        QPen framePen(QColor(60, 210, 255, 235));
+        framePen.setWidth(kFrameThickness);
+        framePen.setJoinStyle(Qt::MiterJoin);
+        painter->setPen(framePen);
+        painter->setBrush(Qt::NoBrush);
+        const int inset = kFrameThickness / 2;
+        painter->drawRect(vp.adjusted(inset, inset, -inset, -inset));
+
+        const QString bannerText = measurementBannerText();
+        QFont bannerFont(QStringLiteral("Segoe UI"), 11, QFont::Bold);
+        painter->setFont(bannerFont);
+        const QFontMetrics bannerMetrics(bannerFont);
+        const int bannerPadding = 10;
+        const int bannerWidth = bannerMetrics.horizontalAdvance(bannerText) + bannerPadding * 2;
+        const int bannerHeight = bannerMetrics.height() + bannerPadding;
+        const QRect bannerRect((vp.width() - bannerWidth) / 2,
+                               vp.top() + 12,
+                               bannerWidth,
+                               bannerHeight);
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(QColor(60, 210, 255, 220));
+        painter->drawRoundedRect(bannerRect, 6, 6);
+        painter->setPen(QColor(8, 20, 30));
+        painter->drawText(bannerRect.left() + bannerPadding,
+                          bannerRect.top() + bannerPadding / 2 + bannerMetrics.ascent(),
+                          bannerText);
     }
 
     painter->restore();
@@ -1050,6 +1364,11 @@ void SystemMapView::leaveEvent(QEvent *event)
 
 void SystemMapView::keyPressEvent(QKeyEvent *event)
 {
+    if (m_measurementStage != MeasurementStage::Inactive && event->key() == Qt::Key_Escape) {
+        cancelMeasurementMode();
+        event->accept();
+        return;
+    }
     if (m_placementMode && event->key() == Qt::Key_Escape) {
         m_placementMode = false;
         m_placementHelpText.clear();
@@ -1077,6 +1396,60 @@ void SystemMapView::setPlacementMode(bool enabled, const QString &helpText)
     viewport()->update();
 }
 
+void SystemMapView::startMeasurementMode()
+{
+    clearMeasurement(true);
+    m_measurementStage = MeasurementStage::AwaitingStart;
+    updateMeasurementCursor();
+    setFocus(Qt::OtherFocusReason);
+    viewport()->update();
+}
+
+void SystemMapView::cancelMeasurementMode()
+{
+    clearMeasurement(false);
+}
+
+void SystemMapView::clearMeasurement(bool keepMode)
+{
+    if (!keepMode)
+        m_measurementStage = MeasurementStage::Inactive;
+    m_measurementStartScenePos = QPointF();
+    m_measurementEndScenePos = QPointF();
+    m_measurementHasFinal = false;
+    updateMeasurementCursor();
+    viewport()->update();
+}
+
+void SystemMapView::updateMeasurementCursor()
+{
+    if (m_measurementStage != MeasurementStage::Inactive)
+        setCursor(Qt::CrossCursor);
+    else if (!m_placementMode)
+        setCursor(Qt::ArrowCursor);
+}
+
+QString SystemMapView::measurementBannerText() const
+{
+    if (m_measurementStage == MeasurementStage::AwaitingStart)
+        return tr("Ruler: click the first point. [Esc] cancels.");
+    if (m_measurementStage == MeasurementStage::AwaitingEnd)
+        return tr("Ruler: click the second point. [Esc] cancels.");
+    return tr("Ruler");
+}
+
+bool SystemMapView::hasMeasurementResult() const
+{
+    return m_measurementHasFinal;
+}
+
+double SystemMapView::measurementDistanceWorld() const
+{
+    if (m_measurementStage == MeasurementStage::Inactive && !m_measurementHasFinal)
+        return 0.0;
+    return worldDistanceForScenePoints(m_measurementStartScenePos, m_measurementEndScenePos);
+}
+
 void SystemMapView::beginTrackedSelectionMove(QMouseEvent *event)
 {
     m_trackingSelectionMove = false;
@@ -1088,6 +1461,17 @@ void SystemMapView::beginTrackedSelectionMove(QMouseEvent *event)
         return;
 
     QGraphicsItem *hitItem = itemAt(event->pos());
+    const QString hitNickname = itemNickname(hitItem);
+    const bool hitAlreadySelected = hitItem && hitItem->isSelected();
+    const Qt::KeyboardModifiers modifiers = event->modifiers();
+    const bool plainDragStart = !(modifiers & (Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier | Qt::MetaModifier));
+    if (plainDragStart && !hitNickname.isEmpty()) {
+        const QStringList targetSelection = resolvedMoveSelectionForHit(hitNickname, hitAlreadySelected);
+        if (!targetSelection.isEmpty())
+            m_mapScene->selectNicknames(targetSelection);
+        hitItem = itemAt(event->pos());
+    }
+
     if (!hitItem || !hitItem->isSelected())
         return;
 
@@ -1099,6 +1483,31 @@ void SystemMapView::beginTrackedSelectionMove(QMouseEvent *event)
     }
 
     m_trackingSelectionMove = !m_moveStartPositions.isEmpty();
+}
+
+QStringList SystemMapView::resolvedMoveSelectionForHit(const QString &hitNickname, bool hitAlreadySelected) const
+{
+    if (!m_mapScene || hitNickname.trimmed().isEmpty())
+        return {};
+
+    auto resolveNickname = [this](const QString &nickname) {
+        if (!m_moveGroupResolver)
+            return QStringList{nickname};
+        const QStringList resolved = m_moveGroupResolver(nickname);
+        return resolved.isEmpty() ? QStringList{nickname} : resolved;
+    };
+
+    QStringList targetSelection;
+    if (hitAlreadySelected) {
+        const QStringList currentSelection = m_mapScene->selectedNicknames();
+        for (const QString &nickname : currentSelection)
+            targetSelection.append(resolveNickname(nickname));
+    } else {
+        targetSelection = resolveNickname(hitNickname);
+    }
+
+    targetSelection.removeDuplicates();
+    return targetSelection;
 }
 
 void SystemMapView::finishTrackedSelectionMove()
@@ -1165,6 +1574,23 @@ void SystemMapView::updateRubberBandSelection(const QRect &viewportRect, Qt::Key
 QString SystemMapView::itemNicknameAtViewportPos(const QPoint &pos) const
 {
     return itemNickname(itemAt(pos));
+}
+
+QStringList SystemMapView::zoneNicknamesAtViewportPos(const QPoint &pos) const
+{
+    QStringList nicknames;
+    const auto hitItems = items(pos);
+    nicknames.reserve(hitItems.size());
+    for (QGraphicsItem *item : hitItems) {
+        auto *zoneItem = dynamic_cast<ZoneItem2D *>(item);
+        if (!zoneItem || !zoneItem->isVisible())
+            continue;
+        const QString nickname = zoneItem->nickname().trimmed();
+        if (!nickname.isEmpty())
+            nicknames.append(nickname);
+    }
+    nicknames.removeDuplicates();
+    return nicknames;
 }
 
 } // namespace flatlas::rendering

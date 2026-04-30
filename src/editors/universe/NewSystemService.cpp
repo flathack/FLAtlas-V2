@@ -157,6 +157,8 @@ NewSystemDialogOptions NewSystemService::scanOptions(const QString &universeFile
 {
     Q_UNUSED(data);
     NewSystemDialogOptions options;
+    if (data)
+        options.sectors = data->sectors;
 
     insertUniqueSorted(options.musicSpaceOptions, QStringLiteral("music_br_space"));
     insertUniqueSorted(options.musicDangerOptions, QStringLiteral("music_br_danger"));
@@ -369,6 +371,11 @@ bool NewSystemService::createSystem(const QString &universeFilePath,
         {QStringLiteral("msg_id_prefix"), QStringLiteral("gcs_refer_system_%1").arg(info.nickname)}
     };
     info.sectorPositions.insert(QStringLiteral("universe"), position);
+    const QString sectorKey = request.sectorKey.trimmed().isEmpty()
+        ? QStringLiteral("universe")
+        : request.sectorKey.trimmed().toLower();
+    if (sectorKey.compare(QStringLiteral("universe"), Qt::CaseInsensitive) != 0)
+        info.sectorPositions.insert(sectorKey, position);
 
     updatedUniverse.addSystem(info);
 

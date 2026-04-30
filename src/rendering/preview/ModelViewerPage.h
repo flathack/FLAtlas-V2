@@ -23,6 +23,7 @@ class ModelViewerPage : public QWidget {
     Q_OBJECT
 public:
     explicit ModelViewerPage(QWidget *parent = nullptr);
+    bool loadModelPath(const QString &modelPath, const QString &displayLabel = QString());
 
 private:
     const flatlas::infrastructure::ModelAssetEntry *findEntryByModelPath(const QString &modelPath) const;

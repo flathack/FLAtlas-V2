@@ -5,17 +5,23 @@
 #include <QHash>
 #include <QPointF>
 #include <QStringList>
+#include <QVector>
 #include <QVector3D>
+#include "domain/ZoneItem.h"
 #include "rendering/view2d/SystemDisplayFilter.h"
 #include <memory>
 
-namespace flatlas::domain { class SystemDocument; class SolarObject; class ZoneItem; }
+namespace flatlas::domain { class SystemDocument; class SolarObject; }
 namespace flatlas::rendering { class MapScene; class SystemMapView; class SceneView3D; }
 namespace flatlas::editors {
 struct CreateFieldZoneResult;
 struct CreateExclusionZoneResult;
 struct CreateSimpleZoneRequest;
 struct CreatePatrolZoneRequest;
+struct CreateBuoyRequest;
+struct CreateTradeLaneRequest;
+struct EditTradeLaneRequest;
+struct RingEditRequest;
 struct ExclusionShellSettings;
 }
 class QToolBar;
@@ -36,6 +42,7 @@ class QStackedWidget;
 class QGraphicsEllipseItem;
 class QGraphicsLineItem;
 class QGraphicsPolygonItem;
+class QTimer;
 
 namespace flatlas::editors { class IniCodeEditor; class IniSyntaxHighlighter; }
 
@@ -62,6 +69,7 @@ public:
     flatlas::domain::SystemDocument *document() const;
     QString filePath() const;
     bool isDirty() const;
+    QString lastSaveError() const;
 
 signals:
     void titleChanged(const QString &title);
@@ -69,6 +77,13 @@ signals:
     void loadingProgressChanged(int percent, const QString &message);
 
 private:
+    enum class EditorTool {
+        Selection,
+        Move,
+        Rotate,
+        Scale,
+    };
+
     struct PendingGeneratedZoneFile {
         QString absolutePath;
         QString content;
@@ -79,6 +94,37 @@ private:
         QString content;
     };
 
+    struct ClipboardPayload {
+        QVector<std::shared_ptr<flatlas::domain::SolarObject>> objects;
+        QVector<std::shared_ptr<flatlas::domain::ZoneItem>> zones;
+
+        bool isEmpty() const { return objects.isEmpty() && zones.isEmpty(); }
+        void clear()
+        {
+            objects.clear();
+            zones.clear();
+        }
+    };
+
+    enum class DockingRingPlacementStep {
+        Idle,
+        SelectPlanet,
+        SelectPosition,
+        ConfirmPosition,
+    };
+
+    struct DockingRingPlacementState {
+        DockingRingPlacementStep step = DockingRingPlacementStep::Idle;
+        QString planetNickname;
+        QPointF planetSceneCenter;
+        QVector3D planetWorldCenter;
+        qreal planetRadiusScene = 0.0;
+        float orbitRadiusWorld = 0.0f;
+        QPointF currentProjectedScenePos;
+
+        bool isActive() const { return step != DockingRingPlacementStep::Idle; }
+    };
+
     void loadDocumentIntoUi();
     void openSystemSettingsDialog();
     void emitLoadingProgress(int percent, const QString &message);
@@ -87,17 +133,59 @@ private:
     QString normalizeObjectNicknameToGroupRoot(const QString &nickname) const;
     QStringList normalizeSelectionNicknames(const QStringList &nicknames) const;
     QStringList expandSelectionNicknamesForScene(const QStringList &nicknames) const;
+    QStringList expandMoveNicknames(const QStringList &nicknames) const;
     QStringList objectGroupNicknames(const QString &rootNickname) const;
+    bool isPlanetLikeObject(const flatlas::domain::SolarObject &obj) const;
     bool isChildObject(const flatlas::domain::SolarObject &obj) const;
+    bool canHostDockingRing(const flatlas::domain::SolarObject &obj) const;
+    flatlas::domain::SolarObject *findDockingRingObjectForSelection() const;
+    flatlas::domain::SolarObject *findBaseHostForSelection() const;
+    flatlas::domain::SolarObject *findRingHostForSelection() const;
+    flatlas::domain::SolarObject *findRingHostAtScenePos(const QPointF &scenePos) const;
+    flatlas::domain::SolarObject *findDockingRingPlanetAtScenePos(const QPointF &scenePos) const;
+    bool openRingDialogForHost(flatlas::domain::SolarObject *hostObject, bool forceEnableForCreate);
+    void beginDockingRingPlacement();
+    void updateDockingRingPlacementPreview(const QPointF &scenePos);
+    void handleDockingRingPlacementClick(const QPointF &scenePos);
+    void confirmDockingRingPlacement();
+    void cancelDockingRingPlacement();
+    void clearDockingRingPlacementPreview();
+    void refreshDockingRingPlacementAnimation();
+    QPointF projectDockingRingScenePos(const QPointF &scenePos) const;
+    bool openDockingRingDialogForPlacement();
+    bool openDockingRingDialogForEdit(flatlas::domain::SolarObject *ringObject);
     bool hasSingleObjectGroupSelection() const;
+    void openBaseBuilderForSelection();
     void open3DPreviewForSelection();
     void setupUi();
     void setupToolBar();
+    void setupShortcutActions();
     void setupObjectList();
     void connectSignals();
     void ensureSceneView3D();
     void bindDocumentSignals();
     void refreshTitle();
+    void refreshDocumentDirtyState();
+    void captureSavedDocumentSnapshot();
+    void updateSaveButtonAppearance();
+    bool hasPendingIniEditorChangesForSelection() const;
+    void rotateSelectedObjectYaw(float deltaDegrees);
+    void rotateSelectedEntriesYaw(float deltaDegrees, const QString &undoText);
+    void moveSelectedEntries(const QVector3D &delta, const QString &undoText);
+    void copySelectedToClipboard();
+    void pasteClipboardSelection();
+    void focusCurrentSelectionInView();
+    void selectAllEligibleEntries();
+    bool cancelCurrentEditorInteraction();
+    void setCurrentEditorTool(EditorTool tool);
+    bool canTriggerEditorShortcut(bool requiresCanvasFocus = false) const;
+    bool isEditableShortcutTarget(QWidget *widget) const;
+    bool shouldConsumeShortcutOverride(QKeyEvent *event) const;
+    bool isMapCanvasFocusWidget(QWidget *widget) const;
+    QString uniqueNicknameForCopy(const QString &baseNickname) const;
+    void connectDocumentEntitySignals();
+    void onDocumentObjectAdded(const std::shared_ptr<flatlas::domain::SolarObject> &obj);
+    void onDocumentZoneAdded(const std::shared_ptr<flatlas::domain::ZoneItem> &zone);
     void set3DViewEnabled(bool enabled);
     void openDisplayFilterDialog();
     void loadDisplayFilterSettings();
@@ -127,6 +215,9 @@ private:
     void onCreateWeaponPlatform();
     void onCreateDepot();
     void onCreateTradeLane();
+    void onEditTradeLane();
+    void onCreateRing();
+    void onEditRing();
     void onCreateBase();
     void onCreateDockingRing();
     void onCreateAsteroidNebulaZone();
@@ -134,9 +225,17 @@ private:
     void refreshObjectList();
     void onCanvasSelectionChanged(const QStringList &nicknames);
     void onTreeSelectionChanged();
+    void showMapContextMenu(const QPoint &globalPos,
+                            const QPointF &scenePos,
+                            const QStringList &zoneNicknames);
     void onAddObject();
     void onDeleteSelected();
     void onDuplicateSelected();
+    bool selectSingleContextTarget(const QString &nickname);
+    void editContextTarget(const QString &nickname);
+    void deleteContextTarget(const QString &nickname);
+    QString zoneContextLabel(const flatlas::domain::ZoneItem &zone) const;
+    QString zoneShapeLabel(flatlas::domain::ZoneItem::Shape shape) const;
     void onItemsMoved(const QHash<QString, QPointF> &oldPositions,
                       const QHash<QString, QPointF> &newPositions,
                       double verticalOffsetMeters);
@@ -173,6 +272,14 @@ private:
     void updatePatrolZonePlacementPreview(const QPointF &currentScenePos);
     void finalizePatrolZonePlacement(const QPointF &endScenePos);
     void cancelPatrolZonePlacement();
+    void beginBuoyPlacement(const CreateBuoyRequest &request);
+    void updateBuoyPlacementPreview(const QPointF &currentScenePos);
+    void finalizeBuoyPlacement(const QPointF &scenePos);
+    void cancelBuoyPlacement();
+    void beginTradeLanePlacement();
+    void updateTradeLanePlacementPreview(const QPointF &currentScenePos);
+    void finalizeTradeLanePlacement(const QPointF &endScenePos);
+    void cancelTradeLanePlacement();
     void beginExclusionZonePlacement(const CreateExclusionZoneResult &request);
     void updateExclusionZonePlacementPreview(const QPointF &currentScenePos);
     void finalizeExclusionZonePlacement(const QPointF &edgeScenePos);
@@ -200,6 +307,7 @@ private:
     void removeLinkedFieldSectionsForNicknames(const QStringList &zoneNicknames);
     bool writePendingGeneratedZoneFiles(QString *errorMessage);
     bool writePendingTextFiles(QString *errorMessage);
+    void stagePendingTextWrite(const QString &absolutePath, const QString &content);
     void syncLightSourcesInScene();
     int findLightSourceSectionIndexByNickname(const QString &nickname) const;
     QStringList lightSourceNicknames() const;
@@ -223,6 +331,8 @@ private:
     QWidget *m_singleEditorPage = nullptr;
     IniCodeEditor *m_iniEditor = nullptr;
     IniSyntaxHighlighter *m_iniEditorHighlighter = nullptr;
+    QPushButton *m_rotateLeftButton = nullptr;
+    QPushButton *m_rotateRightButton = nullptr;
     QPushButton *m_applyIniButton = nullptr;
     QPushButton *m_openSystemIniButton = nullptr;
     QPushButton *m_preview3DButton = nullptr;
@@ -232,8 +342,36 @@ private:
     QWidget *m_multiSelectionListHost = nullptr;
     QVBoxLayout *m_multiSelectionListLayout = nullptr;
     QAction *m_toggle3DAction = nullptr;
+    QAction *m_selectToolAction = nullptr;
+    QAction *m_moveToolAction = nullptr;
+    QAction *m_rotateToolAction = nullptr;
+    QAction *m_scaleToolAction = nullptr;
+    QAction *m_toggleGridAction = nullptr;
+    QAction *m_focusSelectionAction = nullptr;
+    QAction *m_deleteSelectionAction = nullptr;
+    QAction *m_duplicateSelectionAction = nullptr;
+    QAction *m_copySelectionAction = nullptr;
+    QAction *m_pasteSelectionAction = nullptr;
+    QAction *m_undoAction = nullptr;
+    QAction *m_redoAction = nullptr;
+    QAction *m_selectAllAction = nullptr;
+    QAction *m_saveAction = nullptr;
+    QAction *m_cancelAction = nullptr;
+    QAction *m_moveLeftAction = nullptr;
+    QAction *m_moveRightAction = nullptr;
+    QAction *m_moveUpAction = nullptr;
+    QAction *m_moveDownAction = nullptr;
+    QAction *m_moveLeftLargeAction = nullptr;
+    QAction *m_moveRightLargeAction = nullptr;
+    QAction *m_moveUpLargeAction = nullptr;
+    QAction *m_moveDownLargeAction = nullptr;
+    QAction *m_rotateLeftAction = nullptr;
+    QAction *m_rotateRightAction = nullptr;
     bool m_is3DViewEnabled = false;
+    EditorTool m_currentEditorTool = EditorTool::Selection;
     QStringList m_selectedNicknames;
+    ClipboardPayload m_clipboardPayload;
+    int m_clipboardPasteSequence = 0;
     flatlas::rendering::SystemDisplayFilterSettings m_displayFilterSettings;
     QWidget *m_rightSidebar = nullptr;
     QLabel *m_selectionTitleLabel = nullptr;
@@ -267,6 +405,7 @@ private:
     QLabel *m_systemFileInfoLabel = nullptr;
     QLabel *m_systemStatsLabel = nullptr;
     QPushButton *m_saveFileButton = nullptr;
+    QString m_savedDocumentTextSnapshot;
     bool m_isShuttingDown = false;
     bool m_syncingSelection = false;
 
@@ -278,6 +417,7 @@ private:
     bool m_liveMoveActive = false;
     QHash<QString, PendingGeneratedZoneFile> m_pendingGeneratedZoneFiles;
     QHash<QString, PendingTextFileWrite> m_pendingTextFileWrites;
+    QString m_lastSaveError;
     std::unique_ptr<CreateFieldZoneResult> m_pendingFieldZoneRequest;
     bool m_pendingFieldZoneHasCenter = false;
     QPointF m_pendingFieldZoneCenterScenePos;
@@ -295,10 +435,27 @@ private:
     int m_pendingPatrolZoneStep = 0;
     QGraphicsLineItem *m_patrolZonePlacementPreview = nullptr;
     QGraphicsPolygonItem *m_patrolZoneWidthPreview = nullptr;
+    std::unique_ptr<CreateBuoyRequest> m_pendingBuoyRequest;
+    bool m_pendingBuoyHasAnchor = false;
+    QPointF m_pendingBuoyAnchorScenePos;
+    int m_pendingBuoyStep = 0;
+    QGraphicsLineItem *m_buoyLinePreview = nullptr;
+    QGraphicsEllipseItem *m_buoyCirclePreview = nullptr;
+    QVector<QGraphicsEllipseItem *> m_buoyMarkerPreviews;
+    bool m_pendingTradeLaneHasStart = false;
+    QPointF m_pendingTradeLaneStartScenePos;
+    QGraphicsLineItem *m_tradeLanePlacementPreview = nullptr;
     std::unique_ptr<CreateExclusionZoneResult> m_pendingExclusionZoneRequest;
     bool m_pendingExclusionZoneHasCenter = false;
     QPointF m_pendingExclusionZoneCenterScenePos;
     QGraphicsEllipseItem *m_exclusionZonePlacementPreview = nullptr;
+    DockingRingPlacementState m_dockingRingPlacement;
+    QGraphicsEllipseItem *m_dockingRingPlanetPreview = nullptr;
+    QGraphicsEllipseItem *m_dockingRingOrbitPreview = nullptr;
+    QGraphicsEllipseItem *m_dockingRingDotPreview = nullptr;
+    QGraphicsLineItem *m_dockingRingGuidePreview = nullptr;
+    QTimer *m_dockingRingPreviewTimer = nullptr;
+    qreal m_dockingRingPreviewPulse = 0.0;
 };
 
 } // namespace flatlas::editors

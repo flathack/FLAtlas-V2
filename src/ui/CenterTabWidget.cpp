@@ -71,9 +71,11 @@ void CenterTabWidget::removeTab(int index, bool force)
     if (force && isPinnedTab(index))
         --m_pinnedCount;
     QWidget *w = m_stack->widget(index);
+    if (w)
+        m_stack->removeWidget(w);
     m_tabBar->removeTab(index);
-    m_stack->removeWidget(w);
-    w->deleteLater();
+    if (w)
+        w->deleteLater();
 }
 
 void CenterTabWidget::setCurrentIndex(int index)

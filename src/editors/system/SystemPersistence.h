@@ -23,12 +23,23 @@ public:
     /// Speichert mit dem im Dokument hinterlegten Dateipfad.
     static bool save(const flatlas::domain::SystemDocument &doc);
 
+    /// Serialisiert den aktuellen logischen Dokumentzustand in denselben
+    /// INI-Text, der auch gespeichert würde, ohne dabei Dateien zu schreiben.
+    static QString serializeToText(const flatlas::domain::SystemDocument &doc);
+
     /// Gibt die gespeicherten Extra-Sections fuer ein Dokument zurueck.
     static flatlas::infrastructure::IniDocument extraSections(const flatlas::domain::SystemDocument *doc);
+
+    /// Gibt die gespeicherte SystemInfo-Section fuer ein Dokument zurueck.
+    static flatlas::infrastructure::IniSection systemInfoSection(const flatlas::domain::SystemDocument *doc);
 
     /// Ersetzt die gespeicherten Extra-Sections fuer ein Dokument.
     static void setExtraSections(const flatlas::domain::SystemDocument *doc,
                                  const flatlas::infrastructure::IniDocument &extras);
+
+    /// Ersetzt die gespeicherte SystemInfo-Section fuer ein Dokument.
+    static void setSystemInfoSection(const flatlas::domain::SystemDocument *doc,
+                                     const flatlas::infrastructure::IniSection &section);
 
     /// Entfernt gespeicherte Extra-Sections und Layout-Metadaten.
     static void clearExtras(const flatlas::domain::SystemDocument *doc);

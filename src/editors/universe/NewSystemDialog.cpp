@@ -78,6 +78,20 @@ NewSystemDialog::NewSystemDialog(const NewSystemDialogOptions &options, QWidget 
         m_localFactionCombo->setCurrentIndex(liIndex);
     form->addRow(tr("Local Faction:"), m_localFactionCombo);
 
+    m_sectorCombo = new QComboBox(this);
+    for (const auto &sector : options.sectors) {
+        const QString display = sector.displayName.trimmed().isEmpty() ? sector.key : sector.displayName;
+        m_sectorCombo->addItem(display, sector.key);
+    }
+    if (m_sectorCombo->count() == 0)
+        m_sectorCombo->addItem(QStringLiteral("Sirius"), QStringLiteral("universe"));
+    const int sectorIndex = m_sectorCombo->findData(options.activeSectorKey.trimmed().isEmpty()
+                                                       ? QStringLiteral("universe")
+                                                       : options.activeSectorKey.trimmed());
+    if (sectorIndex >= 0)
+        m_sectorCombo->setCurrentIndex(sectorIndex);
+    form->addRow(tr("Sektor:"), m_sectorCombo);
+
     layout->addLayout(form);
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
@@ -103,6 +117,9 @@ NewSystemRequest NewSystemDialog::request() const
     req.lightSourceColor = m_lightColorLabel->text().trimmed();
     req.localFactionNickname = m_localFactionCombo->currentData().toString().trimmed();
     req.localFactionDisplay = m_localFactionCombo->currentText().trimmed();
+    req.sectorKey = m_sectorCombo->currentData().toString().trimmed();
+    if (req.sectorKey.isEmpty())
+        req.sectorKey = QStringLiteral("universe");
     return req;
 }
 

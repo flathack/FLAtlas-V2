@@ -198,6 +198,28 @@ ModelViewerPage::ModelViewerPage(QWidget *parent)
     QTimer::singleShot(0, this, &ModelViewerPage::rebuildEntries);
 }
 
+bool ModelViewerPage::loadModelPath(const QString &modelPath, const QString &displayLabel)
+{
+    if (modelPath.trimmed().isEmpty() || !QFileInfo::exists(modelPath))
+        return false;
+
+    if (const auto *entry = findEntryByModelPath(modelPath)) {
+        setCurrentEntry(entry);
+        return true;
+    }
+
+    m_currentEntry = nullptr;
+    updateDetails();
+    updateButtons();
+    if (!ensureViewport())
+        return false;
+    m_fileLabel->setText(displayLabel.trimmed().isEmpty()
+                             ? tr("Initializing 3D preview...")
+                             : displayLabel.trimmed());
+    scheduleViewportLoad(modelPath, false);
+    return true;
+}
+
 const flatlas::infrastructure::ModelAssetEntry *ModelViewerPage::findEntryByModelPath(const QString &modelPath) const
 {
     if (modelPath.trimmed().isEmpty())

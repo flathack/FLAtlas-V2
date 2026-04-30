@@ -36,6 +36,11 @@ static QString posToString(const QVector3D &v)
     return QStringLiteral("%1, %2").arg(v.x(), 0, 'f', 0).arg(v.z(), 0, 'f', 0);
 }
 
+static QString pointToString(const QPointF &v)
+{
+    return QStringLiteral("%1, %2").arg(v.x(), 0, 'f', 0).arg(v.y(), 0, 'f', 0);
+}
+
 static QString sectorDisplayName(const QString &sectorKey)
 {
     if (sectorKey.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0)
@@ -225,6 +230,129 @@ static IniSection buildSystemSection(const SystemInfo &sys)
         section.entries.append({QStringLiteral("pos"), posToString(sys.position)});
 
     return section;
+}
+
+static QString sectorKeyFromSection(const IniSection &section)
+{
+    for (const auto &entry : section.entries) {
+        if (entry.first.compare(QStringLiteral("mapping"), Qt::CaseInsensitive) == 0)
+            return entry.second.split(QLatin1Char(',')).value(0).trimmed().toLower();
+    }
+    return {};
+}
+
+static bool isBaseSector(const QString &sectorKey)
+{
+    return sectorKey.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0;
+}
+
+static void appendSectorSystems(IniSection &section, const UniverseData &data, const QString &sectorKey)
+{
+    for (const auto &sys : data.systems) {
+        const auto it = sys.sectorPositions.constFind(sectorKey);
+        if (it == sys.sectorPositions.constEnd())
+            continue;
+        section.entries.append({QStringLiteral("system"),
+                                QStringLiteral("%1, %2").arg(sys.nickname, pointToString(it.value()))});
+    }
+}
+
+static IniSection buildSectorSection(const SectorDefinition &sector, const UniverseData &data)
+{
+    IniSection section;
+    section.name = QStringLiteral("Sector");
+    section.entries.append({QStringLiteral("mapping"), sector.sourceMap.trimmed().isEmpty() ? sector.key : sector.sourceMap});
+    for (const QString &labelId : sector.labelIds)
+        section.entries.append({QStringLiteral("label"), labelId});
+    appendSectorSystems(section, data, sector.key);
+    return section;
+}
+
+static IniSection updateSectorSection(const IniSection &existing, const UniverseData &data)
+{
+    const QString sectorKey = sectorKeyFromSection(existing);
+    IniSection section;
+    section.name = existing.name;
+    bool wroteMapping = false;
+    for (const auto &entry : existing.entries) {
+        if (entry.first.compare(QStringLiteral("system"), Qt::CaseInsensitive) == 0)
+            continue;
+        if (entry.first.compare(QStringLiteral("mapping"), Qt::CaseInsensitive) == 0)
+            wroteMapping = true;
+        section.entries.append(entry);
+    }
+    if (!wroteMapping)
+        section.entries.prepend({QStringLiteral("mapping"), sectorKey});
+    appendSectorSystems(section, data, sectorKey);
+    return section;
+}
+
+static bool saveMultiUniverse(const UniverseData &data, const QString &universeFilePath)
+{
+    const QString universeDir = QFileInfo(universeFilePath).absolutePath();
+    QString multiUniversePath =
+        flatlas::core::PathUtils::ciResolvePath(universeDir, QStringLiteral("multiuniverse.ini"));
+
+    bool hasMultiverseData = false;
+    QHash<QString, const SectorDefinition *> sectorsByKey;
+    for (const auto &sector : data.sectors) {
+        const QString key = sector.key.trimmed().toLower();
+        if (key.isEmpty() || isBaseSector(key))
+            continue;
+        hasMultiverseData = true;
+        sectorsByKey.insert(key, &sector);
+    }
+    for (const auto &sys : data.systems) {
+        for (auto it = sys.sectorPositions.constBegin(); it != sys.sectorPositions.constEnd(); ++it) {
+            const QString key = it.key().trimmed().toLower();
+            if (!key.isEmpty() && !isBaseSector(key))
+                hasMultiverseData = true;
+        }
+    }
+
+    if (multiUniversePath.isEmpty()) {
+        if (!hasMultiverseData)
+            return true;
+        multiUniversePath = QDir(universeDir).absoluteFilePath(QStringLiteral("multiuniverse.ini"));
+    }
+
+    IniDocument doc;
+    QSet<QString> writtenSectors;
+    if (QFile::exists(multiUniversePath)) {
+        const IniDocument existing = IniParser::parseFile(multiUniversePath);
+        for (const auto &section : existing) {
+            if (section.name.compare(QStringLiteral("sector"), Qt::CaseInsensitive) != 0) {
+                doc.append(section);
+                continue;
+            }
+
+            const QString sectorKey = sectorKeyFromSection(section);
+            if (sectorKey.isEmpty()) {
+                doc.append(section);
+                continue;
+            }
+
+            if (!sectorsByKey.contains(sectorKey))
+                continue;
+
+            doc.append(updateSectorSection(section, data));
+            writtenSectors.insert(sectorKey);
+        }
+    }
+
+    for (const auto &sector : data.sectors) {
+        const QString key = sector.key.trimmed().toLower();
+        if (key.isEmpty() || isBaseSector(key) || writtenSectors.contains(key))
+            continue;
+        doc.append(buildSectorSection(sector, data));
+    }
+
+    QFile file(multiUniversePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+
+    file.write(IniParser::serialize(doc).toUtf8());
+    return true;
 }
 
 /// Classify an [Object] with goto as gate/hole/other based on archetype.
@@ -444,7 +572,7 @@ bool UniverseSerializer::save(const UniverseData &data, const QString &filePath)
         return false;
 
     file.write(IniParser::serialize(doc).toUtf8());
-    return true;
+    return saveMultiUniverse(data, filePath);
 }
 
 } // namespace flatlas::editors

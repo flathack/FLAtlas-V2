@@ -3,6 +3,7 @@ build/
 build-mingw-ci/
 cmake-build-*/
 out/
+docs/
 
 # IDE
 .vs/
@@ -33,5 +34,8 @@ qrc_*
 Thumbs.db
 .DS_Store
 desktop.ini
+
+# Steven
 todo.md
+AGENTS.md
 V2-Prompting.md

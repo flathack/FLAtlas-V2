@@ -35,18 +35,35 @@ add_executable(FLAtlas
     ${CMAKE_SOURCE_DIR}/resources/resources.qrc
 )
 
-target_link_libraries(FLAtlas PRIVATE
-    flatlas_ui
-    flatlas_editors
-    flatlas_rendering
-    flatlas_infrastructure
-    flatlas_domain
-    flatlas_core
-    flatlas_tools
-    Qt6::Core
-    Qt6::Widgets
-    Qt6::Gui
-)
+if(MINGW)
+    target_link_libraries(FLAtlas PRIVATE
+        -Wl,--start-group
+        flatlas_ui
+        flatlas_editors
+        flatlas_rendering
+        flatlas_infrastructure
+        flatlas_domain
+        flatlas_core
+        flatlas_tools
+        -Wl,--end-group
+        Qt6::Core
+        Qt6::Widgets
+        Qt6::Gui
+    )
+else()
+    target_link_libraries(FLAtlas PRIVATE
+        flatlas_ui
+        flatlas_editors
+        flatlas_rendering
+        flatlas_infrastructure
+        flatlas_domain
+        flatlas_core
+        flatlas_tools
+        Qt6::Core
+        Qt6::Widgets
+        Qt6::Gui
+    )
+endif()
 
 target_include_directories(FLAtlas PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

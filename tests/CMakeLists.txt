@@ -29,6 +29,11 @@ flatlas_add_test(test_Logger      test_Logger.cpp      flatlas_core)
 # Phase 5 system editor tests
 flatlas_add_test(test_SystemPersistence test_SystemPersistence.cpp flatlas_editors)
 flatlas_add_test(test_ExclusionZoneUtils test_ExclusionZoneUtils.cpp flatlas_editors)
+flatlas_add_test(test_TradeLaneEditService test_TradeLaneEditService.cpp flatlas_editors)
+flatlas_add_test(test_SystemSettingsService test_SystemSettingsService.cpp flatlas_editors)
+flatlas_add_test(test_PlanetCreationService test_PlanetCreationService.cpp flatlas_editors)
+flatlas_add_test(test_RingEditService test_RingEditService.cpp flatlas_editors)
+flatlas_add_test(test_BaseEditService test_BaseEditService.cpp flatlas_editors)
 
 # Phase 6 INI editor tests
 flatlas_add_test(test_IniSyntaxHighlighter test_IniSyntaxHighlighter.cpp flatlas_editors Qt6::Widgets)
@@ -55,6 +60,7 @@ flatlas_add_test(test_BaseEditor   test_BaseEditor.cpp   flatlas_editors Qt6::Wi
 flatlas_add_test(test_MarketScanner   test_MarketScanner.cpp   flatlas_editors)
 flatlas_add_test(test_TradeScoring    test_TradeScoring.cpp    flatlas_editors flatlas_domain)
 flatlas_add_test(test_TradeRouteDataService test_TradeRouteDataService.cpp flatlas_editors)
+flatlas_add_test(test_RingPreviewSceneBuilder test_RingPreviewSceneBuilder.cpp flatlas_rendering)
 
 # Phase 12 IDS/String tests
 flatlas_add_test(test_IdsStringTable  test_IdsStringTable.cpp  flatlas_infrastructure)

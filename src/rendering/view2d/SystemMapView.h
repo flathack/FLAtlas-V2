@@ -8,6 +8,7 @@
 #include <QString>
 #include <QStringList>
 #include <QVector>
+#include <functional>
 #include "SystemDisplayFilter.h"
 
 class QRubberBand;
@@ -31,8 +32,11 @@ public:
     void applyTheme();
     void scheduleInitialFit();
     void zoomToFit();
+    void zoomToSceneRect(const QRectF &sceneRect);
+    void focusSelection();
     void setDisplayFilterSettings(const SystemDisplayFilterSettings &settings);
     SystemDisplayFilterSettings displayFilterSettings() const { return m_displayFilterSettings; }
+    void setMoveGroupResolver(std::function<QStringList(const QString &)> resolver);
 
     /// Enable/disable a one-shot placement mode. While active the view shows
     /// a yellow frame + help banner and the next left click is captured to
@@ -40,6 +44,8 @@ public:
     /// right click cancels and emits placementCanceled().
     void setPlacementMode(bool enabled, const QString &helpText = QString());
     bool isPlacementModeActive() const { return m_placementMode; }
+    bool hasActiveMeasurement() const;
+    void cancelActiveMeasurement();
 
 signals:
     void objectSelected(const QString &nickname);
@@ -51,6 +57,13 @@ signals:
                     double verticalOffsetMeters);
     void placementClicked(const QPointF &scenePos);
     void placementCanceled();
+    void contextMenuRequested(const QPoint &globalPos,
+                              const QPointF &scenePos,
+                              const QStringList &zoneNicknames);
+
+public:
+    void startMeasurement();
+    void clearMeasurementResults();
 
 protected:
     void wheelEvent(QWheelEvent *event) override;
@@ -67,6 +80,12 @@ protected:
     void keyPressEvent(QKeyEvent *event) override;
 
 private:
+    enum class MeasurementStage {
+        Inactive,
+        AwaitingStart,
+        AwaitingEnd,
+    };
+
     struct LabelCluster {
         QVector<SolarObjectItem *> members;
         QStringList nicknames;
@@ -83,6 +102,15 @@ private:
     void finishTrackedSelectionMove();
     void updateRubberBandSelection(const QRect &viewportRect, Qt::KeyboardModifiers modifiers);
     QString itemNicknameAtViewportPos(const QPoint &pos) const;
+    QStringList zoneNicknamesAtViewportPos(const QPoint &pos) const;
+    void startMeasurementMode();
+    void cancelMeasurementMode();
+    void clearMeasurement(bool keepMode = false);
+    void updateMeasurementCursor();
+    QString measurementBannerText() const;
+    bool hasMeasurementResult() const;
+    double measurementDistanceWorld() const;
+    QStringList resolvedMoveSelectionForHit(const QString &hitNickname, bool hitAlreadySelected) const;
 
     MapScene *m_mapScene = nullptr;
     bool m_panning = false;
@@ -111,6 +139,11 @@ private:
     QTimer *m_clusterHoverHideTimer = nullptr;
     bool m_placementMode = false;
     QString m_placementHelpText;
+    std::function<QStringList(const QString &)> m_moveGroupResolver;
+    MeasurementStage m_measurementStage = MeasurementStage::Inactive;
+    QPointF m_measurementStartScenePos;
+    QPointF m_measurementEndScenePos;
+    bool m_measurementHasFinal = false;
 };
 
 } // namespace flatlas::rendering

@@ -13,9 +13,9 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
+#include <QSaveFile>
 #include <QRegularExpression>
 #include <QStringDecoder>
-#include <QTextStream>
 #include <QVector3D>
 
 using namespace flatlas::infrastructure;
@@ -170,7 +170,8 @@ static SolarObject::Type detectObjectType(const IniSection &sec)
         return SolarObject::Planet;
     if (archetype.contains(QLatin1String("satellite")))
         return SolarObject::Satellite;
-    if (archetype.contains(QLatin1String("waypoint")))
+    if (archetype.contains(QLatin1String("waypoint"))
+        || archetype.contains(QLatin1String("buoy")))
         return SolarObject::Waypoint;
     if (archetype.contains(QLatin1String("weapons_platform")))
         return SolarObject::Weapons_Platform;
@@ -806,7 +807,12 @@ IniSection SystemPersistence::serializeObjectSection(const SolarObject &obj)
     setOptionalIntEntry(sec.entries, QStringLiteral("ids_name"), obj.idsName());
     setOptionalIntEntry(sec.entries, QStringLiteral("ids_info"), obj.idsInfo());
     setOptionalVec3Entry(sec.entries, QStringLiteral("pos"), obj.position());
-    setOptionalVec3Entry(sec.entries, QStringLiteral("rotate"), obj.rotation());
+    const int rotateIndex = findEntryIndex(sec.entries, QStringLiteral("rotate"));
+    const bool preserveExplicitZeroRotate = rotateIndex >= 0
+        && obj.rotation().isNull()
+        && vec3Equals(parseVec3(sec.entries[rotateIndex].second), QVector3D());
+    if (!preserveExplicitZeroRotate)
+        setOptionalVec3Entry(sec.entries, QStringLiteral("rotate"), obj.rotation());
     setOptionalEntry(sec.entries, QStringLiteral("archetype"), obj.archetype());
     setOptionalEntry(sec.entries, QStringLiteral("base"), obj.base());
     setOptionalEntry(sec.entries, QStringLiteral("dock_with"), obj.dockWith());
@@ -860,7 +866,15 @@ IniSection SystemPersistence::serializeZoneSection(const ZoneItem &zone)
     setOptionalIntEntry(sec.entries, QStringLiteral("damage"), zone.damage());
     setOptionalFloatEntry(sec.entries, QStringLiteral("interference"), zone.interference());
     setOptionalFloatEntry(sec.entries, QStringLiteral("drag_modifier"), zone.dragScale());
-    setOptionalIntEntry(sec.entries, QStringLiteral("sort"), zone.sortKey());
+    const int sortIndex = findEntryIndex(sec.entries, QStringLiteral("sort"));
+    if (zone.sortKey() != 0) {
+        setOptionalIntEntry(sec.entries, QStringLiteral("sort"), zone.sortKey());
+    } else if (sortIndex >= 0) {
+        bool okInt = false;
+        sec.entries[sortIndex].second.trimmed().toInt(&okInt);
+        if (okInt || sec.entries[sortIndex].second.trimmed().isEmpty())
+            removeEntry(sec.entries, QStringLiteral("sort"));
+    }
 
     return sec;
 }
@@ -939,6 +953,48 @@ bool SystemPersistence::save(const SystemDocument &doc, const QString &filePath)
     const IniDocument currentSections = buildCurrentSections(doc, extras, systemInfoSection);
     const IniDocument layoutSections = s_layoutSections.value(&doc);
     const IniDocument orderedSections = mergeSectionsWithLayout(layoutSections, currentSections);
+    const QString text = serializeToText(doc);
+
+    QSaveFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate))
+        return false;
+
+    const QByteArray bytes = text.toUtf8();
+    if (file.write(bytes) != bytes.size()) {
+        file.cancelWriting();
+        return false;
+    }
+    if (!file.commit())
+        return false;
+
+    QFile verifyFile(filePath);
+    if (!verifyFile.open(QIODevice::ReadOnly | QIODevice::Text))
+        return false;
+    if (verifyFile.readAll() != bytes)
+        return false;
+
+    if (!orderedSections.isEmpty()
+        && normalizedSectionName(orderedSections.first().name) == QStringLiteral("systeminfo")) {
+        s_systemInfoSections[&doc] = orderedSections.first();
+    }
+    s_layoutSections[&doc] = orderedSections;
+    s_nonStandardOrder[&doc] =
+        hasDifferentSectionSequence(orderedSections, standardizeSystemSectionOrder(orderedSections));
+    return true;
+}
+
+bool SystemPersistence::save(const SystemDocument &doc)
+{
+    return save(doc, doc.filePath());
+}
+
+QString SystemPersistence::serializeToText(const SystemDocument &doc)
+{
+    const IniDocument extras = s_extras.value(&doc);
+    const IniSection systemInfoSection = s_systemInfoSections.value(&doc);
+    const IniDocument currentSections = buildCurrentSections(doc, extras, systemInfoSection);
+    const IniDocument layoutSections = s_layoutSections.value(&doc);
+    const IniDocument orderedSections = mergeSectionsWithLayout(layoutSections, currentSections);
 
     QString text;
     for (const IniSection &section : orderedSections) {
@@ -956,26 +1012,7 @@ bool SystemPersistence::save(const SystemDocument &doc, const QString &filePath)
         }
         appendSerializedSection(text, section, leadingComment);
     }
-
-    QFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
-        return false;
-
-    QTextStream out(&file);
-    out << text;
-    if (!orderedSections.isEmpty()
-        && normalizedSectionName(orderedSections.first().name) == QStringLiteral("systeminfo")) {
-        s_systemInfoSections[&doc] = orderedSections.first();
-    }
-    s_layoutSections[&doc] = orderedSections;
-    s_nonStandardOrder[&doc] =
-        hasDifferentSectionSequence(orderedSections, standardizeSystemSectionOrder(orderedSections));
-    return true;
-}
-
-bool SystemPersistence::save(const SystemDocument &doc)
-{
-    return save(doc, doc.filePath());
+    return text;
 }
 
 // ─── extras management ────────────────────────────────────────────────────────
@@ -985,11 +1022,23 @@ IniDocument SystemPersistence::extraSections(const SystemDocument *doc)
     return s_extras.value(doc);
 }
 
+IniSection SystemPersistence::systemInfoSection(const SystemDocument *doc)
+{
+    return s_systemInfoSections.value(doc);
+}
+
 void SystemPersistence::setExtraSections(const SystemDocument *doc, const IniDocument &extras)
 {
     if (!doc)
         return;
     s_extras.insert(doc, extras);
+}
+
+void SystemPersistence::setSystemInfoSection(const SystemDocument *doc, const IniSection &section)
+{
+    if (!doc)
+        return;
+    s_systemInfoSections.insert(doc, section);
 }
 
 void SystemPersistence::clearExtras(const SystemDocument *doc)

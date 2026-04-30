@@ -57,12 +57,14 @@ private:
     void onSystemDoubleClicked(QTreeWidgetItem *item, int column);
     void onMapItemDoubleClicked(const QString &nickname);
     void onAddSystem();
+    void onAddSector();
     void onMapContextMenuRequested(const QPoint &globalPos, const QString &nickname);
     void onMapPlacementRequested(const QPointF &scenePos);
     void onEditSystem(const QString &nickname);
     void onDeleteSystem();
     void onDeleteSystem(const QString &nickname);
     void onNodeSelected(const QString &nickname);
+    void selectSystemOnMap(const QString &nickname, bool centerOnSelection);
     void onNodeMoved(const QString &nickname);
     void onNodeMoveFinished(const QString &nickname);
 
@@ -105,6 +107,7 @@ private:
     QToolBar *m_toolBar = nullptr;
     QToolBar *m_mapToolBar = nullptr;
     QAction *m_addSystemAction = nullptr;
+    QAction *m_addSectorAction = nullptr;
     QAction *m_moveAction = nullptr;
     QTabBar *m_sectorTabs = nullptr;
     QTreeWidget *m_systemTree = nullptr;

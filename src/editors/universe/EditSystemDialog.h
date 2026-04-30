@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QDialog>
+#include <QString>
+#include <QVector>
 
 class QComboBox;
 class QLabel;
@@ -9,7 +11,7 @@ class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
 
-namespace flatlas::domain { struct SystemInfo; }
+namespace flatlas::domain { struct SectorDefinition; struct SystemInfo; }
 
 namespace flatlas::editors {
 
@@ -18,6 +20,7 @@ struct EditSystemRequest {
     QString name;
     QString infocardXml;
     double navMapScale = 1.36;
+    QString sectorKey = QStringLiteral("universe");
 };
 
 class EditSystemDialog : public QDialog {
@@ -26,6 +29,7 @@ public:
     explicit EditSystemDialog(const flatlas::domain::SystemInfo &systemInfo,
                               const QString &currentResolvedName,
                               const QString &currentInfocardXml,
+                              const QVector<flatlas::domain::SectorDefinition> &sectors,
                               QWidget *parent = nullptr);
 
     EditSystemRequest request() const;
@@ -35,6 +39,7 @@ private:
 
     QComboBox *m_visitCombo = nullptr;
     QLineEdit *m_nameEdit = nullptr;
+    QComboBox *m_sectorCombo = nullptr;
     QDoubleSpinBox *m_navMapScaleSpin = nullptr;
     QPlainTextEdit *m_infocardEdit = nullptr;
     QLabel *m_infocardPreview = nullptr;

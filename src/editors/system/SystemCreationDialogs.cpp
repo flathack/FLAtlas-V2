@@ -5,6 +5,7 @@
 #include "infrastructure/freelancer/IdsStringTable.h"
 #include "infrastructure/parser/IniParser.h"
 #include "infrastructure/parser/XmlInfocard.h"
+#include "rendering/view3d/RingPreviewSceneBuilder.h"
 #include "rendering/view3d/ModelViewport3D.h"
 
 #include <QCheckBox>
@@ -21,6 +22,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStackedLayout>
@@ -361,13 +363,23 @@ void populateFixedVisitCombo(QComboBox *combo)
     combo->setEnabled(false);
 }
 
-QDialogButtonBox *createDialogButtons(QDialog *dialog)
+QDialogButtonBox *createDialogButtons(QDialog *dialog, const QString &acceptText = QObject::tr("Erstellen"))
 {
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog);
-    buttons->button(QDialogButtonBox::Ok)->setText(QObject::tr("Erstellen"));
+    buttons->button(QDialogButtonBox::Ok)->setText(acceptText);
     QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, &QDialog::accept);
     QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
     return buttons;
+}
+
+QDoubleSpinBox *createCoordinateSpinBox(double value, QWidget *parent)
+{
+    auto *spin = new QDoubleSpinBox(parent);
+    spin->setRange(-10000000.0, 10000000.0);
+    spin->setDecimals(0);
+    spin->setSingleStep(1000.0);
+    spin->setValue(value);
+    return spin;
 }
 
 QComboBox *createEditableCombo(const QStringList &values, QWidget *parent)
@@ -425,6 +437,433 @@ CreateSimpleZoneRequest CreateSimpleZoneDialog::result() const
     value.sort = m_sortSpin->value();
     value.damage = m_damageSpin->value();
     return value;
+}
+
+CreateBuoyDialog::CreateBuoyDialog(QWidget *parent)
+    : QDialog(parent)
+{
+    setWindowTitle(tr("Bojen erstellen"));
+    setMinimumWidth(440);
+
+    auto *layout = new QFormLayout(this);
+
+    m_typeCombo = new QComboBox(this);
+    m_typeCombo->addItem(QStringLiteral("nav_buoy"), QStringLiteral("nav_buoy"));
+    m_typeCombo->addItem(QStringLiteral("hazard_buoy"), QStringLiteral("hazard_buoy"));
+    layout->addRow(tr("Typ:"), m_typeCombo);
+
+    m_modeCombo = new QComboBox(this);
+    m_modeCombo->addItem(tr("Linie"), QVariant::fromValue(static_cast<int>(CreateBuoyRequest::Mode::Line)));
+    m_modeCombo->addItem(tr("Kreis"), QVariant::fromValue(static_cast<int>(CreateBuoyRequest::Mode::Circle)));
+    layout->addRow(tr("Muster:"), m_modeCombo);
+
+    m_lineConstraintCombo = new QComboBox(this);
+    m_lineConstraintCombo->addItem(tr("Feste Anzahl"),
+                                   QVariant::fromValue(static_cast<int>(CreateBuoyRequest::LineConstraint::FixedCount)));
+    m_lineConstraintCombo->addItem(tr("Fester Abstand"),
+                                   QVariant::fromValue(static_cast<int>(CreateBuoyRequest::LineConstraint::FixedSpacing)));
+    layout->addRow(tr("Linienmodus:"), m_lineConstraintCombo);
+
+    m_countSpin = new QSpinBox(this);
+    m_countSpin->setRange(2, 128);
+    m_countSpin->setValue(8);
+    layout->addRow(tr("Anzahl:"), m_countSpin);
+    m_countDerivedLabel = new QLabel(tr("Wird waehrend der Platzierung berechnet."), this);
+    m_countDerivedLabel->setWordWrap(true);
+    layout->addRow(QString(), m_countDerivedLabel);
+
+    m_spacingLabel = new QLabel(tr("Abstand (m):"), this);
+    m_spacingSpin = new QSpinBox(this);
+    m_spacingSpin->setRange(100, 100000);
+    m_spacingSpin->setSingleStep(100);
+    m_spacingSpin->setValue(3000);
+    layout->addRow(m_spacingLabel, m_spacingSpin);
+    m_spacingDerivedLabel = new QLabel(tr("Wird waehrend der Platzierung berechnet."), this);
+    m_spacingDerivedLabel->setWordWrap(true);
+    layout->addRow(QString(), m_spacingDerivedLabel);
+
+    m_modeHintLabel = new QLabel(this);
+    m_modeHintLabel->setWordWrap(true);
+    m_modeHintLabel->setFrameStyle(QFrame::NoFrame);
+    layout->addRow(QString(), m_modeHintLabel);
+
+    connect(m_modeCombo, &QComboBox::currentIndexChanged, this, &CreateBuoyDialog::updateModeUi);
+    connect(m_lineConstraintCombo, &QComboBox::currentIndexChanged, this, &CreateBuoyDialog::updateLineConstraintUi);
+    updateModeUi();
+
+    layout->addRow(createDialogButtons(this));
+}
+
+void CreateBuoyDialog::updateModeUi()
+{
+    const auto mode = static_cast<CreateBuoyRequest::Mode>(
+        m_modeCombo->currentData().toInt());
+    const bool lineMode = mode == CreateBuoyRequest::Mode::Line;
+    m_lineConstraintCombo->setVisible(lineMode);
+    m_countSpin->setMinimum(lineMode ? 2 : 3);
+    if (m_countSpin->value() < m_countSpin->minimum())
+        m_countSpin->setValue(m_countSpin->minimum());
+    if (!lineMode) {
+        m_countSpin->setEnabled(true);
+        m_countDerivedLabel->setVisible(false);
+        m_spacingLabel->setVisible(false);
+        m_spacingSpin->setVisible(false);
+        m_spacingDerivedLabel->setVisible(false);
+        m_modeHintLabel->setText(tr("1. Klick setzt den Mittelpunkt. 2. Klick bestimmt den Radius. "
+                                    "Die Bojen werden gleichmaessig auf dem Kreis verteilt."));
+        return;
+    }
+
+    updateLineConstraintUi();
+}
+
+void CreateBuoyDialog::updateLineConstraintUi()
+{
+    const auto mode = static_cast<CreateBuoyRequest::Mode>(
+        m_modeCombo->currentData().toInt());
+    if (mode != CreateBuoyRequest::Mode::Line)
+        return;
+
+    const auto constraint = static_cast<CreateBuoyRequest::LineConstraint>(
+        m_lineConstraintCombo->currentData().toInt());
+    const bool fixedCount = constraint == CreateBuoyRequest::LineConstraint::FixedCount;
+
+    m_countSpin->setEnabled(fixedCount);
+    m_countDerivedLabel->setVisible(!fixedCount);
+    m_spacingLabel->setVisible(true);
+    m_spacingSpin->setVisible(!fixedCount);
+    m_spacingSpin->setEnabled(!fixedCount);
+    m_spacingDerivedLabel->setVisible(fixedCount);
+
+    m_countDerivedLabel->setText(tr("Die Anzahl wird waehrend der Platzierung aus Linienlaenge und Abstand berechnet."));
+    m_spacingDerivedLabel->setText(tr("Der Abstand wird waehrend der Platzierung aus Linienlaenge und Anzahl berechnet."));
+    m_modeHintLabel->setText(fixedCount
+                                 ? tr("Linienmodus: feste Anzahl. 1. Klick setzt den Startpunkt. 2. Klick bestimmt die Richtung. "
+                                      "Der Abstand zwischen den Bojen wird aus der gezeichneten Linienlaenge berechnet.")
+                                 : tr("Linienmodus: fester Abstand. 1. Klick setzt den Startpunkt. 2. Klick bestimmt die Richtung. "
+                                      "Die Anzahl der Bojen wird aus Linienlaenge und Abstand berechnet."));
+}
+
+CreateBuoyRequest CreateBuoyDialog::result() const
+{
+    CreateBuoyRequest value;
+    value.archetype = m_typeCombo->currentData().toString().trimmed();
+    value.mode = static_cast<CreateBuoyRequest::Mode>(m_modeCombo->currentData().toInt());
+    value.lineConstraint = static_cast<CreateBuoyRequest::LineConstraint>(m_lineConstraintCombo->currentData().toInt());
+    value.count = m_countSpin->value();
+    value.spacingMeters = m_spacingSpin->value();
+    return value;
+}
+
+CreateTradeLaneDialog::CreateTradeLaneDialog(const QString &systemNickname,
+                                             int startNumber,
+                                             int ringCount,
+                                             double distanceMeters,
+                                             const QStringList &loadouts,
+                                             const QStringList &factions,
+                                             const QStringList &pilots,
+                                             QWidget *parent)
+    : QDialog(parent)
+    , m_distanceMeters(std::max(distanceMeters, 0.0))
+{
+    setWindowTitle(tr("Trade Lane erstellen"));
+    setMinimumWidth(480);
+
+    auto *layout = new QVBoxLayout(this);
+    auto *form = new QFormLayout();
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+
+    m_countSpin = new QSpinBox(this);
+    m_countSpin->setRange(2, 200);
+    m_countSpin->setValue(std::max(ringCount, 2));
+    form->addRow(tr("Ring-Anzahl:"), m_countSpin);
+
+    m_spacingSpin = new QSpinBox(this);
+    m_spacingSpin->setRange(500, 50000);
+    m_spacingSpin->setSingleStep(500);
+    m_spacingSpin->setSuffix(tr(" m"));
+    m_spacingSpin->setValue(7500);
+    form->addRow(tr("Abstand:"), m_spacingSpin);
+
+    m_spacingInfoLabel = new QLabel(this);
+    m_spacingInfoLabel->setWordWrap(true);
+    m_spacingInfoLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    form->addRow(QString(), m_spacingInfoLabel);
+
+    m_startNumberSpin = new QSpinBox(this);
+    m_startNumberSpin->setRange(1, 99999);
+    m_startNumberSpin->setValue(std::max(startNumber, 1));
+    form->addRow(tr("Startnummer:"), m_startNumberSpin);
+
+    QStringList loadoutValues = loadouts;
+    loadoutValues.removeDuplicates();
+    if (loadoutValues.isEmpty()) {
+        loadoutValues = {
+            QStringLiteral("trade_lane_ring_li_01"),
+            QStringLiteral("trade_lane_ring_br_01"),
+            QStringLiteral("trade_lane_ring_ku_01"),
+        };
+    }
+    m_loadoutCombo = createEditableCombo(loadoutValues, this);
+    if (m_loadoutCombo->count() > 0)
+        m_loadoutCombo->setCurrentIndex(0);
+    form->addRow(tr("Loadout:"), m_loadoutCombo);
+
+    m_reputationCombo = createEditableCombo(factions, this);
+    form->addRow(tr("Reputation:"), m_reputationCombo);
+
+    m_difficultySpin = new QSpinBox(this);
+    m_difficultySpin->setRange(1, 7);
+    m_difficultySpin->setValue(1);
+    form->addRow(tr("difficulty_level:"), m_difficultySpin);
+
+    m_pilotCombo = createEditableCombo(pilots, this);
+    const int easiestIndex =
+        m_pilotCombo->findText(QStringLiteral("pilot_solar_easiest"), Qt::MatchFixedString);
+    m_pilotCombo->setCurrentIndex(easiestIndex >= 0 ? easiestIndex : 0);
+    form->addRow(tr("Pilot:"), m_pilotCombo);
+
+    m_routeNameEdit = new QLineEdit(this);
+    m_routeNameEdit->setPlaceholderText(tr("Anzeigename der Route (optional)"));
+    form->addRow(tr("Route / ids_name:"), m_routeNameEdit);
+
+    m_startSpaceNameEdit = new QLineEdit(this);
+    m_startSpaceNameEdit->setPlaceholderText(tr("Name am ersten Ring (optional)"));
+    form->addRow(tr("Start tradelane_space_name:"), m_startSpaceNameEdit);
+
+    m_endSpaceNameEdit = new QLineEdit(this);
+    m_endSpaceNameEdit->setPlaceholderText(tr("Name am letzten Ring (optional)"));
+    form->addRow(tr("Ende tradelane_space_name:"), m_endSpaceNameEdit);
+
+    layout->addLayout(form);
+
+    auto *infoLabel = new QLabel(
+        tr("System: %1\nNicknames: %1_Trade_Lane_Ring_N")
+            .arg(systemNickname.trimmed().isEmpty() ? QStringLiteral("System") : systemNickname),
+        this);
+    infoLabel->setWordWrap(true);
+    infoLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    layout->addWidget(infoLabel);
+
+    layout->addWidget(createDialogButtons(this));
+
+    connect(m_countSpin, &QSpinBox::valueChanged, this, &CreateTradeLaneDialog::updateDerivedSpacing);
+    connect(m_spacingSpin, &QSpinBox::valueChanged, this, &CreateTradeLaneDialog::updateCountFromSpacing);
+
+    updateDerivedSpacing();
+}
+
+void CreateTradeLaneDialog::updateDerivedSpacing()
+{
+    if (!m_countSpin || !m_spacingInfoLabel)
+        return;
+
+    const int ringCount = std::max(m_countSpin->value(), 2);
+    const double spacingMeters =
+        ringCount > 1 ? m_distanceMeters / static_cast<double>(ringCount - 1) : m_distanceMeters;
+    m_spacingInfoLabel->setText(
+        tr("Gemessene Lane-Laenge: %1 m. Bei %2 Ringen ergibt das ca. %3 m Abstand.")
+            .arg(QString::number(m_distanceMeters, 'f', 0))
+            .arg(ringCount)
+            .arg(QString::number(spacingMeters, 'f', 0)));
+}
+
+void CreateTradeLaneDialog::updateCountFromSpacing(int spacingMeters)
+{
+    if (m_updatingSpacing || !m_countSpin)
+        return;
+
+    const int safeSpacing = std::max(spacingMeters, 1);
+    const int ringCount = std::max(2, qRound(m_distanceMeters / static_cast<double>(safeSpacing)) + 1);
+    m_updatingSpacing = true;
+    m_countSpin->setValue(ringCount);
+    m_updatingSpacing = false;
+    updateDerivedSpacing();
+}
+
+CreateTradeLaneRequest CreateTradeLaneDialog::result() const
+{
+    CreateTradeLaneRequest value;
+    value.ringCount = m_countSpin ? m_countSpin->value() : 2;
+    value.spacingMeters = m_spacingSpin ? m_spacingSpin->value() : 7500;
+    value.startNumber = m_startNumberSpin ? m_startNumberSpin->value() : 1;
+    value.loadout = m_loadoutCombo ? m_loadoutCombo->currentText().trimmed() : QString();
+    value.reputationDisplay = m_reputationCombo ? m_reputationCombo->currentText().trimmed() : QString();
+    value.difficultyLevel = m_difficultySpin ? m_difficultySpin->value() : 1;
+    value.pilot = m_pilotCombo ? m_pilotCombo->currentText().trimmed() : QString();
+    value.routeName = m_routeNameEdit ? m_routeNameEdit->text().trimmed() : QString();
+    value.startSpaceName = m_startSpaceNameEdit ? m_startSpaceNameEdit->text().trimmed() : QString();
+    value.endSpaceName = m_endSpaceNameEdit ? m_endSpaceNameEdit->text().trimmed() : QString();
+    return value;
+}
+
+EditTradeLaneDialog::EditTradeLaneDialog(const QString &laneSummary,
+                                         const QStringList &archetypes,
+                                         const QStringList &loadouts,
+                                         const QStringList &factions,
+                                         const QStringList &pilots,
+                                         const EditTradeLaneRequest &initial,
+                                         QWidget *parent)
+    : QDialog(parent)
+{
+    setWindowTitle(tr("Trade Lane bearbeiten"));
+    setMinimumWidth(560);
+
+    auto *layout = new QVBoxLayout(this);
+
+    auto *summaryLabel = new QLabel(laneSummary, this);
+    summaryLabel->setWordWrap(true);
+    summaryLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    layout->addWidget(summaryLabel);
+
+    auto *form = new QFormLayout();
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+
+    m_startXSpin = createCoordinateSpinBox(initial.startX, this);
+    form->addRow(tr("Start X:"), m_startXSpin);
+    m_startZSpin = createCoordinateSpinBox(initial.startZ, this);
+    form->addRow(tr("Start Z:"), m_startZSpin);
+    m_endXSpin = createCoordinateSpinBox(initial.endX, this);
+    form->addRow(tr("Ende X:"), m_endXSpin);
+    m_endZSpin = createCoordinateSpinBox(initial.endZ, this);
+    form->addRow(tr("Ende Z:"), m_endZSpin);
+
+    m_countSpin = new QSpinBox(this);
+    m_countSpin->setRange(2, 200);
+    m_countSpin->setValue(std::max(initial.ringCount, 2));
+    form->addRow(tr("Ring-Anzahl:"), m_countSpin);
+
+    m_spacingSpin = new QSpinBox(this);
+    m_spacingSpin->setRange(500, 50000);
+    m_spacingSpin->setSingleStep(500);
+    m_spacingSpin->setSuffix(tr(" m"));
+    m_spacingSpin->setValue(7500);
+    form->addRow(tr("Abstand:"), m_spacingSpin);
+
+    m_spacingInfoLabel = new QLabel(this);
+    m_spacingInfoLabel->setWordWrap(true);
+    m_spacingInfoLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    form->addRow(QString(), m_spacingInfoLabel);
+
+    m_archetypeCombo = createEditableCombo(archetypes, this);
+    m_archetypeCombo->setCurrentText(initial.archetype.trimmed());
+    form->addRow(tr("Archetype:"), m_archetypeCombo);
+
+    m_loadoutCombo = createEditableCombo(loadouts, this);
+    m_loadoutCombo->setCurrentText(initial.loadout.trimmed());
+    form->addRow(tr("Loadout:"), m_loadoutCombo);
+
+    m_reputationCombo = createEditableCombo(factions, this);
+    m_reputationCombo->setCurrentText(initial.reputationDisplay.trimmed());
+    form->addRow(tr("Reputation:"), m_reputationCombo);
+
+    m_difficultySpin = new QSpinBox(this);
+    m_difficultySpin->setRange(1, 7);
+    m_difficultySpin->setValue(std::max(initial.difficultyLevel, 1));
+    form->addRow(tr("difficulty_level:"), m_difficultySpin);
+
+    m_pilotCombo = createEditableCombo(pilots, this);
+    m_pilotCombo->setCurrentText(initial.pilot.trimmed());
+    form->addRow(tr("Pilot:"), m_pilotCombo);
+
+    m_routeNameEdit = new QLineEdit(initial.routeName.trimmed(), this);
+    form->addRow(tr("Route / ids_name:"), m_routeNameEdit);
+
+    m_startSpaceNameEdit = new QLineEdit(initial.startSpaceName.trimmed(), this);
+    form->addRow(tr("Start tradelane_space_name:"), m_startSpaceNameEdit);
+
+    m_endSpaceNameEdit = new QLineEdit(initial.endSpaceName.trimmed(), this);
+    form->addRow(tr("Ende tradelane_space_name:"), m_endSpaceNameEdit);
+
+    layout->addLayout(form);
+
+    auto *hintLabel = new QLabel(
+        tr("Lane-weite Felder werden auf die komplette Ring-Kette angewendet. "
+           "tradelane_space_name bleibt auf Start- und Endring beschraenkt."),
+        this);
+    hintLabel->setWordWrap(true);
+    hintLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    layout->addWidget(hintLabel);
+
+    auto *buttons = createDialogButtons(this, tr("Anwenden"));
+    auto *deleteButton = buttons->addButton(tr("Trade Lane loeschen"), QDialogButtonBox::DestructiveRole);
+    QObject::connect(deleteButton, &QPushButton::clicked, this, [this]() {
+        m_deleteRequested = true;
+        accept();
+    });
+    layout->addWidget(buttons);
+
+    connect(m_countSpin, &QSpinBox::valueChanged, this, &EditTradeLaneDialog::updateDerivedSpacing);
+    connect(m_spacingSpin, &QSpinBox::valueChanged, this, &EditTradeLaneDialog::updateCountFromSpacing);
+    connect(m_startXSpin, &QDoubleSpinBox::valueChanged, this, &EditTradeLaneDialog::updateDerivedSpacing);
+    connect(m_startZSpin, &QDoubleSpinBox::valueChanged, this, &EditTradeLaneDialog::updateDerivedSpacing);
+    connect(m_endXSpin, &QDoubleSpinBox::valueChanged, this, &EditTradeLaneDialog::updateDerivedSpacing);
+    connect(m_endZSpin, &QDoubleSpinBox::valueChanged, this, &EditTradeLaneDialog::updateDerivedSpacing);
+
+    updateDerivedSpacing();
+}
+
+double EditTradeLaneDialog::currentLaneLengthMeters() const
+{
+    if (!m_startXSpin || !m_startZSpin || !m_endXSpin || !m_endZSpin)
+        return 0.0;
+    const double dx = m_endXSpin->value() - m_startXSpin->value();
+    const double dz = m_endZSpin->value() - m_startZSpin->value();
+    return std::hypot(dx, dz);
+}
+
+void EditTradeLaneDialog::updateDerivedSpacing()
+{
+    if (!m_countSpin || !m_spacingInfoLabel)
+        return;
+
+    const double lengthMeters = currentLaneLengthMeters();
+    const int ringCount = std::max(m_countSpin->value(), 2);
+    const double spacingMeters = ringCount > 1
+        ? lengthMeters / static_cast<double>(ringCount - 1)
+        : lengthMeters;
+    m_spacingInfoLabel->setText(
+        tr("Lane-Laenge: %1 m. Bei %2 Ringen ergibt das ca. %3 m Abstand.")
+            .arg(QString::number(lengthMeters, 'f', 0))
+            .arg(ringCount)
+            .arg(QString::number(spacingMeters, 'f', 0)));
+}
+
+void EditTradeLaneDialog::updateCountFromSpacing(int spacingMeters)
+{
+    if (m_updatingSpacing || !m_countSpin)
+        return;
+
+    const int safeSpacing = std::max(spacingMeters, 1);
+    const int ringCount = std::max(2, qRound(currentLaneLengthMeters() / static_cast<double>(safeSpacing)) + 1);
+    m_updatingSpacing = true;
+    m_countSpin->setValue(ringCount);
+    m_updatingSpacing = false;
+    updateDerivedSpacing();
+}
+
+EditTradeLaneRequest EditTradeLaneDialog::result() const
+{
+    EditTradeLaneRequest value;
+    value.startX = m_startXSpin ? m_startXSpin->value() : 0.0;
+    value.startZ = m_startZSpin ? m_startZSpin->value() : 0.0;
+    value.endX = m_endXSpin ? m_endXSpin->value() : 0.0;
+    value.endZ = m_endZSpin ? m_endZSpin->value() : 0.0;
+    value.ringCount = m_countSpin ? m_countSpin->value() : 2;
+    value.archetype = m_archetypeCombo ? m_archetypeCombo->currentText().trimmed() : QString();
+    value.loadout = m_loadoutCombo ? m_loadoutCombo->currentText().trimmed() : QString();
+    value.reputationDisplay = m_reputationCombo ? m_reputationCombo->currentText().trimmed() : QString();
+    value.difficultyLevel = m_difficultySpin ? m_difficultySpin->value() : 1;
+    value.pilot = m_pilotCombo ? m_pilotCombo->currentText().trimmed() : QString();
+    value.routeName = m_routeNameEdit ? m_routeNameEdit->text().trimmed() : QString();
+    value.startSpaceName = m_startSpaceNameEdit ? m_startSpaceNameEdit->text().trimmed() : QString();
+    value.endSpaceName = m_endSpaceNameEdit ? m_endSpaceNameEdit->text().trimmed() : QString();
+    return value;
+}
+
+bool EditTradeLaneDialog::deleteRequested() const
+{
+    return m_deleteRequested;
 }
 
 CreatePatrolZoneDialog::CreatePatrolZoneDialog(const QString &suggestedNickname,
@@ -783,6 +1222,460 @@ CreateSunRequest CreateSunDialog::result() const
     value.deathZoneDamage = m_deathZoneDamageSpin->value();
     value.atmosphereRange = m_atmosphereRangeSpin->value();
     value.star = m_starCombo->currentText().trimmed();
+    return value;
+}
+
+CreatePlanetDialog::CreatePlanetDialog(const QString &suggestedNickname,
+                                       const PlanetCreationCatalog &catalog,
+                                       QWidget *parent)
+    : QDialog(parent)
+    , m_catalog(catalog)
+{
+    setWindowTitle(tr("Planet erstellen"));
+    resize(760, 640);
+
+    auto *layout = new QVBoxLayout(this);
+
+    auto *form = new QFormLayout();
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+
+    m_nicknameEdit = new QLineEdit(suggestedNickname, this);
+    m_nicknameEdit->setPlaceholderText(tr("Objekt-Nickname, z.B. Li01_planet_001"));
+    form->addRow(tr("Nickname:"), m_nicknameEdit);
+
+    m_ingameNameEdit = new QLineEdit(this);
+    m_ingameNameEdit->setPlaceholderText(tr("Sichtbarer Planetenname"));
+    form->addRow(tr("Planet Name:"), m_ingameNameEdit);
+
+    QStringList archetypes = m_catalog.archetypeNicknames();
+    if (archetypes.isEmpty())
+        archetypes << QStringLiteral("planet_earthgrncld_3000");
+    m_archetypeCombo = createEditableCombo(archetypes, this);
+    if (m_archetypeCombo->count() > 0)
+        m_archetypeCombo->setCurrentIndex(0);
+    form->addRow(tr("Planet Archetype:"), m_archetypeCombo);
+
+    m_planetRadiusLabel = new QLabel(this);
+    m_planetRadiusLabel->setWordWrap(true);
+    form->addRow(tr("Planet Radius:"), m_planetRadiusLabel);
+
+    m_deathZoneRadiusSpin = new QSpinBox(this);
+    m_deathZoneRadiusSpin->setRange(1, 2000000);
+    form->addRow(tr("Death-Zone Radius:"), m_deathZoneRadiusSpin);
+
+    m_deathZoneDamageSpin = new QSpinBox(this);
+    m_deathZoneDamageSpin->setRange(1, 2000000);
+    m_deathZoneDamageSpin->setValue(2000000);
+    form->addRow(tr("Death-Zone Damage:"), m_deathZoneDamageSpin);
+
+    m_atmosphereRangeSpin = new QSpinBox(this);
+    m_atmosphereRangeSpin->setRange(0, 2000000);
+    form->addRow(tr("Atmosphere Range:"), m_atmosphereRangeSpin);
+
+    layout->addLayout(form);
+
+    auto *infoLabel = new QLabel(
+        tr("Der Infocard-Text wird archetypebasiert vorgeschlagen und beim Erstellen als neuer ids_info-Eintrag gespeichert. Bestehende Shared-Texte werden nicht ueberschrieben."),
+        this);
+    infoLabel->setWordWrap(true);
+    infoLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    layout->addWidget(infoLabel);
+
+    auto *toolbar = new QHBoxLayout();
+    m_infocardSourceLabel = new QLabel(this);
+    m_infocardSourceLabel->setWordWrap(true);
+    toolbar->addWidget(m_infocardSourceLabel, 1);
+    m_resetInfocardButton = new QPushButton(tr("Vorschlag neu laden"), this);
+    toolbar->addWidget(m_resetInfocardButton);
+    layout->addLayout(toolbar);
+
+    m_infocardStateLabel = new QLabel(this);
+    m_infocardStateLabel->setWordWrap(true);
+    m_infocardStateLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    layout->addWidget(m_infocardStateLabel);
+
+    m_infoCardEdit = new QTextEdit(this);
+    m_infoCardEdit->setMinimumHeight(220);
+    m_infoCardEdit->setPlaceholderText(tr("Infocard-Text fuer den neuen Planeten"));
+    layout->addWidget(m_infoCardEdit, 1);
+
+    connect(m_archetypeCombo, &QComboBox::currentTextChanged, this, &CreatePlanetDialog::onArchetypeChanged);
+    connect(m_infoCardEdit, &QTextEdit::textChanged, this, &CreatePlanetDialog::onInfocardEdited);
+    connect(m_resetInfocardButton, &QPushButton::clicked, this, &CreatePlanetDialog::resetInfocardSuggestion);
+
+    layout->addWidget(createDialogButtons(this));
+    applyArchetypeDefaults(m_archetypeCombo->currentText().trimmed(), true);
+}
+
+void CreatePlanetDialog::accept()
+{
+    const CreatePlanetRequest request = result();
+    if (request.nickname.isEmpty()) {
+        QMessageBox::warning(this, tr("Planet erstellen"), tr("Bitte einen Objekt-Nickname angeben."));
+        return;
+    }
+    if (!PlanetCreationService::isValidNickname(request.nickname)) {
+        QMessageBox::warning(this, tr("Planet erstellen"),
+                             tr("Der Nickname darf nur Buchstaben, Zahlen und Unterstriche enthalten."));
+        return;
+    }
+    if (request.ingameName.isEmpty()) {
+        QMessageBox::warning(this, tr("Planet erstellen"), tr("Bitte einen Planetennamen angeben."));
+        return;
+    }
+    if (request.archetype.isEmpty()) {
+        QMessageBox::warning(this, tr("Planet erstellen"), tr("Bitte einen Planet-Archetype auswaehlen."));
+        return;
+    }
+    if (request.infoCardText.isEmpty()) {
+        QMessageBox::warning(this, tr("Planet erstellen"), tr("Bitte einen Infocard-Text angeben."));
+        return;
+    }
+    if (request.planetRadius > 0 && request.deathZoneRadius < request.planetRadius) {
+        QMessageBox::warning(this, tr("Planet erstellen"),
+                             tr("Der Death-Zone-Radius darf nicht kleiner als der Planet-Radius sein."));
+        return;
+    }
+    if (request.planetRadius > 0 && request.atmosphereRange < request.planetRadius) {
+        QMessageBox::warning(this, tr("Planet erstellen"),
+                             tr("Die Atmosphaeren-Reichweite darf nicht kleiner als der Planet-Radius sein."));
+        return;
+    }
+
+    QDialog::accept();
+}
+
+void CreatePlanetDialog::onArchetypeChanged(const QString &archetype)
+{
+    applyArchetypeDefaults(archetype, false);
+}
+
+void CreatePlanetDialog::onInfocardEdited()
+{
+    if (m_updatingInfocardText || !m_infoCardEdit)
+        return;
+
+    m_infocardManuallyEdited = m_infoCardEdit->toPlainText().trimmed() != m_lastSuggestedInfocard.trimmed();
+    m_infocardStateLabel->setText(m_infocardManuallyEdited
+                                      ? tr("Manuell angepasst. Archetype-Wechsel behalten den aktuellen Text, bis du den Vorschlag explizit neu laedst.")
+                                      : tr("Der aktuelle Text folgt dem geladenen Archetype-Vorschlag."));
+}
+
+void CreatePlanetDialog::resetInfocardSuggestion()
+{
+    applyArchetypeDefaults(m_archetypeCombo ? m_archetypeCombo->currentText().trimmed() : QString(), true);
+}
+
+void CreatePlanetDialog::applyArchetypeDefaults(const QString &archetype, bool forceInfocardRefresh)
+{
+    const PlanetArchetypeOption option = m_catalog.optionForArchetype(archetype);
+    const int planetRadius = PlanetCreationService::derivePlanetRadius(archetype, m_catalog);
+
+    if (m_planetRadiusLabel) {
+        m_planetRadiusLabel->setText(planetRadius > 0
+                                         ? tr("%1 m aus solar_radius des Archetypes.").arg(planetRadius)
+                                         : tr("Kein solar_radius gefunden. Die Defaultwerte bleiben editierbar."));
+    }
+    if (m_deathZoneRadiusSpin)
+        m_deathZoneRadiusSpin->setValue(PlanetCreationService::defaultDeathZoneRadius(planetRadius));
+    if (m_atmosphereRangeSpin)
+        m_atmosphereRangeSpin->setValue(PlanetCreationService::defaultAtmosphereRange(planetRadius));
+
+    m_infocardSourceLabel->setText(option.sourceObjectNickname.trimmed().isEmpty()
+                                       ? tr("Kein archetypegleicher Planet mit Infocard gefunden. Bitte Text manuell eintragen.")
+                                       : tr("Vorschlag aus %1 (ids_info %2).").arg(
+                                             option.sourceObjectNickname,
+                                             option.sourceIdsInfo > 0 ? QString::number(option.sourceIdsInfo)
+                                                                      : tr("ohne ID")));
+
+    const QString suggestedText = option.suggestedInfocardText.trimmed();
+    const bool shouldRefreshText = forceInfocardRefresh
+        || !m_infocardManuallyEdited
+        || (m_infoCardEdit && m_infoCardEdit->toPlainText().trimmed().isEmpty())
+        || (m_infoCardEdit && m_infoCardEdit->toPlainText().trimmed() == m_lastSuggestedInfocard.trimmed());
+
+    m_lastSuggestedInfocard = suggestedText;
+    if (shouldRefreshText)
+        setInfocardText(suggestedText);
+
+    if (!m_infocardManuallyEdited || forceInfocardRefresh) {
+        m_infocardManuallyEdited = false;
+        m_infocardStateLabel->setText(suggestedText.isEmpty()
+                                          ? tr("Kein Standardtext gefunden. Der finale Text wird trotzdem als neuer ids_info-Eintrag gespeichert.")
+                                          : tr("Der aktuelle Text folgt dem geladenen Archetype-Vorschlag."));
+    }
+}
+
+void CreatePlanetDialog::setInfocardText(const QString &text)
+{
+    if (!m_infoCardEdit)
+        return;
+    m_updatingInfocardText = true;
+    m_infoCardEdit->setPlainText(text);
+    m_updatingInfocardText = false;
+}
+
+CreatePlanetRequest CreatePlanetDialog::result() const
+{
+    CreatePlanetRequest value;
+    value.nickname = m_nicknameEdit ? m_nicknameEdit->text().trimmed() : QString();
+    value.ingameName = m_ingameNameEdit ? m_ingameNameEdit->text().trimmed() : QString();
+    value.infoCardText = m_infoCardEdit ? m_infoCardEdit->toPlainText().trimmed() : QString();
+    value.archetype = m_archetypeCombo ? m_archetypeCombo->currentText().trimmed() : QString();
+    value.planetRadius = PlanetCreationService::derivePlanetRadius(value.archetype, m_catalog);
+    value.deathZoneRadius = m_deathZoneRadiusSpin ? m_deathZoneRadiusSpin->value() : 0;
+    value.deathZoneDamage = m_deathZoneDamageSpin ? m_deathZoneDamageSpin->value() : 0;
+    value.atmosphereRange = m_atmosphereRangeSpin ? m_atmosphereRangeSpin->value() : 0;
+    return value;
+}
+
+ObjectRingDialog::ObjectRingDialog(const QString &objectLabel,
+                                   const QString &hostArchetype,
+                                   bool showHostRadiusSphere,
+                                   double hostRadius,
+                                   bool hostRadiusSphereIsSun,
+                                   const RingEditOptions &options,
+                                   const RingEditState &initialState,
+                                   QWidget *parent)
+    : QDialog(parent)
+    , m_hostArchetype(hostArchetype.trimmed())
+    , m_showHostRadiusSphere(showHostRadiusSphere)
+    , m_hostRadius(hostRadius)
+    , m_hostRadiusSphereIsSun(hostRadiusSphereIsSun)
+{
+    setWindowTitle(tr("Ring konfigurieren"));
+    resize(1120, 760);
+
+    auto *layout = new QVBoxLayout(this);
+
+    auto *header = new QLabel(tr("Host-Objekt: %1").arg(objectLabel), this);
+    header->setWordWrap(true);
+    header->setStyleSheet(QStringLiteral("font-weight:600; font-size:11pt;"));
+    layout->addWidget(header);
+
+    auto *contentRow = new QHBoxLayout();
+    layout->addLayout(contentRow, 1);
+
+    auto *controls = new QWidget(this);
+    auto *controlsLayout = new QVBoxLayout(controls);
+    controlsLayout->setContentsMargins(0, 0, 0, 0);
+
+    auto *form = new QFormLayout();
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    controlsLayout->addLayout(form);
+
+    m_enabledCheck = new QCheckBox(tr("Ring aktiv"), this);
+    m_enabledCheck->setChecked(initialState.enabled);
+    form->addRow(m_enabledCheck);
+
+    m_ringIniCombo = createEditableCombo(options.ringPresets, this);
+    m_ringIniCombo->setCurrentText(initialState.ringIni);
+    form->addRow(tr("Ring preset:"), m_ringIniCombo);
+
+    m_zoneNicknameEdit = new QLineEdit(initialState.zoneNickname, this);
+    form->addRow(tr("Zone nickname:"), m_zoneNicknameEdit);
+
+    m_outerRadiusSpin = new QDoubleSpinBox(this);
+    m_outerRadiusSpin->setRange(1.0, 9999999.0);
+    m_outerRadiusSpin->setDecimals(2);
+    m_outerRadiusSpin->setValue(initialState.outerRadius);
+    form->addRow(tr("Outer radius:"), m_outerRadiusSpin);
+
+    m_innerRadiusSpin = new QDoubleSpinBox(this);
+    m_innerRadiusSpin->setRange(1.0, 9999999.0);
+    m_innerRadiusSpin->setDecimals(2);
+    m_innerRadiusSpin->setValue(initialState.innerRadius);
+    form->addRow(tr("Inner radius:"), m_innerRadiusSpin);
+
+    m_thicknessSpin = new QDoubleSpinBox(this);
+    m_thicknessSpin->setRange(1.0, 9999999.0);
+    m_thicknessSpin->setDecimals(2);
+    m_thicknessSpin->setValue(initialState.thickness);
+    form->addRow(tr("Thickness:"), m_thicknessSpin);
+
+    m_rotateXSpin = new QDoubleSpinBox(this);
+    m_rotateXSpin->setRange(-360.0, 360.0);
+    m_rotateXSpin->setDecimals(2);
+    m_rotateXSpin->setValue(initialState.rotateX);
+    form->addRow(tr("Rotate X:"), m_rotateXSpin);
+
+    m_rotateYSpin = new QDoubleSpinBox(this);
+    m_rotateYSpin->setRange(-360.0, 360.0);
+    m_rotateYSpin->setDecimals(2);
+    m_rotateYSpin->setValue(initialState.rotateY);
+    form->addRow(tr("Rotate Y:"), m_rotateYSpin);
+
+    m_rotateZSpin = new QDoubleSpinBox(this);
+    m_rotateZSpin->setRange(-360.0, 360.0);
+    m_rotateZSpin->setDecimals(2);
+    m_rotateZSpin->setValue(initialState.rotateZ);
+    form->addRow(tr("Rotate Z:"), m_rotateZSpin);
+
+    auto *helpLabel = new QLabel(
+        tr("Freelancer speichert Objekt-Ringe ueber den 'ring'-Eintrag am Host sowie eine verknuepfte Zone mit 'shape = RING'. Dieser Dialog aktualisiert beide Seiten gemeinsam."),
+        this);
+    helpLabel->setWordWrap(true);
+    helpLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    controlsLayout->addWidget(helpLabel);
+    controlsLayout->addStretch(1);
+    contentRow->addWidget(controls, 0);
+
+    auto *previewColumn = new QWidget(this);
+    auto *previewColumnLayout = new QVBoxLayout(previewColumn);
+    previewColumnLayout->setContentsMargins(0, 0, 0, 0);
+    previewColumnLayout->setSpacing(6);
+    previewColumnLayout->addWidget(createPreviewFrame(&m_preview, &m_previewFallback, &m_previewStack, previewColumn), 1);
+
+    m_previewStatusLabel = new QLabel(previewColumn);
+    m_previewStatusLabel->setWordWrap(true);
+    m_previewStatusLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
+    previewColumnLayout->addWidget(m_previewStatusLabel);
+    contentRow->addWidget(previewColumn, 1);
+
+    m_previewRefreshTimer = new QTimer(this);
+    m_previewRefreshTimer->setSingleShot(true);
+    m_previewRefreshTimer->setInterval(180);
+    connect(m_previewRefreshTimer, &QTimer::timeout, this, &ObjectRingDialog::refreshPreview);
+
+    connect(m_enabledCheck, &QCheckBox::toggled, this, &ObjectRingDialog::syncEnabledState);
+    connect(m_enabledCheck, &QCheckBox::toggled, this, &ObjectRingDialog::schedulePreviewRefresh);
+    connect(m_ringIniCombo, &QComboBox::currentTextChanged, this, &ObjectRingDialog::schedulePreviewRefresh);
+    connect(m_zoneNicknameEdit, &QLineEdit::textChanged, this, &ObjectRingDialog::schedulePreviewRefresh);
+    connect(m_outerRadiusSpin, &QDoubleSpinBox::valueChanged, this, &ObjectRingDialog::schedulePreviewRefresh);
+    connect(m_innerRadiusSpin, &QDoubleSpinBox::valueChanged, this, &ObjectRingDialog::schedulePreviewRefresh);
+    connect(m_thicknessSpin, &QDoubleSpinBox::valueChanged, this, &ObjectRingDialog::schedulePreviewRefresh);
+    connect(m_rotateXSpin, &QDoubleSpinBox::valueChanged, this, &ObjectRingDialog::schedulePreviewRefresh);
+    connect(m_rotateYSpin, &QDoubleSpinBox::valueChanged, this, &ObjectRingDialog::schedulePreviewRefresh);
+    connect(m_rotateZSpin, &QDoubleSpinBox::valueChanged, this, &ObjectRingDialog::schedulePreviewRefresh);
+
+    syncEnabledState();
+    refreshPreview();
+
+    layout->addWidget(createDialogButtons(this, tr("Anwenden")));
+}
+
+void ObjectRingDialog::accept()
+{
+    const RingEditRequest request = result();
+    if (request.enabled) {
+        if (request.ringIni.isEmpty()) {
+            QMessageBox::warning(this, tr("Ring konfigurieren"), tr("Bitte ein Ring-Preset angeben."));
+            return;
+        }
+        if (!RingEditService::isValidZoneNickname(request.zoneNickname)) {
+            QMessageBox::warning(this, tr("Ring konfigurieren"), tr("Bitte einen gueltigen Zone-Nickname angeben."));
+            return;
+        }
+        if (request.innerRadius >= request.outerRadius) {
+            QMessageBox::warning(this, tr("Ring konfigurieren"), tr("Inner radius muss kleiner als Outer radius sein."));
+            return;
+        }
+        if (request.thickness <= 0.0) {
+            QMessageBox::warning(this, tr("Ring konfigurieren"), tr("Thickness muss groesser als 0 sein."));
+            return;
+        }
+    }
+    QDialog::accept();
+}
+
+void ObjectRingDialog::syncEnabledState()
+{
+    const bool enabled = m_enabledCheck && m_enabledCheck->isChecked();
+    for (QWidget *widget : {static_cast<QWidget *>(m_ringIniCombo),
+                            static_cast<QWidget *>(m_zoneNicknameEdit),
+                            static_cast<QWidget *>(m_outerRadiusSpin),
+                            static_cast<QWidget *>(m_innerRadiusSpin),
+                            static_cast<QWidget *>(m_thicknessSpin),
+                            static_cast<QWidget *>(m_rotateXSpin),
+                            static_cast<QWidget *>(m_rotateYSpin),
+                            static_cast<QWidget *>(m_rotateZSpin)}) {
+        if (widget)
+            widget->setEnabled(enabled);
+    }
+}
+
+void ObjectRingDialog::schedulePreviewRefresh()
+{
+    if (!m_previewRefreshTimer) {
+        refreshPreview();
+        return;
+    }
+    m_previewRefreshTimer->start();
+}
+
+void ObjectRingDialog::refreshPreview()
+{
+    if (!m_preview || !m_previewFallback || !m_previewStack || !m_previewStatusLabel)
+        return;
+
+    const SharedCreationCatalog &catalog = sharedCreationCatalog();
+    const QString hostModelPath = catalog.archetypeModelPaths.value(normalizedKey(m_hostArchetype));
+
+    flatlas::rendering::RingPreviewSceneRequest request;
+    request.gameRoot = primaryGamePath();
+    request.hostModelPath = hostModelPath;
+    request.ringPreset = m_ringIniCombo ? m_ringIniCombo->currentText().trimmed() : QString();
+    request.hostRadius = m_hostRadius;
+    request.showHostRadiusSphere = m_showHostRadiusSphere;
+    request.hostRadiusSphereIsSun = m_hostRadiusSphereIsSun;
+    request.innerRadius = m_innerRadiusSpin ? m_innerRadiusSpin->value() : 0.0;
+    request.outerRadius = m_outerRadiusSpin ? m_outerRadiusSpin->value() : 0.0;
+    request.thickness = m_thicknessSpin ? m_thicknessSpin->value() : 0.0;
+    request.rotationEuler = QVector3D(static_cast<float>(m_rotateXSpin ? m_rotateXSpin->value() : 0.0),
+                                      static_cast<float>(m_rotateYSpin ? m_rotateYSpin->value() : 0.0),
+                                      static_cast<float>(m_rotateZSpin ? m_rotateZSpin->value() : 0.0));
+
+    const flatlas::rendering::OrbitCameraState previousCamera = m_preview->cameraState();
+    const flatlas::rendering::RingPreviewSceneResult scene = flatlas::rendering::RingPreviewSceneBuilder::build(request);
+
+    if (!scene.hasRenderableScene) {
+        m_preview->clearModel();
+        m_previewFallback->setText(scene.statusMessage.trimmed().isEmpty()
+                                       ? tr("Keine Ring-Vorschau verfuegbar.")
+                                       : scene.statusMessage);
+        m_previewStack->setCurrentWidget(m_previewFallback);
+        m_previewStatusLabel->setText(m_previewFallback->text());
+        return;
+    }
+
+    QString errorMessage;
+    if (!m_preview->loadModelNode(scene.sceneRoot, &errorMessage)) {
+        m_previewFallback->setText(tr("Die 3D-Vorschau konnte nicht aufgebaut werden: %1")
+                                       .arg(errorMessage.trimmed().isEmpty() ? tr("unbekannter Fehler") : errorMessage));
+        m_previewStack->setCurrentWidget(m_previewFallback);
+        m_previewStatusLabel->setText(m_previewFallback->text());
+        return;
+    }
+
+    if (previousCamera.valid)
+        m_preview->setCameraState(previousCamera);
+
+    m_previewStack->setCurrentWidget(m_preview);
+
+    QStringList statusParts;
+    if (!scene.statusMessage.trimmed().isEmpty())
+        statusParts.append(scene.statusMessage.trimmed());
+    else
+        statusParts.append(tr("Aenderungen an Rotation, Inner/Outer Radius und Thickness werden live angezeigt."));
+    if (!scene.hasHostModel)
+        statusParts.append(tr("Das Host-Objekt konnte nicht geladen werden; die Vorschau zeigt nur den Ring."));
+    if (!scene.geometryInputsValid)
+        statusParts.append(tr("Bis zu gueltigen Ringabmessungen bleibt die Vorschau im sicheren Fallback-Zustand."));
+    m_previewStatusLabel->setText(statusParts.join(QLatin1Char('\n')));
+}
+
+RingEditRequest ObjectRingDialog::result() const
+{
+    RingEditRequest value;
+    value.enabled = m_enabledCheck && m_enabledCheck->isChecked();
+    value.ringIni = m_ringIniCombo ? m_ringIniCombo->currentText().trimmed() : QString();
+    value.zoneNickname = m_zoneNicknameEdit ? m_zoneNicknameEdit->text().trimmed() : QString();
+    value.outerRadius = m_outerRadiusSpin ? m_outerRadiusSpin->value() : 0.0;
+    value.innerRadius = m_innerRadiusSpin ? m_innerRadiusSpin->value() : 0.0;
+    value.thickness = m_thicknessSpin ? m_thicknessSpin->value() : 0.0;
+    value.rotateX = m_rotateXSpin ? m_rotateXSpin->value() : 0.0;
+    value.rotateY = m_rotateYSpin ? m_rotateYSpin->value() : 0.0;
+    value.rotateZ = m_rotateZSpin ? m_rotateZSpin->value() : 0.0;
     return value;
 }
 

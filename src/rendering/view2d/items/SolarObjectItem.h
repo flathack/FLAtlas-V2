@@ -35,6 +35,7 @@ public:
     void setLabelSuppressedByCluster(bool suppressed);
     bool isLabelSuppressedByCluster() const { return m_labelSuppressedByCluster; }
     qreal currentRadius() const { return m_currentRadius; }
+    QRectF selectionCircleLocalRect() const;
     QRectF boundingRect() const override;
     void paint(QPainter *painter,
                const QStyleOptionGraphicsItem *option,
@@ -61,6 +62,7 @@ private:
     QPixmap m_topViewIcon;
     qreal m_baseRadius = 0.0;
     qreal m_currentRadius = 0.0;
+    qreal m_atmosphereRadius = 0.0;
     qreal m_hoverProgress = 0.0;
     bool m_objectVisibleByFilter = true;
     bool m_labelVisibleByFilter = true;

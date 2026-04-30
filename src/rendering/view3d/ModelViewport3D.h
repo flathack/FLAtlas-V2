@@ -3,6 +3,7 @@
 
 #include <QWidget>
 #include <QString>
+#include <QVector3D>
 
 class QLabel;
 
@@ -15,6 +16,14 @@ namespace Qt3DRender { class QCamera; class QPointLight; }
 namespace flatlas::infrastructure { struct ModelNode; }
 
 namespace flatlas::rendering {
+
+struct OrbitCameraState {
+    QVector3D target{0.0f, 0.0f, 0.0f};
+    float distance = 0.0f;
+    float azimuth = 0.0f;
+    float elevation = 0.0f;
+    bool valid = false;
+};
 
 #ifdef FLATLAS_HAS_QT3D
 class OrbitCamera;
@@ -31,6 +40,8 @@ public:
     bool loadModelNode(const flatlas::infrastructure::ModelNode &model, QString *errorMessage = nullptr);
     void clearModel();
     void resetView();
+    OrbitCameraState cameraState() const;
+    void setCameraState(const OrbitCameraState &state);
 
     QString currentFilePath() const { return m_filePath; }
     bool hasModel() const { return m_hasModel; }

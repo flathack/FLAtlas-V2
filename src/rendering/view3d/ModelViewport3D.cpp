@@ -60,6 +60,22 @@ QColor colorForNodeIndex(int nodeIndex, bool brightBackground)
 
 QColor colorForMesh(const flatlas::infrastructure::MeshData &mesh, int nodeIndex, bool brightBackground)
 {
+    const QString materialValue = mesh.materialValue.trimmed();
+    if (materialValue.startsWith(QStringLiteral("preview_color:"), Qt::CaseInsensitive)) {
+        const QStringList parts = materialValue.mid(QStringLiteral("preview_color:").size())
+                                      .split(QLatin1Char(','), Qt::SkipEmptyParts);
+        if (parts.size() >= 3) {
+            bool okRed = false;
+            bool okGreen = false;
+            bool okBlue = false;
+            const int red = parts[0].trimmed().toInt(&okRed);
+            const int green = parts[1].trimmed().toInt(&okGreen);
+            const int blue = parts[2].trimmed().toInt(&okBlue);
+            if (okRed && okGreen && okBlue)
+                return QColor(qBound(0, red, 255), qBound(0, green, 255), qBound(0, blue, 255));
+        }
+    }
+
     if (mesh.materialName.isEmpty())
         return colorForNodeIndex(nodeIndex, brightBackground);
 
@@ -439,6 +455,35 @@ void ModelViewport3D::resetView()
 #ifdef FLATLAS_HAS_QT3D
     if (m_orbitCamera)
         m_orbitCamera->resetView();
+#endif
+}
+
+OrbitCameraState ModelViewport3D::cameraState() const
+{
+    OrbitCameraState state;
+#ifdef FLATLAS_HAS_QT3D
+    if (m_orbitCamera) {
+        state.target = m_orbitCamera->target();
+        state.distance = m_orbitCamera->distance();
+        state.azimuth = m_orbitCamera->azimuth();
+        state.elevation = m_orbitCamera->elevation();
+        state.valid = true;
+    }
+#endif
+    return state;
+}
+
+void ModelViewport3D::setCameraState(const OrbitCameraState &state)
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (!m_orbitCamera || !state.valid)
+        return;
+    m_orbitCamera->setTarget(state.target);
+    m_orbitCamera->setDistance(state.distance);
+    m_orbitCamera->setAzimuth(state.azimuth);
+    m_orbitCamera->setElevation(state.elevation);
+#else
+    Q_UNUSED(state);
 #endif
 }
 
