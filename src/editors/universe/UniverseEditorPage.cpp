@@ -403,6 +403,8 @@ void UniverseEditorPage::setupUi()
     m_mapToolBar->setIconSize(QSize(16, 16));
     m_mapToolBar->setMovable(false);
     m_addSystemAction = m_mapToolBar->addAction(tr("Add System"), this, &UniverseEditorPage::onAddSystem);
+    m_addSectorAction = m_mapToolBar->addAction(tr("Add Sector"), this, &UniverseEditorPage::onAddSector);
+    m_addSectorAction->setEnabled(false);
     m_mapToolBar->addAction(tr("Delete System"), this, [this]() { onDeleteSystem(); });
     m_mapToolBar->addSeparator();
     m_mapToolBar->addAction(tr("Fit View"), this, &UniverseEditorPage::fitMapInView);
@@ -650,15 +652,21 @@ void UniverseEditorPage::drawConnections()
 void UniverseEditorPage::onSystemSelected(QTreeWidgetItem *item, int)
 {
     if (!item) return;
-    QString nickname = item->data(0, Qt::UserRole).toString();
+    selectSystemOnMap(item->data(0, Qt::UserRole).toString(), true);
+}
 
-    // Highlight on map
+void UniverseEditorPage::selectSystemOnMap(const QString &nickname, bool centerOnSelection)
+{
+    if (!m_mapScene)
+        return;
+
     for (auto *gItem : m_mapScene->items()) {
         auto *node = dynamic_cast<SystemNodeItem *>(gItem);
         if (node) {
             if (node->nickname().compare(nickname, Qt::CaseInsensitive) == 0) {
                 node->setSelected(true);
-                m_mapView->centerOn(node);
+                if (centerOnSelection && m_mapView)
+                    m_mapView->centerOn(node);
             } else {
                 node->setSelected(false);
             }
@@ -681,7 +689,7 @@ void UniverseEditorPage::onNodeSelected(const QString &nickname)
         }
     }
 
-    onSystemSelected(m_systemTree->currentItem(), 0);
+    selectSystemOnMap(nickname, false);
 }
 
 void UniverseEditorPage::onSystemDoubleClicked(QTreeWidgetItem *item, int)
@@ -712,13 +720,8 @@ void UniverseEditorPage::onAddSystem()
     if (!m_data || m_filePath.trimmed().isEmpty())
         return;
 
-    if (m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) != 0) {
-        QMessageBox::information(this, tr("Neues System"),
-                                 tr("Neue Systeme können nur im Sirius-Sektor platziert werden."));
-        return;
-    }
-
-    const NewSystemDialogOptions options = NewSystemService::scanOptions(m_filePath, m_data.get());
+    NewSystemDialogOptions options = NewSystemService::scanOptions(m_filePath, m_data.get());
+    options.activeSectorKey = m_activeSector;
     NewSystemDialog dialog(options, this);
     if (dialog.exec() != QDialog::Accepted)
         return;
@@ -742,6 +745,64 @@ void UniverseEditorPage::onAddSystem()
                              tr("Klicke jetzt auf die Universe Map, um das neue System zu platzieren."));
 }
 
+void UniverseEditorPage::onAddSector()
+{
+    if (!m_data || m_filePath.trimmed().isEmpty())
+        return;
+    if (!m_data->multiverseDetected)
+        return;
+
+    int nextIndex = 1;
+    while (true) {
+        const QString candidate = QStringLiteral("sector%1").arg(nextIndex);
+        bool exists = false;
+        for (const auto &sector : m_data->sectors) {
+            if (sector.key.compare(candidate, Qt::CaseInsensitive) == 0) {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists)
+            break;
+        ++nextIndex;
+    }
+
+    bool ok = false;
+    const QString key = QInputDialog::getText(this,
+                                             tr("Neuer Sektor"),
+                                             tr("Sektor-Key:"),
+                                             QLineEdit::Normal,
+                                             QStringLiteral("sector%1").arg(nextIndex),
+                                             &ok).trimmed().toLower();
+    if (!ok || key.isEmpty())
+        return;
+
+    for (const auto &sector : m_data->sectors) {
+        if (sector.key.compare(key, Qt::CaseInsensitive) == 0) {
+            QMessageBox::warning(this, tr("Neuer Sektor"),
+                                 tr("Der Sektor '%1' existiert bereits.").arg(key));
+            return;
+        }
+    }
+
+    SectorDefinition sector;
+    sector.key = key;
+    sector.displayName = sectorDisplayName(key);
+    sector.sourceMap = key;
+    m_data->sectors.append(sector);
+    m_data->multiverseDetected = true;
+
+    if (!UniverseSerializer::save(*m_data, m_filePath)) {
+        QMessageBox::warning(this, tr("Neuer Sektor"),
+                             tr("multiuniverse.ini konnte nicht aktualisiert werden."));
+        return;
+    }
+
+    rebuildSectorTabs();
+    applySector(key);
+    setDirty(false);
+}
+
 void UniverseEditorPage::onMapContextMenuRequested(const QPoint &globalPos, const QString &nickname)
 {
     QMenu menu(this);
@@ -752,8 +813,10 @@ void UniverseEditorPage::onMapContextMenuRequested(const QPoint &globalPos, cons
         menu.addAction(tr("Delete System"), this, [this, nickname]() {
             onDeleteSystem(nickname);
         });
-    } else if (m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0) {
+    } else {
         menu.addAction(tr("Neues System"), this, &UniverseEditorPage::onAddSystem);
+        if (m_data && m_data->multiverseDetected)
+            menu.addAction(tr("Neuer Sektor"), this, &UniverseEditorPage::onAddSector);
     }
     if (!menu.isEmpty())
         menu.exec(globalPos);
@@ -764,13 +827,13 @@ void UniverseEditorPage::onMapPlacementRequested(const QPointF &scenePos)
     if (!m_pendingSystemPlacement || !m_pendingSystemRequest || !m_data || m_mapScale <= 0.0)
         return;
 
-    const QPointF universePos(scenePos.x() / m_mapScale, scenePos.y() / m_mapScale);
+    const QPointF mapPos(scenePos.x() / m_mapScale, scenePos.y() / m_mapScale);
     CreatedSystemResult result;
     QString errorMessage;
     if (!NewSystemService::createSystem(m_filePath,
                                         *m_data,
                                         *m_pendingSystemRequest,
-                                        universePos,
+                                        mapPos,
                                         &result,
                                         &errorMessage)) {
         QMessageBox::warning(this, tr("Neues System"), errorMessage);
@@ -831,7 +894,7 @@ void UniverseEditorPage::onEditSystem(const QString &nickname)
     if (!sys)
         return;
 
-    EditSystemDialog dialog(*sys, resolvedSystemName(*sys), currentSystemInfocardXml(*sys), this);
+    EditSystemDialog dialog(*sys, resolvedSystemName(*sys), currentSystemInfocardXml(*sys), m_data->sectors, this);
     if (dialog.exec() != QDialog::Accepted)
         return;
 
@@ -885,6 +948,25 @@ void UniverseEditorPage::onEditSystem(const QString &nickname)
         sys->stridName = updatedNameId;
     sys->idsInfo = newIdsInfo;
     sys->navMapScale = request.navMapScale;
+    const QString requestedSector = request.sectorKey.trimmed().isEmpty()
+        ? QStringLiteral("universe")
+        : request.sectorKey.trimmed().toLower();
+    const QPointF fallbackPos(sys->position.x(), sys->position.z());
+    QPointF assignedPos = fallbackPos;
+    if (requestedSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) != 0) {
+        const auto existingPos = sys->sectorPositions.constFind(requestedSector);
+        if (existingPos != sys->sectorPositions.constEnd())
+            assignedPos = existingPos.value();
+    }
+    for (auto it = sys->sectorPositions.begin(); it != sys->sectorPositions.end(); ) {
+        if (it.key().compare(QStringLiteral("universe"), Qt::CaseInsensitive) != 0)
+            it = sys->sectorPositions.erase(it);
+        else
+            ++it;
+    }
+    sys->sectorPositions.insert(QStringLiteral("universe"), fallbackPos);
+    if (requestedSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) != 0)
+        sys->sectorPositions.insert(requestedSector, assignedPos);
 
     if (!UniverseSerializer::save(*m_data, m_filePath)) {
         QMessageBox::warning(this, tr("System bearbeiten"),
@@ -1089,6 +1171,9 @@ void UniverseEditorPage::rebuildSectorTabs()
     if (!m_sectorTabs)
         return;
 
+    if (m_addSectorAction)
+        m_addSectorAction->setEnabled(m_data && m_data->multiverseDetected);
+
     m_sectorTabs->blockSignals(true);
     while (m_sectorTabs->count() > 0)
         m_sectorTabs->removeTab(0);
@@ -1117,17 +1202,13 @@ void UniverseEditorPage::applySector(const QString &sectorKey)
 {
     m_activeSector = sectorKey.trimmed().isEmpty() ? QStringLiteral("universe") : sectorKey.trimmed();
 
-    if (m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) != 0 && m_pendingSystemPlacement)
-        cancelPendingSystemPlacement();
-
     if (m_addSystemAction)
-        m_addSystemAction->setEnabled(m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0);
+        m_addSystemAction->setEnabled(true);
+    if (m_addSectorAction)
+        m_addSectorAction->setEnabled(m_data && m_data->multiverseDetected);
 
     if (m_moveAction) {
-        const bool editable = m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0;
-        m_moveAction->setEnabled(editable);
-        if (!editable && m_moveAction->isChecked())
-            m_moveAction->setChecked(false);
+        m_moveAction->setEnabled(true);
     }
 
     refreshSystemList();
@@ -1148,8 +1229,7 @@ void UniverseEditorPage::applyThemeStyling()
 
 void UniverseEditorPage::syncSystemPositionFromMap(const QString &nickname)
 {
-    if (!m_data || m_mapScale <= 0.0 ||
-        m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) != 0)
+    if (!m_data || m_mapScale <= 0.0)
         return;
 
     QPointF scenePos;
@@ -1167,8 +1247,14 @@ void UniverseEditorPage::syncSystemPositionFromMap(const QString &nickname)
 
     for (auto &sys : m_data->systems) {
         if (sys.nickname.compare(nickname, Qt::CaseInsensitive) == 0) {
-            sys.position.setX(static_cast<float>(scenePos.x() / m_mapScale));
-            sys.position.setZ(static_cast<float>(scenePos.y() / m_mapScale));
+            const QPointF mapPos(scenePos.x() / m_mapScale, scenePos.y() / m_mapScale);
+            if (m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0) {
+                sys.position.setX(static_cast<float>(mapPos.x()));
+                sys.position.setZ(static_cast<float>(mapPos.y()));
+                sys.sectorPositions.insert(QStringLiteral("universe"), mapPos);
+            } else {
+                sys.sectorPositions.insert(m_activeSector, mapPos);
+            }
             break;
         }
     }
