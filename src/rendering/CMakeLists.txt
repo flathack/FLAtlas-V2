@@ -8,6 +8,8 @@ add_library(flatlas_rendering STATIC
     view2d/items/ZoneItem2D.h view2d/items/ZoneItem2D.cpp
     view2d/items/TradelaneItem.h view2d/items/TradelaneItem.cpp
     view3d/SceneView3D.h view3d/SceneView3D.cpp
+    view3d/ZoneColorScheme.h view3d/ZoneColorScheme.cpp
+    view3d/ZoneGeometryBuilder.h view3d/ZoneGeometryBuilder.cpp
     view3d/OrbitCamera.h view3d/OrbitCamera.cpp
     view3d/ModelGeometryBuilder.h view3d/ModelGeometryBuilder.cpp
     view3d/ModelViewport3D.h view3d/ModelViewport3D.cpp

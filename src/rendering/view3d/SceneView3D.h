@@ -1,7 +1,10 @@
 #pragma once
-// rendering/view3d/SceneView3D.h – Qt3D-Hauptview (Phase 7)
+// rendering/view3d/SceneView3D.h - practical 3D system editor viewport
 
+#include <QHash>
+#include <QStringList>
 #include <QWidget>
+
 #include <memory>
 
 #ifdef FLATLAS_HAS_QT3D
@@ -10,7 +13,8 @@ namespace Qt3DCore { class QEntity; }
 namespace Qt3DRender { class QCamera; class QPointLight; }
 #endif
 
-namespace flatlas::domain { class SystemDocument; class SolarObject; }
+namespace flatlas::domain { class SystemDocument; class SolarObject; class ZoneItem; }
+namespace flatlas::infrastructure { struct DecodedModel; struct ModelNode; }
 
 namespace flatlas::rendering {
 
@@ -18,6 +22,7 @@ namespace flatlas::rendering {
 class OrbitCamera;
 class SelectionManager;
 class SkyRenderer;
+struct ModelBounds;
 #endif
 
 class SceneView3D : public QWidget {
@@ -26,10 +31,8 @@ public:
     explicit SceneView3D(QWidget *parent = nullptr);
     ~SceneView3D() override;
 
-    /// Load objects from a SystemDocument into the 3D scene.
+    void setArchetypeModelPaths(const QHash<QString, QString> &modelPaths);
     void loadDocument(flatlas::domain::SystemDocument *doc);
-
-    /// Select object by nickname (for 2D↔3D sync).
     void selectObject(const QString &nickname);
 
 signals:
@@ -37,29 +40,46 @@ signals:
 
 protected:
 #ifdef FLATLAS_HAS_QT3D
-    void mousePressEvent(QMouseEvent *event) override;
-    void mouseMoveEvent(QMouseEvent *event) override;
-    void mouseReleaseEvent(QMouseEvent *event) override;
-    void wheelEvent(QWheelEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 #endif
 
 private:
     void setupScene();
     void clearScene();
     void addSolarObject(const std::shared_ptr<flatlas::domain::SolarObject> &obj);
+    void addZone(const std::shared_ptr<flatlas::domain::ZoneItem> &zone);
+    void updateSceneCamera();
 
 #ifdef FLATLAS_HAS_QT3D
+    void scheduleModelLoading();
+    void attachLoadedModels(const QHash<QString, flatlas::infrastructure::DecodedModel> &models, int generation);
+    void addModelNodeRecursive(const flatlas::infrastructure::ModelNode &node,
+                               Qt3DCore::QEntity *parent,
+                               const QString &nickname,
+                               int nodeIndex = 0,
+                               int depth = 0);
+    QString modelPathForObject(const flatlas::domain::SolarObject &obj) const;
+
     Qt3DExtras::Qt3DWindow *m_3dWindow = nullptr;
     QWidget *m_container = nullptr;
     Qt3DCore::QEntity *m_rootEntity = nullptr;
+    Qt3DCore::QEntity *m_sceneRoot = nullptr;
     Qt3DCore::QEntity *m_objectsRoot = nullptr;
+    Qt3DCore::QEntity *m_zonesRoot = nullptr;
     Qt3DRender::QCamera *m_camera = nullptr;
     Qt3DRender::QPointLight *m_light = nullptr;
     OrbitCamera *m_orbitCamera = nullptr;
     SelectionManager *m_selectionManager = nullptr;
     SkyRenderer *m_skyRenderer = nullptr;
+    QHash<QString, Qt3DCore::QEntity *> m_modelHostsByNickname;
+    QHash<QString, Qt3DCore::QEntity *> m_markerEntitiesByNickname;
+    QHash<QString, QStringList> m_nicknamesByModelPath;
+    ModelBounds *m_sceneBounds = nullptr;
+    int m_loadGeneration = 0;
 #endif
+
     flatlas::domain::SystemDocument *m_document = nullptr;
+    QHash<QString, QString> m_archetypeModelPaths;
 };
 
 } // namespace flatlas::rendering

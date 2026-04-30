@@ -53,6 +53,7 @@ private:
     void openSystemFromUniverse(const QString &nickname,
                                 const QString &systemFile,
                                 const QString &ingameName);
+    void open3DSystemEditorFor(flatlas::editors::SystemEditorPage *editor);
     void openUniverseFromContext();
     void handleEditingContextChanged();
     void closeContextBoundTabs();

@@ -25,6 +25,7 @@
 #include "tools/KeyboardShortcutOverviewDialog.h"
 #include "tools/PathFinderDialog.h"
 #include "rendering/preview/ModelViewerPage.h"
+#include "rendering/view3d/SceneView3D.h"
 #include "domain/SystemDocument.h"
 #include "domain/UniverseData.h"
 #include "infrastructure/freelancer/UniverseScanner.h"
@@ -43,6 +44,7 @@
 #include <QProgressDialog>
 #include <QStandardPaths>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QProgressBar>
 #include <QVBoxLayout>
@@ -53,6 +55,10 @@
 #include <QEventLoop>
 #include <QProcess>
 #include <QUrl>
+#include <QSignalBlocker>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
+#include <QAbstractItemView>
 
 #include <exception>
 
@@ -60,13 +66,120 @@ namespace {
 
 bool isContextBoundTab(QWidget *widget)
 {
+    if (widget && widget->objectName().startsWith(QStringLiteral("system3d:")))
+        return true;
     return qobject_cast<flatlas::editors::UniverseEditorPage *>(widget)
         || qobject_cast<flatlas::editors::SystemEditorPage *>(widget)
         || qobject_cast<flatlas::editors::IniEditorPage *>(widget)
+        || qobject_cast<flatlas::rendering::SceneView3D *>(widget)
         || qobject_cast<flatlas::editors::TradeRoutePage *>(widget)
         || qobject_cast<flatlas::editors::IdsEditorPage *>(widget)
         || qobject_cast<flatlas::editors::NpcEditorPage *>(widget)
         || qobject_cast<flatlas::editors::NewsRumorEditor *>(widget);
+}
+
+QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
+                            const QHash<QString, QString> &modelPaths,
+                            const QString &tabKey,
+                            QWidget *parent)
+{
+    auto *page = new QWidget(parent);
+    page->setObjectName(tabKey);
+    auto *layout = new QHBoxLayout(page);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    auto *splitter = new QSplitter(Qt::Horizontal, page);
+    layout->addWidget(splitter, 1);
+
+    auto *leftSidebar = new QWidget(splitter);
+    leftSidebar->setMinimumWidth(220);
+    auto *leftLayout = new QVBoxLayout(leftSidebar);
+    leftLayout->setContentsMargins(8, 8, 8, 8);
+    leftLayout->setSpacing(6);
+
+    auto *searchEdit = new QLineEdit(leftSidebar);
+    searchEdit->setPlaceholderText(QObject::tr("Search objects / zones"));
+    leftLayout->addWidget(searchEdit);
+
+    auto *tree = new QTreeWidget(leftSidebar);
+    tree->setHeaderLabels({QObject::tr("Nickname"), QObject::tr("Type")});
+    tree->setAlternatingRowColors(true);
+    tree->setRootIsDecorated(true);
+    tree->setSelectionMode(QAbstractItemView::SingleSelection);
+    leftLayout->addWidget(tree, 1);
+    splitter->addWidget(leftSidebar);
+
+    auto *view = new flatlas::rendering::SceneView3D(splitter);
+    view->setArchetypeModelPaths(modelPaths);
+    view->loadDocument(document);
+    splitter->addWidget(view);
+    splitter->setStretchFactor(0, 0);
+    splitter->setStretchFactor(1, 1);
+    splitter->setSizes({280, 1000});
+
+    auto *objectsRoot = new QTreeWidgetItem(tree, {QObject::tr("Objects")});
+    objectsRoot->setFlags(objectsRoot->flags() & ~Qt::ItemIsSelectable);
+    objectsRoot->setExpanded(true);
+    auto *zonesRoot = new QTreeWidgetItem(tree, {QObject::tr("Zones")});
+    zonesRoot->setFlags(zonesRoot->flags() & ~Qt::ItemIsSelectable);
+    zonesRoot->setExpanded(true);
+
+    if (document) {
+        for (const auto &obj : document->objects()) {
+            if (!obj)
+                continue;
+            auto *item = new QTreeWidgetItem(objectsRoot, {obj->nickname(), obj->archetype()});
+            item->setData(0, Qt::UserRole, obj->nickname());
+        }
+        for (const auto &zone : document->zones()) {
+            if (!zone)
+                continue;
+            auto *item = new QTreeWidgetItem(zonesRoot, {zone->nickname(), zone->zoneType()});
+            item->setData(0, Qt::UserRole, zone->nickname());
+        }
+    }
+    tree->resizeColumnToContents(0);
+
+    QObject::connect(searchEdit, &QLineEdit::textChanged, tree, [tree](const QString &text) {
+        const QString needle = text.trimmed().toLower();
+        for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+            QTreeWidgetItem *root = tree->topLevelItem(i);
+            bool anyVisible = false;
+            for (int j = 0; root && j < root->childCount(); ++j) {
+                QTreeWidgetItem *child = root->child(j);
+                const bool visible = needle.isEmpty()
+                    || child->text(0).toLower().contains(needle)
+                    || child->text(1).toLower().contains(needle);
+                child->setHidden(!visible);
+                anyVisible = anyVisible || visible;
+            }
+            if (root)
+                root->setHidden(!anyVisible && !needle.isEmpty());
+        }
+    });
+
+    QObject::connect(tree, &QTreeWidget::itemSelectionChanged, view, [tree, view]() {
+        const auto selected = tree->selectedItems();
+        if (selected.isEmpty())
+            return;
+        const QString nickname = selected.first()->data(0, Qt::UserRole).toString();
+        if (!nickname.isEmpty())
+            view->selectObject(nickname);
+    });
+
+    QObject::connect(view, &flatlas::rendering::SceneView3D::objectSelected, tree, [tree](const QString &nickname) {
+        if (nickname.isEmpty())
+            return;
+        QSignalBlocker blocker(tree);
+        const auto matches = tree->findItems(nickname, Qt::MatchExactly | Qt::MatchRecursive, 0);
+        if (!matches.isEmpty()) {
+            tree->setCurrentItem(matches.first());
+            tree->scrollToItem(matches.first());
+        }
+    });
+
+    return page;
 }
 
 }
@@ -1002,9 +1115,41 @@ void MainWindow::openSystemFromUniverse(const QString &nickname,
             this, [this](const QString &message) {
         statusBar()->showMessage(message);
     });
+    connect(editor, &flatlas::editors::SystemEditorPage::open3DSystemViewRequested,
+            this, [this, editor]() {
+        open3DSystemEditorFor(editor);
+    });
 
     updateLoadProgress(100, tr("Opened system: %1").arg(nickname));
     statusBar()->showMessage(tr("Opened system: %1").arg(nickname), 3000);
+}
+
+void MainWindow::open3DSystemEditorFor(flatlas::editors::SystemEditorPage *editor)
+{
+    if (!editor || !editor->document())
+        return;
+
+    const QString systemName = editor->document()->name().trimmed().isEmpty()
+        ? QFileInfo(editor->filePath()).completeBaseName()
+        : editor->document()->name().trimmed();
+    const QString tabKey = QStringLiteral("system3d:%1").arg(QDir::cleanPath(editor->filePath()).toLower());
+
+    for (int i = 0; i < m_centerTabs->count(); ++i) {
+        QWidget *widget = m_centerTabs->widget(i);
+        if (widget && widget->objectName() == tabKey) {
+            m_centerTabs->setCurrentIndex(i);
+            return;
+        }
+    }
+
+    auto *view = createSystem3DPage(editor->document(),
+                                    editor->archetypeModelPathsFor3DView(),
+                                    tabKey,
+                                    this);
+
+    const int idx = m_centerTabs->addTab(view, tr("3D: %1").arg(systemName));
+    m_centerTabs->setCurrentIndex(idx);
+    statusBar()->showMessage(tr("3D system view opened: %1").arg(systemName), 3000);
 }
 
 void MainWindow::openTradeRoutes()

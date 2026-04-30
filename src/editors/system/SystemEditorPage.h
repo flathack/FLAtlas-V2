@@ -70,11 +70,13 @@ public:
     QString filePath() const;
     bool isDirty() const;
     QString lastSaveError() const;
+    QHash<QString, QString> archetypeModelPathsFor3DView() const;
 
 signals:
     void titleChanged(const QString &title);
     void selectionStatusChanged(const QString &message);
     void loadingProgressChanged(int percent, const QString &message);
+    void open3DSystemViewRequested();
 
 private:
     enum class EditorTool {
@@ -162,7 +164,6 @@ private:
     void setupShortcutActions();
     void setupObjectList();
     void connectSignals();
-    void ensureSceneView3D();
     void bindDocumentSignals();
     void refreshTitle();
     void refreshDocumentDirtyState();
@@ -186,7 +187,6 @@ private:
     void connectDocumentEntitySignals();
     void onDocumentObjectAdded(const std::shared_ptr<flatlas::domain::SolarObject> &obj);
     void onDocumentZoneAdded(const std::shared_ptr<flatlas::domain::ZoneItem> &zone);
-    void set3DViewEnabled(bool enabled);
     void openDisplayFilterDialog();
     void loadDisplayFilterSettings();
     void saveDisplayFilterSettings() const;
@@ -316,9 +316,6 @@ private:
     std::unique_ptr<flatlas::domain::SystemDocument> m_document;
     flatlas::rendering::MapScene *m_mapScene = nullptr;
     flatlas::rendering::SystemMapView *m_mapView = nullptr;
-    flatlas::rendering::SceneView3D *m_sceneView3D = nullptr;
-    QWidget *m_sceneView3DHost = nullptr;
-    QLabel *m_sceneView3DPlaceholder = nullptr;
     QToolBar *m_toolBar = nullptr;
     QSplitter *m_splitter = nullptr;
     QSplitter *m_leftSidebarSplitter = nullptr;
@@ -367,7 +364,6 @@ private:
     QAction *m_moveDownLargeAction = nullptr;
     QAction *m_rotateLeftAction = nullptr;
     QAction *m_rotateRightAction = nullptr;
-    bool m_is3DViewEnabled = false;
     EditorTool m_currentEditorTool = EditorTool::Selection;
     QStringList m_selectedNicknames;
     ClipboardPayload m_clipboardPayload;

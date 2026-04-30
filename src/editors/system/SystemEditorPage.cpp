@@ -2539,8 +2539,6 @@ SystemEditorPage::~SystemEditorPage()
     m_isShuttingDown = true;
     cancelDockingRingPlacement();
     qApp->removeEventFilter(this);
-    if (m_sceneView3D)
-        m_sceneView3D->loadDocument(nullptr);
     if (m_mapView)
         m_mapView->setMapScene(nullptr);
     if (m_mapScene)
@@ -2553,8 +2551,6 @@ SystemEditorPage::~SystemEditorPage()
         disconnect(m_mapView, nullptr, this, nullptr);
     if (m_objectTree)
         disconnect(m_objectTree, nullptr, this, nullptr);
-    if (m_sceneView3D)
-        disconnect(m_sceneView3D, nullptr, this, nullptr);
 
     if (m_document)
         SystemPersistence::clearExtras(m_document.get());
@@ -2763,6 +2759,9 @@ void SystemEditorPage::setupToolBar()
         if (m_mapScene)
             m_mapScene->setGridVisible(checked);
     });
+
+    m_toggle3DAction = m_toolBar->addAction(tr("3D"));
+    connect(m_toggle3DAction, &QAction::triggered, this, &SystemEditorPage::open3DSystemViewRequested);
 
     setCurrentEditorTool(EditorTool::Selection);
 }
@@ -3462,11 +3461,6 @@ void SystemEditorPage::loadDocumentIntoUi()
         return nickname;
     }());
     m_mapView->setDisplayFilterSettings(m_displayFilterSettings);
-    if (m_is3DViewEnabled) {
-        ensureSceneView3D();
-        emitLoadingProgress(88, tr("Preparing 3D view..."));
-        m_sceneView3D->loadDocument(m_document.get());
-    }
     emitLoadingProgress(94, tr("Refreshing object navigation..."));
     refreshObjectList();
     m_mapView->scheduleInitialFit();
@@ -3536,6 +3530,11 @@ QString SystemEditorPage::filePath() const
 bool SystemEditorPage::isDirty() const
 {
     return m_document && m_document->isDirty();
+}
+
+QHash<QString, QString> SystemEditorPage::archetypeModelPathsFor3DView() const
+{
+    return solarArchetypeModelPathsForPreview();
 }
 
 void SystemEditorPage::bindDocumentSignals()
@@ -3672,32 +3671,6 @@ void SystemEditorPage::onDocumentZoneAdded(const std::shared_ptr<ZoneItem> &zone
     if (zone)
         connect(zone.get(), &ZoneItem::changed, this, &SystemEditorPage::refreshDocumentDirtyState, Qt::UniqueConnection);
     refreshDocumentDirtyState();
-}
-
-void SystemEditorPage::ensureSceneView3D()
-{
-    if (m_sceneView3D)
-        return;
-
-    m_sceneView3D = new SceneView3D(m_rightSidebar);
-
-    connect(m_sceneView3D, &SceneView3D::objectSelected,
-            this, [this](const QString &nickname) {
-        onCanvasSelectionChanged({nickname});
-    });
-}
-
-void SystemEditorPage::set3DViewEnabled(bool enabled)
-{
-    m_is3DViewEnabled = enabled;
-
-    if (!enabled) {
-        return;
-    }
-
-    ensureSceneView3D();
-    if (m_document)
-        m_sceneView3D->loadDocument(m_document.get());
 }
 
 void SystemEditorPage::openDisplayFilterDialog()
@@ -4129,8 +4102,6 @@ void SystemEditorPage::onCanvasSelectionChanged(const QStringList &nicknames)
     }
 
     const QString primaryNickname = primarySelectedNickname();
-    if (m_sceneView3D && m_is3DViewEnabled && m_selectedNicknames.size() == 1)
-        m_sceneView3D->selectObject(primaryNickname);
 
     if (m_objectJumpCombo && !primaryNickname.isEmpty())
         m_objectJumpCombo->setCurrentText(primaryNickname);
@@ -4173,9 +4144,6 @@ void SystemEditorPage::onTreeSelectionChanged()
     m_selectedNicknames = normalizeSelectionNicknames(nicknames);
     pruneSelectionByCurrentFilter();
     syncSceneSelectionFromNicknames(m_selectedNicknames);
-
-    if (m_sceneView3D && m_is3DViewEnabled && m_selectedNicknames.size() == 1)
-        m_sceneView3D->selectObject(primarySelectedNickname());
 
     updateSelectionSummary();
     updateIniEditorForSelection();

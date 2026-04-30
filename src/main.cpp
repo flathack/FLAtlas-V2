@@ -7,6 +7,7 @@
 
 #include <QApplication>
 #include <QByteArray>
+#include <QSurfaceFormat>
 
 int main(int argc, char *argv[])
 {
@@ -15,6 +16,15 @@ int main(int argc, char *argv[])
     // OpenGL als Fallback für Qt3D auf Windows
     QApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
 #endif
+
+    QSurfaceFormat format;
+    format.setRenderableType(QSurfaceFormat::OpenGL);
+    format.setVersion(4, 3);
+    format.setProfile(QSurfaceFormat::CoreProfile);
+    format.setDepthBufferSize(24);
+    format.setStencilBufferSize(8);
+    format.setSamples(0);
+    QSurfaceFormat::setDefaultFormat(format);
 
     if (qEnvironmentVariableIsEmpty("QT3D_RENDERER"))
         qputenv("QT3D_RENDERER", QByteArrayLiteral("opengl"));
