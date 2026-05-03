@@ -60,7 +60,7 @@ QHash<QString, QString> builtInTranslations(const QString &language)
     addPair(t, QStringLiteral("&IDS Editor"), QStringLiteral("&IDS-Editor"), language);
     addPair(t, QStringLiteral("&Mod Manager"), QStringLiteral("&Mod-Manager"), language);
     addPair(t, QStringLiteral("&NPC Editor"), QStringLiteral("&NPC-Editor"), language);
-    addPair(t, QStringLiteral("Ne&ws/Rumor Editor"), QStringLiteral("Ne&ws-/Gerüchte-Editor"), language);
+    addPair(t, QStringLiteral("&News Editor"), QStringLiteral("&News Editor"), language);
     addPair(t, QStringLiteral("&3D Model Viewer"), QStringLiteral("&3D-Modellviewer"), language);
     addPair(t, QStringLiteral("&Shortest Path..."), QStringLiteral("&Kürzester Pfad..."), language);
     addPair(t, QStringLiteral("&Launch Freelancer..."), QStringLiteral("Freelancer &starten..."), language);
@@ -204,8 +204,8 @@ QHash<QString, QString> builtInTranslations(const QString &language)
     addPair(t, QStringLiteral("NPC Editor"), QStringLiteral("NPC-Editor"), language);
     addPair(t, QStringLiteral("NPC Editor opened"), QStringLiteral("NPC-Editor geöffnet"), language);
     addPair(t, QStringLiteral("%1 (%2 NPCs)"), QStringLiteral("%1 (%2 NPCs)"), language);
-    addPair(t, QStringLiteral("News/Rumor Editor"), QStringLiteral("News-/Gerüchte-Editor"), language);
-    addPair(t, QStringLiteral("News/Rumor Editor opened"), QStringLiteral("News-/Gerüchte-Editor geöffnet"), language);
+    addPair(t, QStringLiteral("News Editor"), QStringLiteral("News Editor"), language);
+    addPair(t, QStringLiteral("News Editor opened"), QStringLiteral("News Editor geöffnet"), language);
     addPair(t, QStringLiteral("Shortest Path"), QStringLiteral("Kürzester Pfad"), language);
     addPair(t, QStringLiteral("Please open a Universe file first."), QStringLiteral("Bitte zuerst eine Universe-Datei öffnen."), language);
 

@@ -467,7 +467,7 @@ void MainWindow::createMenus()
     toolsMenu->addAction(tr("&Mod Manager"), this, [this]() { openModManager(); });
     toolsMenu->addAction(tr("Mod &Settings"), this, [this]() { openModSettings(); });
     toolsMenu->addAction(tr("&NPC Editor"), this, [this]() { openNpcEditor(); });
-    toolsMenu->addAction(tr("Ne&ws/Rumor Editor"), this, [this]() { openNewsRumorEditor(); });
+    toolsMenu->addAction(tr("&News Editor"), this, [this]() { openNewsRumorEditor(); });
     toolsMenu->addSeparator();
 
     // -- Tools --
@@ -932,6 +932,10 @@ bool MainWindow::saveWidgetWithPrompt(QWidget *widget)
         return false;
     }
 
+    if (auto *editor = qobject_cast<flatlas::editors::NewsRumorEditor *>(widget)) {
+        return editor->save();
+    }
+
     return true;
 }
 
@@ -946,6 +950,8 @@ bool MainWindow::isWidgetDirty(QWidget *widget) const
         return editor->isDirty();
     if (auto *editor = qobject_cast<flatlas::editors::IniEditorPage *>(widget))
         return editor->isDirty();
+    if (auto *editor = qobject_cast<flatlas::editors::NewsRumorEditor *>(widget))
+        return editor->isModified();
 
     return false;
 }
@@ -1191,7 +1197,7 @@ bool MainWindow::openToolByKey(const QString &key, bool pinned)
     }
     if (key == QStringLiteral("newsRumorEditor")) {
         auto *editor = new flatlas::editors::NewsRumorEditor(this);
-        const int idx = addToolTab(editor, tr("News/Rumor Editor"));
+        const int idx = addToolTab(editor, tr("News Editor"));
         connect(editor, &flatlas::editors::NewsRumorEditor::titleChanged,
                 this, [this, editor](const QString &title) {
             int i = m_centerTabs->indexOf(editor);
@@ -1676,7 +1682,7 @@ void MainWindow::openNewsRumorEditor()
 {
     auto *editor = new flatlas::editors::NewsRumorEditor(this);
 
-    int idx = m_centerTabs->addTab(editor, tr("News/Rumor Editor"));
+    int idx = m_centerTabs->addTab(editor, tr("News Editor"));
     m_centerTabs->setCurrentIndex(idx);
 
     connect(editor, &flatlas::editors::NewsRumorEditor::titleChanged,
@@ -1686,7 +1692,7 @@ void MainWindow::openNewsRumorEditor()
             m_centerTabs->setTabText(i, title);
     });
 
-    statusBar()->showMessage(tr("News/Rumor Editor opened"), 3000);
+    statusBar()->showMessage(tr("News Editor opened"), 3000);
 }
 
 void MainWindow::openModelViewer()

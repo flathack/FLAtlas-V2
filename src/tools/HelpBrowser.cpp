@@ -201,9 +201,9 @@ void HelpBrowser::loadBuiltinTopics()
 
     registerTopic({
         QStringLiteral("news-rumor-editor"),
-        tr("News & Rumor Editor"),
-        tr("<h1>News & Rumor Editor</h1>"
-           "<p>Edit bar news and rumors displayed at bases.</p>")
+        tr("News Editor"),
+        tr("<h1>News Editor</h1>"
+           "<p>Edit news displayed at bases.</p>")
     });
 
     registerTopic({
