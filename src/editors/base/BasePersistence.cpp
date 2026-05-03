@@ -1,6 +1,7 @@
 // editors/base/BasePersistence.cpp – Laden/Speichern von Basis-Daten (Phase 10)
 
 #include "BasePersistence.h"
+#include "BaseEquipmentService.h"
 #include "infrastructure/parser/IniParser.h"
 
 #include <QFile>
@@ -78,6 +79,10 @@ std::unique_ptr<BaseData> BasePersistence::loadFromIni(const QString &filePath,
             base->rooms.append(room);
         }
 
+        const BaseEquipmentState equipmentState = BaseEquipmentService::load(filePath, base->nickname);
+        base->equipment = equipmentState.equipment;
+        base->shipPackages = equipmentState.shipPackages;
+        base->shipPackageLevels = equipmentState.shipPackageLevels;
         return base;
     }
     return nullptr;
@@ -138,6 +143,13 @@ QVector<BaseData> BasePersistence::loadAllBases(const QString &filePath)
         result[it.value()].rooms.append(room);
     }
 
+    for (auto &base : result) {
+        const BaseEquipmentState equipmentState = BaseEquipmentService::load(filePath, base.nickname);
+        base.equipment = equipmentState.equipment;
+        base.shipPackages = equipmentState.shipPackages;
+        base.shipPackageLevels = equipmentState.shipPackageLevels;
+    }
+
     return result;
 }
 
@@ -185,6 +197,9 @@ bool BasePersistence::save(const BaseData &base, const QString &filePath)
         return false;
     QTextStream out(&file);
     out << text;
+    QString marketError;
+    if (!BaseEquipmentService::save(filePath, base.nickname, base.equipment, base.shipPackages, base.shipPackageLevels, &marketError))
+        return false;
     return true;
 }
 

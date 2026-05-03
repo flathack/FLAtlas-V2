@@ -28,6 +28,7 @@ add_library(flatlas_editors STATIC
     universe/DeleteSystemDialog.h universe/DeleteSystemDialog.cpp
     universe/DeleteSystemService.h universe/DeleteSystemService.cpp
     base/BaseEditorPage.h base/BaseEditorPage.cpp
+    base/BaseEquipmentService.h base/BaseEquipmentService.cpp
     base/BasePersistence.h base/BasePersistence.cpp
     base/BaseBuilder.h base/BaseBuilder.cpp
     base/RoomEditor.h base/RoomEditor.cpp

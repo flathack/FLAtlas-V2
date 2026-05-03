@@ -230,6 +230,36 @@ QHash<QString, QString> builtInTranslations(const QString &language)
             QStringLiteral("Erstellt oder behält ein docking_fixture über dem Docking Ring mit ids_name=261166 und ids_info=66489."), language);
     addPair(t, QStringLiteral("Base Nickname:"), QStringLiteral("Base-Nickname:"), language);
     addPair(t, QStringLiteral("strid_name:"), QStringLiteral("strid_name:"), language);
+    addPair(t, QStringLiteral("General"), QStringLiteral("Allgemein"), language);
+    addPair(t, QStringLiteral("Room Editor"), QStringLiteral("Room-Editor"), language);
+    addPair(t, QStringLiteral("Equipment & Ships"), QStringLiteral("Ausrüstung & Schiffe"), language);
+    addPair(t, QStringLiteral("Base Equipment"), QStringLiteral("Base-Ausrüstung"), language);
+    addPair(t, QStringLiteral("Available"), QStringLiteral("Verfügbar"), language);
+    addPair(t, QStringLiteral("Search equipment..."), QStringLiteral("Equipment suchen..."), language);
+    addPair(t, QStringLiteral("On This Base"), QStringLiteral("Auf dieser Base"), language);
+    addPair(t, QStringLiteral("Weapons"), QStringLiteral("Waffen"), language);
+    addPair(t, QStringLiteral("Shields / Thrusters"), QStringLiteral("Schilde / Thruster"), language);
+    addPair(t, QStringLiteral("Misc"), QStringLiteral("Sonstiges"), language);
+    addPair(t, QStringLiteral("Engines"), QStringLiteral("Engines"), language);
+    addPair(t, QStringLiteral("Level:"), QStringLiteral("Level:"), language);
+    addPair(t, QStringLiteral("Remove Selected"), QStringLiteral("Auswahl entfernen"), language);
+    addPair(t, QStringLiteral("Ships (maximum 3)"), QStringLiteral("Schiffe (maximal 3)"), language);
+    addPair(t, QStringLiteral("Ship Slot %1:"), QStringLiteral("Schiff-Slot %1:"), language);
+    addPair(t, QStringLiteral("Freelancer supports a maximum of 3 ships per base."),
+            QStringLiteral("Freelancer unterstützt maximal 3 Schiffe pro Base."), language);
+    addPair(t, QStringLiteral("Freelancer supports at most 3 ships per base."),
+            QStringLiteral("Freelancer unterstützt maximal 3 Schiffe pro Base."), language);
+    addPair(t, QStringLiteral("Empty"), QStringLiteral("Leer"), language);
+    addPair(t, QStringLiteral("Ship packages are shown as nickname - ingamename. Empty ship slots are allowed."),
+            QStringLiteral("Schiffspakete werden als nickname - ingamename angezeigt. Leere Schiff-Slots sind erlaubt."), language);
+    addPair(t, QStringLiteral("Duplicate ship assignments were removed. Freelancer supports each ship package only once per base."),
+            QStringLiteral("Doppelte Schiff-Zuweisungen wurden entfernt. Freelancer unterstützt jedes Schiffspaket nur einmal pro Base."), language);
+    addPair(t, QStringLiteral("Ship packages are displayed as nickname - ingamename. Freelancer supports at most 3 ships per base."),
+            QStringLiteral("Schiffspakete werden als nickname - ingamename angezeigt. Freelancer unterstützt maximal 3 Schiffe pro Base."), language);
+    addPair(t, QStringLiteral("Duplicate ship assignments were removed. Freelancer supports at most 3 ships per base."),
+            QStringLiteral("Doppelte Schiff-Zuweisungen wurden entfernt. Freelancer unterstützt maximal 3 Schiffe pro Base."), language);
+    addPair(t, QStringLiteral("Could not resolve Freelancer DATA path for equipment and ship markets."),
+            QStringLiteral("Der Freelancer-DATA-Pfad für Ausrüstungs- und Schiffsmärkte konnte nicht ermittelt werden."), language);
     addPair(t, QStringLiteral("Start Room"), QStringLiteral("Start-Room"), language);
     addPair(t, QStringLiteral("Price Variance"), QStringLiteral("Preisabweichung"), language);
     addPair(t, QStringLiteral("Room Template"), QStringLiteral("Room-Vorlage"), language);

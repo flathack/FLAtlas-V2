@@ -2,6 +2,7 @@
 
 #include "core/EditingContext.h"
 #include "core/PathUtils.h"
+#include "editors/base/BaseEquipmentService.h"
 #include "infrastructure/freelancer/IdsStringTable.h"
 #include "infrastructure/parser/IniParser.h"
 #include "rendering/view3d/ModelViewport3D.h"
@@ -23,12 +24,15 @@
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSet>
+#include <QSignalBlocker>
 #include <QSplitter>
+#include <QSpinBox>
 #include <QStackedLayout>
 #include <QTabWidget>
 #include <QTimer>
@@ -815,6 +819,7 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     roomsPreviewLayout->addWidget(m_activeRoomLabel);
     roomsPreviewLayout->addWidget(createPreviewFrame(&m_roomPreview, &m_roomPreviewFallback, &m_roomPreviewStack, roomsPreviewSidebar), 1);
     m_tabs->addTab(roomsTab, tr("Rooms"));
+    m_tabs->addTab(createEquipmentShipsTab(state), tr("Equipment & Ships"));
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     root->addWidget(buttons);
@@ -853,6 +858,276 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     refreshPreview();
     updateRoomSelectionUi();
     refreshRoomPreview();
+}
+
+QWidget *BaseEditDialog::createEquipmentShipsTab(const BaseEditState &state)
+{
+    auto *tab = new QWidget(m_tabs);
+    auto *layout = new QVBoxLayout(tab);
+    layout->setContentsMargins(12, 12, 12, 12);
+    layout->setSpacing(12);
+
+    const BaseEquipmentState equipmentState = BaseEquipmentService::load(state.universeIniAbsolutePath, state.baseNickname);
+
+    auto optionLabel = [](const QVector<BaseEquipmentOption> &options, const QString &nickname) {
+        for (const BaseEquipmentOption &option : options) {
+            if (option.nickname.compare(nickname, Qt::CaseInsensitive) == 0)
+                return option.displayLabel;
+        }
+        return BaseEquipmentService::displayLabel(nickname, QString());
+    };
+
+    auto *equipmentGroup = new QGroupBox(tr("Base Equipment"), tab);
+    auto *equipmentLayout = new QVBoxLayout(equipmentGroup);
+    m_equipmentCombo = new QComboBox(equipmentGroup);
+    m_equipmentCombo->hide();
+    for (const BaseEquipmentOption &option : equipmentState.equipmentOptions)
+        m_equipmentCombo->addItem(option.displayLabel, option.nickname);
+
+    auto *equipmentColumns = new QHBoxLayout();
+    auto *availableColumn = new QVBoxLayout();
+    availableColumn->addWidget(new QLabel(tr("Available"), equipmentGroup));
+    m_equipmentFilterEdit = new QLineEdit(equipmentGroup);
+    m_equipmentFilterEdit->setPlaceholderText(tr("Search equipment..."));
+    availableColumn->addWidget(m_equipmentFilterEdit);
+    m_equipmentAvailableTabs = new QTabWidget(equipmentGroup);
+    QSet<QString> assignedEquipment;
+    for (const QString &nickname : state.equipment)
+        assignedEquipment.insert(nickname.trimmed().toLower());
+    for (const BaseEquipmentOption &option : equipmentState.equipmentOptions) {
+        if (assignedEquipment.contains(option.nickname.trimmed().toLower()))
+            continue;
+        const QString group = option.groupLabel.trimmed().isEmpty() ? tr("General") : option.groupLabel.trimmed();
+        QListWidget *list = m_equipmentListsByGroup.value(group, nullptr);
+        if (!list) {
+            list = new QListWidget(m_equipmentAvailableTabs);
+            list->setSelectionMode(QAbstractItemView::ExtendedSelection);
+            connect(list, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *) { addSelectedEquipment(); });
+            m_equipmentListsByGroup.insert(group, list);
+            m_equipmentAvailableTabs->addTab(list, group);
+        }
+        auto *item = new QListWidgetItem(option.displayLabel, list);
+        item->setData(Qt::UserRole, option.nickname);
+    }
+    availableColumn->addWidget(m_equipmentAvailableTabs, 1);
+    equipmentColumns->addLayout(availableColumn, 1);
+
+    auto *moveButtons = new QVBoxLayout();
+    moveButtons->addStretch(1);
+    m_addEquipmentButton = new QPushButton(QStringLiteral(">"), equipmentGroup);
+    m_addEquipmentButton->setToolTip(tr("Add"));
+    m_addEquipmentButton->setFixedWidth(44);
+    moveButtons->addWidget(m_addEquipmentButton);
+    m_removeEquipmentButton = new QPushButton(QStringLiteral("<"), equipmentGroup);
+    m_removeEquipmentButton->setToolTip(tr("Remove Selected"));
+    m_removeEquipmentButton->setFixedWidth(44);
+    moveButtons->addWidget(m_removeEquipmentButton);
+    moveButtons->addStretch(1);
+    equipmentColumns->addLayout(moveButtons);
+
+    auto *assignedColumn = new QVBoxLayout();
+    assignedColumn->addWidget(new QLabel(tr("On This Base"), equipmentGroup));
+    m_equipmentList = new QListWidget(equipmentGroup);
+    m_equipmentList->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    for (const QString &nickname : state.equipment) {
+        const QString clean = nickname.trimmed();
+        if (clean.isEmpty())
+            continue;
+        auto *item = new QListWidgetItem(optionLabel(equipmentState.equipmentOptions, clean), m_equipmentList);
+        item->setData(Qt::UserRole, clean);
+    }
+    assignedColumn->addWidget(m_equipmentList, 1);
+    equipmentColumns->addLayout(assignedColumn, 1);
+
+    equipmentLayout->addLayout(equipmentColumns, 1);
+    layout->addWidget(equipmentGroup, 2);
+
+    auto *shipsGroup = new QGroupBox(tr("Ships (maximum 3)"), tab);
+    auto *shipsForm = new QFormLayout(shipsGroup);
+    for (int slot = 0; slot < BaseEquipmentService::MaxShipsPerBase; ++slot) {
+        auto *combo = new QComboBox(shipsGroup);
+        combo->setEditable(false);
+        combo->addItem(tr("Empty"), QString());
+        for (const BaseEquipmentOption &option : equipmentState.shipPackageOptions)
+            combo->addItem(option.displayLabel, option.nickname);
+
+        const QString current = state.shipPackages.value(slot).trimmed();
+        if (!current.isEmpty()) {
+            bool found = false;
+            for (int index = 0; index < combo->count(); ++index) {
+                if (combo->itemData(index).toString().compare(current, Qt::CaseInsensitive) == 0) {
+                    combo->setCurrentIndex(index);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                combo->addItem(optionLabel(equipmentState.shipPackageOptions, current), current);
+                combo->setCurrentIndex(combo->count() - 1);
+            }
+        }
+
+        m_shipSlotCombos[slot] = combo;
+        m_shipLevelSpins[slot] = new QSpinBox(shipsGroup);
+        m_shipLevelSpins[slot]->setRange(0, 100);
+        m_shipLevelSpins[slot]->setValue(state.shipPackageLevels.value(slot, QStringLiteral("1")).toInt());
+        auto *slotRow = new QHBoxLayout();
+        slotRow->addWidget(combo, 1);
+        slotRow->addWidget(new QLabel(tr("Level:"), shipsGroup));
+        slotRow->addWidget(m_shipLevelSpins[slot]);
+        shipsForm->addRow(tr("Ship Slot %1:").arg(slot + 1), slotRow);
+        connect(combo, &QComboBox::currentIndexChanged, this, &BaseEditDialog::enforceShipSlotRules);
+    }
+    layout->addWidget(shipsGroup);
+
+    m_equipmentStatusLabel = new QLabel(tab);
+    m_equipmentStatusLabel->setWordWrap(true);
+    m_equipmentStatusLabel->setStyleSheet(QStringLiteral("color:#9aa3ad;"));
+    m_equipmentStatusLabel->setText(equipmentState.warningMessage.trimmed().isEmpty()
+                                        ? tr("Ship packages are displayed as nickname - ingamename. Freelancer supports at most 3 ships per base.")
+                                        : equipmentState.warningMessage);
+    layout->addWidget(m_equipmentStatusLabel);
+    layout->addStretch(1);
+
+    connect(m_addEquipmentButton, &QPushButton::clicked, this, &BaseEditDialog::addSelectedEquipment);
+    connect(m_removeEquipmentButton, &QPushButton::clicked, this, &BaseEditDialog::removeSelectedEquipment);
+    connect(m_equipmentFilterEdit, &QLineEdit::textChanged, this, &BaseEditDialog::filterEquipmentLists);
+
+    enforceShipSlotRules();
+    filterEquipmentLists();
+    return tab;
+}
+
+void BaseEditDialog::addSelectedEquipment()
+{
+    if (!m_equipmentCombo || !m_equipmentList)
+        return;
+
+    QListWidget *currentList = m_equipmentAvailableTabs
+        ? qobject_cast<QListWidget *>(m_equipmentAvailableTabs->currentWidget())
+        : nullptr;
+    if (!currentList)
+        return;
+
+    for (QListWidgetItem *selected : currentList->selectedItems()) {
+        const QString nickname = selected->data(Qt::UserRole).toString().trimmed();
+        if (nickname.isEmpty())
+            continue;
+        bool exists = false;
+        for (int row = 0; row < m_equipmentList->count(); ++row) {
+            if (m_equipmentList->item(row)->data(Qt::UserRole).toString().compare(nickname, Qt::CaseInsensitive) == 0) {
+                exists = true;
+                break;
+            }
+        }
+        if (exists)
+            continue;
+        auto *item = new QListWidgetItem(selected->text().trimmed(), m_equipmentList);
+        item->setData(Qt::UserRole, nickname);
+        delete currentList->takeItem(currentList->row(selected));
+    }
+}
+
+void BaseEditDialog::removeSelectedEquipment()
+{
+    if (!m_equipmentList)
+        return;
+    const QList<QListWidgetItem *> selected = m_equipmentList->selectedItems();
+    for (QListWidgetItem *item : selected) {
+        const QString nickname = item->data(Qt::UserRole).toString().trimmed();
+        const BaseEquipmentState equipmentState = BaseEquipmentService::load(m_initialState.universeIniAbsolutePath, m_initialState.baseNickname);
+        QString group = tr("General");
+        QString label = item->text();
+        for (const BaseEquipmentOption &option : equipmentState.equipmentOptions) {
+            if (option.nickname.compare(nickname, Qt::CaseInsensitive) == 0) {
+                group = option.groupLabel.trimmed().isEmpty() ? tr("General") : option.groupLabel.trimmed();
+                label = option.displayLabel;
+                break;
+            }
+        }
+        QListWidget *list = m_equipmentListsByGroup.value(group, nullptr);
+        if (list) {
+            auto *restored = new QListWidgetItem(label, list);
+            restored->setData(Qt::UserRole, nickname);
+        }
+        delete m_equipmentList->takeItem(m_equipmentList->row(item));
+    }
+}
+
+void BaseEditDialog::enforceShipSlotRules()
+{
+    QSet<QString> seen;
+    bool removedDuplicate = false;
+    for (QComboBox *combo : m_shipSlotCombos) {
+        if (!combo)
+            continue;
+        const QString value = comboStoredValue(combo);
+        if (value.isEmpty())
+            continue;
+        const QString key = normalizedKey(value);
+        if (seen.contains(key)) {
+            QSignalBlocker blocker(combo);
+            combo->setCurrentIndex(0);
+            removedDuplicate = true;
+            continue;
+        }
+        seen.insert(key);
+    }
+    if (m_equipmentStatusLabel && removedDuplicate)
+        m_equipmentStatusLabel->setText(tr("Duplicate ship assignments were removed. Freelancer supports at most 3 ships per base."));
+}
+
+void BaseEditDialog::filterEquipmentLists()
+{
+    const QString filter = m_equipmentFilterEdit ? m_equipmentFilterEdit->text().trimmed().toLower() : QString();
+    for (QListWidget *list : std::as_const(m_equipmentListsByGroup)) {
+        if (!list)
+            continue;
+        for (int row = 0; row < list->count(); ++row) {
+            QListWidgetItem *item = list->item(row);
+            const QString nickname = item->data(Qt::UserRole).toString().toLower();
+            const QString label = item->text().toLower();
+            item->setHidden(!filter.isEmpty() && !nickname.contains(filter) && !label.contains(filter));
+        }
+    }
+}
+
+QStringList BaseEditDialog::selectedEquipment() const
+{
+    QStringList equipment;
+    if (!m_equipmentList)
+        return equipment;
+    for (int row = 0; row < m_equipmentList->count(); ++row) {
+        const QString nickname = m_equipmentList->item(row)->data(Qt::UserRole).toString().trimmed();
+        if (!nickname.isEmpty() && !equipment.contains(nickname, Qt::CaseInsensitive))
+            equipment.append(nickname);
+    }
+    return equipment;
+}
+
+QStringList BaseEditDialog::selectedShipPackages() const
+{
+    QStringList ships;
+    for (const QComboBox *combo : m_shipSlotCombos) {
+        const QString nickname = comboStoredValue(combo);
+        if (!nickname.isEmpty() && !ships.contains(nickname, Qt::CaseInsensitive))
+            ships.append(nickname);
+        if (ships.size() >= BaseEquipmentService::MaxShipsPerBase)
+            break;
+    }
+    return ships;
+}
+
+QStringList BaseEditDialog::selectedShipPackageLevels() const
+{
+    QStringList levels;
+    for (int slot = 0; slot < BaseEquipmentService::MaxShipsPerBase; ++slot) {
+        const QString nickname = comboStoredValue(m_shipSlotCombos[slot]);
+        if (nickname.isEmpty())
+            continue;
+        levels.append(QString::number(m_shipLevelSpins[slot] ? m_shipLevelSpins[slot]->value() : 1));
+    }
+    return levels;
 }
 
 void BaseEditDialog::populateRooms(const QVector<BaseRoomState> &rooms)
@@ -933,6 +1208,9 @@ BaseEditState BaseEditDialog::state() const
     result.priceVariance = m_priceVarianceSpin->value();
     result.infocardXml = m_infocardEdit->toPlainText().trimmed();
     result.rooms = m_roomStates;
+    result.equipment = selectedEquipment();
+    result.shipPackages = selectedShipPackages();
+    result.shipPackageLevels = selectedShipPackageLevels();
     return result;
 }
 

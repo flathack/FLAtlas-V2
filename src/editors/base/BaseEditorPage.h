@@ -2,13 +2,18 @@
 // editors/base/BaseEditorPage.h – Basis-Editor (Phase 10)
 
 #include <QWidget>
+#include <QHash>
 #include <memory>
 #include "domain/BaseData.h"
 
 class QLineEdit;
 class QComboBox;
+class QLabel;
+class QListWidget;
+class QPushButton;
 class QSpinBox;
 class QSplitter;
+class QTabWidget;
 class QToolBar;
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -43,8 +48,15 @@ signals:
 private:
     void setupUi();
     void setupToolBar();
+    QWidget *createGeneralTab();
+    QWidget *createEquipmentShipsTab();
     void populateFromData();
     void applyToData();
+    void populateEquipmentOptions();
+    void refreshEquipmentList();
+    void filterEquipmentLists();
+    void addSelectedEquipment();
+    void removeSelectedEquipment();
     void onNewBase();
     void markDirty();
     void setDirty(bool dirty);
@@ -57,6 +69,7 @@ private:
 
     QToolBar *m_toolBar = nullptr;
     QSplitter *m_splitter = nullptr;
+    QTabWidget *m_tabs = nullptr;
 
     // Properties panel
     QLineEdit *m_nicknameEdit = nullptr;
@@ -69,6 +82,18 @@ private:
 
     // Room editor
     RoomEditor *m_roomEditor = nullptr;
+
+    // Equipment & Ships
+    QComboBox *m_equipmentCombo = nullptr;
+    QLineEdit *m_equipmentFilterEdit = nullptr;
+    QTabWidget *m_equipmentAvailableTabs = nullptr;
+    QHash<QString, QListWidget *> m_equipmentListsByGroup;
+    QListWidget *m_equipmentList = nullptr;
+    QPushButton *m_addEquipmentButton = nullptr;
+    QPushButton *m_removeEquipmentButton = nullptr;
+    QLabel *m_equipmentStatusLabel = nullptr;
+    QComboBox *m_shipSlotCombos[3] = {nullptr, nullptr, nullptr};
+    QSpinBox *m_shipLevelSpins[3] = {nullptr, nullptr, nullptr};
 };
 
 } // namespace flatlas::editors

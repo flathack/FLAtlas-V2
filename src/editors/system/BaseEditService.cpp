@@ -3,6 +3,7 @@
 #include "core/PathUtils.h"
 #include "domain/SolarObject.h"
 #include "domain/SystemDocument.h"
+#include "editors/base/BaseEquipmentService.h"
 #include "infrastructure/freelancer/IdsDataService.h"
 #include "infrastructure/freelancer/IdsStringTable.h"
 #include "infrastructure/freelancer/ResourceDllWriter.h"
@@ -1660,6 +1661,17 @@ bool validateState(const BaseEditState &state, QString *errorMessage)
             *errorMessage = QObject::tr("Mindestens ein aktiver Raum ist erforderlich.");
         return false;
     }
+    QStringList ships;
+    for (const QString &ship : state.shipPackages) {
+        const QString clean = ship.trimmed();
+        if (!clean.isEmpty() && !ships.contains(clean, Qt::CaseInsensitive))
+            ships.append(clean);
+    }
+    if (ships.size() > BaseEquipmentService::MaxShipsPerBase) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("Freelancer supports at most 3 ships per base.");
+        return false;
+    }
     return true;
 }
 
@@ -1778,6 +1790,9 @@ BaseEditState BaseEditService::makeCreateState(const SystemDocument &document,
     state.loadout = defaults.loadout;
     state.infocardXml = defaults.infocardXml;
     state.rooms = buildDefaultRoomsForArchetype(state.archetype);
+    state.equipment = {};
+    state.shipPackages = {};
+    state.shipPackageLevels = {};
     state.startRoom = chooseStartRoom(enabledRoomNames(state), QStringLiteral("Deck"));
 
     const QString systemFile = document.filePath();
@@ -1839,6 +1854,11 @@ bool BaseEditService::loadState(const SystemDocument &document,
             return false;
     }
 
+    const BaseEquipmentState equipmentState = BaseEquipmentService::load(state.universeIniAbsolutePath, state.baseNickname);
+    state.equipment = equipmentState.equipment;
+    state.shipPackages = equipmentState.shipPackages;
+    state.shipPackageLevels = equipmentState.shipPackageLevels;
+
     *outState = state;
     return true;
 }
@@ -1856,6 +1876,10 @@ bool BaseEditService::loadTemplateState(const QString &baseNickname,
     state.baseNickname = baseNickname.trimmed();
     if (!loadBaseFileState(&state, gameRoot, textOverrides, errorMessage))
         return false;
+    const BaseEquipmentState equipmentState = BaseEquipmentService::load(state.universeIniAbsolutePath, state.baseNickname);
+    state.equipment = equipmentState.equipment;
+    state.shipPackages = equipmentState.shipPackages;
+    state.shipPackageLevels = equipmentState.shipPackageLevels;
     *outState = state;
     return true;
 }
@@ -1902,6 +1926,16 @@ bool BaseEditService::applyCreate(const BaseEditState &state,
         {working.baseIniAbsolutePath, buildUpdatedBaseIniText(QString(), working)},
         {working.mbaseAbsolutePath, normalizeGeneratedText(IniParser::serialize(mbasesDoc))},
     };
+    const QVector<BaseEquipmentStagedWrite> marketWrites = BaseEquipmentService::stagedWrites(working.universeIniAbsolutePath,
+                                                                                              working.baseNickname,
+                                                                                              working.equipment,
+                                                                                              working.shipPackages,
+                                                                                              working.shipPackageLevels,
+                                                                                              errorMessage);
+    if (marketWrites.isEmpty() && errorMessage && !errorMessage->trimmed().isEmpty())
+        return false;
+    for (const BaseEquipmentStagedWrite &write : marketWrites)
+        outResult->stagedWrites.append({write.absolutePath, write.content});
 
     const QStringList rooms = enabledRoomNames(working);
     for (const BaseRoomState &room : working.rooms) {
@@ -1966,6 +2000,16 @@ bool BaseEditService::applyEdit(SolarObject &object,
         {working.baseIniAbsolutePath, buildUpdatedBaseIniText(existingBaseIniText, working)},
         {working.mbaseAbsolutePath, normalizeGeneratedText(IniParser::serialize(mbasesDoc))},
     };
+    const QVector<BaseEquipmentStagedWrite> marketWrites = BaseEquipmentService::stagedWrites(working.universeIniAbsolutePath,
+                                                                                              working.baseNickname,
+                                                                                              working.equipment,
+                                                                                              working.shipPackages,
+                                                                                              working.shipPackageLevels,
+                                                                                              errorMessage);
+    if (marketWrites.isEmpty() && errorMessage && !errorMessage->trimmed().isEmpty())
+        return false;
+    for (const BaseEquipmentStagedWrite &write : marketWrites)
+        outResult->stagedWrites.append({write.absolutePath, write.content});
 
     const QStringList rooms = enabledRoomNames(working);
     const QString startRoom = chooseStartRoom(rooms, working.startRoom);

@@ -22,6 +22,9 @@ struct BaseData {
     QVector3D position;
     QStringList dockWith;
     QVector<RoomData> rooms;
+    QStringList equipment;
+    QStringList shipPackages;
+    QStringList shipPackageLevels;
 };
 
 } // namespace flatlas::domain
