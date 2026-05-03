@@ -10,6 +10,7 @@
 #include <QAbstractItemView>
 #include <QAction>
 #include <QComboBox>
+#include <QDateTime>
 #include <QDir>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -75,6 +76,21 @@ QStringList csvParts(const QString &value)
     for (QString &part : parts)
         part = part.trimmed();
     return parts;
+}
+
+QString fixtureNpcNickname(const QString &fixtureValue)
+{
+    const QStringList parts = csvParts(fixtureValue);
+    return parts.isEmpty() ? QString() : parts.first().trimmed();
+}
+
+QString fixtureValueWithNpcNickname(const QString &fixtureValue, const QString &npcNickname)
+{
+    QStringList parts = csvParts(fixtureValue);
+    if (parts.isEmpty())
+        return npcNickname.trimmed();
+    parts[0] = npcNickname.trimmed();
+    return parts.join(QStringLiteral(", "));
 }
 
 int toInt(const QString &value, int fallback = 0)
@@ -234,6 +250,90 @@ IniSection npcToSection(const NpcRecord &npc, int bribePrice)
 QString sectionLabel(const IniSection &section)
 {
     return section.name.trimmed().toLower();
+}
+
+QSet<QString> npcKeysForBase(const NpcBaseRecord &base)
+{
+    QSet<QString> keys;
+    for (const NpcRecord &npc : base.npcs) {
+        const QString key = keyOf(npc.nickname);
+        if (!key.isEmpty())
+            keys.insert(key);
+    }
+    return keys;
+}
+
+QSet<QString> npcKeysInMbaseBlock(const IniDocument &doc, const QVector<int> &indexes)
+{
+    QSet<QString> keys;
+    for (int idx : indexes) {
+        const IniSection &section = doc.at(idx);
+        if (section.name.compare(QStringLiteral("GF_NPC"), Qt::CaseInsensitive) != 0)
+            continue;
+        const QString key = keyOf(section.value(QStringLiteral("nickname")));
+        if (!key.isEmpty())
+            keys.insert(key);
+    }
+    return keys;
+}
+
+QHash<QString, QString> fixtureValuesByNpc(const IniDocument &doc, const QVector<int> &indexes)
+{
+    QHash<QString, QString> values;
+    for (int idx : indexes) {
+        const IniSection &section = doc.at(idx);
+        if (section.name.compare(QStringLiteral("MRoom"), Qt::CaseInsensitive) != 0)
+            continue;
+        for (const QString &fixture : section.values(QStringLiteral("fixture"))) {
+            const QString npcKey = keyOf(fixtureNpcNickname(fixture));
+            if (!npcKey.isEmpty() && !values.contains(npcKey))
+                values.insert(npcKey, fixture.trimmed());
+        }
+    }
+    return values;
+}
+
+QHash<QString, QStringList> desiredFixturesByRoom(const NpcBaseRecord &base,
+                                                  const IniDocument &doc,
+                                                  const QHash<QString, QString> &oldFixtureByNpc)
+{
+    QHash<QString, QStringList> result;
+    for (const NpcRecord &npc : base.npcs) {
+        const QString room = npc.room.trimmed();
+        QString fixture = oldFixtureByNpc.value(keyOf(npc.nickname)).trimmed();
+        if (fixture.isEmpty() && npc.sectionIndex >= 0 && npc.sectionIndex < doc.size()) {
+            const IniSection &oldSection = doc.at(npc.sectionIndex);
+            if (oldSection.name.compare(QStringLiteral("GF_NPC"), Qt::CaseInsensitive) == 0) {
+                const QString oldNickname = oldSection.value(QStringLiteral("nickname")).trimmed();
+                fixture = oldFixtureByNpc.value(keyOf(oldNickname)).trimmed();
+                if (!fixture.isEmpty() && oldNickname.compare(npc.nickname, Qt::CaseInsensitive) != 0)
+                    fixture = fixtureValueWithNpcNickname(fixture, npc.nickname);
+            }
+        }
+        if (room.isEmpty() || fixture.isEmpty())
+            continue;
+        appendUnique(&result[keyOf(room)], fixture);
+    }
+    return result;
+}
+
+IniSection syncedMRoomSection(const IniSection &section,
+                              const QSet<QString> &managedNpcKeys,
+                              const QStringList &desiredFixtures)
+{
+    IniSection updated = section;
+    QVector<QPair<QString, QString>> entries;
+    for (const auto &entry : section.entries) {
+        if (entry.first.compare(QStringLiteral("fixture"), Qt::CaseInsensitive) == 0
+            && managedNpcKeys.contains(keyOf(fixtureNpcNickname(entry.second)))) {
+            continue;
+        }
+        entries.append(entry);
+    }
+    for (const QString &fixture : desiredFixtures)
+        entries.append({QStringLiteral("fixture"), fixture});
+    updated.entries = entries;
+    return updated;
 }
 
 void setComboText(QComboBox *combo, const QString &text)
@@ -555,6 +655,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
             continue;
         const QString nickname = sectionValue(section, QStringLiteral("nickname"));
         const QString display = resolvedIdsText(toInt(section.value(QStringLiteral("ids_name")))).trimmed();
+        appendUnique(&m_factionChoices, nickname);
         if (!nickname.isEmpty() && !display.isEmpty())
             m_factionDisplayByNickname.insert(keyOf(nickname), display);
     }
@@ -747,6 +848,19 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
             appendUnique(&m_handChoices, section.value(QStringLiteral("nickname")));
     }
 
+    const QString audioDirPath = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("AUDIO"));
+    if (!audioDirPath.isEmpty()) {
+        const QDir audioDir(audioDirPath);
+        const QStringList audioFiles = audioDir.entryList({QStringLiteral("*.ini")}, QDir::Files, QDir::Name);
+        for (const QString &fileName : audioFiles) {
+            const IniDocument audioDoc = IniParser::parseFile(audioDir.absoluteFilePath(fileName));
+            for (const IniSection &section : audioDoc) {
+                if (section.name.compare(QStringLiteral("Voice"), Qt::CaseInsensitive) == 0)
+                    appendUnique(&m_voiceChoices, section.value(QStringLiteral("nickname")));
+            }
+        }
+    }
+
     m_bodyChoices.sort(Qt::CaseInsensitive);
     m_headChoices.sort(Qt::CaseInsensitive);
     m_handChoices.sort(Qt::CaseInsensitive);
@@ -798,6 +912,11 @@ bool NpcEditorPage::saveCurrentFile(QString *errorMessage)
         const QVector<int> oldIndexes = sectionIndexesForMbase(newDoc, base.nickname);
         IniDocument block;
         QHash<QString, QStringList> npcsByFaction;
+        QSet<QString> managedNpcKeys = npcKeysInMbaseBlock(newDoc, oldIndexes);
+        managedNpcKeys.unite(npcKeysForBase(base));
+        const QHash<QString, QString> oldFixtureByNpc = fixtureValuesByNpc(newDoc, oldIndexes);
+        const QHash<QString, QStringList> fixtureTargetsByRoom = desiredFixturesByRoom(base, newDoc, oldFixtureByNpc);
+        QSet<QString> writtenMRoomKeys;
         for (const NpcRecord &npc : base.npcs) {
             if (!npc.baseFaction.trimmed().isEmpty())
                 appendUnique(&npcsByFaction[npc.baseFaction.trimmed()], npc.nickname);
@@ -840,7 +959,34 @@ bool NpcEditorPage::saveCurrentFile(QString *errorMessage)
                 const QString label = sectionLabel(section);
                 if (label == QStringLiteral("mbase") || label == QStringLiteral("basefaction") || label == QStringLiteral("gf_npc"))
                     continue;
+                if (label == QStringLiteral("mroom")) {
+                    const QString room = sectionValue(section, QStringLiteral("nickname"));
+                    writtenMRoomKeys.insert(keyOf(room));
+                    block.append(syncedMRoomSection(section,
+                                                    managedNpcKeys,
+                                                    fixtureTargetsByRoom.value(keyOf(room))));
+                    continue;
+                }
                 block.append(section);
+            }
+            for (auto it = fixtureTargetsByRoom.constBegin(); it != fixtureTargetsByRoom.constEnd(); ++it) {
+                if (writtenMRoomKeys.contains(it.key()) || it.value().isEmpty())
+                    continue;
+                IniSection room;
+                room.name = QStringLiteral("MRoom");
+                QString roomName;
+                for (const NpcRecord &npc : base.npcs) {
+                    if (keyOf(npc.room) == it.key()) {
+                        roomName = npc.room.trimmed();
+                        break;
+                    }
+                }
+                if (roomName.isEmpty())
+                    continue;
+                room.entries.append({QStringLiteral("nickname"), roomName});
+                for (const QString &fixture : it.value())
+                    room.entries.append({QStringLiteral("fixture"), fixture});
+                block.append(room);
             }
         } else if (!base.npcs.isEmpty()) {
             IniSection mbase;
@@ -871,6 +1017,15 @@ bool NpcEditorPage::saveCurrentFile(QString *errorMessage)
             for (const IniSection &section : std::as_const(block))
                 newDoc.append(section);
         }
+    }
+
+    const QString backupPath = QStringLiteral("%1.flatlas-bak-%2")
+                                   .arg(m_mbasesPath,
+                                        QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-hhmmss")));
+    if (QFileInfo::exists(m_mbasesPath) && !QFile::copy(m_mbasesPath, backupPath)) {
+        if (errorMessage)
+            *errorMessage = tr("Backup von mbases.ini konnte nicht erstellt werden: %1").arg(backupPath);
+        return false;
     }
 
     QFile file(m_mbasesPath);
@@ -1038,13 +1193,8 @@ bool NpcEditorPage::applyIdsNameEdits(QString *errorMessage)
         for (const NpcRecord &npc : base.npcs) {
             const QString desiredName = npc.individualNameText.trimmed();
             const QString currentName = resolvedIdsText(npc.individualName).trimmed();
-            if (desiredName.isEmpty()) {
-                if (npc.individualName > 0) {
-                    needsDataset = false;
-                    break;
-                }
+            if (desiredName.isEmpty())
                 continue;
-            }
             if (npc.individualName <= 0 || desiredName.compare(currentName, Qt::CaseSensitive) != 0) {
                 needsDataset = true;
                 break;
@@ -1157,6 +1307,8 @@ void NpcEditorPage::saveEditorToCurrentNpc()
         return;
     npc->nickname = m_nicknameEdit->text().trimmed();
     npc->room = m_roomCombo->currentText().trimmed();
+    if (npc->room == tr("Nicht zugeordnet"))
+        npc->room.clear();
     npc->baseFaction = currentFactionComboNickname(m_baseFactionCombo);
     npc->affiliation = currentFactionComboNickname(m_affiliationCombo);
     npc->body = m_bodyCombo->currentText().trimmed();
