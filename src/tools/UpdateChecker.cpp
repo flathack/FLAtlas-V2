@@ -13,7 +13,7 @@ namespace flatlas::tools {
 namespace {
 constexpr const char *kRepoOwner = "flathack";
 constexpr const char *kRepoName  = "FLAtlas-V2";
-constexpr const char *kAppVersion = "2.0.0";
+constexpr const char *kAppVersion = "0.8.0";
 } // anonymous
 
 UpdateChecker::UpdateChecker(QObject *parent)

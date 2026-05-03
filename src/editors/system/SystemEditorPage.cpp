@@ -3537,6 +3537,25 @@ QHash<QString, QString> SystemEditorPage::archetypeModelPathsFor3DView() const
     return solarArchetypeModelPathsForPreview();
 }
 
+SystemDisplayFilterSettings SystemEditorPage::displayFilterSettingsFor3DView() const
+{
+    return m_displayFilterSettings;
+}
+
+void SystemEditorPage::applyDisplayFilterSettingsFrom3DView(const SystemDisplayFilterSettings &settings)
+{
+    m_displayFilterSettings = settings;
+    saveDisplayFilterSettings();
+    if (m_mapView)
+        m_mapView->setDisplayFilterSettings(m_displayFilterSettings);
+    pruneSelectionByCurrentFilter();
+    refreshSidebarVisibilityState();
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+    updateIniEditorForSelection();
+    updateSidebarButtons();
+}
+
 void SystemEditorPage::bindDocumentSignals()
 {
     if (!m_document)

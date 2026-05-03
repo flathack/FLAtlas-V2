@@ -11,7 +11,7 @@ Application::Application(int &argc, char **argv)
     , m_currentLanguage(QStringLiteral("en"))
 {
     setApplicationName(QStringLiteral("FLAtlas"));
-    setApplicationVersion(QStringLiteral("2.0.0"));
+    setApplicationVersion(QStringLiteral("0.8.0"));
     setOrganizationName(QStringLiteral("FLAtlas"));
     setOrganizationDomain(QStringLiteral("flatlas.flathack.de"));
 

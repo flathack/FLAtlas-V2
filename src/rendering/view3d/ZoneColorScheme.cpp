@@ -35,7 +35,7 @@ ZoneVisualStyle ZoneColorScheme::styleForZone(const flatlas::domain::ZoneItem &z
     const int damage = zone.damage();
 
     if (name.contains(QStringLiteral("death")) || name.contains(QStringLiteral("destroy_vignette")) || damage > 0)
-        return makeStyle(QStringLiteral("death"), QColor(235, 45, 45), 56);
+        return makeStyle(QStringLiteral("death"), QColor(235, 45, 45), 30);
 
     if (name.contains(QStringLiteral("nebula"))
         || name.contains(QStringLiteral("badlands"))
@@ -44,19 +44,19 @@ ZoneVisualStyle ZoneColorScheme::styleForZone(const flatlas::domain::ZoneItem &z
         || zoneType.contains(QStringLiteral("nebula"))
         || zoneType.contains(QStringLiteral("asteroid"))
         || zoneType.contains(QStringLiteral("debris"))) {
-        return makeStyle(QStringLiteral("asteroid/nebula"), QColor(45, 145, 255), 48);
+        return makeStyle(QStringLiteral("asteroid/nebula"), QColor(45, 145, 255), 28);
     }
 
     if (name.contains(QStringLiteral("pop"))
         || !popType.isEmpty()
         || usage.contains(QStringLiteral("population"))
         || pathLabel.contains(QStringLiteral("pop"))) {
-        return makeStyle(QStringLiteral("population"), QColor(245, 205, 55), 46);
+        return makeStyle(QStringLiteral("population"), QColor(245, 205, 55), 28);
     }
 
     Q_UNUSED(usage);
     Q_UNUSED(pathLabel);
-    return makeStyle(QStringLiteral("generic"), QColor(155, 165, 175), 34);
+    return makeStyle(QStringLiteral("generic"), QColor(155, 165, 175), 18);
 }
 
 } // namespace flatlas::rendering

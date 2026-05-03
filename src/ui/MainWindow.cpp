@@ -10,6 +10,7 @@
 #include "core/I18n.h"
 #include "core/UndoManager.h"
 #include "editors/system/SystemEditorPage.h"
+#include "editors/system/SystemDisplayFilterDialog.h"
 #include "editors/ini/IniEditorPage.h"
 #include "editors/universe/UniverseEditorPage.h"
 #include "editors/base/BaseBuilder.h"
@@ -27,6 +28,7 @@
 #include "rendering/preview/ModelViewerPage.h"
 #include "rendering/view3d/SceneView3D.h"
 #include "domain/SystemDocument.h"
+#include "domain/ZoneItem.h"
 #include "domain/UniverseData.h"
 #include "infrastructure/freelancer/UniverseScanner.h"
 #include "core/PathUtils.h"
@@ -61,6 +63,7 @@
 #include <QAbstractItemView>
 
 #include <exception>
+#include <memory>
 
 namespace {
 
@@ -78,9 +81,48 @@ bool isContextBoundTab(QWidget *widget)
         || qobject_cast<flatlas::editors::NewsRumorEditor *>(widget);
 }
 
+bool objectVisibleForFilter(const flatlas::rendering::SystemDisplayFilterSettings &settings,
+                            const flatlas::domain::SolarObject &obj)
+{
+    flatlas::rendering::SolarObjectDisplayContext context;
+    context.nickname = obj.nickname();
+    context.archetype = obj.archetype();
+    context.type = obj.type();
+
+    bool visible = settings.objectVisibleForType(obj.type());
+    for (const auto &rule : settings.rules) {
+        if (!flatlas::rendering::matchesDisplayFilterRule(rule, context))
+            continue;
+        if (rule.target == flatlas::rendering::DisplayFilterTarget::Label)
+            continue;
+        visible = (rule.action == flatlas::rendering::DisplayFilterAction::Show);
+    }
+    return visible;
+}
+
+bool zoneVisibleForFilter(const flatlas::rendering::SystemDisplayFilterSettings &settings,
+                          const flatlas::domain::ZoneItem &zone)
+{
+    flatlas::rendering::SolarObjectDisplayContext context;
+    context.nickname = zone.nickname();
+    context.typeNameOverride = QStringLiteral("Zone");
+
+    bool visible = true;
+    for (const auto &rule : settings.rules) {
+        if (!flatlas::rendering::matchesDisplayFilterRule(rule, context))
+            continue;
+        if (rule.target == flatlas::rendering::DisplayFilterTarget::Label)
+            continue;
+        visible = (rule.action == flatlas::rendering::DisplayFilterAction::Show);
+    }
+    return visible;
+}
+
 QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
                             const QHash<QString, QString> &modelPaths,
+                            const flatlas::rendering::SystemDisplayFilterSettings &initialFilterSettings,
                             const QString &tabKey,
+                            flatlas::editors::SystemEditorPage *sourceEditor,
                             QWidget *parent)
 {
     auto *page = new QWidget(parent);
@@ -98,9 +140,13 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     leftLayout->setContentsMargins(8, 8, 8, 8);
     leftLayout->setSpacing(6);
 
+    auto *topRow = new QHBoxLayout();
     auto *searchEdit = new QLineEdit(leftSidebar);
     searchEdit->setPlaceholderText(QObject::tr("Search objects / zones"));
-    leftLayout->addWidget(searchEdit);
+    topRow->addWidget(searchEdit, 1);
+    auto *filterButton = new QPushButton(QObject::tr("Display Filters"), leftSidebar);
+    topRow->addWidget(filterButton);
+    leftLayout->addLayout(topRow);
 
     auto *tree = new QTreeWidget(leftSidebar);
     tree->setHeaderLabels({QObject::tr("Nickname"), QObject::tr("Type")});
@@ -112,6 +158,7 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
 
     auto *view = new flatlas::rendering::SceneView3D(splitter);
     view->setArchetypeModelPaths(modelPaths);
+    view->setDisplayFilterSettings(initialFilterSettings);
     view->loadDocument(document);
     splitter->addWidget(view);
     splitter->setStretchFactor(0, 0);
@@ -141,22 +188,56 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     }
     tree->resizeColumnToContents(0);
 
-    QObject::connect(searchEdit, &QLineEdit::textChanged, tree, [tree](const QString &text) {
-        const QString needle = text.trimmed().toLower();
-        for (int i = 0; i < tree->topLevelItemCount(); ++i) {
-            QTreeWidgetItem *root = tree->topLevelItem(i);
+    auto filterSettings = std::make_shared<flatlas::rendering::SystemDisplayFilterSettings>(initialFilterSettings);
+    auto applyTreeFilter = [tree, searchEdit, document, filterSettings]() {
+        const QString needle = searchEdit ? searchEdit->text().trimmed().toLower() : QString();
+        for (int rootIndex = 0; rootIndex < tree->topLevelItemCount(); ++rootIndex) {
+            QTreeWidgetItem *root = tree->topLevelItem(rootIndex);
             bool anyVisible = false;
-            for (int j = 0; root && j < root->childCount(); ++j) {
-                QTreeWidgetItem *child = root->child(j);
-                const bool visible = needle.isEmpty()
+            for (int childIndex = 0; root && childIndex < root->childCount(); ++childIndex) {
+                QTreeWidgetItem *child = root->child(childIndex);
+                const QString nickname = child->data(0, Qt::UserRole).toString();
+                bool displayVisible = true;
+                if (document) {
+                    displayVisible = false;
+                    for (const auto &obj : document->objects()) {
+                        if (obj && obj->nickname() == nickname) {
+                            displayVisible = objectVisibleForFilter(*filterSettings, *obj);
+                            break;
+                        }
+                    }
+                    for (const auto &zone : document->zones()) {
+                        if (zone && zone->nickname() == nickname) {
+                            displayVisible = zoneVisibleForFilter(*filterSettings, *zone);
+                            break;
+                        }
+                    }
+                }
+                const bool searchVisible = needle.isEmpty()
                     || child->text(0).toLower().contains(needle)
                     || child->text(1).toLower().contains(needle);
+                const bool visible = displayVisible && searchVisible;
                 child->setHidden(!visible);
                 anyVisible = anyVisible || visible;
             }
             if (root)
-                root->setHidden(!anyVisible && !needle.isEmpty());
+                root->setHidden(!anyVisible);
         }
+    };
+
+    QObject::connect(searchEdit, &QLineEdit::textChanged, tree, [applyTreeFilter](const QString &) {
+        applyTreeFilter();
+    });
+
+    QObject::connect(filterButton, &QPushButton::clicked, page, [page, view, tree, sourceEditor, filterSettings, applyTreeFilter]() {
+        flatlas::editors::SystemDisplayFilterDialog dialog(*filterSettings, page);
+        if (dialog.exec() != QDialog::Accepted)
+            return;
+        *filterSettings = dialog.settings();
+        if (sourceEditor)
+            sourceEditor->applyDisplayFilterSettingsFrom3DView(*filterSettings);
+        view->setDisplayFilterSettings(*filterSettings);
+        applyTreeFilter();
     });
 
     QObject::connect(tree, &QTreeWidget::itemSelectionChanged, view, [tree, view]() {
@@ -178,6 +259,8 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
             tree->scrollToItem(matches.first());
         }
     });
+
+    applyTreeFilter();
 
     return page;
 }
@@ -203,7 +286,7 @@ QString MainWindow::formatSystemTabTitle(const QString &editorTitle, const QStri
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
-    setWindowTitle(QStringLiteral("FLAtlas V2"));
+    setWindowTitle(tr("FL Atlas V2 v%1").arg(qApp->applicationVersion()));
     setMinimumSize(960, 620);
     resize(1600, 900);
 
@@ -414,13 +497,21 @@ void MainWindow::createMenus()
         checker->checkForUpdates();
     });
     helpMenu->addSeparator();
-    helpMenu->addAction(tr("&About FLAtlas..."), this, [this]() {
-        QMessageBox::about(this, tr("About FLAtlas"),
-            tr("<h2>FLAtlas V2</h2>"
-               "<p>Version %1</p>"
-               "<p>A comprehensive editor for Freelancer game data.</p>"
+    helpMenu->addAction(tr("&Über FL Atlas..."), this, [this]() {
+        QMessageBox::about(this, tr("Über FL Atlas"),
+            tr("<h2>FL Atlas V2</h2>"
+               "<p><b>Version:</b> v%1</p>"
+               "<p><b>Autor:</b> Steven</p>"
+               "<p><b>Lizenz:</b> MIT License</p>"
+               "<hr>"
+               "<p>Ein visueller Editor für Freelancer-Systemdateien (INI). FL Atlas ist zusätzlich kompatibel mit FLMM-Mods, damit diese auch hier genutzt werden können.</p>"
+               "<p>Zeigt Systeme als interaktive 2-D/3-D-Karte an. Objekte, Zonen, Bases, Docking Rings, Tradelanes und Verbindungen können erstellt, bearbeitet und verschoben werden.</p>"
+               "<p>Vielen Dank an IGx89 für Freelancer Mod Manager (FLMM) und seine Arbeit für die Modding-Community.</p>"
+               "<hr>"
+               "<p><b>Technologie:</b> C++ · Qt 6 · Qt3D</p>"
+               "<p><b>Spiel:</b> Freelancer (2003, Digital Anvil / Microsoft)</p>"
                "<p>&copy; 2024–2025 flathack</p>")
-                .arg(flatlas::tools::UpdateChecker::currentVersion()));
+                .arg(qApp->applicationVersion()));
     });
 
     // --- Menu bar corner: Currently Editing + Launch FL + Give Feedback ---
@@ -1028,10 +1119,10 @@ void MainWindow::handleEditingContextChanged()
 
     if (profile.isValid()) {
         m_editingLabel->setText(tr("Currently Editing: %1").arg(profile.name));
-        setWindowTitle(QStringLiteral("FLAtlas V2 – %1").arg(profile.name));
+        setWindowTitle(tr("FL Atlas V2 v%1 - %2").arg(qApp->applicationVersion(), profile.name));
     } else {
         m_editingLabel->setText(tr("Currently Editing: -"));
-        setWindowTitle(QStringLiteral("FLAtlas V2"));
+        setWindowTitle(tr("FL Atlas V2 v%1").arg(qApp->applicationVersion()));
     }
 
     closeContextBoundTabs();
@@ -1144,7 +1235,9 @@ void MainWindow::open3DSystemEditorFor(flatlas::editors::SystemEditorPage *edito
 
     auto *view = createSystem3DPage(editor->document(),
                                     editor->archetypeModelPathsFor3DView(),
+                                    editor->displayFilterSettingsFor3DView(),
                                     tabKey,
+                                    editor,
                                     this);
 
     const int idx = m_centerTabs->addTab(view, tr("3D: %1").arg(systemName));

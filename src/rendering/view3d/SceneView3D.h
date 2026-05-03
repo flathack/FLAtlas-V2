@@ -5,6 +5,8 @@
 #include <QStringList>
 #include <QWidget>
 
+#include "rendering/view2d/SystemDisplayFilter.h"
+
 #include <memory>
 
 #ifdef FLATLAS_HAS_QT3D
@@ -32,6 +34,7 @@ public:
     ~SceneView3D() override;
 
     void setArchetypeModelPaths(const QHash<QString, QString> &modelPaths);
+    void setDisplayFilterSettings(const SystemDisplayFilterSettings &settings);
     void loadDocument(flatlas::domain::SystemDocument *doc);
     void selectObject(const QString &nickname);
 
@@ -49,15 +52,16 @@ private:
     void addSolarObject(const std::shared_ptr<flatlas::domain::SolarObject> &obj);
     void addZone(const std::shared_ptr<flatlas::domain::ZoneItem> &zone);
     void updateSceneCamera();
+    void applyDisplayFilter();
 
 #ifdef FLATLAS_HAS_QT3D
     void scheduleModelLoading();
     void attachLoadedModels(const QHash<QString, flatlas::infrastructure::DecodedModel> &models, int generation);
-    void addModelNodeRecursive(const flatlas::infrastructure::ModelNode &node,
-                               Qt3DCore::QEntity *parent,
-                               const QString &nickname,
-                               int nodeIndex = 0,
-                               int depth = 0);
+    int addModelNodeRecursive(const flatlas::infrastructure::ModelNode &node,
+                              Qt3DCore::QEntity *parent,
+                              const QString &nickname,
+                              int nodeIndex = 0,
+                              int depth = 0);
     QString modelPathForObject(const flatlas::domain::SolarObject &obj) const;
 
     Qt3DExtras::Qt3DWindow *m_3dWindow = nullptr;
@@ -73,13 +77,17 @@ private:
     SkyRenderer *m_skyRenderer = nullptr;
     QHash<QString, Qt3DCore::QEntity *> m_modelHostsByNickname;
     QHash<QString, Qt3DCore::QEntity *> m_markerEntitiesByNickname;
+    QHash<QString, Qt3DCore::QEntity *> m_sceneEntitiesByNickname;
     QHash<QString, QStringList> m_nicknamesByModelPath;
     ModelBounds *m_sceneBounds = nullptr;
+    ModelBounds *m_objectBounds = nullptr;
+    ModelBounds *m_zoneBounds = nullptr;
     int m_loadGeneration = 0;
 #endif
 
     flatlas::domain::SystemDocument *m_document = nullptr;
     QHash<QString, QString> m_archetypeModelPaths;
+    SystemDisplayFilterSettings m_displayFilterSettings;
 };
 
 } // namespace flatlas::rendering

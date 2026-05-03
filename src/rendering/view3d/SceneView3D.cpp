@@ -104,6 +104,43 @@ QColor colorForMesh(const flatlas::infrastructure::MeshData &mesh, int nodeIndex
     return QColor::fromHsv(hues[nodeIndex % 12], 95, 205);
 }
 
+bool objectVisibleForFilter(const SystemDisplayFilterSettings &settings,
+                            const flatlas::domain::SolarObject &obj)
+{
+    SolarObjectDisplayContext context;
+    context.nickname = obj.nickname();
+    context.archetype = obj.archetype();
+    context.type = obj.type();
+
+    bool visible = settings.objectVisibleForType(obj.type());
+    for (const SystemDisplayFilterRule &rule : settings.rules) {
+        if (!matchesDisplayFilterRule(rule, context))
+            continue;
+        if (rule.target == DisplayFilterTarget::Label)
+            continue;
+        visible = (rule.action == DisplayFilterAction::Show);
+    }
+    return visible;
+}
+
+bool zoneVisibleForFilter(const SystemDisplayFilterSettings &settings,
+                          const flatlas::domain::ZoneItem &zone)
+{
+    SolarObjectDisplayContext context;
+    context.nickname = zone.nickname();
+    context.typeNameOverride = QStringLiteral("Zone");
+
+    bool visible = true;
+    for (const SystemDisplayFilterRule &rule : settings.rules) {
+        if (!matchesDisplayFilterRule(rule, context))
+            continue;
+        if (rule.target == DisplayFilterTarget::Label)
+            continue;
+        visible = (rule.action == DisplayFilterAction::Show);
+    }
+    return visible;
+}
+
 } // namespace
 #endif
 
@@ -129,6 +166,8 @@ SceneView3D::SceneView3D(QWidget *parent) : QWidget(parent)
     layout->addWidget(m_container, 1);
 
     m_sceneBounds = new ModelBounds();
+    m_objectBounds = new ModelBounds();
+    m_zoneBounds = new ModelBounds();
     setupScene();
 #else
     auto *placeholder = new QLabel(tr("3D View - Qt3D not available"), this);
@@ -141,12 +180,20 @@ SceneView3D::~SceneView3D()
 {
 #ifdef FLATLAS_HAS_QT3D
     delete m_sceneBounds;
+    delete m_objectBounds;
+    delete m_zoneBounds;
 #endif
 }
 
 void SceneView3D::setArchetypeModelPaths(const QHash<QString, QString> &modelPaths)
 {
     m_archetypeModelPaths = modelPaths;
+}
+
+void SceneView3D::setDisplayFilterSettings(const SystemDisplayFilterSettings &settings)
+{
+    m_displayFilterSettings = settings;
+    applyDisplayFilter();
 }
 
 void SceneView3D::loadDocument(flatlas::domain::SystemDocument *doc)
@@ -163,6 +210,7 @@ void SceneView3D::loadDocument(flatlas::domain::SystemDocument *doc)
     for (const auto &obj : doc->objects())
         addSolarObject(obj);
 
+    applyDisplayFilter();
     updateSceneCamera();
     scheduleModelLoading();
 #endif
@@ -226,9 +274,14 @@ void SceneView3D::clearScene()
     m_selectionManager->clear();
     m_modelHostsByNickname.clear();
     m_markerEntitiesByNickname.clear();
+    m_sceneEntitiesByNickname.clear();
     m_nicknamesByModelPath.clear();
     if (m_sceneBounds)
         *m_sceneBounds = ModelBounds();
+    if (m_objectBounds)
+        *m_objectBounds = ModelBounds();
+    if (m_zoneBounds)
+        *m_zoneBounds = ModelBounds();
 
     if (m_sceneRoot) {
         delete m_sceneRoot;
@@ -249,9 +302,12 @@ void SceneView3D::addZone(const std::shared_ptr<flatlas::domain::ZoneItem> &zone
     const ZoneGeometryBuildResult result = ZoneGeometryBuilder::buildZone(*zone, style, m_zonesRoot);
     if (!result.valid)
         return;
+    m_sceneEntitiesByNickname.insert(zone->nickname(), result.rootEntity);
 
     if (m_sceneBounds)
         m_sceneBounds->include(result.bounds);
+    if (m_zoneBounds)
+        m_zoneBounds->include(result.bounds);
 
     if (result.pickEntity && result.selectionMaterial && m_selectionManager)
         m_selectionManager->registerEntity(zone->nickname(), result.pickEntity, result.selectionMaterial);
@@ -267,6 +323,7 @@ void SceneView3D::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObj
         return;
 
     auto *objectEntity = new Qt3DCore::QEntity(m_objectsRoot);
+    m_sceneEntitiesByNickname.insert(obj->nickname(), objectEntity);
     auto *objectTransform = new Qt3DCore::QTransform(objectEntity);
     objectTransform->setTranslation(obj->position());
     objectTransform->setRotation(ZoneGeometryBuilder::rotationFromFreelancer(obj->rotation()));
@@ -296,6 +353,10 @@ void SceneView3D::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObj
         m_sceneBounds->include(obj->position() + QVector3D(radius, radius, radius));
         m_sceneBounds->include(obj->position() - QVector3D(radius, radius, radius));
     }
+    if (m_objectBounds) {
+        m_objectBounds->include(obj->position() + QVector3D(radius, radius, radius));
+        m_objectBounds->include(obj->position() - QVector3D(radius, radius, radius));
+    }
 
     const QString modelPath = modelPathForObject(*obj);
     if (!modelPath.isEmpty())
@@ -311,12 +372,34 @@ void SceneView3D::updateSceneCamera()
     if (!m_orbitCamera || !m_sceneBounds)
         return;
 
-    const QVector3D center = m_sceneBounds->valid ? m_sceneBounds->center() : QVector3D();
-    const float radius = qMax(m_sceneBounds->radius(), 5000.0f);
+    const ModelBounds *focusBounds = (m_objectBounds && m_objectBounds->valid) ? m_objectBounds : m_sceneBounds;
+    const QVector3D center = focusBounds->valid ? focusBounds->center() : QVector3D();
+    const float radius = qMax(focusBounds->radius(), 5000.0f);
     const float distance = qMax(radius * 2.4f, 25000.0f);
     m_orbitCamera->setDistanceLimits(qMax(radius * 0.015f, 50.0f), qMax(distance * 80.0f, 1000000.0f));
     m_orbitCamera->setResetState(center, distance, 45.0f, 24.0f);
     m_orbitCamera->resetView();
+#endif
+}
+
+void SceneView3D::applyDisplayFilter()
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (!m_document)
+        return;
+
+    for (const auto &obj : m_document->objects()) {
+        if (!obj)
+            continue;
+        if (Qt3DCore::QEntity *entity = m_sceneEntitiesByNickname.value(obj->nickname(), nullptr))
+            entity->setEnabled(objectVisibleForFilter(m_displayFilterSettings, *obj));
+    }
+    for (const auto &zone : m_document->zones()) {
+        if (!zone)
+            continue;
+        if (Qt3DCore::QEntity *entity = m_sceneEntitiesByNickname.value(zone->nickname(), nullptr))
+            entity->setEnabled(zoneVisibleForFilter(m_displayFilterSettings, *zone));
+    }
 #endif
 }
 
@@ -373,21 +456,25 @@ void SceneView3D::attachLoadedModels(const QHash<QString, flatlas::infrastructur
             Qt3DCore::QEntity *host = m_modelHostsByNickname.value(nickname, nullptr);
             if (!host)
                 continue;
-            addModelNodeRecursive(it.value().rootNode, host, nickname);
-            if (Qt3DCore::QEntity *marker = m_markerEntitiesByNickname.value(nickname, nullptr))
-                marker->setEnabled(false);
+            const int renderedMeshCount = addModelNodeRecursive(it.value().rootNode, host, nickname);
+            if (renderedMeshCount > 0) {
+                if (Qt3DCore::QEntity *marker = m_markerEntitiesByNickname.value(nickname, nullptr))
+                    marker->setEnabled(false);
+            } else {
+                host->setEnabled(false);
+            }
         }
     }
 }
 
-void SceneView3D::addModelNodeRecursive(const flatlas::infrastructure::ModelNode &node,
-                                        Qt3DCore::QEntity *parent,
-                                        const QString &nickname,
-                                        int nodeIndex,
-                                        int depth)
+int SceneView3D::addModelNodeRecursive(const flatlas::infrastructure::ModelNode &node,
+                                       Qt3DCore::QEntity *parent,
+                                       const QString &nickname,
+                                       int nodeIndex,
+                                       int depth)
 {
     if (!parent)
-        return;
+        return 0;
 
     auto *nodeEntity = new Qt3DCore::QEntity(parent);
     auto *transform = new Qt3DCore::QTransform(nodeEntity);
@@ -395,6 +482,7 @@ void SceneView3D::addModelNodeRecursive(const flatlas::infrastructure::ModelNode
     transform->setRotation(node.rotation);
     nodeEntity->addComponent(transform);
 
+    int renderedMeshCount = 0;
     int bestLodIdx = std::numeric_limits<int>::max();
     for (const auto &mesh : node.meshes) {
         if (mesh.lodIndex >= 0 && mesh.lodIndex < bestLodIdx)
@@ -413,6 +501,7 @@ void SceneView3D::addModelNodeRecursive(const flatlas::infrastructure::ModelNode
             meshEntity->addComponent(material);
             if (m_selectionManager)
                 m_selectionManager->registerEntity(nickname, meshEntity, material);
+            ++renderedMeshCount;
         } else {
             meshEntity->deleteLater();
         }
@@ -421,9 +510,13 @@ void SceneView3D::addModelNodeRecursive(const flatlas::infrastructure::ModelNode
     int childIndex = 0;
     for (const auto &child : node.children) {
         const int childNodeIndex = nodeIndex * 7 + depth * 3 + childIndex + 1;
-        addModelNodeRecursive(child, nodeEntity, nickname, childNodeIndex, depth + 1);
+        renderedMeshCount += addModelNodeRecursive(child, nodeEntity, nickname, childNodeIndex, depth + 1);
         ++childIndex;
     }
+
+    if (renderedMeshCount <= 0)
+        nodeEntity->setEnabled(false);
+    return renderedMeshCount;
 }
 
 bool SceneView3D::eventFilter(QObject *watched, QEvent *event)

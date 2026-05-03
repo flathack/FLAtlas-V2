@@ -123,10 +123,11 @@ void ModManagerPage::setupUi()
     m_conflictTable->setAlternatingRowColors(true);
     m_conflictTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_conflictTable->verticalHeader()->setVisible(false);
+    m_conflictTable->setVisible(false);
     rightSide->addWidget(m_conflictTable);
 
-    rightSide->setStretchFactor(0, 3);
-    rightSide->setStretchFactor(1, 1);
+    rightSide->setStretchFactor(0, 1);
+    rightSide->setStretchFactor(1, 0);
     splitter->addWidget(rightSide);
 
     splitter->setStretchFactor(0, 0);
@@ -200,6 +201,7 @@ void ModManagerPage::refreshConflicts()
     m_conflicts = m_detector.detectConflicts(m_mods);
 
     m_conflictTable->setRowCount(m_conflicts.size());
+    m_conflictTable->setVisible(!m_conflicts.isEmpty());
     for (int i = 0; i < m_conflicts.size(); ++i) {
         m_conflictTable->setItem(i, 0,
             new QTableWidgetItem(m_conflicts[i].relativePath));
