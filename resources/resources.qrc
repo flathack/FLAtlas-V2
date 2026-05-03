@@ -1,7 +1,7 @@
 <!DOCTYPE RCC>
 <RCC version="1.0">
     <qresource prefix="/icons">
-        <!-- TODO: Add application icons -->
+        <file alias="FLAtlas-V2-ICON.png">images/FLAtlas-V2-ICON.png</file>
     </qresource>
     <qresource prefix="/images">
         <file alias="Splash-Screen.png">images/Splash-Screen.png</file>

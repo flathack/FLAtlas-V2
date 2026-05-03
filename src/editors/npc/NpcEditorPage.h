@@ -141,6 +141,7 @@ private:
     void onAddBribe();
     void onRemoveBribe();
     void onAddRumor();
+    void onNewRumor();
     void onRemoveRumor();
 
     QString m_gameRoot;

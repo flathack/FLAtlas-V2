@@ -19,12 +19,9 @@ Application::Application(int &argc, char **argv)
     setStyle(QStringLiteral("Fusion"));
 
     // App-Icon setzen
-    QIcon appIcon;
-    appIcon.addFile(QStringLiteral(":/icons/flatlas_16.png"), QSize(16, 16));
-    appIcon.addFile(QStringLiteral(":/icons/flatlas_32.png"), QSize(32, 32));
-    appIcon.addFile(QStringLiteral(":/icons/flatlas_48.png"), QSize(48, 48));
-    appIcon.addFile(QStringLiteral(":/icons/flatlas_256.png"), QSize(256, 256));
-    setWindowIcon(appIcon);
+    QIcon appIcon(QStringLiteral(":/icons/FLAtlas-V2-ICON.png"));
+    if (!appIcon.isNull())
+        setWindowIcon(appIcon);
 
     parseCommandLine();
     initConfig();

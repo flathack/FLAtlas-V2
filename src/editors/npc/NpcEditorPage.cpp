@@ -488,11 +488,13 @@ void NpcEditorPage::setupUi()
     m_rumorKindCombo = new QComboBox(rumorPicker);
     m_rumorKindCombo->addItems({QStringLiteral("rumor"), QStringLiteral("rumor_type2")});
     auto *addRumor = new QPushButton(tr("Rumor suchen..."), rumorPicker);
+    auto *newRumor = new QPushButton(tr("Neu"), rumorPicker);
     auto *removeRumor = new QPushButton(tr("Rumor entfernen"), rumorPicker);
     rumorPickerLayout->addWidget(new QLabel(tr("Typ:"), rumorPicker));
     rumorPickerLayout->addWidget(m_rumorKindCombo);
     rumorPickerLayout->addStretch(1);
     rumorPickerLayout->addWidget(addRumor);
+    rumorPickerLayout->addWidget(newRumor);
     rumorPickerLayout->addWidget(removeRumor);
     rumorLayout->addWidget(rumorPicker);
     m_rumorTable = new QTableWidget(rumorTab);
@@ -507,6 +509,7 @@ void NpcEditorPage::setupUi()
     m_rumorTextPreview->setPlaceholderText(tr("Waehle einen Rumor aus, um den Text zu sehen."));
     rumorLayout->addWidget(m_rumorTextPreview, 0);
     connect(addRumor, &QPushButton::clicked, this, &NpcEditorPage::onAddRumor);
+    connect(newRumor, &QPushButton::clicked, this, &NpcEditorPage::onNewRumor);
     connect(removeRumor, &QPushButton::clicked, this, &NpcEditorPage::onRemoveRumor);
     connect(m_rumorTable, &QTableWidget::currentCellChanged, this, [this]() { refreshSelectedRumorText(); });
     tabs->addTab(rumorTab, tr("Rumors"));
@@ -1823,6 +1826,108 @@ void NpcEditorPage::onAddRumor()
     idsItem->setData(Qt::UserRole, choice.ids);
     m_rumorTable->setItem(row, 4, idsItem);
     m_rumorTable->setCurrentCell(row, 0);
+    refreshSelectedRumorText();
+}
+
+void NpcEditorPage::onNewRumor()
+{
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Neuen Rumor erstellen"));
+    dialog.resize(680, 520);
+
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *formGroup = new QGroupBox(tr("Rumor"), &dialog);
+    auto *form = new QFormLayout(formGroup);
+
+    auto *kindCombo = new QComboBox(formGroup);
+    kindCombo->addItems({QStringLiteral("rumor"), QStringLiteral("rumor_type2")});
+    kindCombo->setCurrentText(m_rumorKindCombo ? m_rumorKindCombo->currentText() : QStringLiteral("rumor"));
+    auto *fromEdit = new QLineEdit(QStringLiteral("base_0_rank"), formGroup);
+    auto *toEdit = new QLineEdit(QStringLiteral("mission_end"), formGroup);
+    auto *weightSpin = new QSpinBox(formGroup);
+    weightSpin->setRange(0, 999999);
+    weightSpin->setValue(1);
+
+    form->addRow(tr("Typ:"), kindCombo);
+    form->addRow(tr("Von-State:"), fromEdit);
+    form->addRow(tr("Bis-State:"), toEdit);
+    form->addRow(tr("Gewicht:"), weightSpin);
+    layout->addWidget(formGroup);
+
+    auto *textEdit = new QPlainTextEdit(&dialog);
+    textEdit->setPlaceholderText(tr("Rumor-Text eingeben. FLAtlas erstellt die IDS automatisch."));
+    textEdit->setMinimumHeight(180);
+    layout->addWidget(textEdit, 1);
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const QString kind = kindCombo->currentText().trimmed();
+    const QString stateFrom = fromEdit->text().trimmed();
+    const QString stateTo = toEdit->text().trimmed();
+    int ids = 0;
+    const QString rumorText = textEdit->toPlainText().trimmed();
+    if (kind.isEmpty() || stateFrom.isEmpty() || stateTo.isEmpty()) {
+        QMessageBox::warning(this, tr("Rumor erstellen"), tr("Typ, Von-State und Bis-State muessen gesetzt sein."));
+        return;
+    }
+    if (rumorText.isEmpty()) {
+        QMessageBox::warning(this, tr("Rumor erstellen"), tr("Bitte einen Rumor-Text eingeben."));
+        return;
+    }
+
+    const IdsDataset dataset = IdsDataService::loadFromGameRoot(m_gameRoot);
+    const QString targetDll = IdsDataService::defaultCreationDllName(dataset);
+    if (targetDll.trimmed().isEmpty()) {
+        QMessageBox::warning(this, tr("Rumor erstellen"), tr("Es konnte keine Ziel-DLL fuer den Rumor-Text ermittelt werden."));
+        return;
+    }
+    QString idsError;
+    int newGlobalId = 0;
+    if (!IdsDataService::writeStringEntry(dataset,
+                                          targetDll,
+                                          0,
+                                          rumorText,
+                                          &newGlobalId,
+                                          &idsError)) {
+        QMessageBox::warning(this,
+                             tr("Rumor erstellen"),
+                             tr("Rumor-Text konnte nicht gespeichert werden: %1").arg(idsError));
+        return;
+    }
+    ids = newGlobalId;
+    m_idsTextByNumber.insert(QString::number(ids), rumorText);
+
+    const int row = m_rumorTable->rowCount();
+    m_rumorTable->insertRow(row);
+    m_rumorTable->setItem(row, 0, new QTableWidgetItem(kind));
+    m_rumorTable->setItem(row, 1, new QTableWidgetItem(stateFrom));
+    m_rumorTable->setItem(row, 2, new QTableWidgetItem(stateTo));
+    m_rumorTable->setItem(row, 3, new QTableWidgetItem(QString::number(weightSpin->value())));
+    auto *idsItem = new QTableWidgetItem(QString::number(ids));
+    idsItem->setData(Qt::UserRole, ids);
+    m_rumorTable->setItem(row, 4, idsItem);
+    m_rumorTable->setCurrentCell(row, 0);
+
+    NpcExistingRumor existing;
+    existing.kind = kind;
+    existing.stateFrom = stateFrom;
+    existing.stateTo = stateTo;
+    existing.weight = weightSpin->value();
+    existing.ids = ids;
+    existing.preview = rumorText.isEmpty() ? resolvedIdsText(ids) : rumorText;
+    const bool duplicate = std::any_of(m_existingRumors.begin(), m_existingRumors.end(), [&](const NpcExistingRumor &other) {
+        return other.kind == existing.kind && other.stateFrom == existing.stateFrom && other.stateTo == existing.stateTo
+               && other.weight == existing.weight && other.ids == existing.ids;
+    });
+    if (!duplicate)
+        m_existingRumors.append(existing);
+
     refreshSelectedRumorText();
 }
 
