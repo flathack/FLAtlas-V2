@@ -109,8 +109,7 @@ void NpcEditorPage::refreshBaseSelector()
     m_baseSelector->blockSignals(true);
     m_baseSelector->clear();
     for (const auto &base : m_bases) {
-        m_baseSelector->addItem(QStringLiteral("%1 (%2 NPCs)")
-            .arg(base.baseName).arg(base.npcs.size()));
+        m_baseSelector->addItem(tr("%1 (%2 NPCs)").arg(base.baseName).arg(base.npcs.size()));
     }
     m_baseSelector->blockSignals(false);
 

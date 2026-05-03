@@ -300,6 +300,21 @@ MainWindow::MainWindow(QWidget *parent)
     createStatusBar();
     restoreWindowState();
     applyThemeStyling();
+    connect(&flatlas::core::I18n::instance(), &flatlas::core::I18n::languageChanged,
+            this, [this]() {
+        menuBar()->clear();
+        createMenus();
+        const auto profile = flatlas::core::EditingContext::instance().editingProfile();
+        if (profile.isValid()) {
+            if (m_editingLabel)
+                m_editingLabel->setText(tr("Currently Editing: %1").arg(profile.name));
+            setWindowTitle(tr("FL Atlas V2 v%1 - %2").arg(qApp->applicationVersion(), profile.name));
+        } else {
+            if (m_editingLabel)
+                m_editingLabel->setText(tr("Currently Editing: -"));
+            setWindowTitle(tr("FL Atlas V2 v%1").arg(qApp->applicationVersion()));
+        }
+    });
     connect(&flatlas::core::Theme::instance(), &flatlas::core::Theme::themeChanged,
             this, [this](const QString &) { applyThemeStyling(); });
 
@@ -459,7 +474,7 @@ void MainWindow::createMenus()
             flatlas::core::I18n::instance().setLanguage(lang);
             flatlas::core::Config::instance().setString("language", lang);
             flatlas::core::Config::instance().save();
-            statusBar()->showMessage(tr("Language set to '%1'. Restart FLAtlas to fully apply.").arg(lang), 5000);
+            statusBar()->showMessage(tr("Language set to '%1'. Open tabs may need to be reopened.").arg(lang), 5000);
         });
     }
 

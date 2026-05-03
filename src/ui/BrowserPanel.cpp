@@ -20,7 +20,7 @@ BrowserPanel::BrowserPanel(QWidget *parent) : QWidget(parent)
     layout->setSpacing(6);
 
     // Title: ★ System Browser
-    m_titleLabel = new QLabel(QStringLiteral("\u2605 System Browser"), this);
+    m_titleLabel = new QLabel(QStringLiteral("\u2605 ") + tr("System Browser"), this);
     m_titleLabel->setStyleSheet(
         QStringLiteral("QLabel { font-size: 14px; font-weight: bold; color: #ccdde8; padding: 2px 0; }"));
     layout->addWidget(m_titleLabel);
@@ -126,7 +126,7 @@ void BrowserPanel::refreshFromContext()
         m_model->appendRow(item);
     }
 
-    m_statusLabel->setText(QStringLiteral("\u2714 %1 systems").arg(m_systems.size()));
+    m_statusLabel->setText(QStringLiteral("\u2714 ") + tr("%1 systems").arg(m_systems.size()));
 }
 
 void BrowserPanel::loadSystems(const QStringList &systemNames)
@@ -137,6 +137,6 @@ void BrowserPanel::loadSystems(const QStringList &systemNames)
         item->setEditable(false);
         m_model->appendRow(item);
     }
-    m_statusLabel->setText(QStringLiteral("\u2714 %1 systems").arg(systemNames.size()));
+    m_statusLabel->setText(QStringLiteral("\u2714 ") + tr("%1 systems").arg(systemNames.size()));
 }
 } // namespace flatlas::ui

@@ -22,7 +22,7 @@ WelcomePage::WelcomePage(QWidget *parent) : QWidget(parent)
     layout->setSpacing(12);
 
     // --- Title ---
-    auto *title = new QLabel(QStringLiteral("<h1>Welcome to FL Atlas</h1>"), this);
+    auto *title = new QLabel(QStringLiteral("<h1>%1</h1>").arg(tr("Welcome to FL Atlas")), this);
     layout->addWidget(title);
 
     auto *subtitle = new QLabel(
@@ -31,7 +31,7 @@ WelcomePage::WelcomePage(QWidget *parent) : QWidget(parent)
     layout->addWidget(subtitle);
 
     // --- Quick Introduction ---
-    auto *introHeader = new QLabel(QStringLiteral("<span style='color:#5599cc;'>Quick Introduction</span>"), this);
+    auto *introHeader = new QLabel(QStringLiteral("<span style='color:#5599cc;'>%1</span>").arg(tr("Quick Introduction")), this);
     layout->addWidget(introHeader);
 
     auto *introFrame = new QFrame(this);
@@ -46,7 +46,7 @@ WelcomePage::WelcomePage(QWidget *parent) : QWidget(parent)
     introText->setWordWrap(true);
     introLayout->addWidget(introText);
 
-    auto *howToStart = new QLabel(QStringLiteral("<b>How to start</b>"), this);
+    auto *howToStart = new QLabel(QStringLiteral("<b>%1</b>").arg(tr("How to start")), this);
     introLayout->addWidget(howToStart);
 
     auto *steps = new QLabel(
@@ -67,7 +67,7 @@ WelcomePage::WelcomePage(QWidget *parent) : QWidget(parent)
     layout->addWidget(introFrame);
 
     // --- Quick Start ---
-    auto *quickStartHeader = new QLabel(QStringLiteral("<span style='color:#5599cc;'>Quick Start</span>"), this);
+    auto *quickStartHeader = new QLabel(QStringLiteral("<span style='color:#5599cc;'>%1</span>").arg(tr("Quick Start")), this);
     layout->addWidget(quickStartHeader);
 
     auto *quickStartFrame = new QFrame(this);
@@ -84,9 +84,8 @@ WelcomePage::WelcomePage(QWidget *parent) : QWidget(parent)
         flatlas::core::I18n::instance().setLanguage(lang);
         flatlas::core::Config::instance().setString(QStringLiteral("language"), lang);
         flatlas::core::Config::instance().save();
-        // Notify that restart is needed for full effect
         if (auto *status = findChild<QLabel *>(QStringLiteral("langHint")))
-            status->setText(tr("Language set to '%1'. Restart FLAtlas to fully apply.").arg(lang));
+            status->setText(tr("Language set to '%1'. Open tabs may need to be reopened.").arg(lang));
     });
     auto *langRow = new QWidget(this);
     auto *langRowLayout = new QHBoxLayout(langRow);

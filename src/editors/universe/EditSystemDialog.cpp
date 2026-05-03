@@ -35,9 +35,9 @@ EditSystemDialog::EditSystemDialog(const SystemInfo &systemInfo,
 
     m_visitCombo = new QComboBox(this);
     m_visitCombo->setEditable(true);
-    m_visitCombo->addItem(QStringLiteral("0 - normal"), 0);
-    m_visitCombo->addItem(QStringLiteral("1 - always visible"), 1);
-    m_visitCombo->addItem(QStringLiteral("128 - hidden system"), 128);
+    m_visitCombo->addItem(tr("0 - normal"), 0);
+    m_visitCombo->addItem(tr("1 - always visible"), 1);
+    m_visitCombo->addItem(tr("128 - hidden system"), 128);
     const int visitIndex = m_visitCombo->findData(systemInfo.visit);
     if (visitIndex >= 0)
         m_visitCombo->setCurrentIndex(visitIndex);

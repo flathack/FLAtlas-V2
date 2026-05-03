@@ -120,7 +120,7 @@ DockingRingDialog::DockingRingDialog(QWidget *parent,
     , m_needsBase(needsBase)
     , m_templateRoomsByBase(templateRoomsByBase)
 {
-    setWindowTitle(windowTitle.trimmed().isEmpty() ? QStringLiteral("Create Docking Ring") : windowTitle.trimmed());
+    setWindowTitle(windowTitle.trimmed().isEmpty() ? tr("Create Docking Ring") : windowTitle.trimmed());
     setMinimumWidth(540);
     buildUi(planetNickname,
             baseNickname,
@@ -211,15 +211,15 @@ void DockingRingDialog::buildUi(const QString &planetNickname,
     contentLayout->setContentsMargins(0, 0, 0, 0);
     scroll->setWidget(content);
 
-    auto *ringGroup = new QGroupBox(QStringLiteral("Docking Ring"), content);
+    auto *ringGroup = new QGroupBox(tr("Docking Ring"), content);
     auto *ringLayout = new QFormLayout(ringGroup);
     m_nicknameEdit = new QLineEdit(QStringLiteral("Dock_Ring_%1").arg(planetNickname), ringGroup);
-    ringLayout->addRow(QStringLiteral("Nickname:"), m_nicknameEdit);
+    ringLayout->addRow(tr("Nickname:"), m_nicknameEdit);
 
     m_archetypeCombo = new QComboBox(ringGroup);
     m_archetypeCombo->setEditable(true);
     m_archetypeCombo->addItems({QStringLiteral("dock_ring"), QStringLiteral("destructable_dock_ring")});
-    ringLayout->addRow(QStringLiteral("Archetype:"), m_archetypeCombo);
+    ringLayout->addRow(tr("Archetype:"), m_archetypeCombo);
 
     QStringList ringLoadouts;
     for (const QString &loadout : loadouts) {
@@ -233,13 +233,13 @@ void DockingRingDialog::buildUi(const QString &planetNickname,
     m_loadoutCombo = new QComboBox(ringGroup);
     m_loadoutCombo->setEditable(true);
     m_loadoutCombo->addItems(ringLoadouts);
-    ringLayout->addRow(QStringLiteral("Loadout:"), m_loadoutCombo);
+    ringLayout->addRow(tr("Loadout:"), m_loadoutCombo);
 
     m_factionCombo = new QComboBox(ringGroup);
     m_factionCombo->setEditable(true);
     m_factionCombo->addItems(factions);
     m_factionCombo->setCurrentText(defaultFactionDisplay);
-    ringLayout->addRow(QStringLiteral("Reputation:"), m_factionCombo);
+    ringLayout->addRow(tr("Reputation:"), m_factionCombo);
 
     QStringList mergedVoices = defaultVoices();
     for (const QString &voice : voices) {
@@ -250,10 +250,10 @@ void DockingRingDialog::buildUi(const QString &planetNickname,
     m_voiceCombo->setEditable(true);
     m_voiceCombo->addItems(mergedVoices);
     m_voiceCombo->setCurrentText(QStringLiteral("atc_leg_m01"));
-    ringLayout->addRow(QStringLiteral("Voice:"), m_voiceCombo);
+    ringLayout->addRow(tr("Voice:"), m_voiceCombo);
 
     m_costumeEdit = new QLineEdit(QStringLiteral("robot_body_A"), ringGroup);
-    ringLayout->addRow(QStringLiteral("Space Costume:"), m_costumeEdit);
+    ringLayout->addRow(tr("Space Costume:"), m_costumeEdit);
 
     QStringList mergedPilots = defaultPilots();
     for (const QString &pilot : pilots) {
@@ -264,56 +264,56 @@ void DockingRingDialog::buildUi(const QString &planetNickname,
     m_pilotCombo->setEditable(true);
     m_pilotCombo->addItems(mergedPilots);
     m_pilotCombo->setCurrentText(QStringLiteral("pilot_solar_easiest"));
-    ringLayout->addRow(QStringLiteral("Pilot:"), m_pilotCombo);
+    ringLayout->addRow(tr("Pilot:"), m_pilotCombo);
 
     m_difficultySpin = new QSpinBox(ringGroup);
     m_difficultySpin->setRange(1, 50);
     m_difficultySpin->setValue(1);
-    ringLayout->addRow(QStringLiteral("Difficulty Level:"), m_difficultySpin);
+    ringLayout->addRow(tr("Difficulty Level:"), m_difficultySpin);
 
     m_idsNameEdit = new QLineEdit(idsNameText, ringGroup);
-    ringLayout->addRow(QStringLiteral("Name:"), m_idsNameEdit);
+    ringLayout->addRow(tr("Name:"), m_idsNameEdit);
 
     m_idsInfoEdit = new QLineEdit(idsInfoValue, ringGroup);
-    ringLayout->addRow(QStringLiteral("ids_info:"), m_idsInfoEdit);
+    ringLayout->addRow(tr("ids_info:"), m_idsInfoEdit);
 
     m_distanceSpin = new QDoubleSpinBox(ringGroup);
     m_distanceSpin->setRange(1.0, 1000000.0);
     m_distanceSpin->setDecimals(1);
     m_distanceSpin->setSingleStep(10.0);
     m_distanceSpin->setValue(std::max(1.0, initialDistanceToPlanetCore));
-    ringLayout->addRow(QStringLiteral("Distance to Planet Core:"), m_distanceSpin);
+    ringLayout->addRow(tr("Distance to Planet Core:"), m_distanceSpin);
 
-    m_createFixtureCheck = new QCheckBox(QStringLiteral("Create docking_fixture"), ringGroup);
-    m_createFixtureCheck->setToolTip(QStringLiteral("Creates or keeps a docking_fixture above the docking ring with ids_name=261166 and ids_info=66489."));
+    m_createFixtureCheck = new QCheckBox(tr("Create docking_fixture"), ringGroup);
+    m_createFixtureCheck->setToolTip(tr("Creates or keeps a docking_fixture above the docking ring with ids_name=261166 and ids_info=66489."));
     ringLayout->addRow(QString(), m_createFixtureCheck);
     contentLayout->addWidget(ringGroup);
 
     if (m_needsBase) {
-        auto *baseGroup = new QGroupBox(QStringLiteral("Base"), content);
+        auto *baseGroup = new QGroupBox(tr("Base"), content);
         auto *baseLayout = new QFormLayout(baseGroup);
         m_baseNicknameEdit = new QLineEdit(baseNickname, baseGroup);
-        baseLayout->addRow(QStringLiteral("Base Nickname:"), m_baseNicknameEdit);
+        baseLayout->addRow(tr("Base Nickname:"), m_baseNicknameEdit);
         m_stridNameSpin = new QSpinBox(baseGroup);
         m_stridNameSpin->setRange(0, 999999);
         m_stridNameSpin->setValue(stridNameValue);
-        baseLayout->addRow(QStringLiteral("strid_name:"), m_stridNameSpin);
+        baseLayout->addRow(tr("strid_name:"), m_stridNameSpin);
         contentLayout->addWidget(baseGroup);
 
-        auto *roomsGroup = new QGroupBox(QStringLiteral("Rooms"), content);
+        auto *roomsGroup = new QGroupBox(tr("Rooms"), content);
         auto *roomsLayout = new QVBoxLayout(roomsGroup);
         m_roomsLayout = roomsLayout;
         for (const auto &roomChoice : kRoomChoices)
             ensureRoomCheckbox(roomChoice.first, roomChoice.second);
 
         auto *startRoomRow = new QHBoxLayout();
-        startRoomRow->addWidget(new QLabel(QStringLiteral("Start Room"), roomsGroup));
+        startRoomRow->addWidget(new QLabel(tr("Start Room"), roomsGroup));
         m_startRoomCombo = new QComboBox(roomsGroup);
         startRoomRow->addWidget(m_startRoomCombo);
         roomsLayout->addLayout(startRoomRow);
 
         auto *priceRow = new QHBoxLayout();
-        priceRow->addWidget(new QLabel(QStringLiteral("Price Variance"), roomsGroup));
+        priceRow->addWidget(new QLabel(tr("Price Variance"), roomsGroup));
         m_priceVarianceSpin = new QDoubleSpinBox(roomsGroup);
         m_priceVarianceSpin->setRange(0.0, 1.0);
         m_priceVarianceSpin->setSingleStep(0.05);
@@ -324,14 +324,14 @@ void DockingRingDialog::buildUi(const QString &planetNickname,
         refreshStartRoomChoices(QStringLiteral("Deck"));
         contentLayout->addWidget(roomsGroup);
 
-        auto *templateGroup = new QGroupBox(QStringLiteral("Room Template"), content);
+        auto *templateGroup = new QGroupBox(tr("Room Template"), content);
         auto *templateLayout = new QFormLayout(templateGroup);
         m_templateBaseCombo = new QComboBox(templateGroup);
         m_templateBaseCombo->setEditable(true);
         m_templateBaseCombo->addItem(QString(), QString());
         for (const auto &existingBase : existingBases)
             m_templateBaseCombo->addItem(existingBase.first, existingBase.second);
-        templateLayout->addRow(QStringLiteral("Copy Rooms From:"), m_templateBaseCombo);
+        templateLayout->addRow(tr("Copy Rooms From:"), m_templateBaseCombo);
         connect(m_templateBaseCombo, &QComboBox::currentIndexChanged, this, [this](int) {
             applyTemplateRooms();
         });

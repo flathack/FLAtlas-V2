@@ -416,12 +416,12 @@ void IdsEditorPage::setupUi()
     layout->addWidget(m_statusLabel);
 
     connect(m_filterEdit, &QLineEdit::textChanged, this, &IdsEditorPage::onFilterChanged);
-    connect(m_typeFilterCombo, &QComboBox::currentTextChanged, this, [this](const QString &text) {
-        static_cast<IdsEntryFilterModel *>(m_proxy)->setTypeFilter(text.toLower());
+    connect(m_typeFilterCombo, &QComboBox::currentIndexChanged, this, [this](int) {
+        static_cast<IdsEntryFilterModel *>(m_proxy)->setTypeFilter(m_typeFilterCombo->currentData().toString().toLower());
         refreshStatusLabel();
     });
-    connect(m_dllFilterCombo, &QComboBox::currentTextChanged, this, [this](const QString &text) {
-        static_cast<IdsEntryFilterModel *>(m_proxy)->setDllFilter(text.toLower());
+    connect(m_dllFilterCombo, &QComboBox::currentIndexChanged, this, [this](int) {
+        static_cast<IdsEntryFilterModel *>(m_proxy)->setDllFilter(m_dllFilterCombo->currentData().toString().toLower());
         refreshStatusLabel();
     });
     connect(m_createStringButton, &QPushButton::clicked, this, [this]() { beginCreateMode(IdsUsageType::IdsName); });
@@ -469,12 +469,16 @@ void IdsEditorPage::setupToolBar()
 
     m_toolBar->addWidget(new QLabel(tr("Type"), this));
     m_typeFilterCombo = new QComboBox(this);
-    m_typeFilterCombo->addItems({QStringLiteral("all"), QStringLiteral("ids_name"), QStringLiteral("ids_info"), QStringLiteral("strid_name"), QStringLiteral("string")});
+    m_typeFilterCombo->addItem(tr("all"), QStringLiteral("all"));
+    m_typeFilterCombo->addItem(QStringLiteral("ids_name"), QStringLiteral("ids_name"));
+    m_typeFilterCombo->addItem(QStringLiteral("ids_info"), QStringLiteral("ids_info"));
+    m_typeFilterCombo->addItem(QStringLiteral("strid_name"), QStringLiteral("strid_name"));
+    m_typeFilterCombo->addItem(QStringLiteral("string"), QStringLiteral("string"));
     m_toolBar->addWidget(m_typeFilterCombo);
 
     m_toolBar->addWidget(new QLabel(tr("DLL"), this));
     m_dllFilterCombo = new QComboBox(this);
-    m_dllFilterCombo->addItem(QStringLiteral("all"));
+    m_dllFilterCombo->addItem(tr("all"), QStringLiteral("all"));
     m_toolBar->addWidget(m_dllFilterCombo);
 }
 
@@ -513,10 +517,10 @@ void IdsEditorPage::applyDataset(IdsDataset dataset)
     m_dllFilterCombo->blockSignals(true);
     m_targetDllCombo->blockSignals(true);
     m_dllFilterCombo->clear();
-    m_dllFilterCombo->addItem(QStringLiteral("all"));
+    m_dllFilterCombo->addItem(tr("all"), QStringLiteral("all"));
     m_targetDllCombo->clear();
     for (const QString &dllName : std::as_const(m_dataset.resourceDlls)) {
-        m_dllFilterCombo->addItem(dllName.toLower());
+        m_dllFilterCombo->addItem(dllName.toLower(), dllName.toLower());
         m_targetDllCombo->addItem(dllName);
     }
     m_dllFilterCombo->blockSignals(false);
@@ -771,8 +775,8 @@ void IdsEditorPage::selectEntryByGlobalId(int globalId)
     QModelIndex proxyIndex = m_proxy->mapFromSource(sourceIndex);
     if (!proxyIndex.isValid()) {
         m_filterEdit->clear();
-        m_typeFilterCombo->setCurrentText(QStringLiteral("all"));
-        m_dllFilterCombo->setCurrentText(QStringLiteral("all"));
+        m_typeFilterCombo->setCurrentIndex(m_typeFilterCombo->findData(QStringLiteral("all")));
+        m_dllFilterCombo->setCurrentIndex(m_dllFilterCombo->findData(QStringLiteral("all")));
         proxyIndex = m_proxy->mapFromSource(sourceIndex);
     }
     if (!proxyIndex.isValid())
