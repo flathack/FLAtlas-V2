@@ -185,4 +185,9 @@ void Config::setJsonObject(const QString &key, const QJsonObject &value)
     m_data[key] = value;
 }
 
+void Config::clear()
+{
+    m_data = {};
+}
+
 } // namespace flatlas::core

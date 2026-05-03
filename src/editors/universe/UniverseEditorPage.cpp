@@ -439,6 +439,15 @@ bool UniverseEditorPage::loadFile(const QString &filePath)
     m_dirty = false;
     m_highlightedPath.clear();
     m_activeSector = QStringLiteral("universe");
+    bool hasUniverseSector = false;
+    for (const auto &sector : m_data->sectors) {
+        if (sector.key.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0) {
+            hasUniverseSector = true;
+            break;
+        }
+    }
+    if (!hasUniverseSector && !m_data->sectors.isEmpty())
+        m_activeSector = m_data->sectors.constFirst().key;
     cancelPendingSystemPlacement();
     reloadIdsStrings();
 
@@ -512,14 +521,28 @@ void UniverseEditorPage::refreshMap()
 
     // Compute adaptive scale: normalize so largest coordinate → 500 scene units
     double maxCoord = 1.0;
+    int visibleSystems = 0;
     for (const auto &sys : m_data->systems) {
         if (!systemVisibleInActiveSector(sys))
             continue;
+        ++visibleSystems;
         const QPointF pos = scenePositionForSystem(sys);
         maxCoord = std::max(maxCoord, std::abs(pos.x()));
         maxCoord = std::max(maxCoord, std::abs(pos.y()));
     }
     m_mapScale = 500.0 / maxCoord;
+
+    if (visibleSystems == 0) {
+        m_mapScene->setSceneRect(QRectF(-320.0, -180.0, 640.0, 360.0));
+        auto *emptyLabel = m_mapScene->addSimpleText(tr("Keine Systeme im ausgewählten Sektor."));
+        emptyLabel->setBrush(QColor(180, 190, 205));
+        emptyLabel->setZValue(10);
+        const QRectF labelRect = emptyLabel->boundingRect();
+        emptyLabel->setPos(-labelRect.width() * 0.5, -labelRect.height() * 0.5);
+        m_pendingInitialFitPasses = 3;
+        QMetaObject::invokeMethod(this, &UniverseEditorPage::fitMapInView, Qt::QueuedConnection);
+        return;
+    }
 
     // Draw system nodes
     for (const auto &sys : m_data->systems) {
@@ -1184,10 +1207,22 @@ void UniverseEditorPage::rebuildSectorTabs()
         return;
     }
 
+    auto systemCountForSector = [this](const QString &sectorKey) {
+        int count = 0;
+        for (const auto &sys : m_data->systems) {
+            if (sectorKey.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0 ||
+                sys.sectorPositions.contains(sectorKey)) {
+                ++count;
+            }
+        }
+        return count;
+    };
+
     int activeIndex = 0;
     for (int i = 0; i < m_data->sectors.size(); ++i) {
         const auto &sector = m_data->sectors[i];
-        const int tabIndex = m_sectorTabs->addTab(sector.displayName);
+        const int tabIndex = m_sectorTabs->addTab(
+            QStringLiteral("%1 (%2)").arg(sector.displayName).arg(systemCountForSector(sector.key)));
         m_sectorTabs->setTabData(tabIndex, sector.key);
         if (sector.key.compare(m_activeSector, Qt::CaseInsensitive) == 0)
             activeIndex = tabIndex;
@@ -1200,7 +1235,20 @@ void UniverseEditorPage::rebuildSectorTabs()
 
 void UniverseEditorPage::applySector(const QString &sectorKey)
 {
-    m_activeSector = sectorKey.trimmed().isEmpty() ? QStringLiteral("universe") : sectorKey.trimmed();
+    QString requested = sectorKey.trimmed().isEmpty() ? QStringLiteral("universe") : sectorKey.trimmed();
+    if (m_data) {
+        bool sectorExists = false;
+        for (const auto &sector : m_data->sectors) {
+            if (sector.key.compare(requested, Qt::CaseInsensitive) == 0) {
+                requested = sector.key;
+                sectorExists = true;
+                break;
+            }
+        }
+        if (!sectorExists)
+            requested = QStringLiteral("universe");
+    }
+    m_activeSector = requested;
 
     if (m_addSystemAction)
         m_addSystemAction->setEnabled(true);

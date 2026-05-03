@@ -1,23 +1,46 @@
 #pragma once
-#include <QDialog>
 
+#include <QDialog>
+#include <QHash>
+
+class QCheckBox;
 class QComboBox;
-class QLineEdit;
+class QLabel;
+class QNetworkAccessManager;
 class QPushButton;
 
 namespace flatlas::ui {
+
 class SettingsDialog : public QDialog {
     Q_OBJECT
 public:
     explicit SettingsDialog(QWidget *parent = nullptr);
 
-private slots:
-    void onBrowsePath();
+    bool requiresPinnedToolRefresh() const;
+    bool resetRequested() const;
 
 private:
-    QComboBox  *m_themeCombo    = nullptr;
-    QComboBox  *m_languageCombo = nullptr;
-    QLineEdit  *m_gamePathEdit  = nullptr;
-    QPushButton *m_browseButton = nullptr;
+    void setupUi();
+    void loadSettings();
+    void saveSettings();
+    void resetToDefaults();
+    void startSuiteDownload(const QString &key, const QString &name, const QString &repoApiUrl);
+    void downloadReleaseAsset(const QString &name, const QUrl &url);
+    void updateSuiteButtons();
+    void openInstalledTool(const QString &key);
+    void registerInstalledTool(const QString &key, const QString &name, const QString &installDir, const QString &exePath);
+    QString toolsDirectory() const;
+
+    QComboBox *m_themeCombo = nullptr;
+    QComboBox *m_languageCombo = nullptr;
+    QCheckBox *m_updateCheckBox = nullptr;
+    QCheckBox *m_restoreTabsCheckBox = nullptr;
+    QHash<QString, QCheckBox *> m_toolChecks;
+    QHash<QString, QPushButton *> m_suiteButtons;
+    QLabel *m_suiteStatusLabel = nullptr;
+    QNetworkAccessManager *m_network = nullptr;
+    bool m_pinnedToolsChanged = false;
+    bool m_resetRequested = false;
 };
+
 } // namespace flatlas::ui

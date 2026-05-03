@@ -16,4 +16,5 @@ target_link_libraries(flatlas_ui PUBLIC
     flatlas_core
     Qt6::Core
     Qt6::Widgets
+    Qt6::Network
 )

@@ -50,6 +50,11 @@ private:
     void openNpcEditor();
     void openNewsRumorEditor();
     void openModelViewer();
+    void openSettingsDialog();
+    void applyPinnedToolSettings();
+    void restoreOpenToolTabs();
+    void saveOpenToolTabs();
+    bool openToolByKey(const QString &key, bool pinned);
     void saveCurrentSystem();
     void saveCurrentFile();
     void openSystemFromUniverse(const QString &nickname,
@@ -79,4 +84,6 @@ private:
     QLabel *m_editingLabel = nullptr;
     QPushButton *m_settingsButton = nullptr;
     QProgressBar *m_progressBar = nullptr;
+    bool m_openToolTabsRestored = false;
+    bool m_suppressTabStateSave = true;
 };

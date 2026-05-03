@@ -50,6 +50,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QProgressBar>
+#include <QJsonObject>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QTabBar>
@@ -59,6 +60,7 @@
 #include <QProcess>
 #include <QUrl>
 #include <QSignalBlocker>
+#include <QSet>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QAbstractItemView>
@@ -67,6 +69,39 @@
 #include <memory>
 
 namespace {
+
+QStringList defaultPinnedTools()
+{
+    return {QStringLiteral("modManager"), QStringLiteral("universe")};
+}
+
+QString toolKeyForWidget(QWidget *widget)
+{
+    if (!widget)
+        return {};
+    if (qobject_cast<flatlas::editors::ModManagerPage *>(widget))
+        return QStringLiteral("modManager");
+    if (qobject_cast<flatlas::editors::UniverseEditorPage *>(widget))
+        return QStringLiteral("universe");
+    if (qobject_cast<flatlas::editors::TradeRoutePage *>(widget))
+        return QStringLiteral("tradeRoutes");
+    if (qobject_cast<flatlas::editors::IdsEditorPage *>(widget))
+        return QStringLiteral("idsEditor");
+    if (qobject_cast<flatlas::editors::ModSettingsPage *>(widget))
+        return QStringLiteral("modSettings");
+    if (qobject_cast<flatlas::editors::NpcEditorPage *>(widget))
+        return QStringLiteral("npcEditor");
+    if (qobject_cast<flatlas::editors::NewsRumorEditor *>(widget))
+        return QStringLiteral("newsRumorEditor");
+    if (qobject_cast<flatlas::rendering::ModelViewerPage *>(widget))
+        return QStringLiteral("modelViewer");
+    return {};
+}
+
+QJsonObject installedExternalTools()
+{
+    return flatlas::core::Config::instance().getJsonObject(QStringLiteral("externalTools"));
+}
 
 bool isContextBoundTab(QWidget *widget)
 {
@@ -325,9 +360,10 @@ MainWindow::MainWindow(QWidget *parent)
     QMetaObject::invokeMethod(this, &MainWindow::handleEditingContextChanged, Qt::QueuedConnection);
 
     // Auto-Update-Check bei Start
-    auto *checker = new flatlas::tools::UpdateChecker(this);
-    connect(checker, &flatlas::tools::UpdateChecker::updateCheckFinished,
-            this, [this, checker](const flatlas::tools::UpdateInfo &info) {
+    if (flatlas::core::Config::instance().getBool(QStringLiteral("updateCheckEnabled"), true)) {
+        auto *checker = new flatlas::tools::UpdateChecker(this);
+        connect(checker, &flatlas::tools::UpdateChecker::updateCheckFinished,
+                this, [this, checker](const flatlas::tools::UpdateInfo &info) {
         checker->deleteLater();
         if (!info.errorMessage.isEmpty()) {
             statusBar()->showMessage(tr("Update check failed: %1").arg(info.errorMessage), 5000);
@@ -391,7 +427,8 @@ MainWindow::MainWindow(QWidget *parent)
 
         dl->download(info.downloadUrl, zipPath);
     });
-    checker->checkForUpdates();
+        checker->checkForUpdates();
+    }
 }
 
 MainWindow::~MainWindow() = default;
@@ -402,10 +439,7 @@ void MainWindow::createMenus()
     auto *fileMenu = menuBar()->addMenu(tr("&File"));
     fileMenu->addAction(tr("&Save"), QKeySequence::Save, this, [this]() { saveCurrentFile(); });
     fileMenu->addSeparator();
-    fileMenu->addAction(tr("&Settings..."), this, [this]() {
-        flatlas::ui::SettingsDialog dlg(this);
-        dlg.exec();
-    });
+    fileMenu->addAction(tr("&Settings..."), this, [this]() { openSettingsDialog(); });
     fileMenu->addSeparator();
     fileMenu->addAction(tr("E&xit"), QKeySequence::Quit, this, &QWidget::close);
 
@@ -459,6 +493,29 @@ void MainWindow::createMenus()
         dlg->show();
     });
     toolsMenu->addAction(tr("&Launch Freelancer..."), this, &MainWindow::launchFreelancerFromContext);
+
+    auto *externalToolsMenu = menuBar()->addMenu(tr("Externe Tools"));
+    const QJsonObject externalTools = installedExternalTools();
+    bool hasExternalTools = false;
+    for (auto it = externalTools.constBegin(); it != externalTools.constEnd(); ++it) {
+        const QJsonObject tool = it.value().toObject();
+        const QString name = tool.value(QStringLiteral("name")).toString(it.key());
+        const QString exePath = tool.value(QStringLiteral("exePath")).toString();
+        if (exePath.isEmpty())
+            continue;
+        hasExternalTools = true;
+        externalToolsMenu->addAction(name, this, [this, exePath, name]() {
+            if (!QFileInfo::exists(exePath)) {
+                QMessageBox::warning(this, tr("Externe Tools"), tr("%1 wurde nicht gefunden:\n%2").arg(name, exePath));
+                return;
+            }
+            QProcess::startDetached(exePath, {}, QFileInfo(exePath).absolutePath());
+        });
+    }
+    if (!hasExternalTools) {
+        auto *empty = externalToolsMenu->addAction(tr("Keine Tools installiert"));
+        empty->setEnabled(false);
+    }
 
     // --- Settings ---
     auto *settingsMenu = menuBar()->addMenu(tr("&Settings"));
@@ -579,6 +636,8 @@ void MainWindow::createPanels()
     tabBarLayout->addWidget(m_centerTabs->tabBar(), 1);
     connect(m_centerTabs, &flatlas::ui::CenterTabWidget::closeRequested,
             this, [this](int index) { closeTabWithPrompt(index); });
+    connect(m_centerTabs, &flatlas::ui::CenterTabWidget::currentChanged,
+            this, [this](int) { saveOpenToolTabs(); });
 
     // Right panel: FLAtlas Settings + indicators
     auto *rightPanel = new QWidget(this);
@@ -588,10 +647,7 @@ void MainWindow::createPanels()
     rightLayout->setSpacing(2);
 
     m_settingsButton = new QPushButton(tr("FLAtlas Settings"), this);
-    connect(m_settingsButton, &QPushButton::clicked, this, [this]() {
-        flatlas::ui::SettingsDialog dlg(this);
-        dlg.exec();
-    });
+    connect(m_settingsButton, &QPushButton::clicked, this, [this]() { openSettingsDialog(); });
     rightLayout->addWidget(m_settingsButton);
 
     auto *indicatorRow = new QHBoxLayout();
@@ -647,10 +703,11 @@ void MainWindow::createPanels()
         if (i >= 0)
             m_centerTabs->setTabText(i, title);
     });
-
     // Welcome page or skip directly to Mod Manager
     if (flatlas::core::Config::instance().getBool(QStringLiteral("skipWelcome"), false)) {
         m_centerTabs->setCurrentIndex(0); // Mod Manager is index 0
+    } else if (flatlas::core::Config::instance().getBool(QStringLiteral("restoreOpenTabs"), false)) {
+        m_centerTabs->setCurrentIndex(0);
     } else {
         auto *welcomePage = new flatlas::ui::WelcomePage(this);
         int welcomeIdx = m_centerTabs->addTab(welcomePage, tr("Welcome"));
@@ -798,6 +855,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
             return;
         }
     }
+    saveOpenToolTabs();
     saveWindowState();
     event->accept();
 }
@@ -812,6 +870,7 @@ bool MainWindow::closeTabWithPrompt(int index, bool force)
         return false;
 
     m_centerTabs->removeTab(index, force);
+    saveOpenToolTabs();
     return true;
 }
 
@@ -913,6 +972,244 @@ void MainWindow::saveWindowState()
     QSettings settings;
     settings.setValue(QStringLiteral("mainwindow/geometry"), saveGeometry());
     settings.setValue(QStringLiteral("mainwindow/state"), saveState());
+}
+
+void MainWindow::openSettingsDialog()
+{
+    flatlas::ui::SettingsDialog dlg(this);
+    if (dlg.exec() != QDialog::Accepted && !dlg.resetRequested())
+        return;
+    menuBar()->clear();
+    createMenus();
+    if (dlg.requiresPinnedToolRefresh() || dlg.resetRequested())
+        applyPinnedToolSettings();
+    saveOpenToolTabs();
+}
+
+void MainWindow::applyPinnedToolSettings()
+{
+    if (!m_centerTabs)
+        return;
+
+    QStringList pinned = flatlas::core::Config::instance().getStringList(QStringLiteral("pinnedTools"), defaultPinnedTools());
+    if (!pinned.contains(QStringLiteral("modManager")))
+        pinned.prepend(QStringLiteral("modManager"));
+
+    QSet<QString> pinnedSet;
+    for (const QString &key : std::as_const(pinned))
+        pinnedSet.insert(key);
+    for (int i = m_centerTabs->count() - 1; i >= 0; --i) {
+        QWidget *widget = m_centerTabs->widget(i);
+        const QString key = toolKeyForWidget(widget);
+        if (key.isEmpty() || key == QStringLiteral("modManager"))
+            continue;
+        if (!pinnedSet.contains(key))
+            m_centerTabs->removeTab(i, true);
+    }
+
+    const bool previousSuppress = m_suppressTabStateSave;
+    m_suppressTabStateSave = true;
+    const int current = m_centerTabs->currentIndex();
+    for (const QString &key : pinned) {
+        if (key == QStringLiteral("modManager"))
+            continue;
+        openToolByKey(key, true);
+    }
+    if (current >= 0 && current < m_centerTabs->count())
+        m_centerTabs->setCurrentIndex(current);
+    m_suppressTabStateSave = previousSuppress;
+}
+
+void MainWindow::restoreOpenToolTabs()
+{
+    const bool previousSuppress = m_suppressTabStateSave;
+    m_suppressTabStateSave = true;
+    const QStringList openTools = flatlas::core::Config::instance().getStringList(QStringLiteral("openToolTabs"));
+    for (const QString &entry : openTools) {
+        if (entry.startsWith(QStringLiteral("system:"), Qt::CaseInsensitive)) {
+            const QString filePath = entry.mid(QStringLiteral("system:").size()).trimmed();
+            if (filePath.isEmpty() || !QFileInfo::exists(filePath))
+                continue;
+            bool alreadyOpen = false;
+            for (int i = 0; i < m_centerTabs->count(); ++i) {
+                auto *existing = qobject_cast<flatlas::editors::SystemEditorPage *>(m_centerTabs->widget(i));
+                if (existing && existing->filePath().compare(filePath, Qt::CaseInsensitive) == 0) {
+                    alreadyOpen = true;
+                    break;
+                }
+            }
+            if (alreadyOpen)
+                continue;
+            auto *editor = new flatlas::editors::SystemEditorPage(this);
+            if (!editor->loadFile(filePath)) {
+                delete editor;
+                continue;
+            }
+            const QString ingameName;
+            int idx = m_centerTabs->addTab(editor, formatSystemTabTitle(editor->document()->name(), ingameName));
+            connect(editor, &flatlas::editors::SystemEditorPage::titleChanged,
+                    this, [this, editor, ingameName](const QString &title) {
+                int i = m_centerTabs->indexOf(editor);
+                if (i >= 0)
+                    m_centerTabs->setTabText(i, formatSystemTabTitle(title, ingameName));
+            });
+            connect(editor, &flatlas::editors::SystemEditorPage::open3DSystemViewRequested,
+                    this, [this, editor]() { open3DSystemEditorFor(editor); });
+            m_centerTabs->setCurrentIndex(idx);
+            continue;
+        }
+
+        const QString key = entry.startsWith(QStringLiteral("tool:"), Qt::CaseInsensitive)
+            ? entry.mid(QStringLiteral("tool:").size()).trimmed()
+            : entry.trimmed();
+        openToolByKey(key, false);
+    }
+    m_suppressTabStateSave = previousSuppress;
+    saveOpenToolTabs();
+}
+
+void MainWindow::saveOpenToolTabs()
+{
+    if (m_suppressTabStateSave)
+        return;
+    auto &config = flatlas::core::Config::instance();
+    if (!config.getBool(QStringLiteral("restoreOpenTabs"), false))
+        return;
+    QStringList openTools;
+    const QStringList pinned = config.getStringList(QStringLiteral("pinnedTools"), defaultPinnedTools());
+    for (int i = 0; m_centerTabs && i < m_centerTabs->count(); ++i) {
+        QWidget *widget = m_centerTabs->widget(i);
+        if (auto *systemEditor = qobject_cast<flatlas::editors::SystemEditorPage *>(widget)) {
+            const QString filePath = systemEditor->filePath().trimmed();
+            if (!filePath.isEmpty())
+                openTools.append(QStringLiteral("system:%1").arg(QDir::cleanPath(filePath)));
+            continue;
+        }
+        const QString key = toolKeyForWidget(widget);
+        if (!key.isEmpty() && key != QStringLiteral("modManager") && !pinned.contains(key))
+            openTools.append(QStringLiteral("tool:%1").arg(key));
+    }
+    openTools.removeDuplicates();
+    config.setStringList(QStringLiteral("openToolTabs"), openTools);
+    config.save();
+}
+
+bool MainWindow::openToolByKey(const QString &key, bool pinned)
+{
+    if (!m_centerTabs)
+        return false;
+    if (key == QStringLiteral("universe")) {
+        if (!flatlas::core::EditingContext::instance().hasContext())
+            return false;
+        openUniverseFromContext();
+        return true;
+    }
+    for (int i = 0; i < m_centerTabs->count(); ++i) {
+        if (toolKeyForWidget(m_centerTabs->widget(i)) == key) {
+            if (key == QStringLiteral("idsEditor")) {
+                auto *ids = qobject_cast<flatlas::editors::IdsEditorPage *>(m_centerTabs->widget(i));
+                auto &ctx = flatlas::core::EditingContext::instance();
+                if (ids && ctx.hasContext()) {
+                    const QString exeDir = flatlas::core::PathUtils::ciResolvePath(
+                        ctx.primaryGamePath(), QStringLiteral("EXE"));
+                    if (!exeDir.isEmpty())
+                        ids->loadFreelancerDir(exeDir);
+                }
+            }
+            return true;
+        }
+    }
+
+    auto addToolTab = [this, pinned](QWidget *widget, const QString &title) {
+        return pinned ? m_centerTabs->addPinnedTab(widget, title) : m_centerTabs->addTab(widget, title);
+    };
+
+    if (key == QStringLiteral("tradeRoutes")) {
+        auto *page = new flatlas::editors::TradeRoutePage(this);
+        if (auto *universeEditor = qobject_cast<flatlas::editors::UniverseEditorPage *>(m_centerTabs->currentWidget()))
+            page->setUniverseData(universeEditor->data());
+        const int idx = addToolTab(page, tr("Trade Routes"));
+        connect(page, &flatlas::editors::TradeRoutePage::titleChanged,
+                this, [this, page](const QString &title) {
+            int i = m_centerTabs->indexOf(page);
+            if (i >= 0)
+                m_centerTabs->setTabText(i, title);
+        });
+        if (!pinned)
+            m_centerTabs->setCurrentIndex(idx);
+        return true;
+    }
+    if (key == QStringLiteral("idsEditor")) {
+        auto *editor = new flatlas::editors::IdsEditorPage(this);
+        auto &ctx = flatlas::core::EditingContext::instance();
+        if (ctx.hasContext()) {
+            const QString exeDir = flatlas::core::PathUtils::ciResolvePath(
+                ctx.primaryGamePath(), QStringLiteral("EXE"));
+            if (!exeDir.isEmpty())
+                editor->loadFreelancerDir(exeDir);
+        }
+        const int idx = addToolTab(editor, tr("IDS Editor"));
+        connect(editor, &flatlas::editors::IdsEditorPage::titleChanged,
+                this, [this, editor](const QString &title) {
+            int i = m_centerTabs->indexOf(editor);
+            if (i >= 0)
+                m_centerTabs->setTabText(i, title);
+        });
+        connect(editor, &flatlas::editors::IdsEditorPage::openIniRequested,
+                this, [this](const QString &filePath, const QString &searchText) {
+            openIniFile(filePath, searchText, 0);
+        });
+        if (!pinned)
+            m_centerTabs->setCurrentIndex(idx);
+        return true;
+    }
+    if (key == QStringLiteral("modSettings")) {
+        auto *editor = new flatlas::editors::ModSettingsPage(this);
+        const int idx = addToolTab(editor, tr("Mod Settings"));
+        connect(editor, &flatlas::editors::ModSettingsPage::titleChanged,
+                this, [this, editor](const QString &title) {
+            int i = m_centerTabs->indexOf(editor);
+            if (i >= 0)
+                m_centerTabs->setTabText(i, title);
+        });
+        if (!pinned)
+            m_centerTabs->setCurrentIndex(idx);
+        return true;
+    }
+    if (key == QStringLiteral("npcEditor")) {
+        auto *editor = new flatlas::editors::NpcEditorPage(this);
+        const int idx = addToolTab(editor, tr("NPC Editor"));
+        connect(editor, &flatlas::editors::NpcEditorPage::titleChanged,
+                this, [this, editor](const QString &title) {
+            int i = m_centerTabs->indexOf(editor);
+            if (i >= 0)
+                m_centerTabs->setTabText(i, title);
+        });
+        if (!pinned)
+            m_centerTabs->setCurrentIndex(idx);
+        return true;
+    }
+    if (key == QStringLiteral("newsRumorEditor")) {
+        auto *editor = new flatlas::editors::NewsRumorEditor(this);
+        const int idx = addToolTab(editor, tr("News/Rumor Editor"));
+        connect(editor, &flatlas::editors::NewsRumorEditor::titleChanged,
+                this, [this, editor](const QString &title) {
+            int i = m_centerTabs->indexOf(editor);
+            if (i >= 0)
+                m_centerTabs->setTabText(i, title);
+        });
+        if (!pinned)
+            m_centerTabs->setCurrentIndex(idx);
+        return true;
+    }
+    if (key == QStringLiteral("modelViewer")) {
+        auto *page = new flatlas::rendering::ModelViewerPage(this);
+        const int idx = addToolTab(page, tr("3D Model Viewer"));
+        if (!pinned)
+            m_centerTabs->setCurrentIndex(idx);
+        return true;
+    }
+    return false;
 }
 
 void MainWindow::saveCurrentSystem()
@@ -1084,8 +1381,15 @@ void MainWindow::openUniverseFromContext()
     if (!ctx.hasContext())
         return;
 
-    QString dataDir = ctx.primaryGamePath() + QStringLiteral("/DATA");
+    QString dataDir = flatlas::core::PathUtils::ciResolvePath(ctx.primaryGamePath(), QStringLiteral("DATA"));
+    if (dataDir.isEmpty())
+        dataDir = QDir(ctx.primaryGamePath()).absoluteFilePath(QStringLiteral("DATA"));
     QString universeIni = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("UNIVERSE/universe.ini"));
+    if (universeIni.isEmpty()) {
+        const QString direct = QDir(dataDir).absoluteFilePath(QStringLiteral("UNIVERSE/universe.ini"));
+        if (QFileInfo::exists(direct))
+            universeIni = direct;
+    }
     if (universeIni.isEmpty()) {
         statusBar()->showMessage(tr("Universe.ini not found in editing context"), 5000);
         return;
@@ -1098,7 +1402,8 @@ void MainWindow::openUniverseFromContext()
                 statusBar()->showMessage(tr("Could not reload Universe from editing context"), 5000);
                 return;
             }
-            m_centerTabs->setTabText(i, QStringLiteral("Universe (%1)").arg(editor->data()->systemCount()));
+            const int systemCount = editor->data() ? editor->data()->systemCount() : 0;
+            m_centerTabs->setTabText(i, QStringLiteral("Universe (%1)").arg(systemCount));
             m_centerTabs->setCurrentIndex(i);
             statusBar()->showMessage(tr("Universe reloaded from editing context"), 3000);
             return;
@@ -1112,8 +1417,9 @@ void MainWindow::openUniverseFromContext()
         return;
     }
 
+    const int systemCount = editor->data() ? editor->data()->systemCount() : 0;
     int idx = m_centerTabs->addPinnedTab(editor,
-        QStringLiteral("Universe (%1)").arg(editor->data()->systemCount()));
+        QStringLiteral("Universe (%1)").arg(systemCount));
     m_centerTabs->setCurrentIndex(idx);
 
     connect(editor, &flatlas::editors::UniverseEditorPage::titleChanged,
@@ -1145,11 +1451,18 @@ void MainWindow::handleEditingContextChanged()
     closeContextBoundTabs();
 
     if (profile.isValid()) {
-        openUniverseFromContext();
+        applyPinnedToolSettings();
         statusBar()->showMessage(tr("Editing context switched to %1").arg(profile.name), 5000);
     } else {
         statusBar()->showMessage(tr("Editing context cleared"), 3000);
     }
+
+    if (!m_openToolTabsRestored && flatlas::core::Config::instance().getBool(QStringLiteral("restoreOpenTabs"), false)) {
+        m_openToolTabsRestored = true;
+        restoreOpenToolTabs();
+    }
+    m_suppressTabStateSave = false;
+    saveOpenToolTabs();
 }
 
 void MainWindow::closeContextBoundTabs()

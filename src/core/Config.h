@@ -38,6 +38,8 @@ public:
     QJsonObject getJsonObject(const QString &key, const QJsonObject &defaultValue = {}) const;
     void setJsonObject(const QString &key, const QJsonObject &value);
 
+    void clear();
+
 private:
     Config() = default;
     bool mergeLegacy();
