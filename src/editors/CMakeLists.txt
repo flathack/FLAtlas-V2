@@ -49,6 +49,7 @@ add_library(flatlas_editors STATIC
     modmanager/ModManagerPage.h modmanager/ModManagerPage.cpp
     modmanager/ConflictDetector.h modmanager/ConflictDetector.cpp
     modmanager/ModWorkflow.h modmanager/ModWorkflow.cpp
+    modsettings/ModSettingsPage.h modsettings/ModSettingsPage.cpp
     jump/JumpConnectionDialog.h jump/JumpConnectionDialog.cpp
 )
 

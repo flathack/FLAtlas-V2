@@ -15,6 +15,7 @@ namespace flatlas::editors { class UniverseEditorPage; }
 namespace flatlas::editors { class TradeRoutePage; }
 namespace flatlas::editors { class IdsEditorPage; }
 namespace flatlas::editors { class ModManagerPage; }
+namespace flatlas::editors { class ModSettingsPage; }
 namespace flatlas::editors { class NpcEditorPage; }
 namespace flatlas::tools { class HelpBrowser; }
 namespace flatlas::tools { class KeyboardShortcutOverviewDialog; }
@@ -45,6 +46,7 @@ private:
     void openTradeRoutes();
     void openIdsEditor();
     void openModManager();
+    void openModSettings();
     void openNpcEditor();
     void openNewsRumorEditor();
     void openModelViewer();

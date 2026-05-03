@@ -17,6 +17,7 @@
 #include "editors/trade/TradeRoutePage.h"
 #include "editors/ids/IdsEditorPage.h"
 #include "editors/modmanager/ModManagerPage.h"
+#include "editors/modsettings/ModSettingsPage.h"
 #include "editors/npc/NpcEditorPage.h"
 #include "editors/news/NewsRumorEditor.h"
 #include "tools/UpdateChecker.h"
@@ -430,6 +431,7 @@ void MainWindow::createMenus()
     toolsMenu->addAction(tr("&Trade Routes"), this, [this]() { openTradeRoutes(); });
     toolsMenu->addAction(tr("&IDS Editor"), this, [this]() { openIdsEditor(); });
     toolsMenu->addAction(tr("&Mod Manager"), this, [this]() { openModManager(); });
+    toolsMenu->addAction(tr("Mod &Settings"), this, [this]() { openModSettings(); });
     toolsMenu->addAction(tr("&NPC Editor"), this, [this]() { openNpcEditor(); });
     toolsMenu->addAction(tr("Ne&ws/Rumor Editor"), this, [this]() { openNewsRumorEditor(); });
     toolsMenu->addSeparator();
@@ -1321,6 +1323,23 @@ void MainWindow::openModManager()
 {
     // Mod Manager is always pinned at index 0 — just switch to it
     m_centerTabs->setCurrentIndex(0);
+}
+
+void MainWindow::openModSettings()
+{
+    auto *editor = new flatlas::editors::ModSettingsPage(this);
+
+    int idx = m_centerTabs->addTab(editor, tr("Mod Settings"));
+    m_centerTabs->setCurrentIndex(idx);
+
+    connect(editor, &flatlas::editors::ModSettingsPage::titleChanged,
+            this, [this, editor](const QString &title) {
+        int i = m_centerTabs->indexOf(editor);
+        if (i >= 0)
+            m_centerTabs->setTabText(i, title);
+    });
+
+    statusBar()->showMessage(tr("Mod Settings opened"), 3000);
 }
 
 void MainWindow::openNpcEditor()
