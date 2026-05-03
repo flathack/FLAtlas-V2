@@ -57,6 +57,8 @@ struct BaseEditState {
     QString rotate;
     QVector<BaseRoomState> rooms;
     QStringList equipment;
+    QStringList commodities;
+    QVector<QStringList> commodityMarketRows;
     QStringList shipPackages;
     QStringList shipPackageLevels;
     QString universeBaseFileRelativePath;

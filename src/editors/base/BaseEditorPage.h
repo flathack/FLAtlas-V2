@@ -50,6 +50,7 @@ private:
     void setupToolBar();
     QWidget *createGeneralTab();
     QWidget *createEquipmentShipsTab();
+    QWidget *createCommoditiesTab();
     void populateFromData();
     void applyToData();
     void populateEquipmentOptions();
@@ -57,6 +58,11 @@ private:
     void filterEquipmentLists();
     void addSelectedEquipment();
     void removeSelectedEquipment();
+    void populateCommodityOptions();
+    void refreshCommodityList();
+    void filterCommodityList();
+    void addSelectedCommodities();
+    void removeSelectedCommodities();
     void onNewBase();
     void markDirty();
     void setDirty(bool dirty);
@@ -94,6 +100,13 @@ private:
     QLabel *m_equipmentStatusLabel = nullptr;
     QComboBox *m_shipSlotCombos[3] = {nullptr, nullptr, nullptr};
     QSpinBox *m_shipLevelSpins[3] = {nullptr, nullptr, nullptr};
+
+    // Commodities
+    QLineEdit *m_commodityFilterEdit = nullptr;
+    QListWidget *m_availableCommodityList = nullptr;
+    QListWidget *m_assignedCommodityList = nullptr;
+    QPushButton *m_addCommodityButton = nullptr;
+    QPushButton *m_removeCommodityButton = nullptr;
 };
 
 } // namespace flatlas::editors

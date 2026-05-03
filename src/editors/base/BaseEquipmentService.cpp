@@ -134,9 +134,11 @@ QHash<QString, QString> loadHullShipNicknames(const QString &dataPath)
 
 void loadGoodOptions(const QString &dataPath,
                      QVector<BaseEquipmentOption> *equipment,
+                     QVector<BaseEquipmentOption> *commodities,
                      QVector<BaseEquipmentOption> *ships)
 {
     equipment->clear();
+    commodities->clear();
     ships->clear();
 
     const IdsStringTable ids = loadIds(dataPath);
@@ -150,6 +152,7 @@ void loadGoodOptions(const QString &dataPath,
         {QStringLiteral("EQUIPMENT/engine_good.ini"), QObject::tr("Engines")},
     };
     QSet<QString> seenEquipment;
+    QSet<QString> seenCommodities;
     QSet<QString> seenShips;
     for (const auto &source : sources) {
         const QString goodsPath = flatlas::core::PathUtils::ciResolvePath(dataPath, source.first);
@@ -190,6 +193,10 @@ void loadGoodOptions(const QString &dataPath,
             option.ingameName = ingameName;
             option.displayLabel = BaseEquipmentService::displayLabel(nickname, ingameName);
             option.groupLabel = source.second;
+            bool priceOk = false;
+            option.price = section.value(QStringLiteral("price")).trimmed().toInt(&priceOk);
+            if (!priceOk)
+                option.price = 0;
 
             const QString key = normalized(nickname);
             if (isShipPackage) {
@@ -197,6 +204,10 @@ void loadGoodOptions(const QString &dataPath,
                     seenShips.insert(key);
                     ships->append(option);
                 }
+            } else if (category.compare(QStringLiteral("commodity"), Qt::CaseInsensitive) == 0 && !seenCommodities.contains(key)) {
+                seenCommodities.insert(key);
+                option.groupLabel = QObject::tr("General");
+                commodities->append(option);
             } else if (category.compare(QStringLiteral("equipment"), Qt::CaseInsensitive) == 0 && !seenEquipment.contains(key)) {
                 seenEquipment.insert(key);
                 equipment->append(option);
@@ -208,6 +219,7 @@ void loadGoodOptions(const QString &dataPath,
         return left.displayLabel.toLower() < right.displayLabel.toLower();
     };
     std::sort(equipment->begin(), equipment->end(), sorter);
+    std::sort(commodities->begin(), commodities->end(), sorter);
     std::sort(ships->begin(), ships->end(), sorter);
 }
 
@@ -351,6 +363,68 @@ QString updatedMarketText(const QString &filePath,
     return IniParser::serialize(updated);
 }
 
+QString updatedMarketTextFromRows(const QString &filePath,
+                                  const QString &baseNickname,
+                                  const QVector<QStringList> &rows,
+                                  const QSet<QString> &managedGoods)
+{
+    QStringList goods;
+    for (const QStringList &row : rows) {
+        const QString nickname = row.value(0).trimmed();
+        if (!nickname.isEmpty() && !goods.contains(nickname, Qt::CaseInsensitive))
+            goods.append(nickname);
+    }
+
+    IniDocument doc = QFile::exists(filePath) ? IniParser::parseFile(filePath) : IniDocument();
+    IniDocument updated;
+    bool wroteBase = false;
+    auto appendRows = [&](IniSection *section) {
+        for (const QStringList &row : rows) {
+            QStringList values = row;
+            if (values.isEmpty() || values.first().trimmed().isEmpty())
+                continue;
+            while (values.size() < 7)
+                values.append(values.size() == 2 ? QStringLiteral("-1") : QStringLiteral("0"));
+            for (QString &value : values)
+                value = value.trimmed();
+            section->entries.append({QStringLiteral("MarketGood"), values.mid(0, 7).join(QStringLiteral(", "))});
+        }
+    };
+
+    for (const IniSection &section : doc) {
+        if (section.name.compare(QStringLiteral("BaseGood"), Qt::CaseInsensitive) != 0
+            || section.value(QStringLiteral("base")).trimmed().compare(baseNickname, Qt::CaseInsensitive) != 0) {
+            updated.append(section);
+            continue;
+        }
+
+        IniSection out = section;
+        QVector<IniEntry> preserved;
+        for (const IniEntry &entry : out.entries) {
+            if (entry.first.compare(QStringLiteral("MarketGood"), Qt::CaseInsensitive) != 0) {
+                preserved.append(entry);
+                continue;
+            }
+            const QString existingGood = entry.second.section(QLatin1Char(','), 0, 0).trimmed();
+            if (!managedGoods.contains(normalized(existingGood)))
+                preserved.append(entry);
+        }
+        out.entries = preserved;
+        appendRows(&out);
+        updated.append(out);
+        wroteBase = true;
+    }
+
+    if (!wroteBase && !rows.isEmpty()) {
+        IniSection section;
+        section.name = QStringLiteral("BaseGood");
+        section.entries.append({QStringLiteral("base"), baseNickname});
+        appendRows(&section);
+        updated.append(section);
+    }
+    return IniParser::serialize(updated);
+}
+
 bool writeMarketFile(const QString &filePath, const QString &content, QString *errorMessage)
 {
     QDir().mkpath(QFileInfo(filePath).absolutePath());
@@ -399,16 +473,22 @@ BaseEquipmentState BaseEquipmentService::load(const QString &systemFilePath, con
     state.equipmentMarketFilePath = findFirstMarketFile(state.dataPath,
                                                         QStringLiteral("EQUIPMENT/market_misc.ini"),
                                                         QStringLiteral("market_misc.ini"));
+    state.commodityMarketFilePath = findFirstMarketFile(state.dataPath,
+                                                        QStringLiteral("EQUIPMENT/market_commodities.ini"),
+                                                        QStringLiteral("market_commodities.ini"));
     state.shipMarketFilePath = findFirstMarketFile(state.dataPath,
                                                    QStringLiteral("EQUIPMENT/market_ships.ini"),
                                                    QStringLiteral("market_ships.ini"));
 
-    loadGoodOptions(state.dataPath, &state.equipmentOptions, &state.shipPackageOptions);
+    loadGoodOptions(state.dataPath, &state.equipmentOptions, &state.commodityOptions, &state.shipPackageOptions);
 
     const QSet<QString> equipmentSet = optionNicknameSet(state.equipmentOptions);
+    const QSet<QString> commoditySet = optionNicknameSet(state.commodityOptions);
     const QSet<QString> shipSet = optionNicknameSet(state.shipPackageOptions);
 
     state.equipment = marketNicknames(loadMarketRowsForBase(state.equipmentMarketFilePath, baseNickname, equipmentSet));
+    state.commodityMarketRows = loadMarketRowsForBase(state.commodityMarketFilePath, baseNickname, commoditySet);
+    state.commodities = marketNicknames(state.commodityMarketRows);
     const QVector<QStringList> shipRows = loadMarketRowsForBase(state.shipMarketFilePath, baseNickname, shipSet);
     state.shipPackages = uniqueTrimmed(marketNicknames(shipRows), MaxShipsPerBase);
     state.shipPackageLevels = marketShipLevels(shipRows).mid(0, state.shipPackages.size());
@@ -418,15 +498,17 @@ BaseEquipmentState BaseEquipmentService::load(const QString &systemFilePath, con
 bool BaseEquipmentService::save(const QString &systemFilePath,
                                 const QString &baseNickname,
                                 const QStringList &equipment,
+                                const QStringList &commodities,
                                 const QStringList &shipPackages,
                                 QString *errorMessage)
 {
-    return save(systemFilePath, baseNickname, equipment, shipPackages, {}, errorMessage);
+    return save(systemFilePath, baseNickname, equipment, commodities, shipPackages, {}, errorMessage);
 }
 
 bool BaseEquipmentService::save(const QString &systemFilePath,
                                 const QString &baseNickname,
                                 const QStringList &equipment,
+                                const QStringList &commodities,
                                 const QStringList &shipPackages,
                                 const QStringList &shipPackageLevels,
                                 QString *errorMessage)
@@ -434,6 +516,7 @@ bool BaseEquipmentService::save(const QString &systemFilePath,
     const QVector<BaseEquipmentStagedWrite> writes = stagedWrites(systemFilePath,
                                                                   baseNickname,
                                                                   equipment,
+                                                                  commodities,
                                                                   shipPackages,
                                                                   shipPackageLevels,
                                                                   errorMessage);
@@ -450,15 +533,31 @@ bool BaseEquipmentService::save(const QString &systemFilePath,
 QVector<BaseEquipmentStagedWrite> BaseEquipmentService::stagedWrites(const QString &systemFilePath,
                                                                      const QString &baseNickname,
                                                                      const QStringList &equipment,
+                                                                     const QStringList &commodities,
                                                                      const QStringList &shipPackages,
                                                                      QString *errorMessage)
 {
-    return stagedWrites(systemFilePath, baseNickname, equipment, shipPackages, {}, errorMessage);
+    return stagedWrites(systemFilePath, baseNickname, equipment, commodities, shipPackages, {}, errorMessage);
 }
 
 QVector<BaseEquipmentStagedWrite> BaseEquipmentService::stagedWrites(const QString &systemFilePath,
                                                                      const QString &baseNickname,
                                                                      const QStringList &equipment,
+                                                                     const QStringList &commodities,
+                                                                     const QStringList &shipPackages,
+                                                                     const QStringList &shipPackageLevels,
+                                                                     QString *errorMessage)
+{
+    QVector<QStringList> commodityRows;
+    for (const QString &commodity : commodities)
+        commodityRows.append({commodity, QStringLiteral("0"), QStringLiteral("-1"), QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("1")});
+    return stagedWrites(systemFilePath, baseNickname, equipment, commodityRows, shipPackages, shipPackageLevels, errorMessage);
+}
+
+QVector<BaseEquipmentStagedWrite> BaseEquipmentService::stagedWrites(const QString &systemFilePath,
+                                                                     const QString &baseNickname,
+                                                                     const QStringList &equipment,
+                                                                     const QVector<QStringList> &commodityMarketRows,
                                                                      const QStringList &shipPackages,
                                                                      const QStringList &shipPackageLevels,
                                                                      QString *errorMessage)
@@ -472,6 +571,21 @@ QVector<BaseEquipmentStagedWrite> BaseEquipmentService::stagedWrites(const QStri
     }
 
     const QStringList cleanEquipment = uniqueTrimmed(equipment);
+    QVector<QStringList> cleanCommodityRows;
+    QSet<QString> seenCommodityRows;
+    for (const QStringList &row : commodityMarketRows) {
+        const QString nickname = row.value(0).trimmed();
+        if (nickname.isEmpty() || seenCommodityRows.contains(normalized(nickname)))
+            continue;
+        seenCommodityRows.insert(normalized(nickname));
+        QStringList values = row;
+        while (values.size() < 7)
+            values.append(values.size() == 2 ? QStringLiteral("-1") : QStringLiteral("0"));
+        values[0] = nickname;
+        if (values.value(6).trimmed().isEmpty())
+            values[6] = QStringLiteral("1");
+        cleanCommodityRows.append(values.mid(0, 7));
+    }
     const QStringList cleanShips = uniqueTrimmed(shipPackages, MaxShipsPerBase);
     QStringList cleanShipLevels;
     for (int index = 0; index < cleanShips.size(); ++index) {
@@ -486,10 +600,13 @@ QVector<BaseEquipmentStagedWrite> BaseEquipmentService::stagedWrites(const QStri
     }
 
     const QSet<QString> equipmentSet = optionNicknameSet(state.equipmentOptions);
+    const QSet<QString> commoditySet = optionNicknameSet(state.commodityOptions);
     const QSet<QString> shipSet = optionNicknameSet(state.shipPackageOptions);
 
     writes.append({state.equipmentMarketFilePath,
                    updatedMarketText(state.equipmentMarketFilePath, baseNickname, cleanEquipment, {}, equipmentSet)});
+    writes.append({state.commodityMarketFilePath,
+                   updatedMarketTextFromRows(state.commodityMarketFilePath, baseNickname, cleanCommodityRows, commoditySet)});
     writes.append({state.shipMarketFilePath,
                    updatedMarketText(state.shipMarketFilePath, baseNickname, cleanShips, cleanShipLevels, shipSet)});
     return writes;

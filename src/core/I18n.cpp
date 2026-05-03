@@ -233,10 +233,24 @@ QHash<QString, QString> builtInTranslations(const QString &language)
     addPair(t, QStringLiteral("General"), QStringLiteral("Allgemein"), language);
     addPair(t, QStringLiteral("Room Editor"), QStringLiteral("Room-Editor"), language);
     addPair(t, QStringLiteral("Equipment & Ships"), QStringLiteral("Ausrüstung & Schiffe"), language);
+    addPair(t, QStringLiteral("Commodities"), QStringLiteral("Commodities"), language);
     addPair(t, QStringLiteral("Base Equipment"), QStringLiteral("Base-Ausrüstung"), language);
     addPair(t, QStringLiteral("Available"), QStringLiteral("Verfügbar"), language);
     addPair(t, QStringLiteral("Search equipment..."), QStringLiteral("Equipment suchen..."), language);
+    addPair(t, QStringLiteral("Search commodities..."), QStringLiteral("Commodities suchen..."), language);
     addPair(t, QStringLiteral("On This Base"), QStringLiteral("Auf dieser Base"), language);
+    addPair(t, QStringLiteral("Market Settings"), QStringLiteral("Market-Einstellungen"), language);
+    addPair(t, QStringLiteral("Reputation:"), QStringLiteral("Reputation:"), language);
+    addPair(t, QStringLiteral("Min Stock:"), QStringLiteral("Min-Bestand:"), language);
+    addPair(t, QStringLiteral("Max Stock:"), QStringLiteral("Max-Bestand:"), language);
+    addPair(t, QStringLiteral("Trade Mode:"), QStringLiteral("Handelsmodus:"), language);
+    addPair(t, QStringLiteral("Base sells to player"), QStringLiteral("Base verkauft an Spieler"), language);
+    addPair(t, QStringLiteral("Base buys from player"), QStringLiteral("Base kauft vom Spieler"), language);
+    addPair(t, QStringLiteral("MarketGood mode: sell means the player can buy this commodity here; buy means the player can sell it here."),
+            QStringLiteral("MarketGood-Modus: Verkaufen bedeutet, dass der Spieler die Ware hier kaufen kann; Kaufen bedeutet, dass der Spieler sie hier verkaufen kann."), language);
+    addPair(t, QStringLiteral("Price Factor:"), QStringLiteral("Preisfaktor:"), language);
+    addPair(t, QStringLiteral("Base Price:"), QStringLiteral("Basispreis:"), language);
+    addPair(t, QStringLiteral("Calculated Price:"), QStringLiteral("Berechneter Preis:"), language);
     addPair(t, QStringLiteral("Weapons"), QStringLiteral("Waffen"), language);
     addPair(t, QStringLiteral("Shields / Thrusters"), QStringLiteral("Schilde / Thruster"), language);
     addPair(t, QStringLiteral("Misc"), QStringLiteral("Sonstiges"), language);

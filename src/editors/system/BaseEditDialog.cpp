@@ -820,6 +820,7 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     roomsPreviewLayout->addWidget(createPreviewFrame(&m_roomPreview, &m_roomPreviewFallback, &m_roomPreviewStack, roomsPreviewSidebar), 1);
     m_tabs->addTab(roomsTab, tr("Rooms"));
     m_tabs->addTab(createEquipmentShipsTab(state), tr("Equipment & Ships"));
+    m_tabs->addTab(createCommoditiesTab(state), tr("Commodities"));
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     root->addWidget(buttons);
@@ -940,7 +941,7 @@ QWidget *BaseEditDialog::createEquipmentShipsTab(const BaseEditState &state)
     equipmentColumns->addLayout(assignedColumn, 1);
 
     equipmentLayout->addLayout(equipmentColumns, 1);
-    layout->addWidget(equipmentGroup, 2);
+    layout->addWidget(equipmentGroup, 1);
 
     auto *shipsGroup = new QGroupBox(tr("Ships (maximum 3)"), tab);
     auto *shipsForm = new QFormLayout(shipsGroup);
@@ -978,7 +979,7 @@ QWidget *BaseEditDialog::createEquipmentShipsTab(const BaseEditState &state)
         shipsForm->addRow(tr("Ship Slot %1:").arg(slot + 1), slotRow);
         connect(combo, &QComboBox::currentIndexChanged, this, &BaseEditDialog::enforceShipSlotRules);
     }
-    layout->addWidget(shipsGroup);
+    layout->addWidget(shipsGroup, 0);
 
     m_equipmentStatusLabel = new QLabel(tab);
     m_equipmentStatusLabel->setWordWrap(true);
@@ -987,7 +988,6 @@ QWidget *BaseEditDialog::createEquipmentShipsTab(const BaseEditState &state)
                                         ? tr("Ship packages are displayed as nickname - ingamename. Freelancer supports at most 3 ships per base.")
                                         : equipmentState.warningMessage);
     layout->addWidget(m_equipmentStatusLabel);
-    layout->addStretch(1);
 
     connect(m_addEquipmentButton, &QPushButton::clicked, this, &BaseEditDialog::addSelectedEquipment);
     connect(m_removeEquipmentButton, &QPushButton::clicked, this, &BaseEditDialog::removeSelectedEquipment);
@@ -1054,6 +1054,139 @@ void BaseEditDialog::removeSelectedEquipment()
     }
 }
 
+QWidget *BaseEditDialog::createCommoditiesTab(const BaseEditState &state)
+{
+    auto *tab = new QWidget(m_tabs);
+    auto *root = new QVBoxLayout(tab);
+    root->setContentsMargins(12, 12, 12, 12);
+    root->setSpacing(10);
+    auto *layout = new QHBoxLayout();
+    layout->setContentsMargins(12, 12, 12, 12);
+    layout->setSpacing(10);
+    const BaseEquipmentState equipmentState = BaseEquipmentService::load(state.universeIniAbsolutePath, state.baseNickname);
+    m_commodityBasePrices.clear();
+    for (const BaseEquipmentOption &option : equipmentState.commodityOptions)
+        m_commodityBasePrices.insert(normalizedKey(option.nickname), option.price);
+
+    QSet<QString> assigned;
+    for (const QString &nickname : state.commodities)
+        assigned.insert(nickname.trimmed().toLower());
+
+    auto *availableColumn = new QVBoxLayout();
+    availableColumn->addWidget(new QLabel(tr("Available"), tab));
+    m_commodityFilterEdit = new QLineEdit(tab);
+    m_commodityFilterEdit->setPlaceholderText(tr("Search commodities..."));
+    availableColumn->addWidget(m_commodityFilterEdit);
+    m_availableCommodityList = new QListWidget(tab);
+    m_availableCommodityList->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    for (const BaseEquipmentOption &option : equipmentState.commodityOptions) {
+        if (assigned.contains(option.nickname.trimmed().toLower()))
+            continue;
+        auto *item = new QListWidgetItem(option.displayLabel, m_availableCommodityList);
+        item->setData(Qt::UserRole, option.nickname);
+    }
+    availableColumn->addWidget(m_availableCommodityList, 1);
+    layout->addLayout(availableColumn, 1);
+
+    auto *moveButtons = new QVBoxLayout();
+    moveButtons->addStretch(1);
+    m_addCommodityButton = new QPushButton(QStringLiteral(">"), tab);
+    m_addCommodityButton->setToolTip(tr("Add"));
+    m_addCommodityButton->setFixedWidth(44);
+    moveButtons->addWidget(m_addCommodityButton);
+    m_removeCommodityButton = new QPushButton(QStringLiteral("<"), tab);
+    m_removeCommodityButton->setToolTip(tr("Remove Selected"));
+    m_removeCommodityButton->setFixedWidth(44);
+    moveButtons->addWidget(m_removeCommodityButton);
+    moveButtons->addStretch(1);
+    layout->addLayout(moveButtons);
+
+    auto *assignedColumn = new QVBoxLayout();
+    assignedColumn->addWidget(new QLabel(tr("On This Base"), tab));
+    m_assignedCommodityList = new QListWidget(tab);
+    m_assignedCommodityList->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    QHash<QString, QStringList> rowByCommodity;
+    for (const QStringList &row : state.commodityMarketRows) {
+        if (!row.isEmpty())
+            rowByCommodity.insert(normalizedKey(row.first()), row);
+    }
+    for (const QString &nickname : state.commodities) {
+        QString label = nickname;
+        for (const BaseEquipmentOption &option : equipmentState.commodityOptions) {
+            if (option.nickname.compare(nickname, Qt::CaseInsensitive) == 0) {
+                label = option.displayLabel;
+                break;
+            }
+        }
+        auto *item = new QListWidgetItem(label, m_assignedCommodityList);
+        item->setData(Qt::UserRole, nickname);
+        QStringList row = rowByCommodity.value(normalizedKey(nickname));
+        if (row.isEmpty())
+            row = {nickname, QStringLiteral("0"), QStringLiteral("-1"), QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("1")};
+        item->setData(Qt::UserRole + 1, row);
+    }
+    assignedColumn->addWidget(m_assignedCommodityList, 1);
+    layout->addLayout(assignedColumn, 1);
+    root->addLayout(layout, 1);
+
+    m_commoditySettingsGroup = new QGroupBox(tr("Market Settings"), tab);
+    auto *settingsForm = new QFormLayout(m_commoditySettingsGroup);
+    m_commodityLevelSpin = new QSpinBox(m_commoditySettingsGroup);
+    m_commodityLevelSpin->setRange(0, 100);
+    m_commodityRepSpin = new QSpinBox(m_commoditySettingsGroup);
+    m_commodityRepSpin->setRange(-1, 100);
+    m_commodityMinStockSpin = new QSpinBox(m_commoditySettingsGroup);
+    m_commodityMinStockSpin->setRange(0, 999999);
+    m_commodityMaxStockSpin = new QSpinBox(m_commoditySettingsGroup);
+    m_commodityMaxStockSpin->setRange(0, 999999);
+    m_commodityTradeModeCombo = new QComboBox(m_commoditySettingsGroup);
+    m_commodityTradeModeCombo->addItem(tr("Base sells to player"), QStringLiteral("0"));
+    m_commodityTradeModeCombo->addItem(tr("Base buys from player"), QStringLiteral("1"));
+    m_commodityTradeModeCombo->setToolTip(tr("MarketGood mode: sell means the player can buy this commodity here; buy means the player can sell it here."));
+    m_commodityFactorSpin = new QDoubleSpinBox(m_commoditySettingsGroup);
+    m_commodityFactorSpin->setRange(0.0, 1000.0);
+    m_commodityFactorSpin->setDecimals(3);
+    m_commodityFactorSpin->setSingleStep(0.1);
+    m_commodityBasePriceSpin = new QSpinBox(m_commoditySettingsGroup);
+    m_commodityBasePriceSpin->setRange(0, 999999999);
+    m_commodityBasePriceSpin->setReadOnly(true);
+    m_commodityEndPriceSpin = new QSpinBox(m_commoditySettingsGroup);
+    m_commodityEndPriceSpin->setRange(0, 999999999);
+    settingsForm->addRow(tr("Level:"), m_commodityLevelSpin);
+    settingsForm->addRow(tr("Reputation:"), m_commodityRepSpin);
+    settingsForm->addRow(tr("Min Stock:"), m_commodityMinStockSpin);
+    settingsForm->addRow(tr("Max Stock:"), m_commodityMaxStockSpin);
+    settingsForm->addRow(tr("Trade Mode:"), m_commodityTradeModeCombo);
+    settingsForm->addRow(tr("Price Factor:"), m_commodityFactorSpin);
+    settingsForm->addRow(tr("Base Price:"), m_commodityBasePriceSpin);
+    settingsForm->addRow(tr("Calculated Price:"), m_commodityEndPriceSpin);
+    root->addWidget(m_commoditySettingsGroup, 0);
+
+    connect(m_commodityFilterEdit, &QLineEdit::textChanged, this, &BaseEditDialog::filterCommodityList);
+    connect(m_addCommodityButton, &QPushButton::clicked, this, &BaseEditDialog::addSelectedCommodities);
+    connect(m_removeCommodityButton, &QPushButton::clicked, this, &BaseEditDialog::removeSelectedCommodities);
+    connect(m_assignedCommodityList, &QListWidget::itemSelectionChanged, this, &BaseEditDialog::onCommoditySelectionChanged);
+    connect(m_availableCommodityList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *) {
+        addSelectedCommodities();
+    });
+    for (QSpinBox *spin : {m_commodityLevelSpin, m_commodityRepSpin, m_commodityMinStockSpin, m_commodityMaxStockSpin})
+        connect(spin, qOverload<int>(&QSpinBox::valueChanged), this, &BaseEditDialog::syncCommoditySettingsFromUi);
+    connect(m_commodityTradeModeCombo, &QComboBox::currentIndexChanged, this, &BaseEditDialog::syncCommoditySettingsFromUi);
+    connect(m_commodityFactorSpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double) {
+        if (!m_loadingCommoditySettings)
+            recalcCommodityEndPrice();
+        syncCommoditySettingsFromUi();
+    });
+    connect(m_commodityEndPriceSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int) {
+        if (!m_loadingCommoditySettings)
+            recalcCommodityFactorFromPrice();
+        syncCommoditySettingsFromUi();
+    });
+    filterCommodityList();
+    onCommoditySelectionChanged();
+    return tab;
+}
+
 void BaseEditDialog::enforceShipSlotRules()
 {
     QSet<QString> seen;
@@ -1092,6 +1225,129 @@ void BaseEditDialog::filterEquipmentLists()
     }
 }
 
+void BaseEditDialog::filterCommodityList()
+{
+    if (!m_availableCommodityList)
+        return;
+    const QString filter = m_commodityFilterEdit ? m_commodityFilterEdit->text().trimmed().toLower() : QString();
+    for (int row = 0; row < m_availableCommodityList->count(); ++row) {
+        QListWidgetItem *item = m_availableCommodityList->item(row);
+        const QString nickname = item->data(Qt::UserRole).toString().toLower();
+        const QString label = item->text().toLower();
+        item->setHidden(!filter.isEmpty() && !nickname.contains(filter) && !label.contains(filter));
+    }
+}
+
+void BaseEditDialog::addSelectedCommodities()
+{
+    if (!m_availableCommodityList || !m_assignedCommodityList)
+        return;
+    const QList<QListWidgetItem *> selected = m_availableCommodityList->selectedItems();
+    for (QListWidgetItem *selectedItem : selected) {
+        const QString nickname = selectedItem->data(Qt::UserRole).toString().trimmed();
+        if (nickname.isEmpty())
+            continue;
+        bool exists = false;
+        for (int row = 0; row < m_assignedCommodityList->count(); ++row) {
+            if (m_assignedCommodityList->item(row)->data(Qt::UserRole).toString().compare(nickname, Qt::CaseInsensitive) == 0) {
+                exists = true;
+                break;
+            }
+        }
+        if (exists)
+            continue;
+        auto *item = new QListWidgetItem(selectedItem->text().trimmed(), m_assignedCommodityList);
+        item->setData(Qt::UserRole, nickname);
+        item->setData(Qt::UserRole + 1, QStringList{nickname, QStringLiteral("0"), QStringLiteral("-1"), QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("1")});
+        delete m_availableCommodityList->takeItem(m_availableCommodityList->row(selectedItem));
+    }
+    onCommoditySelectionChanged();
+}
+
+void BaseEditDialog::removeSelectedCommodities()
+{
+    if (!m_availableCommodityList || !m_assignedCommodityList)
+        return;
+    const QList<QListWidgetItem *> selected = m_assignedCommodityList->selectedItems();
+    for (QListWidgetItem *selectedItem : selected) {
+        auto *item = new QListWidgetItem(selectedItem->text().trimmed(), m_availableCommodityList);
+        item->setData(Qt::UserRole, selectedItem->data(Qt::UserRole));
+        delete m_assignedCommodityList->takeItem(m_assignedCommodityList->row(selectedItem));
+    }
+    filterCommodityList();
+    onCommoditySelectionChanged();
+}
+
+void BaseEditDialog::onCommoditySelectionChanged()
+{
+    const QList<QListWidgetItem *> selected = m_assignedCommodityList ? m_assignedCommodityList->selectedItems() : QList<QListWidgetItem *>();
+    const bool single = selected.size() == 1;
+    if (m_commoditySettingsGroup)
+        m_commoditySettingsGroup->setEnabled(single);
+    if (!single)
+        return;
+
+    QListWidgetItem *item = selected.first();
+    QStringList row = item->data(Qt::UserRole + 1).toStringList();
+    while (row.size() < 7)
+        row.append(row.size() == 2 ? QStringLiteral("-1") : QStringLiteral("0"));
+    const QString nickname = item->data(Qt::UserRole).toString().trimmed();
+    const int basePrice = m_commodityBasePrices.value(normalizedKey(nickname), 0);
+
+    m_loadingCommoditySettings = true;
+    m_commodityLevelSpin->setValue(row.value(1, QStringLiteral("0")).toInt());
+    m_commodityRepSpin->setValue(row.value(2, QStringLiteral("-1")).toInt());
+    m_commodityMinStockSpin->setValue(row.value(3, QStringLiteral("0")).toInt());
+    m_commodityMaxStockSpin->setValue(row.value(4, QStringLiteral("0")).toInt());
+    const int tradeModeIndex = m_commodityTradeModeCombo->findData(row.value(5, QStringLiteral("0")).trimmed());
+    m_commodityTradeModeCombo->setCurrentIndex(tradeModeIndex >= 0 ? tradeModeIndex : 0);
+    m_commodityFactorSpin->setValue(row.value(6, QStringLiteral("1")).toDouble());
+    m_commodityBasePriceSpin->setValue(basePrice);
+    m_commodityEndPriceSpin->setValue(qRound(basePrice * m_commodityFactorSpin->value()));
+    m_loadingCommoditySettings = false;
+}
+
+void BaseEditDialog::syncCommoditySettingsFromUi()
+{
+    if (m_loadingCommoditySettings || !m_assignedCommodityList)
+        return;
+    const QList<QListWidgetItem *> selected = m_assignedCommodityList->selectedItems();
+    if (selected.size() != 1)
+        return;
+    const QString nickname = selected.first()->data(Qt::UserRole).toString().trimmed();
+    const QStringList row = {
+        nickname,
+        QString::number(m_commodityLevelSpin->value()),
+        QString::number(m_commodityRepSpin->value()),
+        QString::number(m_commodityMinStockSpin->value()),
+        QString::number(m_commodityMaxStockSpin->value()),
+        m_commodityTradeModeCombo->currentData().toString().trimmed().isEmpty()
+            ? QStringLiteral("0")
+            : m_commodityTradeModeCombo->currentData().toString().trimmed(),
+        QString::number(m_commodityFactorSpin->value(), 'f', 3),
+    };
+    selected.first()->setData(Qt::UserRole + 1, row);
+}
+
+void BaseEditDialog::recalcCommodityEndPrice()
+{
+    if (!m_commodityEndPriceSpin || !m_commodityBasePriceSpin || !m_commodityFactorSpin)
+        return;
+    QSignalBlocker blocker(m_commodityEndPriceSpin);
+    m_commodityEndPriceSpin->setValue(qRound(m_commodityBasePriceSpin->value() * m_commodityFactorSpin->value()));
+}
+
+void BaseEditDialog::recalcCommodityFactorFromPrice()
+{
+    if (!m_commodityEndPriceSpin || !m_commodityBasePriceSpin || !m_commodityFactorSpin)
+        return;
+    const int basePrice = m_commodityBasePriceSpin->value();
+    if (basePrice <= 0)
+        return;
+    QSignalBlocker blocker(m_commodityFactorSpin);
+    m_commodityFactorSpin->setValue(static_cast<double>(m_commodityEndPriceSpin->value()) / static_cast<double>(basePrice));
+}
+
 QStringList BaseEditDialog::selectedEquipment() const
 {
     QStringList equipment;
@@ -1103,6 +1359,38 @@ QStringList BaseEditDialog::selectedEquipment() const
             equipment.append(nickname);
     }
     return equipment;
+}
+
+QStringList BaseEditDialog::selectedCommodities() const
+{
+    QStringList commodities;
+    if (!m_assignedCommodityList)
+        return commodities;
+    for (int row = 0; row < m_assignedCommodityList->count(); ++row) {
+        const QString nickname = m_assignedCommodityList->item(row)->data(Qt::UserRole).toString().trimmed();
+        if (!nickname.isEmpty() && !commodities.contains(nickname, Qt::CaseInsensitive))
+            commodities.append(nickname);
+    }
+    return commodities;
+}
+
+QVector<QStringList> BaseEditDialog::selectedCommodityMarketRows() const
+{
+    QVector<QStringList> rows;
+    if (!m_assignedCommodityList)
+        return rows;
+    for (int rowIndex = 0; rowIndex < m_assignedCommodityList->count(); ++rowIndex) {
+        const QListWidgetItem *item = m_assignedCommodityList->item(rowIndex);
+        QStringList row = item->data(Qt::UserRole + 1).toStringList();
+        const QString nickname = item->data(Qt::UserRole).toString().trimmed();
+        if (nickname.isEmpty())
+            continue;
+        while (row.size() < 7)
+            row.append(row.size() == 2 ? QStringLiteral("-1") : QStringLiteral("0"));
+        row[0] = nickname;
+        rows.append(row.mid(0, 7));
+    }
+    return rows;
 }
 
 QStringList BaseEditDialog::selectedShipPackages() const
@@ -1209,6 +1497,8 @@ BaseEditState BaseEditDialog::state() const
     result.infocardXml = m_infocardEdit->toPlainText().trimmed();
     result.rooms = m_roomStates;
     result.equipment = selectedEquipment();
+    result.commodities = selectedCommodities();
+    result.commodityMarketRows = selectedCommodityMarketRows();
     result.shipPackages = selectedShipPackages();
     result.shipPackageLevels = selectedShipPackageLevels();
     return result;

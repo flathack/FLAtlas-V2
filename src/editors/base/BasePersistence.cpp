@@ -81,6 +81,7 @@ std::unique_ptr<BaseData> BasePersistence::loadFromIni(const QString &filePath,
 
         const BaseEquipmentState equipmentState = BaseEquipmentService::load(filePath, base->nickname);
         base->equipment = equipmentState.equipment;
+        base->commodities = equipmentState.commodities;
         base->shipPackages = equipmentState.shipPackages;
         base->shipPackageLevels = equipmentState.shipPackageLevels;
         return base;
@@ -146,6 +147,7 @@ QVector<BaseData> BasePersistence::loadAllBases(const QString &filePath)
     for (auto &base : result) {
         const BaseEquipmentState equipmentState = BaseEquipmentService::load(filePath, base.nickname);
         base.equipment = equipmentState.equipment;
+        base.commodities = equipmentState.commodities;
         base.shipPackages = equipmentState.shipPackages;
         base.shipPackageLevels = equipmentState.shipPackageLevels;
     }
@@ -198,7 +200,7 @@ bool BasePersistence::save(const BaseData &base, const QString &filePath)
     QTextStream out(&file);
     out << text;
     QString marketError;
-    if (!BaseEquipmentService::save(filePath, base.nickname, base.equipment, base.shipPackages, base.shipPackageLevels, &marketError))
+    if (!BaseEquipmentService::save(filePath, base.nickname, base.equipment, base.commodities, base.shipPackages, base.shipPackageLevels, &marketError))
         return false;
     return true;
 }

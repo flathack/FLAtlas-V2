@@ -23,6 +23,7 @@ struct BaseData {
     QStringList dockWith;
     QVector<RoomData> rooms;
     QStringList equipment;
+    QStringList commodities;
     QStringList shipPackages;
     QStringList shipPackageLevels;
 };

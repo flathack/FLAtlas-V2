@@ -1791,6 +1791,8 @@ BaseEditState BaseEditService::makeCreateState(const SystemDocument &document,
     state.infocardXml = defaults.infocardXml;
     state.rooms = buildDefaultRoomsForArchetype(state.archetype);
     state.equipment = {};
+    state.commodities = {};
+    state.commodityMarketRows = {};
     state.shipPackages = {};
     state.shipPackageLevels = {};
     state.startRoom = chooseStartRoom(enabledRoomNames(state), QStringLiteral("Deck"));
@@ -1856,6 +1858,8 @@ bool BaseEditService::loadState(const SystemDocument &document,
 
     const BaseEquipmentState equipmentState = BaseEquipmentService::load(state.universeIniAbsolutePath, state.baseNickname);
     state.equipment = equipmentState.equipment;
+    state.commodities = equipmentState.commodities;
+    state.commodityMarketRows = equipmentState.commodityMarketRows;
     state.shipPackages = equipmentState.shipPackages;
     state.shipPackageLevels = equipmentState.shipPackageLevels;
 
@@ -1878,6 +1882,8 @@ bool BaseEditService::loadTemplateState(const QString &baseNickname,
         return false;
     const BaseEquipmentState equipmentState = BaseEquipmentService::load(state.universeIniAbsolutePath, state.baseNickname);
     state.equipment = equipmentState.equipment;
+    state.commodities = equipmentState.commodities;
+    state.commodityMarketRows = equipmentState.commodityMarketRows;
     state.shipPackages = equipmentState.shipPackages;
     state.shipPackageLevels = equipmentState.shipPackageLevels;
     *outState = state;
@@ -1929,6 +1935,7 @@ bool BaseEditService::applyCreate(const BaseEditState &state,
     const QVector<BaseEquipmentStagedWrite> marketWrites = BaseEquipmentService::stagedWrites(working.universeIniAbsolutePath,
                                                                                               working.baseNickname,
                                                                                               working.equipment,
+                                                                                              working.commodityMarketRows,
                                                                                               working.shipPackages,
                                                                                               working.shipPackageLevels,
                                                                                               errorMessage);
@@ -2003,6 +2010,7 @@ bool BaseEditService::applyEdit(SolarObject &object,
     const QVector<BaseEquipmentStagedWrite> marketWrites = BaseEquipmentService::stagedWrites(working.universeIniAbsolutePath,
                                                                                               working.baseNickname,
                                                                                               working.equipment,
+                                                                                              working.commodityMarketRows,
                                                                                               working.shipPackages,
                                                                                               working.shipPackageLevels,
                                                                                               errorMessage);

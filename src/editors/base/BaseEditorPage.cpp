@@ -60,6 +60,7 @@ void BaseEditorPage::setupUi()
     });
     m_tabs->addTab(m_roomEditor, tr("Room Editor"));
     m_tabs->addTab(createEquipmentShipsTab(), tr("Equipment & Ships"));
+    m_tabs->addTab(createCommoditiesTab(), tr("Commodities"));
 
     auto wireLineEdit = [this](QLineEdit *edit) {
         connect(edit, &QLineEdit::textChanged, this, [this]() {
@@ -194,13 +195,58 @@ QWidget *BaseEditorPage::createEquipmentShipsTab()
     auto *limitHint = new QLabel(tr("Freelancer supports a maximum of 3 ships per base."), shipsGroup);
     limitHint->setWordWrap(true);
     shipsForm->addRow(QString(), limitHint);
-    layout->addWidget(shipsGroup);
-    layout->addStretch(1);
+    layout->addWidget(shipsGroup, 0);
 
     connect(m_addEquipmentButton, &QPushButton::clicked, this, &BaseEditorPage::addSelectedEquipment);
     connect(m_removeEquipmentButton, &QPushButton::clicked, this, &BaseEditorPage::removeSelectedEquipment);
     connect(m_equipmentFilterEdit, &QLineEdit::textChanged, this, &BaseEditorPage::filterEquipmentLists);
 
+    return tab;
+}
+
+QWidget *BaseEditorPage::createCommoditiesTab()
+{
+    auto *tab = new QWidget(this);
+    auto *layout = new QHBoxLayout(tab);
+    layout->setContentsMargins(10, 10, 10, 10);
+    layout->setSpacing(10);
+
+    auto *availableColumn = new QVBoxLayout();
+    availableColumn->addWidget(new QLabel(tr("Available"), tab));
+    m_commodityFilterEdit = new QLineEdit(tab);
+    m_commodityFilterEdit->setPlaceholderText(tr("Search commodities..."));
+    availableColumn->addWidget(m_commodityFilterEdit);
+    m_availableCommodityList = new QListWidget(tab);
+    m_availableCommodityList->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    availableColumn->addWidget(m_availableCommodityList, 1);
+    layout->addLayout(availableColumn, 1);
+
+    auto *moveButtons = new QVBoxLayout();
+    moveButtons->addStretch(1);
+    m_addCommodityButton = new QPushButton(QStringLiteral(">"), tab);
+    m_addCommodityButton->setToolTip(tr("Add"));
+    m_addCommodityButton->setFixedWidth(44);
+    moveButtons->addWidget(m_addCommodityButton);
+    m_removeCommodityButton = new QPushButton(QStringLiteral("<"), tab);
+    m_removeCommodityButton->setToolTip(tr("Remove Selected"));
+    m_removeCommodityButton->setFixedWidth(44);
+    moveButtons->addWidget(m_removeCommodityButton);
+    moveButtons->addStretch(1);
+    layout->addLayout(moveButtons);
+
+    auto *assignedColumn = new QVBoxLayout();
+    assignedColumn->addWidget(new QLabel(tr("On This Base"), tab));
+    m_assignedCommodityList = new QListWidget(tab);
+    m_assignedCommodityList->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    assignedColumn->addWidget(m_assignedCommodityList, 1);
+    layout->addLayout(assignedColumn, 1);
+
+    connect(m_commodityFilterEdit, &QLineEdit::textChanged, this, &BaseEditorPage::filterCommodityList);
+    connect(m_addCommodityButton, &QPushButton::clicked, this, &BaseEditorPage::addSelectedCommodities);
+    connect(m_removeCommodityButton, &QPushButton::clicked, this, &BaseEditorPage::removeSelectedCommodities);
+    connect(m_availableCommodityList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *) {
+        addSelectedCommodities();
+    });
     return tab;
 }
 
@@ -328,6 +374,88 @@ void BaseEditorPage::removeSelectedEquipment()
         markDirty();
 }
 
+void BaseEditorPage::populateCommodityOptions()
+{
+    if (!m_availableCommodityList)
+        return;
+    const QString baseNickname = m_data ? m_data->nickname : QString();
+    const BaseEquipmentState state = BaseEquipmentService::load(m_filePath, baseNickname);
+    QSet<QString> assigned;
+    if (m_data) {
+        for (const QString &nickname : std::as_const(m_data->commodities))
+            assigned.insert(nickname.trimmed().toLower());
+    }
+    m_availableCommodityList->clear();
+    for (const BaseEquipmentOption &option : state.commodityOptions) {
+        if (assigned.contains(option.nickname.trimmed().toLower()))
+            continue;
+        auto *item = new QListWidgetItem(option.displayLabel, m_availableCommodityList);
+        item->setData(Qt::UserRole, option.nickname);
+    }
+    filterCommodityList();
+}
+
+void BaseEditorPage::refreshCommodityList()
+{
+    if (!m_assignedCommodityList || !m_data)
+        return;
+    const BaseEquipmentState state = BaseEquipmentService::load(m_filePath, m_data->nickname);
+    m_assignedCommodityList->clear();
+    for (const QString &nickname : std::as_const(m_data->commodities)) {
+        QString label = nickname;
+        for (const BaseEquipmentOption &option : state.commodityOptions) {
+            if (option.nickname.compare(nickname, Qt::CaseInsensitive) == 0) {
+                label = option.displayLabel;
+                break;
+            }
+        }
+        auto *item = new QListWidgetItem(label, m_assignedCommodityList);
+        item->setData(Qt::UserRole, nickname);
+    }
+}
+
+void BaseEditorPage::filterCommodityList()
+{
+    if (!m_availableCommodityList)
+        return;
+    const QString filter = m_commodityFilterEdit ? m_commodityFilterEdit->text().trimmed().toLower() : QString();
+    for (int row = 0; row < m_availableCommodityList->count(); ++row) {
+        QListWidgetItem *item = m_availableCommodityList->item(row);
+        const QString nickname = item->data(Qt::UserRole).toString().toLower();
+        const QString label = item->text().toLower();
+        item->setHidden(!filter.isEmpty() && !nickname.contains(filter) && !label.contains(filter));
+    }
+}
+
+void BaseEditorPage::addSelectedCommodities()
+{
+    if (!m_data || !m_availableCommodityList)
+        return;
+    const auto selected = m_availableCommodityList->selectedItems();
+    for (QListWidgetItem *item : selected) {
+        const QString nickname = item->data(Qt::UserRole).toString().trimmed();
+        if (!nickname.isEmpty() && !m_data->commodities.contains(nickname, Qt::CaseInsensitive))
+            m_data->commodities.append(nickname);
+    }
+    populateCommodityOptions();
+    refreshCommodityList();
+    if (!selected.isEmpty() && !m_loadingUi)
+        markDirty();
+}
+
+void BaseEditorPage::removeSelectedCommodities()
+{
+    if (!m_data || !m_assignedCommodityList)
+        return;
+    const auto selected = m_assignedCommodityList->selectedItems();
+    for (QListWidgetItem *item : selected)
+        m_data->commodities.removeAll(item->data(Qt::UserRole).toString());
+    populateCommodityOptions();
+    refreshCommodityList();
+    if (!selected.isEmpty() && !m_loadingUi)
+        markDirty();
+}
+
 void BaseEditorPage::setupToolBar()
 {
     m_toolBar = new QToolBar(this);
@@ -411,6 +539,8 @@ void BaseEditorPage::populateFromData()
 
     populateEquipmentOptions();
     refreshEquipmentList();
+    populateCommodityOptions();
+    refreshCommodityList();
     for (int i = 0; i < BaseEquipmentService::MaxShipsPerBase; ++i) {
         QComboBox *combo = m_shipSlotCombos[i];
         if (!combo)
@@ -454,6 +584,14 @@ void BaseEditorPage::applyToData()
 
     m_data->rooms = m_roomEditor->rooms();
     m_roomEditor->setBaseNickname(m_data->nickname);
+    m_data->commodities.clear();
+    if (m_assignedCommodityList) {
+        for (int row = 0; row < m_assignedCommodityList->count(); ++row) {
+            const QString nickname = m_assignedCommodityList->item(row)->data(Qt::UserRole).toString().trimmed();
+            if (!nickname.isEmpty() && !m_data->commodities.contains(nickname, Qt::CaseInsensitive))
+                m_data->commodities.append(nickname);
+        }
+    }
     QStringList ships;
     QStringList shipLevels;
     bool removedDuplicate = false;
