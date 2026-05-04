@@ -229,6 +229,13 @@ void preventFramebufferAlphaWrites(Qt3DRender::QMaterial *material)
     if (!material || !material->effect())
         return;
 
+    // QPhongAlphaMaterial correctly blends zones inside the Qt3D scene, but on
+    // Windows the native Qt3D window can expose its framebuffer alpha to the
+    // desktop compositor. If zone fragments write alpha < 1, widgets from the
+    // previously visible 2D tab may show through the 3D view exactly where
+    // transparent zones are drawn. Keep RGB blending, but prevent writes to the
+    // framebuffer alpha channel so objects inside zones remain visible/pickable
+    // without leaking stale UI pixels from behind the native window.
     for (Qt3DRender::QTechnique *technique : material->effect()->techniques()) {
         if (!technique)
             continue;
