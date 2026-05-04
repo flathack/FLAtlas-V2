@@ -1,6 +1,7 @@
 // editors/modmanager/ModManagerPage.cpp – Mod-Manager UI (Phase 13 + Editing Context)
 
 #include "ModManagerPage.h"
+#include "ModExportDialog.h"
 #include "core/EditingContext.h"
 #include "core/PathUtils.h"
 
@@ -87,6 +88,10 @@ void ModManagerPage::setupUi()
     connect(scanBtn, &QPushButton::clicked, this, &ModManagerPage::onScanClicked);
     sidebarLayout->addWidget(scanBtn);
 
+    auto *exportBtn = new QPushButton(tr("Mod exportieren"), this);
+    connect(exportBtn, &QPushButton::clicked, this, &ModManagerPage::onExportClicked);
+    sidebarLayout->addWidget(exportBtn);
+
     sidebarLayout->addSpacing(12);
     auto *runLabel = new QLabel(tr("<b>Run</b>"), this);
     sidebarLayout->addWidget(runLabel);
@@ -148,6 +153,7 @@ void ModManagerPage::setupToolBar()
     m_toolBar->addSeparator();
     m_toolBar->addAction(tr("Activate"), this, &ModManagerPage::onActivateClicked);
     m_toolBar->addAction(tr("Deactivate"), this, &ModManagerPage::onDeactivateClicked);
+    m_toolBar->addAction(tr("Mod exportieren"), this, &ModManagerPage::onExportClicked);
 }
 
 void ModManagerPage::refreshProfileTable()
@@ -310,6 +316,62 @@ void ModManagerPage::onScanClicked()
     QString dir = QFileDialog::getExistingDirectory(this, tr("Select Mods Directory"));
     if (!dir.isEmpty())
         setModsDir(dir);
+}
+
+QString ModManagerPage::selectedProfileSourcePath() const
+{
+    int row = m_profileTable ? m_profileTable->currentRow() : -1;
+    if (row < 0)
+        return flatlas::core::EditingContext::instance().primaryGamePath();
+    auto *item = m_profileTable->item(row, 0);
+    if (!item)
+        return flatlas::core::EditingContext::instance().primaryGamePath();
+    const auto profile = flatlas::core::EditingContext::instance().profileById(item->data(Qt::UserRole).toString());
+    return profile.sourcePath();
+}
+
+QString ModManagerPage::suggestedReferencePath(const QString &modRoot) const
+{
+    const QString normalizedModRoot = QDir::cleanPath(modRoot).toLower();
+    const auto &profiles = flatlas::core::EditingContext::instance().profiles();
+    for (const auto &profile : profiles) {
+        const QString path = profile.sourcePath();
+        if (path.trimmed().isEmpty() || !QDir(path).exists())
+            continue;
+        if (QDir::cleanPath(path).toLower() != normalizedModRoot)
+            return path;
+    }
+    return {};
+}
+
+void ModManagerPage::onExportClicked()
+{
+    const QString modRoot = selectedProfileSourcePath();
+    if (modRoot.trimmed().isEmpty() || !QDir(modRoot).exists()) {
+        QMessageBox::information(this,
+                                 tr("Mod exportieren"),
+                                 tr("Wähle zuerst eine gültige Installation oder einen aktiven Mod-Kontext aus."));
+        return;
+    }
+
+    const auto &ctx = flatlas::core::EditingContext::instance();
+    QString profileName = QFileInfo(modRoot).fileName();
+    const int row = m_profileTable ? m_profileTable->currentRow() : -1;
+    if (row >= 0) {
+        if (auto *item = m_profileTable->item(row, 0))
+            profileName = item->text().remove(QStringLiteral("\u2714 ")).trimmed();
+    } else if (ctx.hasContext()) {
+        profileName = ctx.editingProfile().name;
+    }
+
+    ModExportDialog dialog(profileName,
+                           modRoot,
+                           suggestedReferencePath(modRoot),
+                           QFileInfo(modRoot).absolutePath(),
+                           this);
+    dialog.exec();
+    if (dialog.exportedCount() > 0)
+        m_statusLabel->setText(tr("Export erstellt: %1 Datei(en)").arg(dialog.exportedCount()));
 }
 
 void ModManagerPage::onActivateClicked()

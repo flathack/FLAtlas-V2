@@ -64,6 +64,9 @@
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QAbstractItemView>
+#include <QBrush>
+#include <QFont>
+#include <QPalette>
 
 #include <exception>
 #include <memory>
@@ -141,6 +144,13 @@ bool zoneVisibleForFilter(const flatlas::rendering::SystemDisplayFilterSettings 
 {
     flatlas::rendering::SolarObjectDisplayContext context;
     context.nickname = zone.nickname();
+    context.archetype = QStringList{
+        zone.zoneType(),
+        zone.usage(),
+        zone.popType(),
+        zone.pathLabel(),
+        zone.comment(),
+    }.join(QLatin1Char(' '));
     context.typeNameOverride = QStringLiteral("Zone");
 
     bool visible = true;
@@ -227,9 +237,12 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     auto filterSettings = std::make_shared<flatlas::rendering::SystemDisplayFilterSettings>(initialFilterSettings);
     auto applyTreeFilter = [tree, searchEdit, document, filterSettings]() {
         const QString needle = searchEdit ? searchEdit->text().trimmed().toLower() : QString();
+        const QPalette palette = tree->palette();
+        const QColor normalText = palette.color(QPalette::Active, QPalette::Text);
+        const QColor mutedText(120, 128, 140);
         for (int rootIndex = 0; rootIndex < tree->topLevelItemCount(); ++rootIndex) {
             QTreeWidgetItem *root = tree->topLevelItem(rootIndex);
-            bool anyVisible = false;
+            bool anySearchVisible = false;
             for (int childIndex = 0; root && childIndex < root->childCount(); ++childIndex) {
                 QTreeWidgetItem *child = root->child(childIndex);
                 const QString nickname = child->data(0, Qt::UserRole).toString();
@@ -252,18 +265,29 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
                 const bool searchVisible = needle.isEmpty()
                     || child->text(0).toLower().contains(needle)
                     || child->text(1).toLower().contains(needle);
-                const bool visible = displayVisible && searchVisible;
-                child->setHidden(!visible);
-                anyVisible = anyVisible || visible;
+                child->setHidden(!searchVisible);
+                anySearchVisible = anySearchVisible || searchVisible;
+                for (int column = 0; column < child->columnCount(); ++column) {
+                    child->setForeground(column, displayVisible ? QBrush(normalText) : QBrush(mutedText));
+                    QFont font = child->font(column);
+                    font.setItalic(!displayVisible);
+                    child->setFont(column, font);
+                }
+                const QString tooltip = displayVisible
+                    ? QString()
+                    : QObject::tr("Durch den Sichtbarkeitsfilter aktuell ausgeblendet");
+                child->setToolTip(0, tooltip);
+                child->setToolTip(1, tooltip);
             }
             if (root)
-                root->setHidden(!anyVisible);
+                root->setHidden(!anySearchVisible);
         }
     };
 
     QObject::connect(searchEdit, &QLineEdit::textChanged, tree, [applyTreeFilter](const QString &) {
         applyTreeFilter();
     });
+    applyTreeFilter();
 
     QObject::connect(filterButton, &QPushButton::clicked, page, [page, view, tree, sourceEditor, filterSettings, applyTreeFilter]() {
         flatlas::editors::SystemDisplayFilterDialog dialog(*filterSettings, page);

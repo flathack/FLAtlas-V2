@@ -356,6 +356,12 @@ void SystemMapView::cancelActiveMeasurement()
 
 void SystemMapView::wheelEvent(QWheelEvent *event)
 {
+    if (m_zoneRotationMode) {
+        emit zoneRotationWheelScrolled(mapToScene(event->position().toPoint()), event->angleDelta().y());
+        event->accept();
+        return;
+    }
+
     // Ctrl + wheel while a tracked selection move is active adjusts the
     // vertical (Y / height) offset in 10 m steps. The active X/Z drag
     // continues as normal; only the Y offset is accumulated and forwarded
@@ -409,6 +415,23 @@ void SystemMapView::wheelEvent(QWheelEvent *event)
 
 void SystemMapView::mousePressEvent(QMouseEvent *event)
 {
+    if (m_zoneRotationMode) {
+        if (event->button() == Qt::LeftButton) {
+            emit zoneRotationConfirmed(mapToScene(event->pos()));
+            event->accept();
+            return;
+        }
+        if (event->button() == Qt::RightButton || event->button() == Qt::MiddleButton) {
+            m_zoneRotationMode = false;
+            m_zoneRotationHelpText.clear();
+            setCursor(Qt::ArrowCursor);
+            viewport()->update();
+            emit zoneRotationCanceled();
+            event->accept();
+            return;
+        }
+    }
+
     if (m_measurementStage != MeasurementStage::Inactive) {
         if (event->button() == Qt::LeftButton) {
             const QPointF scenePos = mapToScene(event->pos());
@@ -496,6 +519,12 @@ void SystemMapView::mouseMoveEvent(QMouseEvent *event)
 {
     m_lastMouseViewportPos = event->pos();
     m_hasMouseInViewport = true;
+    if (m_zoneRotationMode) {
+        emit zoneRotationMouseMoved(mapToScene(event->pos()));
+        event->accept();
+        return;
+    }
+
     if (m_measurementStage != MeasurementStage::Inactive) {
         if (m_measurementStage == MeasurementStage::AwaitingEnd)
             m_measurementEndScenePos = mapToScene(event->pos());
@@ -1364,6 +1393,15 @@ void SystemMapView::leaveEvent(QEvent *event)
 
 void SystemMapView::keyPressEvent(QKeyEvent *event)
 {
+    if (m_zoneRotationMode && event->key() == Qt::Key_Escape) {
+        m_zoneRotationMode = false;
+        m_zoneRotationHelpText.clear();
+        setCursor(Qt::ArrowCursor);
+        viewport()->update();
+        emit zoneRotationCanceled();
+        event->accept();
+        return;
+    }
     if (m_measurementStage != MeasurementStage::Inactive && event->key() == Qt::Key_Escape) {
         cancelMeasurementMode();
         event->accept();
@@ -1394,6 +1432,27 @@ void SystemMapView::setPlacementMode(bool enabled, const QString &helpText)
         setCursor(Qt::ArrowCursor);
     }
     viewport()->update();
+}
+
+void SystemMapView::setZoneRotationMode(bool enabled, const QString &helpText)
+{
+    if (m_zoneRotationMode == enabled && m_zoneRotationHelpText == helpText)
+        return;
+    m_zoneRotationMode = enabled;
+    m_zoneRotationHelpText = enabled ? helpText : QString();
+    if (enabled) {
+        if (m_placementMode)
+            setPlacementMode(false);
+        setFocus(Qt::OtherFocusReason);
+        setCursor(Qt::CrossCursor);
+        setMouseTracking(true);
+        if (viewport())
+            viewport()->setMouseTracking(true);
+    } else if (!m_placementMode && m_measurementStage == MeasurementStage::Inactive) {
+        setCursor(Qt::ArrowCursor);
+    }
+    if (viewport())
+        viewport()->update();
 }
 
 void SystemMapView::startMeasurementMode()

@@ -257,11 +257,13 @@ void ZoneItem2D::updateFromZone(const flatlas::domain::ZoneItem &zone)
     case flatlas::domain::ZoneItem::Ellipsoid:
         halfWidth = sx;
         halfHeight = sz;
+        setRotation(-zone.rotation().y());
         break;
 
     case flatlas::domain::ZoneItem::Ring:
         halfWidth = sx;
         halfHeight = sx;
+        setRotation(-zone.rotation().y());
         break;
 
     case flatlas::domain::ZoneItem::Box:

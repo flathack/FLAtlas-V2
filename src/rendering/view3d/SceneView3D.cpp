@@ -128,6 +128,13 @@ bool zoneVisibleForFilter(const SystemDisplayFilterSettings &settings,
 {
     SolarObjectDisplayContext context;
     context.nickname = zone.nickname();
+    context.archetype = QStringList{
+        zone.zoneType(),
+        zone.usage(),
+        zone.popType(),
+        zone.pathLabel(),
+        zone.comment(),
+    }.join(QLatin1Char(' '));
     context.typeNameOverride = QStringLiteral("Zone");
 
     bool visible = true;
@@ -139,6 +146,19 @@ bool zoneVisibleForFilter(const SystemDisplayFilterSettings &settings,
         visible = (rule.action == DisplayFilterAction::Show);
     }
     return visible;
+}
+
+void setEntityTreeEnabled(Qt3DCore::QEntity *entity, bool enabled)
+{
+    if (!entity)
+        return;
+
+    entity->setEnabled(enabled);
+    const auto children = entity->childNodes();
+    for (Qt3DCore::QNode *child : children) {
+        if (auto *childEntity = qobject_cast<Qt3DCore::QEntity *>(child))
+            setEntityTreeEnabled(childEntity, enabled);
+    }
 }
 
 } // namespace
@@ -392,13 +412,13 @@ void SceneView3D::applyDisplayFilter()
         if (!obj)
             continue;
         if (Qt3DCore::QEntity *entity = m_sceneEntitiesByNickname.value(obj->nickname(), nullptr))
-            entity->setEnabled(objectVisibleForFilter(m_displayFilterSettings, *obj));
+            setEntityTreeEnabled(entity, objectVisibleForFilter(m_displayFilterSettings, *obj));
     }
     for (const auto &zone : m_document->zones()) {
         if (!zone)
             continue;
         if (Qt3DCore::QEntity *entity = m_sceneEntitiesByNickname.value(zone->nickname(), nullptr))
-            entity->setEnabled(zoneVisibleForFilter(m_displayFilterSettings, *zone));
+            setEntityTreeEnabled(entity, zoneVisibleForFilter(m_displayFilterSettings, *zone));
     }
 #endif
 }
@@ -465,6 +485,7 @@ void SceneView3D::attachLoadedModels(const QHash<QString, flatlas::infrastructur
             }
         }
     }
+    applyDisplayFilter();
 }
 
 int SceneView3D::addModelNodeRecursive(const flatlas::infrastructure::ModelNode &node,

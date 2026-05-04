@@ -6,6 +6,7 @@
 #include <QDir>
 
 #include "editors/modmanager/ConflictDetector.h"
+#include "editors/modmanager/ModExportService.h"
 #include "editors/modmanager/ModWorkflow.h"
 #include "domain/ModProfile.h"
 
@@ -20,6 +21,9 @@ private slots:
     void testNoConflicts();
     void testModWorkflowActivateDeactivate();
     void testProfileSaveLoad();
+    void testModExportDetectsNewAndModifiedOnly();
+    void testModExportIgnoresFlatlasRuntimeFiles();
+    void testModExportZipAndFlmod();
 };
 
 static void createFile(const QString &path, const QString &content = QStringLiteral("test"))
@@ -154,6 +158,82 @@ void TestModManager::testProfileSaveLoad()
     QCOMPARE(loaded.gamePath, profile.gamePath);
     QCOMPARE(loaded.activeMods.size(), 2);
     QCOMPARE(loaded.isActive, true);
+}
+
+void TestModManager::testModExportDetectsNewAndModifiedOnly()
+{
+    QTemporaryDir referenceDir;
+    QTemporaryDir modDir;
+    QVERIFY(referenceDir.isValid());
+    QVERIFY(modDir.isValid());
+
+    createFile(referenceDir.filePath("DATA/EQUIPMENT/goods.ini"), "old");
+    createFile(modDir.filePath("DATA/EQUIPMENT/goods.ini"), "new");
+    createFile(referenceDir.filePath("DATA/EQUIPMENT/market.ini"), "same");
+    createFile(modDir.filePath("DATA/EQUIPMENT/market.ini"), "same");
+    createFile(modDir.filePath("DATA/UNIVERSE/new_system.ini"), "new system");
+
+    const ModExportPlan plan = ModExportService::collectChangedFiles(modDir.path(), referenceDir.path());
+    QCOMPARE(plan.exportFiles().size(), 2);
+    QCOMPARE(plan.newCount(), 1);
+    QCOMPARE(plan.modifiedCount(), 1);
+    QCOMPARE(plan.unchangedCount, 1);
+}
+
+void TestModManager::testModExportIgnoresFlatlasRuntimeFiles()
+{
+    QTemporaryDir referenceDir;
+    QTemporaryDir modDir;
+    QVERIFY(referenceDir.isValid());
+    QVERIFY(modDir.isValid());
+
+    createFile(modDir.filePath(".flatlas/history.json"), "{}");
+    createFile(modDir.filePath(".FLAtlasLauncher/state.json"), "{}");
+    createFile(modDir.filePath("FLAtlas-Change.log"), "history");
+    createFile(modDir.filePath("ReShade.log"), "runtime");
+
+    const ModExportPlan plan = ModExportService::collectChangedFiles(modDir.path(), referenceDir.path());
+    QCOMPARE(plan.exportFiles().size(), 0);
+}
+
+void TestModManager::testModExportZipAndFlmod()
+{
+    QTemporaryDir referenceDir;
+    QTemporaryDir modDir;
+    QTemporaryDir outDir;
+    QVERIFY(referenceDir.isValid());
+    QVERIFY(modDir.isValid());
+    QVERIFY(outDir.isValid());
+
+    createFile(referenceDir.filePath("DATA/a.ini"), "old");
+    createFile(modDir.filePath("DATA/a.ini"), "new");
+    createFile(modDir.filePath("script.xml"), "<script><data method=\"copyfile\" /></script>");
+
+    const ModExportPlan plan = ModExportService::collectChangedFiles(modDir.path(), referenceDir.path());
+    const QString zipPath = outDir.filePath("export.zip");
+    QString error;
+    QVERIFY2(ModExportService::writeZip(plan, zipPath, &error), qPrintable(error));
+    QFile zip(zipPath);
+    QVERIFY(zip.open(QIODevice::ReadOnly));
+    const QByteArray zipBytes = zip.readAll();
+    QVERIFY(zipBytes.contains("DATA/a.ini"));
+    QVERIFY(zipBytes.contains("FLAtlas-export-manifest.json"));
+
+    QSet<QString> excluded;
+    excluded.insert(QStringLiteral("script.xml"));
+    const ModExportPlan filtered = ModExportService::filterPlan(plan, excluded);
+    const QString flmodPath = outDir.filePath("export.flmod");
+    const QString scriptXml = ModExportService::defaultScriptXml(QStringLiteral("Test Mod"),
+                                                                 QStringLiteral("Tester"),
+                                                                 QStringLiteral("Description"),
+                                                                 true);
+    QVERIFY2(ModExportService::writeFlmod(filtered, flmodPath, scriptXml, &error), qPrintable(error));
+    QFile flmod(flmodPath);
+    QVERIFY(flmod.open(QIODevice::ReadOnly));
+    const QByteArray flmodBytes = flmod.readAll();
+    QVERIFY(flmodBytes.contains("script.xml"));
+    QVERIFY(flmodBytes.contains("DATA/a.ini"));
+    QVERIFY(flmodBytes.contains("Test Mod"));
 }
 
 QTEST_GUILESS_MAIN(TestModManager)

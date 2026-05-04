@@ -43,7 +43,10 @@ private:
     void onActivateClicked();
     void onDeactivateClicked();
     void onScanClicked();
+    void onExportClicked();
     void onLaunchFlClicked();
+    QString selectedProfileSourcePath() const;
+    QString suggestedReferencePath(const QString &modRoot) const;
 
     QString m_modsDir;
     QVector<ModInfo> m_mods;

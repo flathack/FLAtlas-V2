@@ -44,6 +44,8 @@ public:
     /// right click cancels and emits placementCanceled().
     void setPlacementMode(bool enabled, const QString &helpText = QString());
     bool isPlacementModeActive() const { return m_placementMode; }
+    void setZoneRotationMode(bool enabled, const QString &helpText = QString());
+    bool isZoneRotationModeActive() const { return m_zoneRotationMode; }
     bool hasActiveMeasurement() const;
     void cancelActiveMeasurement();
 
@@ -57,6 +59,10 @@ signals:
                     double verticalOffsetMeters);
     void placementClicked(const QPointF &scenePos);
     void placementCanceled();
+    void zoneRotationMouseMoved(const QPointF &scenePos);
+    void zoneRotationWheelScrolled(const QPointF &scenePos, int deltaY);
+    void zoneRotationConfirmed(const QPointF &scenePos);
+    void zoneRotationCanceled();
     void contextMenuRequested(const QPoint &globalPos,
                               const QPointF &scenePos,
                               const QStringList &zoneNicknames);
@@ -139,6 +145,8 @@ private:
     QTimer *m_clusterHoverHideTimer = nullptr;
     bool m_placementMode = false;
     QString m_placementHelpText;
+    bool m_zoneRotationMode = false;
+    QString m_zoneRotationHelpText;
     std::function<QStringList(const QString &)> m_moveGroupResolver;
     MeasurementStage m_measurementStage = MeasurementStage::Inactive;
     QPointF m_measurementStartScenePos;

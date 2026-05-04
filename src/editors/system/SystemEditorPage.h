@@ -129,6 +129,17 @@ private:
         bool isActive() const { return step != DockingRingPlacementStep::Idle; }
     };
 
+    struct ZoneRotateState {
+        flatlas::domain::ZoneItem *zone = nullptr;
+        QVector3D startRotation;
+        QVector3D previewRotation;
+        qreal startSceneY = 0.0;
+        qreal lastSceneY = 0.0;
+        float wheelOffset = 0.0f;
+
+        bool isActive() const { return zone != nullptr; }
+    };
+
     void loadDocumentIntoUi();
     void openSystemSettingsDialog();
     void emitLoadingProgress(int percent, const QString &message);
@@ -174,6 +185,11 @@ private:
     bool hasPendingIniEditorChangesForSelection() const;
     void rotateSelectedObjectYaw(float deltaDegrees);
     void rotateSelectedEntriesYaw(float deltaDegrees, const QString &undoText);
+    void beginZoneRotateInteraction(const QString &zoneNickname, const QPointF &scenePos);
+    void updateZoneRotatePreview(const QPointF &scenePos);
+    void updateZoneRotatePreviewFromWheel(const QPointF &scenePos, int deltaY);
+    void finishZoneRotateInteraction(bool commit);
+    float zoneRotateAngleFromVerticalDrag(float startYaw, qreal startSceneY, qreal currentSceneY) const;
     void moveSelectedEntries(const QVector3D &delta, const QString &undoText);
     void copySelectedToClipboard();
     void pasteClipboardSelection();
@@ -454,6 +470,7 @@ private:
     QGraphicsLineItem *m_dockingRingGuidePreview = nullptr;
     QTimer *m_dockingRingPreviewTimer = nullptr;
     qreal m_dockingRingPreviewPulse = 0.0;
+    ZoneRotateState m_zoneRotateState;
 };
 
 } // namespace flatlas::editors

@@ -2956,6 +2956,15 @@ void SystemEditorPage::connectSignals()
     connect(m_mapView, &SystemMapView::itemsMoved, this, &SystemEditorPage::onItemsMoved);
     connect(m_mapView, &SystemMapView::itemsMoveStarted, this, &SystemEditorPage::onItemsMoveStarted);
     connect(m_mapView, &SystemMapView::itemsMoving, this, &SystemEditorPage::onItemsMoving);
+    connect(m_mapView, &SystemMapView::zoneRotationMouseMoved, this, &SystemEditorPage::updateZoneRotatePreview);
+    connect(m_mapView, &SystemMapView::zoneRotationWheelScrolled, this, &SystemEditorPage::updateZoneRotatePreviewFromWheel);
+    connect(m_mapView, &SystemMapView::zoneRotationConfirmed, this, [this](const QPointF &scenePos) {
+        updateZoneRotatePreview(scenePos);
+        finishZoneRotateInteraction(true);
+    });
+    connect(m_mapView, &SystemMapView::zoneRotationCanceled, this, [this]() {
+        finishZoneRotateInteraction(false);
+    });
 
     // 3D → 2D selection sync
 
@@ -3153,6 +3162,10 @@ void SystemEditorPage::connectSignals()
 
     bool SystemEditorPage::cancelCurrentEditorInteraction()
     {
+        if (m_zoneRotateState.isActive()) {
+            finishZoneRotateInteraction(false);
+            return true;
+        }
         if (m_pendingFieldZoneRequest) {
             cancelFieldZonePlacement();
             return true;
@@ -3268,6 +3281,120 @@ void SystemEditorPage::connectSignals()
 
         updateIniEditorForSelection();
         updateSidebarButtons();
+    }
+
+    float SystemEditorPage::zoneRotateAngleFromVerticalDrag(float startYaw,
+                                                            qreal startSceneY,
+                                                            qreal currentSceneY) const
+    {
+        const Qt::KeyboardModifiers modifiers = QApplication::keyboardModifiers();
+        const bool fineMode = modifiers.testFlag(Qt::ShiftModifier);
+        const bool snapMode = modifiers.testFlag(Qt::ControlModifier);
+        const float degreesPerSceneUnit = fineMode ? 0.04f : 0.20f;
+        float yaw = startYaw + static_cast<float>(startSceneY - currentSceneY) * degreesPerSceneUnit;
+        if (snapMode)
+            yaw = std::round(yaw / 15.0f) * 15.0f;
+        return normalizedYawDegrees(yaw);
+    }
+
+    void SystemEditorPage::beginZoneRotateInteraction(const QString &zoneNickname, const QPointF &scenePos)
+    {
+        if (!m_document || !m_mapView)
+            return;
+        if (hasPendingIniEditorChangesForSelection())
+            return;
+
+        ZoneItem *zone = findZoneByNickname(zoneNickname);
+        if (!zone)
+            return;
+
+        if (m_zoneRotateState.isActive())
+            finishZoneRotateInteraction(false);
+
+        selectSingleContextTarget(zone->nickname());
+
+        m_zoneRotateState.zone = zone;
+        m_zoneRotateState.startRotation = zone->rotation();
+        m_zoneRotateState.previewRotation = zone->rotation();
+        m_zoneRotateState.startSceneY = scenePos.y();
+        m_zoneRotateState.lastSceneY = scenePos.y();
+        m_zoneRotateState.wheelOffset = 0.0f;
+
+        const QString helpText = tr("Maus bewegen oder Mausrad nutzen, um die Zone zu drehen. Linksklick speichert die Rotation.");
+        m_mapView->setZoneRotationMode(true, helpText);
+        emit selectionStatusChanged(helpText);
+    }
+
+    void SystemEditorPage::updateZoneRotatePreview(const QPointF &scenePos)
+    {
+        if (!m_zoneRotateState.isActive())
+            return;
+        if (!m_zoneRotateState.zone) {
+            finishZoneRotateInteraction(false);
+            return;
+        }
+
+        m_zoneRotateState.lastSceneY = scenePos.y();
+        QVector3D nextRotation = m_zoneRotateState.startRotation;
+        const float dragYaw = zoneRotateAngleFromVerticalDrag(m_zoneRotateState.startRotation.y(),
+                                                              m_zoneRotateState.startSceneY,
+                                                              scenePos.y());
+        nextRotation.setY(normalizedYawDegrees(dragYaw + m_zoneRotateState.wheelOffset));
+        if (nextRotation == m_zoneRotateState.previewRotation)
+            return;
+
+        m_zoneRotateState.previewRotation = nextRotation;
+        m_zoneRotateState.zone->setRotation(nextRotation);
+        if (m_mapView && m_mapView->viewport())
+            m_mapView->viewport()->update();
+        updateIniEditorForSelection();
+    }
+
+    void SystemEditorPage::updateZoneRotatePreviewFromWheel(const QPointF &scenePos, int deltaY)
+    {
+        if (!m_zoneRotateState.isActive() || deltaY == 0)
+            return;
+
+        const Qt::KeyboardModifiers modifiers = QApplication::keyboardModifiers();
+        const float step = modifiers.testFlag(Qt::ShiftModifier) ? 1.0f : 5.0f;
+        m_zoneRotateState.wheelOffset += (static_cast<float>(deltaY) / 120.0f) * step;
+        if (modifiers.testFlag(Qt::ControlModifier))
+            m_zoneRotateState.wheelOffset = std::round(m_zoneRotateState.wheelOffset / 15.0f) * 15.0f;
+        updateZoneRotatePreview(scenePos);
+    }
+
+    void SystemEditorPage::finishZoneRotateInteraction(bool commit)
+    {
+        if (!m_zoneRotateState.isActive())
+            return;
+
+        ZoneItem *zone = m_zoneRotateState.zone;
+        const QVector3D oldRotation = m_zoneRotateState.startRotation;
+        const QVector3D newRotation = zone ? zone->rotation() : m_zoneRotateState.previewRotation;
+
+        if (m_mapView)
+            m_mapView->setZoneRotationMode(false);
+
+        m_zoneRotateState = {};
+
+        if (!zone)
+            return;
+
+        if (!commit) {
+            zone->setRotation(oldRotation);
+            updateIniEditorForSelection();
+            updateSelectionSummary();
+            return;
+        }
+
+        if (oldRotation != newRotation) {
+            auto *stack = flatlas::core::UndoManager::instance().stack();
+            stack->push(new RotateZoneCommand(zone, oldRotation, newRotation, tr("Rotate Zone")));
+            m_document->setDirty(true);
+        }
+        updateIniEditorForSelection();
+        updateSidebarButtons();
+        updateSelectionSummary();
     }
 
     void SystemEditorPage::copySelectedToClipboard()
@@ -4220,16 +4347,19 @@ void SystemEditorPage::showMapContextMenu(const QPoint &globalPos,
 
     QHash<QAction *, QString> editTargets;
     QHash<QAction *, QString> deleteTargets;
+    QHash<QAction *, QString> rotateTargets;
     if (!zoneEntries.isEmpty()) {
         if (zoneEntries.size() == 1) {
             QAction *zoneHeader = menu.addAction(zoneEntries.first().label);
             zoneHeader->setEnabled(false);
+            rotateTargets.insert(menu.addAction(tr("Zone rotieren")), zoneEntries.first().nickname);
             editTargets.insert(menu.addAction(tr("Edit Object")), zoneEntries.first().nickname);
             deleteTargets.insert(menu.addAction(tr("Delete Object")), zoneEntries.first().nickname);
         } else {
             QMenu *zonesMenu = menu.addMenu(tr("Zones under cursor"));
             for (const ZoneMenuEntry &entry : std::as_const(zoneEntries)) {
                 QMenu *zoneMenu = zonesMenu->addMenu(entry.label);
+                rotateTargets.insert(zoneMenu->addAction(tr("Zone rotieren")), entry.nickname);
                 editTargets.insert(zoneMenu->addAction(tr("Edit Object")), entry.nickname);
                 deleteTargets.insert(zoneMenu->addAction(tr("Delete Object")), entry.nickname);
             }
@@ -4274,6 +4404,10 @@ void SystemEditorPage::showMapContextMenu(const QPoint &globalPos,
     }
     if (editTargets.contains(selectedAction)) {
         editContextTarget(editTargets.value(selectedAction));
+        return;
+    }
+    if (rotateTargets.contains(selectedAction)) {
+        beginZoneRotateInteraction(rotateTargets.value(selectedAction), scenePos);
         return;
     }
     if (deleteTargets.contains(selectedAction)) {
@@ -4948,6 +5082,13 @@ bool SystemEditorPage::isZoneVisibleUnderCurrentFilter(const ZoneItem &zone) con
 {
     SolarObjectDisplayContext context;
     context.nickname = zone.nickname();
+    context.archetype = QStringList{
+        zone.zoneType(),
+        zone.usage(),
+        zone.popType(),
+        zone.pathLabel(),
+        zone.comment(),
+    }.join(QLatin1Char(' '));
     context.typeNameOverride = QStringLiteral("Zone");
 
     bool visible = true;
