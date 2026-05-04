@@ -21,7 +21,10 @@
 #include "infrastructure/freelancer/FreelancerMaterialResolver.h"
 #include "rendering/preview/ModelCache.h"
 
+#include <Qt3DCore/QAttribute>
+#include <Qt3DCore/QBuffer>
 #include <Qt3DCore/QEntity>
+#include <Qt3DCore/QGeometry>
 #include <Qt3DCore/QTransform>
 #include <Qt3DExtras/QCuboidMesh>
 #include <Qt3DExtras/QForwardRenderer>
@@ -34,6 +37,7 @@
 #include <Qt3DRender/QPointLight>
 #include <Qt3DRender/QRenderSettings>
 
+#include <QByteArray>
 #include <QEvent>
 #include <QFileInfo>
 #include <QFutureWatcher>
@@ -54,6 +58,54 @@ namespace flatlas::rendering {
 
 #ifdef FLATLAS_HAS_QT3D
 namespace {
+
+constexpr double kFreelancerNavCellWorld = 30000.0;
+constexpr int kFreelancerNavCellsPerAxis = 8;
+constexpr double kFreelancerReferenceNavMapScale = 1.36;
+
+double navGridHalfExtentWorld(double navMapScale)
+{
+    const double scale = navMapScale > 0.0 ? navMapScale : kFreelancerReferenceNavMapScale;
+    const double referenceHalfExtent = kFreelancerNavCellWorld * (kFreelancerNavCellsPerAxis / 2.0);
+    return referenceHalfExtent * (kFreelancerReferenceNavMapScale / scale);
+}
+
+void appendGridPoint(QByteArray &blob, const QVector3D &point)
+{
+    const float values[] = {point.x(), point.y(), point.z()};
+    blob.append(reinterpret_cast<const char *>(values), static_cast<int>(sizeof(values)));
+}
+
+Qt3DRender::QGeometryRenderer *buildGridLineRenderer(const QVector<QVector3D> &points, Qt3DCore::QNode *owner)
+{
+    if (points.size() < 2)
+        return nullptr;
+
+    QByteArray vertexBlob;
+    vertexBlob.reserve(points.size() * 3 * static_cast<int>(sizeof(float)));
+    for (const QVector3D &point : points)
+        appendGridPoint(vertexBlob, point);
+
+    auto *geometry = new Qt3DCore::QGeometry(owner);
+    auto *vertexBuffer = new Qt3DCore::QBuffer(geometry);
+    vertexBuffer->setData(vertexBlob);
+
+    auto *positionAttr = new Qt3DCore::QAttribute(geometry);
+    positionAttr->setName(Qt3DCore::QAttribute::defaultPositionAttributeName());
+    positionAttr->setAttributeType(Qt3DCore::QAttribute::VertexAttribute);
+    positionAttr->setVertexBaseType(Qt3DCore::QAttribute::Float);
+    positionAttr->setVertexSize(3);
+    positionAttr->setByteStride(3 * static_cast<int>(sizeof(float)));
+    positionAttr->setCount(points.size());
+    positionAttr->setBuffer(vertexBuffer);
+    geometry->addAttribute(positionAttr);
+
+    auto *renderer = new Qt3DRender::QGeometryRenderer(owner);
+    renderer->setGeometry(geometry);
+    renderer->setPrimitiveType(Qt3DRender::QGeometryRenderer::Lines);
+    renderer->setVertexCount(points.size());
+    return renderer;
+}
 
 QColor objectColor(flatlas::domain::SolarObject::Type type)
 {
@@ -313,6 +365,8 @@ void SceneView3D::loadDocument(flatlas::domain::SystemDocument *doc)
         return;
 
 #ifdef FLATLAS_HAS_QT3D
+    addNavigationGrid();
+
     m_linkedRingZoneNicknames.clear();
     for (const auto &obj : doc->objects()) {
         if (!obj)
@@ -489,8 +543,56 @@ void SceneView3D::clearScene()
     if (m_sceneRoot) {
         delete m_sceneRoot;
         m_sceneRoot = new Qt3DCore::QEntity(m_rootEntity);
+        m_gridEntity = nullptr;
         m_zonesRoot = new Qt3DCore::QEntity(m_sceneRoot);
         m_objectsRoot = new Qt3DCore::QEntity(m_sceneRoot);
+    }
+#endif
+}
+
+void SceneView3D::addNavigationGrid()
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (!m_document || !m_sceneRoot)
+        return;
+
+    m_gridEntity = new Qt3DCore::QEntity(m_sceneRoot);
+
+    const float halfExtent = static_cast<float>(navGridHalfExtentWorld(m_document->navMapScale()));
+    const float spacing = (halfExtent * 2.0f) / static_cast<float>(kFreelancerNavCellsPerAxis);
+    constexpr float gridY = -1.0f;
+
+    QVector<QVector3D> gridPoints;
+    QVector<QVector3D> originPoints;
+    gridPoints.reserve((kFreelancerNavCellsPerAxis + 1) * 4);
+    originPoints.reserve(4);
+
+    for (int index = 0; index <= kFreelancerNavCellsPerAxis; ++index) {
+        const float value = -halfExtent + spacing * static_cast<float>(index);
+        QVector<QVector3D> &target = qFuzzyIsNull(value) ? originPoints : gridPoints;
+        target.append(QVector3D(value, gridY, -halfExtent));
+        target.append(QVector3D(value, gridY, halfExtent));
+        target.append(QVector3D(-halfExtent, gridY, value));
+        target.append(QVector3D(halfExtent, gridY, value));
+    }
+
+    if (auto *renderer = buildGridLineRenderer(gridPoints, m_gridEntity)) {
+        auto *material = MaterialFactory::createDefault(QColor(150, 175, 190, 128), m_gridEntity);
+        material->setAmbient(QColor(85, 105, 120));
+        material->setDiffuse(QColor(150, 175, 190, 128));
+        m_gridEntity->addComponent(renderer);
+        m_gridEntity->addComponent(material);
+    }
+
+    auto *originEntity = new Qt3DCore::QEntity(m_gridEntity);
+    if (auto *renderer = buildGridLineRenderer(originPoints, originEntity)) {
+        auto *material = MaterialFactory::createDefault(QColor(220, 235, 245, 128), originEntity);
+        material->setAmbient(QColor(145, 165, 180));
+        material->setDiffuse(QColor(220, 235, 245, 128));
+        originEntity->addComponent(renderer);
+        originEntity->addComponent(material);
+    } else {
+        originEntity->deleteLater();
     }
 #endif
 }

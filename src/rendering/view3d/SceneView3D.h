@@ -65,6 +65,7 @@ protected:
 private:
     void setupScene();
     void clearScene();
+    void addNavigationGrid();
     void addSolarObject(const std::shared_ptr<flatlas::domain::SolarObject> &obj);
     void addPlanetaryRing(const flatlas::domain::SolarObject &obj);
     void addZone(const std::shared_ptr<flatlas::domain::ZoneItem> &zone);
@@ -94,6 +95,7 @@ private:
     QWidget *m_container = nullptr;
     Qt3DCore::QEntity *m_rootEntity = nullptr;
     Qt3DCore::QEntity *m_sceneRoot = nullptr;
+    Qt3DCore::QEntity *m_gridEntity = nullptr;
     Qt3DCore::QEntity *m_objectsRoot = nullptr;
     Qt3DCore::QEntity *m_zonesRoot = nullptr;
     Qt3DRender::QCamera *m_camera = nullptr;
