@@ -23,7 +23,7 @@ jobs:
           target: 'desktop'
           arch: 'win64_mingw'
           modules: 'qt3d'
-          tools: 'tools_mingw,qt.tools.win64_mingw1310'
+          tools: 'tools_mingw1310,qt.tools.win64_mingw1310'
           cache: true
 
       - name: Configure CMake
