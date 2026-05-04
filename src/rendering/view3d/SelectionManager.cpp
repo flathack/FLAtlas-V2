@@ -3,6 +3,9 @@
 #ifdef FLATLAS_HAS_QT3D
 
 #include "SelectionManager.h"
+
+#include <Qt3DExtras/QPhongAlphaMaterial>
+#include <Qt3DExtras/QPhongMaterial>
 #include <Qt3DRender/QObjectPicker>
 
 namespace flatlas::rendering {
@@ -13,12 +16,12 @@ SelectionManager::SelectionManager(QObject *parent)
 }
 
 void SelectionManager::registerEntity(const QString &nickname, Qt3DCore::QEntity *entity,
-                                       Qt3DExtras::QPhongMaterial *material)
+                                       Qt3DRender::QMaterial *material)
 {
     EntityInfo info;
     info.entity = entity;
     info.material = material;
-    info.originalDiffuse = material->diffuse();
+    info.originalDiffuse = diffuseColor(material);
     m_entities.insert(nickname, info);
 
     // Add object picker
@@ -68,9 +71,28 @@ void SelectionManager::applyHighlight(const QString &nickname, bool highlighted)
         return;
 
     if (highlighted)
-        it->material->setDiffuse(m_highlightColor);
+        setDiffuseColor(it->material, m_highlightColor);
     else
-        it->material->setDiffuse(it->originalDiffuse);
+        setDiffuseColor(it->material, it->originalDiffuse);
+}
+
+QColor SelectionManager::diffuseColor(Qt3DRender::QMaterial *material)
+{
+    if (const auto *phong = qobject_cast<Qt3DExtras::QPhongMaterial *>(material))
+        return phong->diffuse();
+    if (const auto *alpha = qobject_cast<Qt3DExtras::QPhongAlphaMaterial *>(material))
+        return alpha->diffuse();
+    return QColor();
+}
+
+void SelectionManager::setDiffuseColor(Qt3DRender::QMaterial *material, const QColor &color)
+{
+    if (auto *phong = qobject_cast<Qt3DExtras::QPhongMaterial *>(material)) {
+        phong->setDiffuse(color);
+        return;
+    }
+    if (auto *alpha = qobject_cast<Qt3DExtras::QPhongAlphaMaterial *>(material))
+        alpha->setDiffuse(color);
 }
 
 } // namespace flatlas::rendering

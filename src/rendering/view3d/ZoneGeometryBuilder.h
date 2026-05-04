@@ -11,14 +11,14 @@
 #include <QVector3D>
 
 namespace Qt3DCore { class QEntity; }
-namespace Qt3DExtras { class QPhongMaterial; }
+namespace Qt3DRender { class QMaterial; }
 
 namespace flatlas::rendering {
 
 struct ZoneGeometryBuildResult {
     Qt3DCore::QEntity *rootEntity = nullptr;
     Qt3DCore::QEntity *pickEntity = nullptr;
-    Qt3DExtras::QPhongMaterial *selectionMaterial = nullptr;
+    Qt3DRender::QMaterial *selectionMaterial = nullptr;
     ModelBounds bounds;
     bool valid = false;
 };

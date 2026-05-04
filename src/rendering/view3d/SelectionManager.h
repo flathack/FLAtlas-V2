@@ -9,7 +9,8 @@
 #include <Qt3DCore/QEntity>
 #include <Qt3DRender/QObjectPicker>
 #include <Qt3DRender/QPickEvent>
-#include <Qt3DExtras/QPhongMaterial>
+
+namespace Qt3DRender { class QMaterial; }
 
 namespace flatlas::rendering {
 
@@ -21,7 +22,7 @@ public:
 
     /// Register an entity with a nickname for picking.
     void registerEntity(const QString &nickname, Qt3DCore::QEntity *entity,
-                        Qt3DExtras::QPhongMaterial *material);
+                        Qt3DRender::QMaterial *material);
 
     /// Unregister all entities.
     void clear();
@@ -38,10 +39,12 @@ signals:
 private:
     void onPicked(Qt3DRender::QPickEvent *event, const QString &nickname);
     void applyHighlight(const QString &nickname, bool highlighted);
+    static QColor diffuseColor(Qt3DRender::QMaterial *material);
+    static void setDiffuseColor(Qt3DRender::QMaterial *material, const QColor &color);
 
     struct EntityInfo {
         Qt3DCore::QEntity *entity = nullptr;
-        Qt3DExtras::QPhongMaterial *material = nullptr;
+        Qt3DRender::QMaterial *material = nullptr;
         QColor originalDiffuse;
     };
 
