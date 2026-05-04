@@ -357,6 +357,7 @@ ZoneGeometryBuildResult ZoneGeometryBuilder::buildZone(const flatlas::domain::Zo
         wire->addComponent(renderer);
         wire->addComponent(wireMaterial);
         result.pickEntity = wire;
+        result.wireEntity = wire;
         result.selectionMaterial = wireMaterial;
     } else {
         wire->deleteLater();

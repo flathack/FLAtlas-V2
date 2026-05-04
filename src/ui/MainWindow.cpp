@@ -42,6 +42,7 @@
 #include <QStatusBar>
 #include <QSettings>
 #include <QApplication>
+#include <QCheckBox>
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QProgressDialog>
@@ -60,6 +61,7 @@
 #include <QProcess>
 #include <QUrl>
 #include <QSignalBlocker>
+#include <QSlider>
 #include <QSet>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
@@ -197,10 +199,6 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     topRow->addWidget(filterButton);
     leftLayout->addLayout(topRow);
 
-    auto *centerButton = new QPushButton(QObject::tr("Center to Object"), leftSidebar);
-    centerButton->setEnabled(false);
-    leftLayout->addWidget(centerButton);
-
     auto *tree = new QTreeWidget(leftSidebar);
     tree->setHeaderLabels({QObject::tr("Nickname"), QObject::tr("Type")});
     tree->setAlternatingRowColors(true);
@@ -245,6 +243,29 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
         }
     }
     tree->resizeColumnToContents(0);
+
+    auto *zoomLabel = new QLabel(QObject::tr("Zoom"), leftSidebar);
+    leftLayout->insertWidget(1, zoomLabel);
+    auto *zoomSlider = new QSlider(Qt::Horizontal, leftSidebar);
+    zoomSlider->setRange(0, 100);
+    zoomSlider->setValue(50);
+    zoomSlider->setToolTip(QObject::tr("Zoom"));
+    leftLayout->insertWidget(2, zoomSlider);
+
+    auto *wireframesCheck = new QCheckBox(QObject::tr("Show Wireframes"), leftSidebar);
+    wireframesCheck->setChecked(true);
+    leftLayout->insertWidget(3, wireframesCheck);
+
+    auto *centerButton = new QPushButton(QObject::tr("Center to Object"), leftSidebar);
+    centerButton->setEnabled(false);
+    leftLayout->insertWidget(4, centerButton);
+
+    QObject::connect(zoomSlider, &QSlider::valueChanged, view, [view](int value) {
+        view->setZoomLevel(value);
+    });
+    QObject::connect(wireframesCheck, &QCheckBox::toggled, view, [view](bool checked) {
+        view->setZoneWireframesVisible(checked);
+    });
 
     auto filterSettings = std::make_shared<flatlas::rendering::SystemDisplayFilterSettings>(initialFilterSettings);
     auto applyTreeFilter = [tree, searchEdit, document, filterSettings]() {

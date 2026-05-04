@@ -18,6 +18,7 @@ namespace flatlas::rendering {
 struct ZoneGeometryBuildResult {
     Qt3DCore::QEntity *rootEntity = nullptr;
     Qt3DCore::QEntity *pickEntity = nullptr;
+    Qt3DCore::QEntity *wireEntity = nullptr;
     Qt3DRender::QMaterial *selectionMaterial = nullptr;
     ModelBounds bounds;
     bool valid = false;

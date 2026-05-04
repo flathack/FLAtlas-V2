@@ -26,6 +26,8 @@ public:
 
     void setDistance(float distance);
     float distance() const { return m_distance; }
+    float minDistance() const { return m_minDistance; }
+    float maxDistance() const { return m_maxDistance; }
 
     void setAzimuth(float degrees);
     float azimuth() const { return m_azimuth; }

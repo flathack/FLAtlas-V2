@@ -368,6 +368,22 @@ bool SceneView3D::centerOnSelectedObject()
 #endif
 }
 
+void SceneView3D::setZoomLevel(int percent)
+{
+    m_zoomLevel = qBound(0, percent, 100);
+#ifdef FLATLAS_HAS_QT3D
+    applyCameraZoom();
+#endif
+}
+
+void SceneView3D::setZoneWireframesVisible(bool visible)
+{
+    m_zoneWireframesVisible = visible;
+#ifdef FLATLAS_HAS_QT3D
+    applyZoneWireframeVisibility();
+#endif
+}
+
 void SceneView3D::setViewportActive(bool active)
 {
 #ifdef FLATLAS_HAS_QT3D
@@ -455,6 +471,7 @@ void SceneView3D::clearScene()
     m_markerMaterialsByNickname.clear();
     m_ringEntitiesByHostNickname.clear();
     m_sceneEntitiesByNickname.clear();
+    m_zoneWireEntitiesByNickname.clear();
     m_nicknamesByModelPath.clear();
     m_planetTextureSourcePathsByNickname.clear();
     m_nicknamesWithRenderedModel.clear();
@@ -489,6 +506,10 @@ void SceneView3D::addZone(const std::shared_ptr<flatlas::domain::ZoneItem> &zone
     if (!result.valid)
         return;
     m_sceneEntitiesByNickname.insert(zone->nickname(), result.rootEntity);
+    if (result.wireEntity) {
+        m_zoneWireEntitiesByNickname.insert(zone->nickname(), result.wireEntity);
+        result.wireEntity->setEnabled(m_zoneWireframesVisible);
+    }
 
     if (m_sceneBounds)
         m_sceneBounds->include(result.bounds);
@@ -644,9 +665,11 @@ void SceneView3D::updateSceneCamera()
     const QVector3D center = focusBounds->valid ? focusBounds->center() : QVector3D();
     const float radius = qMax(focusBounds->radius(), 5000.0f);
     const float distance = qMax(radius * 2.4f, 25000.0f);
+    m_baseCameraDistance = distance;
     m_orbitCamera->setDistanceLimits(qMax(radius * 0.015f, 50.0f), qMax(distance * 80.0f, 1000000.0f));
     m_orbitCamera->setResetState(center, distance, 45.0f, 24.0f);
     m_orbitCamera->resetView();
+    applyCameraZoom();
 #endif
 }
 
@@ -674,6 +697,31 @@ void SceneView3D::applyDisplayFilter()
             continue;
         if (Qt3DCore::QEntity *entity = m_sceneEntitiesByNickname.value(zone->nickname(), nullptr))
             setEntityTreeEnabled(entity, zoneVisibleForFilter(m_displayFilterSettings, *zone));
+    }
+#endif
+}
+
+void SceneView3D::applyCameraZoom()
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (!m_orbitCamera)
+        return;
+
+    const float normalized = (50.0f - static_cast<float>(m_zoomLevel)) / 50.0f;
+    const float zoomFactor = std::pow(8.0f, normalized);
+    const float distance = qBound(m_orbitCamera->minDistance(),
+                                  m_baseCameraDistance * zoomFactor,
+                                  m_orbitCamera->maxDistance());
+    m_orbitCamera->setDistance(distance);
+#endif
+}
+
+void SceneView3D::applyZoneWireframeVisibility()
+{
+#ifdef FLATLAS_HAS_QT3D
+    for (auto it = m_zoneWireEntitiesByNickname.begin(); it != m_zoneWireEntitiesByNickname.end(); ++it) {
+        if (it.value())
+            it.value()->setEnabled(m_zoneWireframesVisible);
     }
 #endif
 }

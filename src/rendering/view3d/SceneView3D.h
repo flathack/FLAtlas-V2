@@ -43,6 +43,8 @@ public:
     void loadDocument(flatlas::domain::SystemDocument *doc);
     void selectObject(const QString &nickname);
     bool centerOnSelectedObject();
+    void setZoomLevel(int percent);
+    void setZoneWireframesVisible(bool visible);
 
 #ifdef FLATLAS_HAS_QT3D
 public slots:
@@ -83,6 +85,8 @@ private:
     QString modelPathForObject(const flatlas::domain::SolarObject &obj) const;
     float displayRadiusForObject(const flatlas::domain::SolarObject &obj) const;
     bool shouldRenderAsRadiusSphere(const flatlas::domain::SolarObject &obj) const;
+    void applyCameraZoom();
+    void applyZoneWireframeVisibility();
 
     Qt3DExtras::Qt3DWindow *m_3dWindow = nullptr;
     QWidget *m_container = nullptr;
@@ -100,6 +104,7 @@ private:
     QHash<QString, Qt3DRender::QMaterial *> m_markerMaterialsByNickname;
     QHash<QString, QList<Qt3DCore::QEntity *>> m_ringEntitiesByHostNickname;
     QHash<QString, Qt3DCore::QEntity *> m_sceneEntitiesByNickname;
+    QHash<QString, Qt3DCore::QEntity *> m_zoneWireEntitiesByNickname;
     QHash<QString, QStringList> m_nicknamesByModelPath;
     QHash<QString, QStringList> m_planetTextureSourcePathsByNickname;
     QSet<QString> m_nicknamesWithRenderedModel;
@@ -118,6 +123,9 @@ private:
     QHash<QString, QStringList> m_archetypeTextureSourcePaths;
     QString m_gameRoot;
     SystemDisplayFilterSettings m_displayFilterSettings;
+    int m_zoomLevel = 50;
+    float m_baseCameraDistance = 80000.0f;
+    bool m_zoneWireframesVisible = true;
 };
 
 } // namespace flatlas::rendering
