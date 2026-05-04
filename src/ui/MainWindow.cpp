@@ -167,6 +167,7 @@ bool zoneVisibleForFilter(const flatlas::rendering::SystemDisplayFilterSettings 
 
 QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
                             const QHash<QString, QString> &modelPaths,
+                            const QHash<QString, float> &displayRadii,
                             const flatlas::rendering::SystemDisplayFilterSettings &initialFilterSettings,
                             const QString &tabKey,
                             flatlas::editors::SystemEditorPage *sourceEditor,
@@ -205,6 +206,7 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
 
     auto *view = new flatlas::rendering::SceneView3D(splitter);
     view->setArchetypeModelPaths(modelPaths);
+    view->setArchetypeDisplayRadii(displayRadii);
     view->setDisplayFilterSettings(initialFilterSettings);
     view->loadDocument(document);
     splitter->addWidget(view);
@@ -1615,6 +1617,7 @@ void MainWindow::open3DSystemEditorFor(flatlas::editors::SystemEditorPage *edito
 
     auto *view = createSystem3DPage(editor->document(),
                                     editor->archetypeModelPathsFor3DView(),
+                                    editor->archetypeDisplayRadiiFor3DView(),
                                     editor->displayFilterSettingsFor3DView(),
                                     tabKey,
                                     editor,

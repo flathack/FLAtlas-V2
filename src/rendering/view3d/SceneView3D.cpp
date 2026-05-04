@@ -7,6 +7,7 @@
 #include "domain/ZoneItem.h"
 
 #include <QLabel>
+#include <QSet>
 #include <QVBoxLayout>
 
 #ifdef FLATLAS_HAS_QT3D
@@ -17,6 +18,7 @@
 #include "SkyRenderer.h"
 #include "ZoneColorScheme.h"
 #include "ZoneGeometryBuilder.h"
+#include "infrastructure/freelancer/FreelancerMaterialResolver.h"
 #include "rendering/preview/ModelCache.h"
 
 #include <Qt3DCore/QEntity>
@@ -28,6 +30,7 @@
 #include <Qt3DExtras/Qt3DWindow>
 #include <Qt3DRender/QCamera>
 #include <Qt3DRender/QGeometryRenderer>
+#include <Qt3DRender/QMaterial>
 #include <Qt3DRender/QPointLight>
 #include <Qt3DRender/QRenderSettings>
 
@@ -37,6 +40,7 @@
 #include <QHideEvent>
 #include <QMouseEvent>
 #include <QPalette>
+#include <QRegularExpression>
 #include <QShowEvent>
 #include <QSurfaceFormat>
 #include <QTimer>
@@ -93,6 +97,19 @@ float markerRadius(flatlas::domain::SolarObject::Type type)
     default:
         return 260.0f;
     }
+}
+
+float sphereFallbackRadius(const QString &archetype)
+{
+    static const QRegularExpression trailingNumber(QStringLiteral("_(\\d+(?:\\.\\d+)?)$"));
+    const QRegularExpressionMatch match = trailingNumber.match(archetype.trimmed());
+    if (match.hasMatch()) {
+        bool ok = false;
+        const float radius = match.captured(1).toFloat(&ok);
+        if (ok && radius > 0.0f)
+            return radius;
+    }
+    return 1500.0f;
 }
 
 QColor colorForMesh(const flatlas::infrastructure::MeshData &mesh, int nodeIndex)
@@ -228,6 +245,11 @@ void SceneView3D::setArchetypeModelPaths(const QHash<QString, QString> &modelPat
     m_archetypeModelPaths = modelPaths;
 }
 
+void SceneView3D::setArchetypeDisplayRadii(const QHash<QString, float> &displayRadii)
+{
+    m_archetypeDisplayRadii = displayRadii;
+}
+
 void SceneView3D::setDisplayFilterSettings(const SystemDisplayFilterSettings &settings)
 {
     m_displayFilterSettings = settings;
@@ -344,6 +366,7 @@ void SceneView3D::clearScene()
     m_markerEntitiesByNickname.clear();
     m_sceneEntitiesByNickname.clear();
     m_nicknamesByModelPath.clear();
+    m_nicknamesWithRenderedModel.clear();
     if (m_sceneBounds)
         *m_sceneBounds = ModelBounds();
     if (m_objectBounds)
@@ -401,7 +424,8 @@ void SceneView3D::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObj
     m_modelHostsByNickname.insert(obj->nickname(), modelHost);
 
     const QColor baseColor = objectColor(obj->type());
-    const float radius = markerRadius(obj->type());
+    const bool radiusSphere = shouldRenderAsRadiusSphere(*obj);
+    const float radius = radiusSphere ? displayRadiusForObject(*obj) : markerRadius(obj->type());
     auto *markerEntity = new Qt3DCore::QEntity(objectEntity);
     auto *markerMesh = new Qt3DExtras::QSphereMesh(markerEntity);
     markerMesh->setRadius(radius);
@@ -426,7 +450,7 @@ void SceneView3D::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObj
         m_objectBounds->include(obj->position() - QVector3D(radius, radius, radius));
     }
 
-    const QString modelPath = modelPathForObject(*obj);
+    const QString modelPath = radiusSphere ? QString() : modelPathForObject(*obj);
     if (!modelPath.isEmpty())
         m_nicknamesByModelPath[modelPath].append(obj->nickname());
 #else
@@ -461,6 +485,10 @@ void SceneView3D::applyDisplayFilter()
             continue;
         if (Qt3DCore::QEntity *entity = m_sceneEntitiesByNickname.value(obj->nickname(), nullptr))
             setEntityTreeEnabled(entity, objectVisibleForFilter(m_displayFilterSettings, *obj));
+        if (m_nicknamesWithRenderedModel.contains(obj->nickname())) {
+            if (Qt3DCore::QEntity *marker = m_markerEntitiesByNickname.value(obj->nickname(), nullptr))
+                marker->setEnabled(false);
+        }
     }
     for (const auto &zone : m_document->zones()) {
         if (!zone)
@@ -478,6 +506,23 @@ QString SceneView3D::modelPathForObject(const flatlas::domain::SolarObject &obj)
     if (archetype.isEmpty())
         return {};
     return m_archetypeModelPaths.value(archetype);
+}
+
+float SceneView3D::displayRadiusForObject(const flatlas::domain::SolarObject &obj) const
+{
+    const QString archetype = obj.archetype().trimmed().toLower();
+    const float resolvedRadius = m_archetypeDisplayRadii.value(archetype, 0.0f);
+    if (resolvedRadius > 0.0f)
+        return resolvedRadius;
+    if (shouldRenderAsRadiusSphere(obj))
+        return sphereFallbackRadius(obj.archetype());
+    return markerRadius(obj.type());
+}
+
+bool SceneView3D::shouldRenderAsRadiusSphere(const flatlas::domain::SolarObject &obj) const
+{
+    using Type = flatlas::domain::SolarObject::Type;
+    return obj.type() == Type::Planet || obj.type() == Type::Sun;
 }
 
 void SceneView3D::scheduleModelLoading()
@@ -524,8 +569,9 @@ void SceneView3D::attachLoadedModels(const QHash<QString, flatlas::infrastructur
             Qt3DCore::QEntity *host = m_modelHostsByNickname.value(nickname, nullptr);
             if (!host)
                 continue;
-            const int renderedMeshCount = addModelNodeRecursive(it.value().rootNode, host, nickname);
+            const int renderedMeshCount = addModelNodeRecursive(it.value().rootNode, host, nickname, it.key());
             if (renderedMeshCount > 0) {
+                m_nicknamesWithRenderedModel.insert(nickname);
                 if (Qt3DCore::QEntity *marker = m_markerEntitiesByNickname.value(nickname, nullptr))
                     marker->setEnabled(false);
             } else {
@@ -539,6 +585,7 @@ void SceneView3D::attachLoadedModels(const QHash<QString, flatlas::infrastructur
 int SceneView3D::addModelNodeRecursive(const flatlas::infrastructure::ModelNode &node,
                                        Qt3DCore::QEntity *parent,
                                        const QString &nickname,
+                                       const QString &modelPath,
                                        int nodeIndex,
                                        int depth)
 {
@@ -565,7 +612,12 @@ int SceneView3D::addModelNodeRecursive(const flatlas::infrastructure::ModelNode 
 
         auto *meshEntity = new Qt3DCore::QEntity(nodeEntity);
         if (auto *renderer = ModelGeometryBuilder::buildTriangleRenderer(mesh, meshEntity)) {
-            auto *material = MaterialFactory::createDefault(colorForMesh(mesh, nodeIndex), meshEntity);
+            Qt3DRender::QMaterial *material = nullptr;
+            const QImage texture = flatlas::infrastructure::FreelancerMaterialResolver::loadTextureForMesh(modelPath, mesh);
+            if (!texture.isNull())
+                material = MaterialFactory::createFromImage(texture, meshEntity);
+            if (!material)
+                material = MaterialFactory::createDefault(colorForMesh(mesh, nodeIndex), meshEntity);
             meshEntity->addComponent(renderer);
             meshEntity->addComponent(material);
             if (m_selectionManager)
@@ -579,7 +631,7 @@ int SceneView3D::addModelNodeRecursive(const flatlas::infrastructure::ModelNode 
     int childIndex = 0;
     for (const auto &child : node.children) {
         const int childNodeIndex = nodeIndex * 7 + depth * 3 + childIndex + 1;
-        renderedMeshCount += addModelNodeRecursive(child, nodeEntity, nickname, childNodeIndex, depth + 1);
+        renderedMeshCount += addModelNodeRecursive(child, nodeEntity, nickname, modelPath, childNodeIndex, depth + 1);
         ++childIndex;
     }
 

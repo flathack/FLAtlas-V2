@@ -1310,6 +1310,61 @@ const QHash<QString, QString> &solarArchetypeModelPathsForPreview()
     return cache;
 }
 
+void collectArchetypeRadiusFromIni(const IniDocument &document,
+                                   const QStringList &radiusKeys,
+                                   QHash<QString, float> &radii)
+{
+    for (const auto &section : document) {
+        const QString nickname = normalizedPathKey(section.value(QStringLiteral("nickname")));
+        if (nickname.isEmpty())
+            continue;
+
+        for (const QString &radiusKey : radiusKeys) {
+            bool ok = false;
+            const float radius = section.value(radiusKey).trimmed().toFloat(&ok);
+            if (ok && radius > 0.0f) {
+                radii.insert(nickname, radius);
+                break;
+            }
+        }
+    }
+}
+
+const QHash<QString, float> &solarArchetypeDisplayRadiiForPreview()
+{
+    static QString cachedGamePath;
+    static QHash<QString, float> cache;
+
+    const QString gamePath = normalizedPathKey(flatlas::core::EditingContext::instance().primaryGamePath());
+    if (gamePath == cachedGamePath)
+        return cache;
+
+    cachedGamePath = gamePath;
+    cache.clear();
+    if (gamePath.isEmpty())
+        return cache;
+
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gamePath, QStringLiteral("DATA"));
+    if (dataDir.isEmpty())
+        return cache;
+
+    const QString solarArchPath = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("SOLAR/solararch.ini"));
+    if (!solarArchPath.isEmpty()) {
+        collectArchetypeRadiusFromIni(IniParser::parseFile(solarArchPath),
+                                      {QStringLiteral("solar_radius"), QStringLiteral("radius")},
+                                      cache);
+    }
+
+    const QString starArchPath = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("SOLAR/stararch.ini"));
+    if (!starArchPath.isEmpty()) {
+        collectArchetypeRadiusFromIni(IniParser::parseFile(starArchPath),
+                                      {QStringLiteral("radius"), QStringLiteral("solar_radius")},
+                                      cache);
+    }
+
+    return cache;
+}
+
 QQuaternion quaternionFromFreelancerRotation(const QVector3D &rotation)
 {
     return QQuaternion::fromEulerAngles(rotation.x(), rotation.y(), rotation.z());
@@ -3662,6 +3717,11 @@ bool SystemEditorPage::isDirty() const
 QHash<QString, QString> SystemEditorPage::archetypeModelPathsFor3DView() const
 {
     return solarArchetypeModelPathsForPreview();
+}
+
+QHash<QString, float> SystemEditorPage::archetypeDisplayRadiiFor3DView() const
+{
+    return solarArchetypeDisplayRadiiForPreview();
 }
 
 SystemDisplayFilterSettings SystemEditorPage::displayFilterSettingsFor3DView() const

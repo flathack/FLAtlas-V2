@@ -34,6 +34,7 @@ public:
     ~SceneView3D() override;
 
     void setArchetypeModelPaths(const QHash<QString, QString> &modelPaths);
+    void setArchetypeDisplayRadii(const QHash<QString, float> &displayRadii);
     void setDisplayFilterSettings(const SystemDisplayFilterSettings &settings);
     void loadDocument(flatlas::domain::SystemDocument *doc);
     void selectObject(const QString &nickname);
@@ -68,9 +69,12 @@ private:
     int addModelNodeRecursive(const flatlas::infrastructure::ModelNode &node,
                               Qt3DCore::QEntity *parent,
                               const QString &nickname,
+                              const QString &modelPath,
                               int nodeIndex = 0,
                               int depth = 0);
     QString modelPathForObject(const flatlas::domain::SolarObject &obj) const;
+    float displayRadiusForObject(const flatlas::domain::SolarObject &obj) const;
+    bool shouldRenderAsRadiusSphere(const flatlas::domain::SolarObject &obj) const;
 
     Qt3DExtras::Qt3DWindow *m_3dWindow = nullptr;
     QWidget *m_container = nullptr;
@@ -87,6 +91,7 @@ private:
     QHash<QString, Qt3DCore::QEntity *> m_markerEntitiesByNickname;
     QHash<QString, Qt3DCore::QEntity *> m_sceneEntitiesByNickname;
     QHash<QString, QStringList> m_nicknamesByModelPath;
+    QSet<QString> m_nicknamesWithRenderedModel;
     ModelBounds *m_sceneBounds = nullptr;
     ModelBounds *m_objectBounds = nullptr;
     ModelBounds *m_zoneBounds = nullptr;
@@ -95,6 +100,7 @@ private:
 
     flatlas::domain::SystemDocument *m_document = nullptr;
     QHash<QString, QString> m_archetypeModelPaths;
+    QHash<QString, float> m_archetypeDisplayRadii;
     SystemDisplayFilterSettings m_displayFilterSettings;
 };
 
