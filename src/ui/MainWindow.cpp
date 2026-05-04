@@ -261,9 +261,23 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     wireframesCheck->setChecked(true);
     leftLayout->insertWidget(3, wireframesCheck);
 
+    auto *freeCamButton = new QPushButton(QObject::tr("Free Cam"), leftSidebar);
+    freeCamButton->setCheckable(true);
+    freeCamButton->setToolTip(QObject::tr("Free camera mode: left drag looks around, W/S move forward/back, A/D strafe, Space/Ctrl move up/down, mouse wheel changes speed."));
+    leftLayout->insertWidget(4, freeCamButton);
+
+    auto *freeCamSpeedLabel = new QLabel(leftSidebar);
+    freeCamSpeedLabel->setVisible(false);
+    leftLayout->insertWidget(5, freeCamSpeedLabel);
+
     auto *centerButton = new QPushButton(QObject::tr("Center to Object"), leftSidebar);
     centerButton->setEnabled(false);
-    leftLayout->insertWidget(4, centerButton);
+    leftLayout->insertWidget(6, centerButton);
+
+    auto updateFreeCamSpeedLabel = [freeCamSpeedLabel](float speed) {
+        freeCamSpeedLabel->setText(QObject::tr("Free Cam Speed: %1").arg(QString::number(speed, 'f', 0)));
+    };
+    updateFreeCamSpeedLabel(view->freeCameraSpeed());
 
     QObject::connect(zoomSlider, &QSlider::valueChanged, view, [view](int value) {
         view->setZoomLevel(value);
@@ -275,6 +289,17 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     QObject::connect(wireframesCheck, &QCheckBox::toggled, view, [view](bool checked) {
         view->setZoneWireframesVisible(checked);
     });
+    QObject::connect(freeCamButton, &QPushButton::toggled, view, [view](bool checked) {
+        view->setFreeCameraModeEnabled(checked);
+    });
+    QObject::connect(view, &flatlas::rendering::SceneView3D::freeCameraModeChanged,
+                     freeCamButton, [freeCamButton, freeCamSpeedLabel](bool enabled) {
+        QSignalBlocker blocker(freeCamButton);
+        freeCamButton->setChecked(enabled);
+        freeCamSpeedLabel->setVisible(enabled);
+    });
+    QObject::connect(view, &flatlas::rendering::SceneView3D::freeCameraSpeedChanged,
+                     freeCamSpeedLabel, updateFreeCamSpeedLabel);
 
     auto filterSettings = std::make_shared<flatlas::rendering::SystemDisplayFilterSettings>(initialFilterSettings);
     auto applyTreeFilter = [tree, searchEdit, document, filterSettings]() {

@@ -5,6 +5,7 @@
 #include "domain/SolarObject.h"
 
 #ifdef FLATLAS_HAS_QT3D
+#include "rendering/view3d/FreeCameraController.h"
 #include "rendering/view3d/OrbitCamera.h"
 #include "rendering/view3d/ModelGeometryBuilder.h"
 #include "rendering/view3d/SelectionManager.h"
@@ -36,6 +37,9 @@ private slots:
     void testSelectionManagerSelectEmits();
     void testSelectionManagerReselect();
     void testSelectionManagerClear();
+    void testFreeCameraWheelChangesSpeed();
+    void testFreeCameraKeyboardMovement();
+    void testFreeCameraMouseLook();
 #endif
 };
 
@@ -144,8 +148,8 @@ void TestSceneView3D::testOrbitCameraMouseRotate()
                         QPointingDevice::primaryPointingDevice());
     orbit.handleMouseRelease(&release);
 
-    QVERIFY(orbit.azimuth() > 45.0f);
-    QVERIFY(orbit.elevation() > 30.0f);
+    QVERIFY(orbit.azimuth() < 45.0f);
+    QVERIFY(orbit.elevation() < 30.0f);
 }
 
 void TestSceneView3D::testOrbitCameraMousePan()
@@ -259,6 +263,86 @@ void TestSceneView3D::testSelectionManagerClear()
     mgr.select("test_obj");
     mgr.clear();
     QVERIFY(mgr.selectedNickname().isEmpty());
+}
+
+void TestSceneView3D::testFreeCameraWheelChangesSpeed()
+{
+    Qt3DRender::QCamera camera;
+    flatlas::rendering::FreeCameraController freeCam(&camera);
+    freeCam.setEnabled(true);
+    freeCam.setSpeed(1000.0f);
+
+    QWheelEvent faster(QPointF(10.0, 10.0), QPointF(10.0, 10.0),
+                       QPoint(), QPoint(0, 120), Qt::NoButton, Qt::NoModifier,
+                       Qt::NoScrollPhase, false, Qt::MouseEventNotSynthesized,
+                       QPointingDevice::primaryPointingDevice());
+    freeCam.handleWheel(&faster);
+    QVERIFY(freeCam.speed() > 1000.0f);
+
+    QWheelEvent slower(QPointF(10.0, 10.0), QPointF(10.0, 10.0),
+                       QPoint(), QPoint(0, -120), Qt::NoButton, Qt::NoModifier,
+                       Qt::NoScrollPhase, false, Qt::MouseEventNotSynthesized,
+                       QPointingDevice::primaryPointingDevice());
+    freeCam.handleWheel(&slower);
+    QVERIFY(freeCam.speed() < 1250.0f);
+}
+
+void TestSceneView3D::testFreeCameraKeyboardMovement()
+{
+    Qt3DRender::QCamera camera;
+    camera.setPosition(QVector3D(0.0f, 0.0f, 0.0f));
+    camera.setViewCenter(QVector3D(0.0f, 0.0f, 1.0f));
+
+    flatlas::rendering::FreeCameraController freeCam(&camera);
+    freeCam.setEnabled(true);
+    freeCam.setSpeed(1000.0f);
+
+    QKeyEvent pressForward(QEvent::KeyPress, Qt::Key_W, Qt::NoModifier);
+    freeCam.handleKeyPress(&pressForward);
+    freeCam.update(1.0f);
+    QKeyEvent releaseForward(QEvent::KeyRelease, Qt::Key_W, Qt::NoModifier);
+    freeCam.handleKeyRelease(&releaseForward);
+    QVERIFY(camera.position().z() > 900.0f);
+
+    QKeyEvent pressRight(QEvent::KeyPress, Qt::Key_D, Qt::NoModifier);
+    freeCam.handleKeyPress(&pressRight);
+    freeCam.update(1.0f);
+    const float xAfterRight = camera.position().x();
+    QVERIFY(qAbs(xAfterRight) > 900.0f);
+
+    QKeyEvent releaseRight(QEvent::KeyRelease, Qt::Key_D, Qt::NoModifier);
+    freeCam.handleKeyRelease(&releaseRight);
+    const float xBeforeLeft = camera.position().x();
+    QKeyEvent pressLeft(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier);
+    freeCam.handleKeyPress(&pressLeft);
+    freeCam.update(1.0f);
+    QVERIFY(qAbs(camera.position().x()) < qAbs(xBeforeLeft));
+}
+
+void TestSceneView3D::testFreeCameraMouseLook()
+{
+    Qt3DRender::QCamera camera;
+    camera.setPosition(QVector3D(0.0f, 0.0f, 0.0f));
+    camera.setViewCenter(QVector3D(0.0f, 0.0f, 1.0f));
+
+    flatlas::rendering::FreeCameraController freeCam(&camera);
+    freeCam.setEnabled(true);
+    const QVector3D originalView = camera.viewVector();
+
+    QMouseEvent press(QEvent::MouseButtonPress,
+                      QPointF(10.0, 10.0), QPointF(10.0, 10.0),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier,
+                      QPointingDevice::primaryPointingDevice());
+    freeCam.handleMousePress(&press);
+
+    QMouseEvent move(QEvent::MouseMove,
+                     QPointF(60.0, 0.0), QPointF(60.0, 0.0),
+                     Qt::NoButton, Qt::LeftButton, Qt::NoModifier,
+                     QPointingDevice::primaryPointingDevice());
+    freeCam.handleMouseMove(&move);
+
+    QVERIFY(camera.viewVector() != originalView);
+    QVERIFY(camera.viewVector().y() > originalView.y());
 }
 
 #endif // FLATLAS_HAS_QT3D

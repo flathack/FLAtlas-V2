@@ -11,6 +11,7 @@ add_library(flatlas_rendering STATIC
     view3d/ZoneColorScheme.h view3d/ZoneColorScheme.cpp
     view3d/ZoneGeometryBuilder.h view3d/ZoneGeometryBuilder.cpp
     view3d/OrbitCamera.h view3d/OrbitCamera.cpp
+    view3d/FreeCameraController.h view3d/FreeCameraController.cpp
     view3d/ModelGeometryBuilder.h view3d/ModelGeometryBuilder.cpp
     view3d/ModelViewport3D.h view3d/ModelViewport3D.cpp
     view3d/RingPreviewSceneBuilder.h view3d/RingPreviewSceneBuilder.cpp

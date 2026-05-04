@@ -5,11 +5,14 @@
 #include <QImage>
 #include <QSet>
 #include <QStringList>
+#include <QElapsedTimer>
 #include <QWidget>
 
 #include "rendering/view2d/SystemDisplayFilter.h"
 
 #include <memory>
+
+class QTimer;
 
 #ifdef FLATLAS_HAS_QT3D
 namespace Qt3DExtras { class Qt3DWindow; }
@@ -24,6 +27,7 @@ namespace flatlas::rendering {
 
 #ifdef FLATLAS_HAS_QT3D
 class OrbitCamera;
+class FreeCameraController;
 class SelectionManager;
 class SkyRenderer;
 struct ModelBounds;
@@ -45,6 +49,9 @@ public:
     bool centerOnSelectedObject();
     void setZoomLevel(int percent);
     void setZoneWireframesVisible(bool visible);
+    void setFreeCameraModeEnabled(bool enabled);
+    bool isFreeCameraModeEnabled() const;
+    float freeCameraSpeed() const;
 
 #ifdef FLATLAS_HAS_QT3D
 public slots:
@@ -54,6 +61,8 @@ public slots:
 signals:
     void objectSelected(const QString &nickname);
     void zoomLevelChanged(int percent);
+    void freeCameraModeChanged(bool enabled);
+    void freeCameraSpeedChanged(float speed);
 
 protected:
 #ifdef FLATLAS_HAS_QT3D
@@ -90,6 +99,8 @@ private:
     void applyCameraZoom();
     void syncZoomLevelFromCamera();
     void applyZoneWireframeVisibility();
+    void tickFreeCamera();
+    void updateCameraDependentScene();
 
     Qt3DExtras::Qt3DWindow *m_3dWindow = nullptr;
     QWidget *m_container = nullptr;
@@ -101,6 +112,7 @@ private:
     Qt3DRender::QCamera *m_camera = nullptr;
     Qt3DRender::QPointLight *m_light = nullptr;
     OrbitCamera *m_orbitCamera = nullptr;
+    FreeCameraController *m_freeCamera = nullptr;
     SelectionManager *m_selectionManager = nullptr;
     SkyRenderer *m_skyRenderer = nullptr;
     QHash<QString, Qt3DCore::QEntity *> m_modelHostsByNickname;
@@ -118,6 +130,8 @@ private:
     ModelBounds *m_sceneBounds = nullptr;
     ModelBounds *m_objectBounds = nullptr;
     ModelBounds *m_zoneBounds = nullptr;
+    QTimer *m_freeCameraTimer = nullptr;
+    QElapsedTimer m_freeCameraClock;
     int m_loadGeneration = 0;
 #endif
 

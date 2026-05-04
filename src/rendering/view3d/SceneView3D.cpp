@@ -10,6 +10,7 @@
 #include <QVBoxLayout>
 
 #ifdef FLATLAS_HAS_QT3D
+#include "FreeCameraController.h"
 #include "MaterialFactory.h"
 #include "ModelGeometryBuilder.h"
 #include "OrbitCamera.h"
@@ -42,6 +43,7 @@
 #include <QFileInfo>
 #include <QFutureWatcher>
 #include <QHideEvent>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPalette>
 #include <QRegularExpression>
@@ -439,6 +441,49 @@ void SceneView3D::setZoneWireframesVisible(bool visible)
 #endif
 }
 
+void SceneView3D::setFreeCameraModeEnabled(bool enabled)
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (!m_freeCamera)
+        return;
+    if (m_freeCamera->isEnabled() == enabled)
+        return;
+    m_freeCamera->setEnabled(enabled);
+    if (enabled) {
+        if (m_container)
+            m_container->setFocus(Qt::OtherFocusReason);
+        if (m_freeCameraTimer && !m_freeCameraTimer->isActive()) {
+            m_freeCameraClock.restart();
+            m_freeCameraTimer->start();
+        }
+    } else if (m_freeCameraTimer) {
+        m_freeCameraTimer->stop();
+    }
+    emit freeCameraModeChanged(enabled);
+    requestViewportUpdate();
+#else
+    Q_UNUSED(enabled);
+#endif
+}
+
+bool SceneView3D::isFreeCameraModeEnabled() const
+{
+#ifdef FLATLAS_HAS_QT3D
+    return m_freeCamera && m_freeCamera->isEnabled();
+#else
+    return false;
+#endif
+}
+
+float SceneView3D::freeCameraSpeed() const
+{
+#ifdef FLATLAS_HAS_QT3D
+    return m_freeCamera ? m_freeCamera->speed() : 0.0f;
+#else
+    return 0.0f;
+#endif
+}
+
 void SceneView3D::setViewportActive(bool active)
 {
 #ifdef FLATLAS_HAS_QT3D
@@ -503,10 +548,20 @@ void SceneView3D::setupScene()
     m_skyRenderer->setRadius(2500000.0f);
     m_skyRenderer->setCenter(m_camera->position());
     connect(m_orbitCamera, &OrbitCamera::cameraChanged, this, [this]() {
-        if (m_skyRenderer && m_camera)
-            m_skyRenderer->setCenter(m_camera->position());
+        updateCameraDependentScene();
         syncZoomLevelFromCamera();
     });
+
+    m_freeCamera = new FreeCameraController(m_camera, this);
+    connect(m_freeCamera, &FreeCameraController::cameraChanged, this, [this]() {
+        updateCameraDependentScene();
+        requestViewportUpdate();
+    });
+    connect(m_freeCamera, &FreeCameraController::speedChanged,
+            this, &SceneView3D::freeCameraSpeedChanged);
+    m_freeCameraTimer = new QTimer(this);
+    m_freeCameraTimer->setInterval(16);
+    connect(m_freeCameraTimer, &QTimer::timeout, this, &SceneView3D::tickFreeCamera);
 
     m_selectionManager = new SelectionManager(this);
     connect(m_selectionManager, &SelectionManager::objectSelected,
@@ -858,6 +913,26 @@ void SceneView3D::applyZoneWireframeVisibility()
 #endif
 }
 
+void SceneView3D::tickFreeCamera()
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (!m_freeCamera || !m_freeCamera->isEnabled())
+        return;
+
+    const qint64 elapsed = m_freeCameraClock.isValid() ? m_freeCameraClock.restart() : 16;
+    const float deltaSeconds = qBound(0.001f, static_cast<float>(elapsed) / 1000.0f, 0.1f);
+    m_freeCamera->update(deltaSeconds);
+#endif
+}
+
+void SceneView3D::updateCameraDependentScene()
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (m_skyRenderer && m_camera)
+        m_skyRenderer->setCenter(m_camera->position());
+#endif
+}
+
 #ifdef FLATLAS_HAS_QT3D
 QString SceneView3D::modelPathForObject(const flatlas::domain::SolarObject &obj) const
 {
@@ -1087,17 +1162,53 @@ bool SceneView3D::eventFilter(QObject *watched, QEvent *event)
         setViewportActive(isVisible());
         break;
     case QEvent::MouseButtonPress:
+        if (m_freeCamera && m_freeCamera->isEnabled()) {
+            if (auto *mouseEvent = static_cast<QMouseEvent *>(event);
+                mouseEvent->button() == Qt::LeftButton && m_container) {
+                m_container->grabMouse();
+            }
+            m_freeCamera->handleMousePress(static_cast<QMouseEvent *>(event));
+            return true;
+        }
         m_orbitCamera->handleMousePress(static_cast<QMouseEvent *>(event));
         return true;
     case QEvent::MouseMove:
+        if (m_freeCamera && m_freeCamera->isEnabled()) {
+            m_freeCamera->handleMouseMove(static_cast<QMouseEvent *>(event));
+            return true;
+        }
         m_orbitCamera->handleMouseMove(static_cast<QMouseEvent *>(event));
         return true;
     case QEvent::MouseButtonRelease:
+        if (m_freeCamera && m_freeCamera->isEnabled()) {
+            m_freeCamera->handleMouseRelease(static_cast<QMouseEvent *>(event));
+            if (auto *mouseEvent = static_cast<QMouseEvent *>(event);
+                mouseEvent->button() == Qt::LeftButton && m_container) {
+                m_container->releaseMouse();
+            }
+            return true;
+        }
         m_orbitCamera->handleMouseRelease(static_cast<QMouseEvent *>(event));
         return true;
     case QEvent::Wheel:
+        if (m_freeCamera && m_freeCamera->isEnabled()) {
+            m_freeCamera->handleWheel(static_cast<QWheelEvent *>(event));
+            return true;
+        }
         m_orbitCamera->handleWheel(static_cast<QWheelEvent *>(event));
         return true;
+    case QEvent::KeyPress:
+        if (m_freeCamera && m_freeCamera->isEnabled()) {
+            m_freeCamera->handleKeyPress(static_cast<QKeyEvent *>(event));
+            return true;
+        }
+        break;
+    case QEvent::KeyRelease:
+        if (m_freeCamera && m_freeCamera->isEnabled()) {
+            m_freeCamera->handleKeyRelease(static_cast<QKeyEvent *>(event));
+            return true;
+        }
+        break;
     default:
         break;
     }
@@ -1108,10 +1219,16 @@ void SceneView3D::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
     setViewportActive(true);
+    if (m_freeCamera && m_freeCamera->isEnabled() && m_freeCameraTimer && !m_freeCameraTimer->isActive()) {
+        m_freeCameraClock.restart();
+        m_freeCameraTimer->start();
+    }
 }
 
 void SceneView3D::hideEvent(QHideEvent *event)
 {
+    if (m_freeCameraTimer)
+        m_freeCameraTimer->stop();
     setViewportActive(false);
     QWidget::hideEvent(event);
 }
