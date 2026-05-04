@@ -42,6 +42,7 @@ public:
     void setDisplayFilterSettings(const SystemDisplayFilterSettings &settings);
     void loadDocument(flatlas::domain::SystemDocument *doc);
     void selectObject(const QString &nickname);
+    bool centerOnSelectedObject();
 
 #ifdef FLATLAS_HAS_QT3D
 public slots:
@@ -103,6 +104,8 @@ private:
     QHash<QString, QStringList> m_planetTextureSourcePathsByNickname;
     QSet<QString> m_nicknamesWithRenderedModel;
     QSet<QString> m_linkedRingZoneNicknames;
+    QHash<QString, QVector3D> m_objectCentersByNickname;
+    QHash<QString, float> m_objectRadiiByNickname;
     ModelBounds *m_sceneBounds = nullptr;
     ModelBounds *m_objectBounds = nullptr;
     ModelBounds *m_zoneBounds = nullptr;

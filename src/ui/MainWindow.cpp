@@ -197,6 +197,10 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     topRow->addWidget(filterButton);
     leftLayout->addLayout(topRow);
 
+    auto *centerButton = new QPushButton(QObject::tr("Center to Object"), leftSidebar);
+    centerButton->setEnabled(false);
+    leftLayout->addWidget(centerButton);
+
     auto *tree = new QTreeWidget(leftSidebar);
     tree->setHeaderLabels({QObject::tr("Nickname"), QObject::tr("Type")});
     tree->setAlternatingRowColors(true);
@@ -230,12 +234,14 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
                 continue;
             auto *item = new QTreeWidgetItem(objectsRoot, {obj->nickname(), obj->archetype()});
             item->setData(0, Qt::UserRole, obj->nickname());
+            item->setData(0, Qt::UserRole + 1, QStringLiteral("object"));
         }
         for (const auto &zone : document->zones()) {
             if (!zone)
                 continue;
             auto *item = new QTreeWidgetItem(zonesRoot, {zone->nickname(), zone->zoneType()});
             item->setData(0, Qt::UserRole, zone->nickname());
+            item->setData(0, Qt::UserRole + 1, QStringLiteral("zone"));
         }
     }
     tree->resizeColumnToContents(0);
@@ -306,23 +312,34 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
         applyTreeFilter();
     });
 
-    QObject::connect(tree, &QTreeWidget::itemSelectionChanged, view, [tree, view]() {
+    QObject::connect(tree, &QTreeWidget::itemSelectionChanged, view, [tree, view, centerButton]() {
         const auto selected = tree->selectedItems();
-        if (selected.isEmpty())
+        if (selected.isEmpty()) {
+            centerButton->setEnabled(false);
             return;
+        }
         const QString nickname = selected.first()->data(0, Qt::UserRole).toString();
+        const bool isObject = selected.first()->data(0, Qt::UserRole + 1).toString() == QStringLiteral("object");
+        centerButton->setEnabled(isObject && !nickname.isEmpty());
         if (!nickname.isEmpty())
             view->selectObject(nickname);
     });
 
-    QObject::connect(view, &flatlas::rendering::SceneView3D::objectSelected, tree, [tree](const QString &nickname) {
-        if (nickname.isEmpty())
+    QObject::connect(centerButton, &QPushButton::clicked, view, [view]() {
+        view->centerOnSelectedObject();
+    });
+
+    QObject::connect(view, &flatlas::rendering::SceneView3D::objectSelected, tree, [tree, centerButton](const QString &nickname) {
+        if (nickname.isEmpty()) {
+            centerButton->setEnabled(false);
             return;
+        }
         QSignalBlocker blocker(tree);
         const auto matches = tree->findItems(nickname, Qt::MatchExactly | Qt::MatchRecursive, 0);
         if (!matches.isEmpty()) {
             tree->setCurrentItem(matches.first());
             tree->scrollToItem(matches.first());
+            centerButton->setEnabled(matches.first()->data(0, Qt::UserRole + 1).toString() == QStringLiteral("object"));
         }
     });
 

@@ -343,10 +343,35 @@ void SceneView3D::loadDocument(flatlas::domain::SystemDocument *doc)
 void SceneView3D::selectObject(const QString &nickname)
 {
 #ifdef FLATLAS_HAS_QT3D
-    if (m_selectionManager)
+    if (!m_selectionManager)
+        return;
+    if (nickname.isEmpty() || m_objectCentersByNickname.contains(nickname))
         m_selectionManager->select(nickname);
+    else
+        m_selectionManager->select(QString());
 #else
     Q_UNUSED(nickname);
+#endif
+}
+
+bool SceneView3D::centerOnSelectedObject()
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (!m_selectionManager || !m_orbitCamera)
+        return false;
+
+    const QString nickname = m_selectionManager->selectedNickname();
+    if (nickname.isEmpty() || !m_objectCentersByNickname.contains(nickname))
+        return false;
+
+    const QVector3D center = m_objectCentersByNickname.value(nickname);
+    const float radius = qMax(m_objectRadiiByNickname.value(nickname, 0.0f), 500.0f);
+    m_orbitCamera->setTarget(center);
+    m_orbitCamera->setDistance(qMax(radius * 4.0f, 6000.0f));
+    requestViewportUpdate();
+    return true;
+#else
+    return false;
 #endif
 }
 
@@ -434,6 +459,8 @@ void SceneView3D::clearScene()
     m_nicknamesByModelPath.clear();
     m_planetTextureSourcePathsByNickname.clear();
     m_nicknamesWithRenderedModel.clear();
+    m_objectCentersByNickname.clear();
+    m_objectRadiiByNickname.clear();
     if (m_sceneBounds)
         *m_sceneBounds = ModelBounds();
     if (m_objectBounds)
@@ -469,8 +496,6 @@ void SceneView3D::addZone(const std::shared_ptr<flatlas::domain::ZoneItem> &zone
     if (m_zoneBounds)
         m_zoneBounds->include(result.bounds);
 
-    if (result.pickEntity && result.selectionMaterial && m_selectionManager)
-        m_selectionManager->registerEntity(zone->nickname(), result.pickEntity, result.selectionMaterial);
 #else
     Q_UNUSED(zone);
 #endif
@@ -495,6 +520,8 @@ void SceneView3D::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObj
     const QColor baseColor = objectColor(obj->type());
     const bool radiusSphere = shouldRenderAsRadiusSphere(*obj);
     const float radius = radiusSphere ? displayRadiusForObject(*obj) : markerRadius(obj->type());
+    m_objectCentersByNickname.insert(obj->nickname(), obj->position());
+    m_objectRadiiByNickname.insert(obj->nickname(), radius);
     auto *markerEntity = new Qt3DCore::QEntity(objectEntity);
     auto *markerMesh = new Qt3DExtras::QSphereMesh(markerEntity);
     markerMesh->setRadius(radius);
