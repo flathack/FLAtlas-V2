@@ -55,6 +55,7 @@ QVector<ToolChoice> toolChoices()
         {QStringLiteral("idsEditor"), QObject::tr("IDS Editor"), false},
         {QStringLiteral("modSettings"), QObject::tr("Mod Settings"), false},
         {QStringLiteral("npcEditor"), QObject::tr("NPC Editor"), false},
+        {QStringLiteral("factionEditor"), QObject::tr("Faction Editor"), false},
         {QStringLiteral("newsRumorEditor"), QObject::tr("News Editor"), false},
         {QStringLiteral("modelViewer"), QObject::tr("3D Model Viewer"), false},
     };

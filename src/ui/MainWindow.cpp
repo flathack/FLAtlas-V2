@@ -19,6 +19,7 @@
 #include "editors/modmanager/ModManagerPage.h"
 #include "editors/modsettings/ModSettingsPage.h"
 #include "editors/npc/NpcEditorPage.h"
+#include "editors/faction/FactionEditorPage.h"
 #include "editors/news/NewsRumorEditor.h"
 #include "tools/UpdateChecker.h"
 #include "tools/UpdateDownloader.h"
@@ -97,6 +98,8 @@ QString toolKeyForWidget(QWidget *widget)
         return QStringLiteral("modSettings");
     if (qobject_cast<flatlas::editors::NpcEditorPage *>(widget))
         return QStringLiteral("npcEditor");
+    if (qobject_cast<flatlas::editors::FactionEditorPage *>(widget))
+        return QStringLiteral("factionEditor");
     if (qobject_cast<flatlas::editors::NewsRumorEditor *>(widget))
         return QStringLiteral("newsRumorEditor");
     if (qobject_cast<flatlas::rendering::ModelViewerPage *>(widget))
@@ -120,6 +123,7 @@ bool isContextBoundTab(QWidget *widget)
         || qobject_cast<flatlas::editors::TradeRoutePage *>(widget)
         || qobject_cast<flatlas::editors::IdsEditorPage *>(widget)
         || qobject_cast<flatlas::editors::NpcEditorPage *>(widget)
+        || qobject_cast<flatlas::editors::FactionEditorPage *>(widget)
         || qobject_cast<flatlas::editors::NewsRumorEditor *>(widget);
 }
 
@@ -540,6 +544,7 @@ void MainWindow::createMenus()
     toolsMenu->addAction(tr("&Mod Manager"), this, [this]() { openModManager(); });
     toolsMenu->addAction(tr("Mod &Settings"), this, [this]() { openModSettings(); });
     toolsMenu->addAction(tr("&NPC Editor"), this, [this]() { openNpcEditor(); });
+    toolsMenu->addAction(tr("&Faction Editor"), this, [this]() { openFactionEditor(); });
     toolsMenu->addAction(tr("&News Editor"), this, [this]() { openNewsRumorEditor(); });
     toolsMenu->addSeparator();
 
@@ -1028,6 +1033,14 @@ bool MainWindow::saveWidgetWithPrompt(QWidget *widget)
         return editor->save();
     }
 
+    if (auto *editor = qobject_cast<flatlas::editors::FactionEditorPage *>(widget)) {
+        QString error;
+        const bool ok = editor->save(&error);
+        if (!ok && !error.trimmed().isEmpty())
+            QMessageBox::warning(this, tr("Faction Editor"), tr("Could not save factions:\n%1").arg(error));
+        return ok;
+    }
+
     return true;
 }
 
@@ -1044,6 +1057,8 @@ bool MainWindow::isWidgetDirty(QWidget *widget) const
         return editor->isDirty();
     if (auto *editor = qobject_cast<flatlas::editors::NewsRumorEditor *>(widget))
         return editor->isModified();
+    if (auto *editor = qobject_cast<flatlas::editors::FactionEditorPage *>(widget))
+        return editor->isDirty();
 
     return false;
 }
@@ -1287,6 +1302,19 @@ bool MainWindow::openToolByKey(const QString &key, bool pinned)
             m_centerTabs->setCurrentIndex(idx);
         return true;
     }
+    if (key == QStringLiteral("factionEditor")) {
+        auto *editor = new flatlas::editors::FactionEditorPage(this);
+        const int idx = addToolTab(editor, tr("Faction Editor"));
+        connect(editor, &flatlas::editors::FactionEditorPage::titleChanged,
+                this, [this, editor](const QString &title) {
+            int i = m_centerTabs->indexOf(editor);
+            if (i >= 0)
+                m_centerTabs->setTabText(i, title);
+        });
+        if (!pinned)
+            m_centerTabs->setCurrentIndex(idx);
+        return true;
+    }
     if (key == QStringLiteral("newsRumorEditor")) {
         auto *editor = new flatlas::editors::NewsRumorEditor(this);
         const int idx = addToolTab(editor, tr("News Editor"));
@@ -1469,6 +1497,16 @@ void MainWindow::saveCurrentFile()
             statusBar()->showMessage(tr("Saved"), 3000);
         else
             QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
+    }
+
+    auto *factionEditor = qobject_cast<flatlas::editors::FactionEditorPage *>(
+        m_centerTabs->currentWidget());
+    if (factionEditor) {
+        QString error;
+        if (factionEditor->save(&error))
+            statusBar()->showMessage(tr("Saved"), 3000);
+        else
+            QMessageBox::warning(this, tr("Faction Editor"), tr("Could not save factions:\n%1").arg(error));
     }
 
 }
@@ -1770,6 +1808,23 @@ void MainWindow::openNpcEditor()
     });
 
     statusBar()->showMessage(tr("NPC Editor opened"), 3000);
+}
+
+void MainWindow::openFactionEditor()
+{
+    auto *editor = new flatlas::editors::FactionEditorPage(this);
+
+    int idx = m_centerTabs->addTab(editor, tr("Faction Editor"));
+    m_centerTabs->setCurrentIndex(idx);
+
+    connect(editor, &flatlas::editors::FactionEditorPage::titleChanged,
+            this, [this, editor](const QString &title) {
+        int i = m_centerTabs->indexOf(editor);
+        if (i >= 0)
+            m_centerTabs->setTabText(i, title);
+    });
+
+    statusBar()->showMessage(tr("Faction Editor opened"), 3000);
 }
 
 void MainWindow::openNewsRumorEditor()

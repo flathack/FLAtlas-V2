@@ -17,6 +17,7 @@ namespace flatlas::editors { class IdsEditorPage; }
 namespace flatlas::editors { class ModManagerPage; }
 namespace flatlas::editors { class ModSettingsPage; }
 namespace flatlas::editors { class NpcEditorPage; }
+namespace flatlas::editors { class FactionEditorPage; }
 namespace flatlas::tools { class HelpBrowser; }
 namespace flatlas::tools { class KeyboardShortcutOverviewDialog; }
 namespace flatlas::rendering { class ModelViewerPage; }
@@ -48,6 +49,7 @@ private:
     void openModManager();
     void openModSettings();
     void openNpcEditor();
+    void openFactionEditor();
     void openNewsRumorEditor();
     void openModelViewer();
     void openSettingsDialog();

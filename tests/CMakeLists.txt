@@ -18,6 +18,8 @@ flatlas_add_test(test_PathUtils      test_PathUtils.cpp      flatlas_core)
 
 # Phase 2 domain model tests
 flatlas_add_test(test_DomainModels   test_DomainModels.cpp   flatlas_domain)
+flatlas_add_test(test_FactionData    test_FactionData.cpp    flatlas_domain)
+flatlas_add_test(test_FactionRepository test_FactionRepository.cpp flatlas_infrastructure)
 
 # Phase 1 core tests
 flatlas_add_test(test_Config      test_Config.cpp      flatlas_core)

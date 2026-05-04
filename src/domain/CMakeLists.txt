@@ -7,6 +7,7 @@ add_library(flatlas_domain STATIC
     BaseData.h BaseData.cpp
     TradeRoute.h TradeRoute.cpp
     NpcData.h NpcData.cpp
+    FactionData.h FactionData.cpp
     ModProfile.h ModProfile.cpp
 )
 

@@ -34,6 +34,8 @@ add_library(flatlas_editors STATIC
     base/RoomEditor.h base/RoomEditor.cpp
     npc/NpcEditorPage.h npc/NpcEditorPage.cpp
     npc/MbaseOperations.h npc/MbaseOperations.cpp
+    faction/FactionEditorPage.h faction/FactionEditorPage.cpp
+    faction/FactionEditorService.h faction/FactionEditorService.cpp
     ini/IniEditorPage.h ini/IniEditorPage.cpp
     ini/IniCodeEditor.h ini/IniCodeEditor.cpp
     ini/IniFindReplaceDialog.h ini/IniFindReplaceDialog.cpp
