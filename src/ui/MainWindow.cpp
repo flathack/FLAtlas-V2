@@ -249,6 +249,7 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     auto *zoomSlider = new QSlider(Qt::Horizontal, leftSidebar);
     zoomSlider->setRange(0, 100);
     zoomSlider->setValue(50);
+    zoomSlider->setTracking(true);
     zoomSlider->setToolTip(QObject::tr("Zoom"));
     leftLayout->insertWidget(2, zoomSlider);
 
@@ -262,6 +263,10 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
 
     QObject::connect(zoomSlider, &QSlider::valueChanged, view, [view](int value) {
         view->setZoomLevel(value);
+    });
+    QObject::connect(view, &flatlas::rendering::SceneView3D::zoomLevelChanged, zoomSlider, [zoomSlider](int value) {
+        QSignalBlocker blocker(zoomSlider);
+        zoomSlider->setValue(value);
     });
     QObject::connect(wireframesCheck, &QCheckBox::toggled, view, [view](bool checked) {
         view->setZoneWireframesVisible(checked);

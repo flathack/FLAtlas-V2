@@ -53,6 +53,7 @@ public slots:
 
 signals:
     void objectSelected(const QString &nickname);
+    void zoomLevelChanged(int percent);
 
 protected:
 #ifdef FLATLAS_HAS_QT3D
@@ -86,6 +87,7 @@ private:
     float displayRadiusForObject(const flatlas::domain::SolarObject &obj) const;
     bool shouldRenderAsRadiusSphere(const flatlas::domain::SolarObject &obj) const;
     void applyCameraZoom();
+    void syncZoomLevelFromCamera();
     void applyZoneWireframeVisibility();
 
     Qt3DExtras::Qt3DWindow *m_3dWindow = nullptr;
@@ -124,7 +126,6 @@ private:
     QString m_gameRoot;
     SystemDisplayFilterSettings m_displayFilterSettings;
     int m_zoomLevel = 50;
-    float m_baseCameraDistance = 80000.0f;
     bool m_zoneWireframesVisible = true;
 };
 

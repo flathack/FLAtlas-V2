@@ -46,6 +46,7 @@
 #include <QWheelEvent>
 #include <QtConcurrent/QtConcurrent>
 
+#include <cmath>
 #include <limits>
 #endif
 
@@ -450,6 +451,7 @@ void SceneView3D::setupScene()
     connect(m_orbitCamera, &OrbitCamera::cameraChanged, this, [this]() {
         if (m_skyRenderer && m_camera)
             m_skyRenderer->setCenter(m_camera->position());
+        syncZoomLevelFromCamera();
     });
 
     m_selectionManager = new SelectionManager(this);
@@ -665,7 +667,6 @@ void SceneView3D::updateSceneCamera()
     const QVector3D center = focusBounds->valid ? focusBounds->center() : QVector3D();
     const float radius = qMax(focusBounds->radius(), 5000.0f);
     const float distance = qMax(radius * 2.4f, 25000.0f);
-    m_baseCameraDistance = distance;
     m_orbitCamera->setDistanceLimits(qMax(radius * 0.015f, 50.0f), qMax(distance * 80.0f, 1000000.0f));
     m_orbitCamera->setResetState(center, distance, 45.0f, 24.0f);
     m_orbitCamera->resetView();
@@ -707,12 +708,41 @@ void SceneView3D::applyCameraZoom()
     if (!m_orbitCamera)
         return;
 
-    const float normalized = (50.0f - static_cast<float>(m_zoomLevel)) / 50.0f;
-    const float zoomFactor = std::pow(8.0f, normalized);
-    const float distance = qBound(m_orbitCamera->minDistance(),
-                                  m_baseCameraDistance * zoomFactor,
-                                  m_orbitCamera->maxDistance());
-    m_orbitCamera->setDistance(distance);
+    const float minDistance = m_orbitCamera->minDistance();
+    const float maxDistance = m_orbitCamera->maxDistance();
+    if (minDistance <= 0.0f || maxDistance <= minDistance)
+        return;
+
+    const double t = static_cast<double>(qBound(0, m_zoomLevel, 100)) / 100.0;
+    const double logMin = std::log(static_cast<double>(minDistance));
+    const double logMax = std::log(static_cast<double>(maxDistance));
+    const float distance = static_cast<float>(std::exp(logMax + (logMin - logMax) * t));
+    m_orbitCamera->setDistance(qBound(minDistance, distance, maxDistance));
+#endif
+}
+
+void SceneView3D::syncZoomLevelFromCamera()
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (!m_orbitCamera)
+        return;
+
+    const float minDistance = m_orbitCamera->minDistance();
+    const float maxDistance = m_orbitCamera->maxDistance();
+    const float distance = qBound(minDistance, m_orbitCamera->distance(), maxDistance);
+    if (minDistance <= 0.0f || maxDistance <= minDistance)
+        return;
+
+    const double logMin = std::log(static_cast<double>(minDistance));
+    const double logMax = std::log(static_cast<double>(maxDistance));
+    const double logDistance = std::log(static_cast<double>(distance));
+    const double normalized = (logMax - logDistance) / (logMax - logMin);
+    const int nextZoomLevel = qBound(0, static_cast<int>(std::lround(normalized * 100.0)), 100);
+    if (nextZoomLevel == m_zoomLevel)
+        return;
+
+    m_zoomLevel = nextZoomLevel;
+    emit zoomLevelChanged(m_zoomLevel);
 #endif
 }
 
