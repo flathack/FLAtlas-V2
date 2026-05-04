@@ -67,6 +67,7 @@
 #include <QBrush>
 #include <QFont>
 #include <QPalette>
+#include <QTimer>
 
 #include <exception>
 #include <memory>
@@ -662,6 +663,25 @@ void MainWindow::createPanels()
             this, [this](int index) { closeTabWithPrompt(index); });
     connect(m_centerTabs, &flatlas::ui::CenterTabWidget::currentChanged,
             this, [this](int) { saveOpenToolTabs(); });
+    connect(m_centerTabs, &flatlas::ui::CenterTabWidget::currentChanged,
+            this, [this](int) {
+        if (!m_centerTabs)
+            return;
+        auto sync3DViews = [this]() {
+            QWidget *current = m_centerTabs ? m_centerTabs->currentWidget() : nullptr;
+            for (int i = 0; m_centerTabs && i < m_centerTabs->count(); ++i) {
+                QWidget *page = m_centerTabs->widget(i);
+                if (!page)
+                    continue;
+                const bool active = (page == current);
+                const auto views = page->findChildren<flatlas::rendering::SceneView3D *>();
+                for (auto *view : views)
+                    view->setViewportActive(active);
+            }
+        };
+        sync3DViews();
+        QTimer::singleShot(0, this, sync3DViews);
+    });
 
     // Right panel: FLAtlas Settings + indicators
     auto *rightPanel = new QWidget(this);

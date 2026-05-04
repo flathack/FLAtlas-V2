@@ -34,7 +34,12 @@
 #include <QEvent>
 #include <QFileInfo>
 #include <QFutureWatcher>
+#include <QHideEvent>
 #include <QMouseEvent>
+#include <QPalette>
+#include <QShowEvent>
+#include <QSurfaceFormat>
+#include <QTimer>
 #include <QWheelEvent>
 #include <QtConcurrent/QtConcurrent>
 
@@ -174,12 +179,24 @@ SceneView3D::SceneView3D(QWidget *parent) : QWidget(parent)
     layout->setSpacing(0);
 
 #ifdef FLATLAS_HAS_QT3D
+    QSurfaceFormat format = QSurfaceFormat::defaultFormat();
+    format.setAlphaBufferSize(0);
+    format.setDepthBufferSize(24);
+    format.setStencilBufferSize(8);
+
     m_3dWindow = new Qt3DExtras::Qt3DWindow();
+    m_3dWindow->setFormat(format);
+    m_3dWindow->setOpacity(1.0);
     m_container = QWidget::createWindowContainer(m_3dWindow, this);
     m_container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     m_container->setMinimumSize(320, 240);
     m_container->setFocusPolicy(Qt::StrongFocus);
     m_container->setMouseTracking(true);
+    m_container->setAutoFillBackground(true);
+    m_container->setAttribute(Qt::WA_OpaquePaintEvent, true);
+    QPalette containerPalette = m_container->palette();
+    containerPalette.setColor(QPalette::Window, QColor(6, 10, 18));
+    m_container->setPalette(containerPalette);
     m_container->setToolTip(tr("Left drag rotates, right drag pans, mouse wheel zooms."));
     m_container->installEventFilter(this);
     m_3dWindow->installEventFilter(this);
@@ -189,6 +206,7 @@ SceneView3D::SceneView3D(QWidget *parent) : QWidget(parent)
     m_objectBounds = new ModelBounds();
     m_zoneBounds = new ModelBounds();
     setupScene();
+    setViewportActive(isVisible());
 #else
     auto *placeholder = new QLabel(tr("3D View - Qt3D not available"), this);
     placeholder->setAlignment(Qt::AlignCenter);
@@ -246,6 +264,36 @@ void SceneView3D::selectObject(const QString &nickname)
 #endif
 }
 
+void SceneView3D::setViewportActive(bool active)
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (m_container)
+        m_container->setVisible(active);
+    if (m_3dWindow)
+        m_3dWindow->setVisible(active);
+    if (active) {
+        if (m_container) {
+            m_container->raise();
+            m_container->update();
+        }
+        requestViewportUpdate();
+    }
+#else
+    Q_UNUSED(active);
+#endif
+}
+
+void SceneView3D::requestViewportUpdate()
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (!m_3dWindow)
+        return;
+    QTimer::singleShot(0, m_3dWindow, [window = m_3dWindow]() {
+        window->requestUpdate();
+    });
+#endif
+}
+
 void SceneView3D::setupScene()
 {
 #ifdef FLATLAS_HAS_QT3D
@@ -264,8 +312,8 @@ void SceneView3D::setupScene()
     m_orbitCamera->resetView();
 
     auto *renderer = m_3dWindow->defaultFrameGraph();
-    renderer->setClearColor(QColor(6, 10, 18));
-    renderer->setFrustumCullingEnabled(true);
+    renderer->setClearColor(QColor(6, 10, 18, 255));
+    renderer->setFrustumCullingEnabled(false);
 
     auto *lightEntity = new Qt3DCore::QEntity(m_rootEntity);
     m_light = new Qt3DRender::QPointLight(lightEntity);
@@ -547,6 +595,11 @@ bool SceneView3D::eventFilter(QObject *watched, QEvent *event)
         return QWidget::eventFilter(watched, event);
 
     switch (event->type()) {
+    case QEvent::Show:
+    case QEvent::Expose:
+    case QEvent::WindowActivate:
+        setViewportActive(isVisible());
+        break;
     case QEvent::MouseButtonPress:
         m_orbitCamera->handleMousePress(static_cast<QMouseEvent *>(event));
         return true;
@@ -563,6 +616,18 @@ bool SceneView3D::eventFilter(QObject *watched, QEvent *event)
         break;
     }
     return QWidget::eventFilter(watched, event);
+}
+
+void SceneView3D::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    setViewportActive(true);
+}
+
+void SceneView3D::hideEvent(QHideEvent *event)
+{
+    setViewportActive(false);
+    QWidget::hideEvent(event);
 }
 #endif
 

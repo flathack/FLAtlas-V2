@@ -12,7 +12,11 @@
 #include <Qt3DExtras/QPhongAlphaMaterial>
 #include <Qt3DExtras/QPhongMaterial>
 #include <Qt3DExtras/QSphereMesh>
+#include <Qt3DRender/QColorMask>
+#include <Qt3DRender/QEffect>
 #include <Qt3DRender/QGeometryRenderer>
+#include <Qt3DRender/QRenderPass>
+#include <Qt3DRender/QTechnique>
 
 #include <QByteArray>
 #include <QtMath>
@@ -220,12 +224,34 @@ void includeRotatedBounds(ModelBounds &bounds,
     }
 }
 
+void preventFramebufferAlphaWrites(Qt3DRender::QMaterial *material)
+{
+    if (!material || !material->effect())
+        return;
+
+    for (Qt3DRender::QTechnique *technique : material->effect()->techniques()) {
+        if (!technique)
+            continue;
+        for (Qt3DRender::QRenderPass *pass : technique->renderPasses()) {
+            if (!pass)
+                continue;
+            auto *colorMask = new Qt3DRender::QColorMask(pass);
+            colorMask->setRedMasked(true);
+            colorMask->setGreenMasked(true);
+            colorMask->setBlueMasked(true);
+            colorMask->setAlphaMasked(false);
+            pass->addRenderState(colorMask);
+        }
+    }
+}
+
 Qt3DExtras::QPhongAlphaMaterial *makeFillMaterial(const QColor &color, float alpha, Qt3DCore::QNode *owner)
 {
     auto *material = new Qt3DExtras::QPhongAlphaMaterial(owner);
     material->setDiffuse(color);
     material->setAmbient(color.darker(170));
     material->setAlpha(qBound(0.0f, alpha, 1.0f));
+    preventFramebufferAlphaWrites(material);
     return material;
 }
 
@@ -237,6 +263,7 @@ Qt3DExtras::QPhongAlphaMaterial *makeWireMaterial(const QColor &color, Qt3DCore:
     material->setDiffuse(wireColor);
     material->setAmbient(wireColor.darker(170));
     material->setAlpha(0.5f);
+    preventFramebufferAlphaWrites(material);
     return material;
 }
 

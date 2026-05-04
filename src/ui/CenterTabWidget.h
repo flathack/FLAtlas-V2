@@ -1,8 +1,10 @@
 #pragma once
 #include <QObject>
+#include <QSet>
 
 class QTabBar;
 class QStackedWidget;
+class QWidget;
 
 namespace flatlas::ui {
 
@@ -35,8 +37,10 @@ signals:
 
 private:
     bool isPinnedTab(int index) const;
+    QWidget *widgetForTab(int index) const;
     QTabBar *m_tabBar;
     QStackedWidget *m_stack;
+    QSet<QWidget *> m_pinnedWidgets;
     int m_pinnedCount = 0;
 };
 

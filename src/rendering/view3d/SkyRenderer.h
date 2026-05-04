@@ -4,9 +4,10 @@
 #ifdef FLATLAS_HAS_QT3D
 
 #include <Qt3DCore/QEntity>
-#include <Qt3DExtras/QPhongMaterial>
-#include <Qt3DExtras/QSphereMesh>
 #include <Qt3DCore/QTransform>
+
+namespace Qt3DRender { class QMaterial; }
+namespace Qt3DRender { class QGeometryRenderer; }
 
 namespace flatlas::rendering {
 
@@ -19,8 +20,8 @@ public:
     void setRadius(float radius);
 
 private:
-    Qt3DExtras::QSphereMesh *m_mesh = nullptr;
-    Qt3DExtras::QPhongMaterial *m_material = nullptr;
+    Qt3DRender::QGeometryRenderer *m_mesh = nullptr;
+    Qt3DRender::QMaterial *m_material = nullptr;
     Qt3DCore::QTransform *m_transform = nullptr;
 };
 

@@ -38,12 +38,19 @@ public:
     void loadDocument(flatlas::domain::SystemDocument *doc);
     void selectObject(const QString &nickname);
 
+#ifdef FLATLAS_HAS_QT3D
+public slots:
+    void setViewportActive(bool active);
+#endif
+
 signals:
     void objectSelected(const QString &nickname);
 
 protected:
 #ifdef FLATLAS_HAS_QT3D
     bool eventFilter(QObject *watched, QEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
 #endif
 
 private:
@@ -55,6 +62,7 @@ private:
     void applyDisplayFilter();
 
 #ifdef FLATLAS_HAS_QT3D
+    void requestViewportUpdate();
     void scheduleModelLoading();
     void attachLoadedModels(const QHash<QString, flatlas::infrastructure::DecodedModel> &models, int generation);
     int addModelNodeRecursive(const flatlas::infrastructure::ModelNode &node,

@@ -1,6 +1,8 @@
 #include "CenterTabWidget.h"
 #include <QTabBar>
 #include <QStackedWidget>
+#include <QVariant>
+#include <QWidget>
 
 namespace flatlas::ui {
 
@@ -16,8 +18,8 @@ CenterTabWidget::CenterTabWidget(QObject *parent)
     m_tabBar->setElideMode(Qt::ElideRight);
 
     connect(m_tabBar, &QTabBar::currentChanged, this, [this](int index) {
-        if (index >= 0 && index < m_stack->count())
-            m_stack->setCurrentIndex(index);
+        if (QWidget *page = widgetForTab(index))
+            m_stack->setCurrentWidget(page);
         emit currentChanged(index);
     });
 
@@ -28,16 +30,9 @@ CenterTabWidget::CenterTabWidget(QObject *parent)
     });
 
     connect(m_tabBar, &QTabBar::tabMoved, this, [this](int from, int to) {
-        if (from < 0 || to < 0 || from == to)
-            return;
-        QWidget *movedWidget = m_stack->widget(from);
-        QWidget *current = m_stack->currentWidget();
-        if (!movedWidget)
-            return;
-        m_stack->removeWidget(movedWidget);
-        m_stack->insertWidget(to, movedWidget);
-        if (current)
-            m_stack->setCurrentWidget(current);
+        Q_UNUSED(from);
+        if (QWidget *page = widgetForTab(to))
+            m_stack->setCurrentWidget(page);
     });
 }
 
@@ -47,7 +42,7 @@ QStackedWidget *CenterTabWidget::contentWidget() const { return m_stack; }
 int CenterTabWidget::addTab(QWidget *widget, const QString &label)
 {
     int idx = m_tabBar->addTab(label);
-    m_tabBar->setTabData(idx, false);
+    m_tabBar->setTabData(idx, QVariant::fromValue(static_cast<QObject *>(widget)));
     m_stack->addWidget(widget);
     return idx;
 }
@@ -56,8 +51,9 @@ int CenterTabWidget::addPinnedTab(QWidget *widget, const QString &label)
 {
     int idx = m_pinnedCount;
     m_tabBar->insertTab(idx, label);
-    m_tabBar->setTabData(idx, true);
-    m_stack->insertWidget(idx, widget);
+    m_tabBar->setTabData(idx, QVariant::fromValue(static_cast<QObject *>(widget)));
+    m_stack->addWidget(widget);
+    m_pinnedWidgets.insert(widget);
     m_tabBar->setTabButton(idx, QTabBar::RightSide, nullptr);
     m_tabBar->setTabButton(idx, QTabBar::LeftSide, nullptr);
     ++m_pinnedCount;
@@ -68,9 +64,11 @@ void CenterTabWidget::removeTab(int index, bool force)
 {
     if (index < 0 || index >= m_tabBar->count() || (!force && isPinnedTab(index)))
         return;
+    QWidget *w = widgetForTab(index);
     if (force && isPinnedTab(index))
         --m_pinnedCount;
-    QWidget *w = m_stack->widget(index);
+    if (w)
+        m_pinnedWidgets.remove(w);
     if (w)
         m_stack->removeWidget(w);
     m_tabBar->removeTab(index);
@@ -80,14 +78,24 @@ void CenterTabWidget::removeTab(int index, bool force)
 
 void CenterTabWidget::setCurrentIndex(int index)
 {
+    if (QWidget *page = widgetForTab(index))
+        m_stack->setCurrentWidget(page);
     m_tabBar->setCurrentIndex(index);
 }
 
 int CenterTabWidget::currentIndex() const { return m_tabBar->currentIndex(); }
 int CenterTabWidget::count() const { return m_tabBar->count(); }
-QWidget *CenterTabWidget::currentWidget() const { return m_stack->currentWidget(); }
-QWidget *CenterTabWidget::widget(int index) const { return m_stack->widget(index); }
-int CenterTabWidget::indexOf(QWidget *widget) const { return m_stack->indexOf(widget); }
+QWidget *CenterTabWidget::currentWidget() const { return widgetForTab(m_tabBar->currentIndex()); }
+QWidget *CenterTabWidget::widget(int index) const { return widgetForTab(index); }
+
+int CenterTabWidget::indexOf(QWidget *widget) const
+{
+    for (int i = 0; i < m_tabBar->count(); ++i) {
+        if (widgetForTab(i) == widget)
+            return i;
+    }
+    return -1;
+}
 
 void CenterTabWidget::setTabText(int index, const QString &text)
 {
@@ -96,9 +104,16 @@ void CenterTabWidget::setTabText(int index, const QString &text)
 
 bool CenterTabWidget::isPinnedTab(int index) const
 {
+    QWidget *widget = widgetForTab(index);
+    return widget && m_pinnedWidgets.contains(widget);
+}
+
+QWidget *CenterTabWidget::widgetForTab(int index) const
+{
     if (index < 0 || index >= m_tabBar->count())
-        return false;
-    return m_tabBar->tabData(index).toBool();
+        return nullptr;
+    QObject *object = m_tabBar->tabData(index).value<QObject *>();
+    return qobject_cast<QWidget *>(object);
 }
 
 } // namespace flatlas::ui
