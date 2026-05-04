@@ -14,6 +14,7 @@ class FreelancerMaterialResolver {
 public:
     static QString resolveTexturePathForMesh(const QString &modelPath, const MeshData &mesh);
     static QImage loadTextureForMesh(const QString &modelPath, const MeshData &mesh);
+    static QImage loadBestPlanetTexture(const QString &archetype, const QStringList &sourcePaths);
 
 private:
     static QHash<QString, QStringList> extractUtfMaterialTextureMap(const QString &utfPath);

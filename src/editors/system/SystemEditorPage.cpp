@@ -1365,6 +1365,55 @@ const QHash<QString, float> &solarArchetypeDisplayRadiiForPreview()
     return cache;
 }
 
+const QHash<QString, QStringList> &solarArchetypeTextureSourcePathsForPreview()
+{
+    static QString cachedGamePath;
+    static QHash<QString, QStringList> cache;
+
+    const QString gamePath = normalizedPathKey(flatlas::core::EditingContext::instance().primaryGamePath());
+    if (gamePath == cachedGamePath)
+        return cache;
+
+    cachedGamePath = gamePath;
+    cache.clear();
+    if (gamePath.isEmpty())
+        return cache;
+
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gamePath, QStringLiteral("DATA"));
+    const QString solarArchPath = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("SOLAR/solararch.ini"));
+    if (dataDir.isEmpty() || solarArchPath.isEmpty())
+        return cache;
+
+    const IniDocument document = IniParser::parseFile(solarArchPath);
+    for (const auto &section : document) {
+        const QString nickname = normalizedPathKey(section.value(QStringLiteral("nickname")));
+        if (nickname.isEmpty())
+            continue;
+
+        QStringList sources;
+        const QString relativeModelPath = section.value(QStringLiteral("DA_archetype")).trimmed();
+        for (const QString &relativePath : section.values(QStringLiteral("material_library"))) {
+            const QString resolved = flatlas::core::PathUtils::ciResolvePath(dataDir, relativePath.trimmed());
+            if (!resolved.isEmpty() && !sources.contains(resolved, Qt::CaseInsensitive))
+                sources.append(resolved);
+        }
+        for (const QString &relativePath : section.values(QStringLiteral("texture_library"))) {
+            const QString resolved = flatlas::core::PathUtils::ciResolvePath(dataDir, relativePath.trimmed());
+            if (!resolved.isEmpty() && !sources.contains(resolved, Qt::CaseInsensitive))
+                sources.append(resolved);
+        }
+
+        const QString modelPath = flatlas::core::PathUtils::ciResolvePath(dataDir, relativeModelPath);
+        if (!modelPath.isEmpty() && !sources.contains(modelPath, Qt::CaseInsensitive))
+            sources.append(modelPath);
+
+        if (!sources.isEmpty())
+            cache.insert(nickname, sources);
+    }
+
+    return cache;
+}
+
 QQuaternion quaternionFromFreelancerRotation(const QVector3D &rotation)
 {
     return QQuaternion::fromEulerAngles(rotation.x(), rotation.y(), rotation.z());
@@ -3722,6 +3771,11 @@ QHash<QString, QString> SystemEditorPage::archetypeModelPathsFor3DView() const
 QHash<QString, float> SystemEditorPage::archetypeDisplayRadiiFor3DView() const
 {
     return solarArchetypeDisplayRadiiForPreview();
+}
+
+QHash<QString, QStringList> SystemEditorPage::archetypeTextureSourcePathsFor3DView() const
+{
+    return solarArchetypeTextureSourcePathsForPreview();
 }
 
 SystemDisplayFilterSettings SystemEditorPage::displayFilterSettingsFor3DView() const

@@ -2,6 +2,8 @@
 // rendering/view3d/SceneView3D.h - practical 3D system editor viewport
 
 #include <QHash>
+#include <QImage>
+#include <QSet>
 #include <QStringList>
 #include <QWidget>
 
@@ -12,7 +14,7 @@
 #ifdef FLATLAS_HAS_QT3D
 namespace Qt3DExtras { class Qt3DWindow; }
 namespace Qt3DCore { class QEntity; }
-namespace Qt3DRender { class QCamera; class QPointLight; }
+namespace Qt3DRender { class QCamera; class QMaterial; class QPointLight; }
 #endif
 
 namespace flatlas::domain { class SystemDocument; class SolarObject; class ZoneItem; }
@@ -35,6 +37,8 @@ public:
 
     void setArchetypeModelPaths(const QHash<QString, QString> &modelPaths);
     void setArchetypeDisplayRadii(const QHash<QString, float> &displayRadii);
+    void setArchetypeTextureSourcePaths(const QHash<QString, QStringList> &textureSourcePaths);
+    void setGameRoot(const QString &gameRoot);
     void setDisplayFilterSettings(const SystemDisplayFilterSettings &settings);
     void loadDocument(flatlas::domain::SystemDocument *doc);
     void selectObject(const QString &nickname);
@@ -58,6 +62,7 @@ private:
     void setupScene();
     void clearScene();
     void addSolarObject(const std::shared_ptr<flatlas::domain::SolarObject> &obj);
+    void addPlanetaryRing(const flatlas::domain::SolarObject &obj);
     void addZone(const std::shared_ptr<flatlas::domain::ZoneItem> &zone);
     void updateSceneCamera();
     void applyDisplayFilter();
@@ -65,7 +70,9 @@ private:
 #ifdef FLATLAS_HAS_QT3D
     void requestViewportUpdate();
     void scheduleModelLoading();
+    void schedulePlanetTextureLoading();
     void attachLoadedModels(const QHash<QString, flatlas::infrastructure::DecodedModel> &models, int generation);
+    void applyPlanetTextures(const QHash<QString, QImage> &textures, int generation);
     int addModelNodeRecursive(const flatlas::infrastructure::ModelNode &node,
                               Qt3DCore::QEntity *parent,
                               const QString &nickname,
@@ -89,9 +96,13 @@ private:
     SkyRenderer *m_skyRenderer = nullptr;
     QHash<QString, Qt3DCore::QEntity *> m_modelHostsByNickname;
     QHash<QString, Qt3DCore::QEntity *> m_markerEntitiesByNickname;
+    QHash<QString, Qt3DRender::QMaterial *> m_markerMaterialsByNickname;
+    QHash<QString, QList<Qt3DCore::QEntity *>> m_ringEntitiesByHostNickname;
     QHash<QString, Qt3DCore::QEntity *> m_sceneEntitiesByNickname;
     QHash<QString, QStringList> m_nicknamesByModelPath;
+    QHash<QString, QStringList> m_planetTextureSourcePathsByNickname;
     QSet<QString> m_nicknamesWithRenderedModel;
+    QSet<QString> m_linkedRingZoneNicknames;
     ModelBounds *m_sceneBounds = nullptr;
     ModelBounds *m_objectBounds = nullptr;
     ModelBounds *m_zoneBounds = nullptr;
@@ -101,6 +112,8 @@ private:
     flatlas::domain::SystemDocument *m_document = nullptr;
     QHash<QString, QString> m_archetypeModelPaths;
     QHash<QString, float> m_archetypeDisplayRadii;
+    QHash<QString, QStringList> m_archetypeTextureSourcePaths;
+    QString m_gameRoot;
     SystemDisplayFilterSettings m_displayFilterSettings;
 };
 

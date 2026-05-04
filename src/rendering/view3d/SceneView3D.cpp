@@ -7,13 +7,13 @@
 #include "domain/ZoneItem.h"
 
 #include <QLabel>
-#include <QSet>
 #include <QVBoxLayout>
 
 #ifdef FLATLAS_HAS_QT3D
 #include "MaterialFactory.h"
 #include "ModelGeometryBuilder.h"
 #include "OrbitCamera.h"
+#include "RingPreviewSceneBuilder.h"
 #include "SelectionManager.h"
 #include "SkyRenderer.h"
 #include "ZoneColorScheme.h"
@@ -114,6 +114,22 @@ float sphereFallbackRadius(const QString &archetype)
 
 QColor colorForMesh(const flatlas::infrastructure::MeshData &mesh, int nodeIndex)
 {
+    const QString materialValue = mesh.materialValue.trimmed();
+    if (materialValue.startsWith(QStringLiteral("preview_color:"), Qt::CaseInsensitive)) {
+        const QStringList parts = materialValue.mid(QStringLiteral("preview_color:").size())
+                                      .split(QLatin1Char(','), Qt::SkipEmptyParts);
+        if (parts.size() >= 3) {
+            bool okRed = false;
+            bool okGreen = false;
+            bool okBlue = false;
+            const int red = parts[0].trimmed().toInt(&okRed);
+            const int green = parts[1].trimmed().toInt(&okGreen);
+            const int blue = parts[2].trimmed().toInt(&okBlue);
+            if (okRed && okGreen && okBlue)
+                return QColor(qBound(0, red, 255), qBound(0, green, 255), qBound(0, blue, 255));
+        }
+    }
+
     if (!mesh.materialValue.isEmpty()) {
         const uint hash = qHash(mesh.materialValue.toLower());
         return QColor::fromHsv(static_cast<int>(hash % 360u), 105, 190);
@@ -183,6 +199,34 @@ void setEntityTreeEnabled(Qt3DCore::QEntity *entity, bool enabled)
     }
 }
 
+QString rawEntryValue(const flatlas::domain::SolarObject &object, const QString &key)
+{
+    const auto entries = object.rawEntries();
+    for (int index = entries.size() - 1; index >= 0; --index) {
+        if (entries[index].first.compare(key, Qt::CaseInsensitive) == 0)
+            return entries[index].second.trimmed();
+    }
+    return {};
+}
+
+QString ringZoneNickname(const flatlas::domain::SolarObject &object)
+{
+    const QString raw = rawEntryValue(object, QStringLiteral("ring"));
+    if (raw.isEmpty())
+        return {};
+    const QStringList parts = raw.split(QLatin1Char(','), Qt::SkipEmptyParts);
+    return parts.isEmpty() ? QString() : parts.first().trimmed();
+}
+
+QString ringPresetPath(const flatlas::domain::SolarObject &object)
+{
+    const QString raw = rawEntryValue(object, QStringLiteral("ring"));
+    if (raw.isEmpty())
+        return {};
+    const QStringList parts = raw.split(QLatin1Char(','), Qt::SkipEmptyParts);
+    return parts.size() >= 2 ? parts.last().trimmed() : QString();
+}
+
 } // namespace
 #endif
 
@@ -250,6 +294,16 @@ void SceneView3D::setArchetypeDisplayRadii(const QHash<QString, float> &displayR
     m_archetypeDisplayRadii = displayRadii;
 }
 
+void SceneView3D::setArchetypeTextureSourcePaths(const QHash<QString, QStringList> &textureSourcePaths)
+{
+    m_archetypeTextureSourcePaths = textureSourcePaths;
+}
+
+void SceneView3D::setGameRoot(const QString &gameRoot)
+{
+    m_gameRoot = gameRoot;
+}
+
 void SceneView3D::setDisplayFilterSettings(const SystemDisplayFilterSettings &settings)
 {
     m_displayFilterSettings = settings;
@@ -265,6 +319,15 @@ void SceneView3D::loadDocument(flatlas::domain::SystemDocument *doc)
         return;
 
 #ifdef FLATLAS_HAS_QT3D
+    m_linkedRingZoneNicknames.clear();
+    for (const auto &obj : doc->objects()) {
+        if (!obj)
+            continue;
+        const QString zoneNickname = ringZoneNickname(*obj);
+        if (!zoneNickname.isEmpty())
+            m_linkedRingZoneNicknames.insert(zoneNickname);
+    }
+
     for (const auto &zone : doc->zones())
         addZone(zone);
     for (const auto &obj : doc->objects())
@@ -273,6 +336,7 @@ void SceneView3D::loadDocument(flatlas::domain::SystemDocument *doc)
     applyDisplayFilter();
     updateSceneCamera();
     scheduleModelLoading();
+    schedulePlanetTextureLoading();
 #endif
 }
 
@@ -364,8 +428,11 @@ void SceneView3D::clearScene()
     m_selectionManager->clear();
     m_modelHostsByNickname.clear();
     m_markerEntitiesByNickname.clear();
+    m_markerMaterialsByNickname.clear();
+    m_ringEntitiesByHostNickname.clear();
     m_sceneEntitiesByNickname.clear();
     m_nicknamesByModelPath.clear();
+    m_planetTextureSourcePathsByNickname.clear();
     m_nicknamesWithRenderedModel.clear();
     if (m_sceneBounds)
         *m_sceneBounds = ModelBounds();
@@ -387,6 +454,8 @@ void SceneView3D::addZone(const std::shared_ptr<flatlas::domain::ZoneItem> &zone
 {
 #ifdef FLATLAS_HAS_QT3D
     if (!zone || !m_zonesRoot)
+        return;
+    if (m_linkedRingZoneNicknames.contains(zone->nickname()))
         return;
 
     const ZoneVisualStyle style = ZoneColorScheme::styleForZone(*zone);
@@ -437,6 +506,7 @@ void SceneView3D::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObj
     markerEntity->addComponent(markerMesh);
     markerEntity->addComponent(markerMaterial);
     m_markerEntitiesByNickname.insert(obj->nickname(), markerEntity);
+    m_markerMaterialsByNickname.insert(obj->nickname(), markerMaterial);
 
     if (m_selectionManager)
         m_selectionManager->registerEntity(obj->nickname(), markerEntity, markerMaterial);
@@ -450,9 +520,89 @@ void SceneView3D::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObj
         m_objectBounds->include(obj->position() - QVector3D(radius, radius, radius));
     }
 
-    const QString modelPath = radiusSphere ? QString() : modelPathForObject(*obj);
-    if (!modelPath.isEmpty())
+    const QString modelPath = modelPathForObject(*obj);
+    if (radiusSphere && obj->type() == flatlas::domain::SolarObject::Planet) {
+        QStringList textureSources = m_archetypeTextureSourcePaths.value(obj->archetype().trimmed().toLower());
+        if (textureSources.isEmpty() && !modelPath.isEmpty())
+            textureSources.append(modelPath);
+        if (!textureSources.isEmpty())
+            m_planetTextureSourcePathsByNickname.insert(obj->nickname(), textureSources);
+    } else if (!radiusSphere && !modelPath.isEmpty()) {
         m_nicknamesByModelPath[modelPath].append(obj->nickname());
+    }
+
+    addPlanetaryRing(*obj);
+#else
+    Q_UNUSED(obj);
+#endif
+}
+
+void SceneView3D::addPlanetaryRing(const flatlas::domain::SolarObject &obj)
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (!m_document || !m_objectsRoot)
+        return;
+
+    const QString zoneNickname = ringZoneNickname(obj);
+    if (zoneNickname.isEmpty())
+        return;
+
+    flatlas::domain::ZoneItem *ringZone = nullptr;
+    for (const auto &zone : m_document->zones()) {
+        if (zone && zone->nickname().compare(zoneNickname, Qt::CaseInsensitive) == 0) {
+            ringZone = zone.get();
+            break;
+        }
+    }
+    if (!ringZone || ringZone->shape() != flatlas::domain::ZoneItem::Ring)
+        return;
+
+    const QVector3D size = ringZone->size();
+    const double outerRadius = static_cast<double>(size.x());
+    const double innerRadius = static_cast<double>(size.y());
+    const double thickness = static_cast<double>(size.z());
+    if (innerRadius <= 0.0 || outerRadius <= innerRadius || thickness <= 0.0)
+        return;
+
+    RingPreviewSceneRequest request;
+    request.gameRoot = m_gameRoot;
+    request.ringPreset = ringPresetPath(obj);
+    request.innerRadius = innerRadius;
+    request.outerRadius = outerRadius;
+    request.thickness = thickness;
+    request.rotationEuler = ringZone->rotation();
+
+    const RingPreviewSceneResult result = RingPreviewSceneBuilder::build(request);
+    if (!result.hasRingGeometry)
+        return;
+
+    auto *ringEntity = new Qt3DCore::QEntity(m_objectsRoot);
+    auto *transform = new Qt3DCore::QTransform(ringEntity);
+    transform->setTranslation(ringZone->position());
+    ringEntity->addComponent(transform);
+
+    const int rendered = addModelNodeRecursive(result.sceneRoot, ringEntity, obj.nickname(), QString());
+    if (rendered <= 0) {
+        ringEntity->deleteLater();
+        return;
+    }
+
+    m_ringEntitiesByHostNickname[obj.nickname()].append(ringEntity);
+
+    if (m_sceneBounds) {
+        const QVector3D extent(static_cast<float>(outerRadius),
+                               static_cast<float>(qMax(thickness, outerRadius * 0.05)),
+                               static_cast<float>(outerRadius));
+        m_sceneBounds->include(ringZone->position() + extent);
+        m_sceneBounds->include(ringZone->position() - extent);
+    }
+    if (m_objectBounds) {
+        const QVector3D extent(static_cast<float>(outerRadius),
+                               static_cast<float>(qMax(thickness, outerRadius * 0.05)),
+                               static_cast<float>(outerRadius));
+        m_objectBounds->include(ringZone->position() + extent);
+        m_objectBounds->include(ringZone->position() - extent);
+    }
 #else
     Q_UNUSED(obj);
 #endif
@@ -485,6 +635,9 @@ void SceneView3D::applyDisplayFilter()
             continue;
         if (Qt3DCore::QEntity *entity = m_sceneEntitiesByNickname.value(obj->nickname(), nullptr))
             setEntityTreeEnabled(entity, objectVisibleForFilter(m_displayFilterSettings, *obj));
+        const bool visible = objectVisibleForFilter(m_displayFilterSettings, *obj);
+        for (Qt3DCore::QEntity *ringEntity : m_ringEntitiesByHostNickname.value(obj->nickname()))
+            setEntityTreeEnabled(ringEntity, visible);
         if (m_nicknamesWithRenderedModel.contains(obj->nickname())) {
             if (Qt3DCore::QEntity *marker = m_markerEntitiesByNickname.value(obj->nickname(), nullptr))
                 marker->setEnabled(false);
@@ -522,7 +675,12 @@ float SceneView3D::displayRadiusForObject(const flatlas::domain::SolarObject &ob
 bool SceneView3D::shouldRenderAsRadiusSphere(const flatlas::domain::SolarObject &obj) const
 {
     using Type = flatlas::domain::SolarObject::Type;
-    return obj.type() == Type::Planet || obj.type() == Type::Sun;
+    const QString archetype = obj.archetype().trimmed().toLower();
+    return obj.type() == Type::Planet
+        || obj.type() == Type::Sun
+        || archetype.contains(QStringLiteral("planet"))
+        || archetype.contains(QStringLiteral("sun"))
+        || archetype.contains(QStringLiteral("star"));
 }
 
 void SceneView3D::scheduleModelLoading()
@@ -578,8 +736,76 @@ void SceneView3D::attachLoadedModels(const QHash<QString, flatlas::infrastructur
                 host->setEnabled(false);
             }
         }
+
     }
     applyDisplayFilter();
+}
+
+void SceneView3D::schedulePlanetTextureLoading()
+{
+    if (m_planetTextureSourcePathsByNickname.isEmpty())
+        return;
+
+    const int generation = m_loadGeneration;
+    const QHash<QString, QStringList> sourcePathsByNickname = m_planetTextureSourcePathsByNickname;
+    const QHash<QString, QString> archetypesByNickname = [&]() {
+        QHash<QString, QString> values;
+        if (!m_document)
+            return values;
+        for (const auto &obj : m_document->objects()) {
+            if (obj)
+                values.insert(obj->nickname(), obj->archetype());
+        }
+        return values;
+    }();
+
+    auto *watcher = new QFutureWatcher<QHash<QString, QImage>>(this);
+    connect(watcher,
+            &QFutureWatcher<QHash<QString, QImage>>::finished,
+            this,
+            [this, watcher, generation]() {
+        watcher->deleteLater();
+        QHash<QString, QImage> textures;
+        try {
+            textures = watcher->result();
+        } catch (...) {
+            return;
+        }
+        applyPlanetTextures(textures, generation);
+    });
+
+    watcher->setFuture(QtConcurrent::run([sourcePathsByNickname, archetypesByNickname]() {
+        QHash<QString, QImage> textures;
+        for (auto it = sourcePathsByNickname.constBegin(); it != sourcePathsByNickname.constEnd(); ++it) {
+            const QImage texture = flatlas::infrastructure::FreelancerMaterialResolver::loadBestPlanetTexture(
+                archetypesByNickname.value(it.key()), it.value());
+            if (!texture.isNull())
+                textures.insert(it.key(), texture);
+        }
+        return textures;
+    }));
+}
+
+void SceneView3D::applyPlanetTextures(const QHash<QString, QImage> &textures, int generation)
+{
+    if (generation != m_loadGeneration)
+        return;
+
+    for (auto it = textures.constBegin(); it != textures.constEnd(); ++it) {
+        Qt3DCore::QEntity *marker = m_markerEntitiesByNickname.value(it.key(), nullptr);
+        if (!marker || it.value().isNull())
+            continue;
+
+        if (Qt3DRender::QMaterial *oldMaterial = m_markerMaterialsByNickname.value(it.key(), nullptr))
+            marker->removeComponent(oldMaterial);
+
+        Qt3DRender::QMaterial *textureMaterial = MaterialFactory::createFromImage(it.value(), marker);
+        marker->addComponent(textureMaterial);
+        m_markerMaterialsByNickname.insert(it.key(), textureMaterial);
+
+        if (m_selectionManager)
+            m_selectionManager->registerEntity(it.key(), marker, textureMaterial);
+    }
 }
 
 int SceneView3D::addModelNodeRecursive(const flatlas::infrastructure::ModelNode &node,
@@ -613,9 +839,11 @@ int SceneView3D::addModelNodeRecursive(const flatlas::infrastructure::ModelNode 
         auto *meshEntity = new Qt3DCore::QEntity(nodeEntity);
         if (auto *renderer = ModelGeometryBuilder::buildTriangleRenderer(mesh, meshEntity)) {
             Qt3DRender::QMaterial *material = nullptr;
-            const QImage texture = flatlas::infrastructure::FreelancerMaterialResolver::loadTextureForMesh(modelPath, mesh);
-            if (!texture.isNull())
-                material = MaterialFactory::createFromImage(texture, meshEntity);
+            if (!modelPath.isEmpty()) {
+                const QImage texture = flatlas::infrastructure::FreelancerMaterialResolver::loadTextureForMesh(modelPath, mesh);
+                if (!texture.isNull())
+                    material = MaterialFactory::createFromImage(texture, meshEntity);
+            }
             if (!material)
                 material = MaterialFactory::createDefault(colorForMesh(mesh, nodeIndex), meshEntity);
             meshEntity->addComponent(renderer);

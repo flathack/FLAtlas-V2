@@ -7,6 +7,8 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QDirIterator>
+#include <algorithm>
+#include <limits>
 
 namespace flatlas::infrastructure {
 
@@ -84,6 +86,144 @@ QImage decodeEmbeddedTextureBlob(const QByteArray &blob)
     if (!tga.isNull())
         return tga;
     return TextureLoader::loadDDSFromData(blob);
+}
+
+QString normalizePlanetTextureKey(QString value)
+{
+    value = value.trimmed().toLower();
+    QString normalized;
+    normalized.reserve(value.size());
+    for (const QChar ch : value) {
+        if (ch.isLetterOrNumber())
+            normalized.append(ch);
+    }
+    return normalized;
+}
+
+bool isPlanetCapTextureName(const QString &value)
+{
+    const QString normalized = normalizePlanetTextureKey(value);
+    return normalized.endsWith(QStringLiteral("cap")) && normalized.size() > 3;
+}
+
+QStringList planetTextureAliases(QString archetype)
+{
+    archetype = QFileInfo(archetype.trimmed().toLower()).completeBaseName();
+    if (archetype.startsWith(QStringLiteral("planet_")))
+        archetype = archetype.mid(7);
+
+    QStringList parts = archetype.split(QLatin1Char('_'), Qt::SkipEmptyParts);
+    while (!parts.isEmpty()) {
+        bool ok = false;
+        parts.last().toDouble(&ok);
+        if (!ok)
+            break;
+        parts.removeLast();
+    }
+
+    const QString core = normalizePlanetTextureKey(parts.join(QString()));
+    if (core.isEmpty())
+        return {};
+
+    QStringList aliases{core};
+    const QStringList layerSuffixes{
+        QStringLiteral("clouds"),
+        QStringLiteral("cloud"),
+        QStringLiteral("cld"),
+        QStringLiteral("rings"),
+        QStringLiteral("ring"),
+        QStringLiteral("atmosphere"),
+        QStringLiteral("atmos"),
+        QStringLiteral("atmo"),
+        QStringLiteral("atm"),
+    };
+    const QStringList surfaceSuffixes{
+        QStringLiteral("grck"),
+        QStringLiteral("rock"),
+        QStringLiteral("rck"),
+        QStringLiteral("moon"),
+        QStringLiteral("ice"),
+        QStringLiteral("lava"),
+        QStringLiteral("molten"),
+    };
+
+    for (const QString &suffix : layerSuffixes) {
+        if (core.endsWith(suffix) && core.size() > suffix.size() + 2)
+            aliases.append(core.left(core.size() - suffix.size()));
+    }
+    for (const QString &suffix : surfaceSuffixes) {
+        if (core.endsWith(suffix) && core.size() > suffix.size() + 2)
+            aliases.append(core.left(core.size() - suffix.size()));
+    }
+    if (core.endsWith(QStringLiteral("ed")) && core.size() > 5)
+        aliases.append(core.left(core.size() - 2));
+
+    aliases.removeDuplicates();
+    std::sort(aliases.begin(), aliases.end(), [](const QString &left, const QString &right) {
+        return left.size() > right.size();
+    });
+    return aliases;
+}
+
+int planetTextureScore(const QString &archetype, const QString &name, const QImage &image)
+{
+    const QString lowered = name.trimmed().toLower();
+    const QString normalized = normalizePlanetTextureKey(lowered);
+    int score = 0;
+
+    for (const QString &alias : planetTextureAliases(archetype)) {
+        if (alias.isEmpty())
+            continue;
+        if (normalized == alias)
+            score = qMax(score, 300 + alias.size());
+        else if (normalized.contains(alias))
+            score = qMax(score, 200 + alias.size());
+        else if (alias.contains(normalized) && normalized.size() >= 5)
+            score = qMax(score, 150 + normalized.size());
+    }
+
+    const QStringList preferTerms{
+        QStringLiteral("planet"),
+        QStringLiteral("surface"),
+        QStringLiteral("surf"),
+        QStringLiteral("diffuse"),
+        QStringLiteral("tex"),
+    };
+    const QStringList excludeTerms{
+        QStringLiteral("cloud"),
+        QStringLiteral("cld"),
+        QStringLiteral("ring"),
+        QStringLiteral("atmo"),
+        QStringLiteral("atmos"),
+        QStringLiteral("glow"),
+        QStringLiteral("haze"),
+        QStringLiteral("halo"),
+        QStringLiteral("shine"),
+        QStringLiteral("light"),
+    };
+
+    for (const QString &term : preferTerms) {
+        if (lowered.contains(term)) {
+            score += 45;
+            break;
+        }
+    }
+    for (const QString &term : excludeTerms) {
+        if (lowered.contains(term)) {
+            score -= 120;
+            break;
+        }
+    }
+    if (isPlanetCapTextureName(lowered))
+        score -= 160;
+
+    if (!image.isNull()) {
+        const double ratio = image.height() > 0 ? static_cast<double>(image.width()) / image.height() : 0.0;
+        score += qMax(0, 100 - static_cast<int>(qAbs(ratio - 2.0) * 100.0));
+        score += qMin(image.width() * image.height() / 4096, 120);
+    }
+
+    return score;
 }
 
 void walkUtfNodeForEmbeddedTextures(const std::shared_ptr<UtfNode> &node,
@@ -362,6 +502,61 @@ QImage FreelancerMaterialResolver::loadTextureForMesh(const QString &modelPath, 
     if (path.isEmpty())
         return {};
     return TextureLoader::load(path);
+}
+
+QImage FreelancerMaterialResolver::loadBestPlanetTexture(const QString &archetype, const QStringList &sourcePaths)
+{
+    QHash<QString, QImage> candidates;
+
+    for (const QString &sourcePath : sourcePaths) {
+        if (sourcePath.trimmed().isEmpty())
+            continue;
+
+        const QFileInfo sourceInfo(sourcePath);
+        const QString sourceKey = sourceInfo.completeBaseName().toLower();
+
+        const QImage direct = TextureLoader::load(sourcePath);
+        if (!direct.isNull())
+            candidates.insert(sourceKey, direct);
+
+        const auto embedded = extractUtfEmbeddedTextures(sourcePath);
+        for (auto it = embedded.constBegin(); it != embedded.constEnd(); ++it) {
+            if (!it.value().isNull())
+                candidates.insert(it.key(), it.value());
+        }
+
+        const auto materialMap = extractUtfMaterialTextureMap(sourcePath);
+        for (auto it = materialMap.constBegin(); it != materialMap.constEnd(); ++it) {
+            for (const QString &value : it.value()) {
+                const QString texturePath = resolveTextureValue(sourcePath, value);
+                if (texturePath.isEmpty())
+                    continue;
+
+                QImage image = TextureLoader::load(texturePath);
+                if (image.isNull()) {
+                    const auto textureEmbedded = extractUtfEmbeddedTextures(texturePath);
+                    if (!textureEmbedded.isEmpty())
+                        image = textureEmbedded.constBegin().value();
+                }
+                if (!image.isNull())
+                    candidates.insert(!it.key().isEmpty() ? it.key() : QFileInfo(value).completeBaseName().toLower(), image);
+            }
+        }
+    }
+
+    QString bestKey;
+    QImage bestImage;
+    int bestScore = std::numeric_limits<int>::min();
+    for (auto it = candidates.constBegin(); it != candidates.constEnd(); ++it) {
+        const int score = planetTextureScore(archetype, it.key(), it.value());
+        if (score > bestScore) {
+            bestScore = score;
+            bestKey = it.key();
+            bestImage = it.value();
+        }
+    }
+    Q_UNUSED(bestKey);
+    return bestImage;
 }
 
 } // namespace flatlas::infrastructure
