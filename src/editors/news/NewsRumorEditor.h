@@ -19,6 +19,8 @@ class QSplitter;
 class QTableWidget;
 class QTableWidgetItem;
 
+namespace flatlas::infrastructure { struct IdsDataset; }
+
 namespace flatlas::editors {
 
 struct NewsEntry {
@@ -93,6 +95,12 @@ private:
     void showEntryInDetail(int entryIndex);
     bool applyDetailToCurrentEntry();
     bool saveIdsText(int currentId, const QString &text, int *outId, QString *errorMessage);
+    bool saveIdsText(const flatlas::infrastructure::IdsDataset &dataset,
+                     const QString &targetDll,
+                     int currentId,
+                     const QString &text,
+                     int *outId,
+                     QString *errorMessage);
     bool writeNewsFile(QString *errorMessage);
     void addNews();
     void removeSelectedNews();
@@ -104,6 +112,7 @@ private:
     QString newsPreview(const NewsEntry &entry) const;
     QString clippedTableText(const QString &text, int maxChars) const;
     QStringList detailBases() const;
+    QStringList invalidBases(const QStringList &bases) const;
     int selectedEntryIndex() const;
     void setDirty(bool dirty);
 

@@ -6,6 +6,7 @@
 #include "infrastructure/io/DllResources.h"
 
 #include <QAbstractItemView>
+#include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFile>
@@ -514,10 +515,10 @@ void NewsRumorEditor::populateNewsTable()
     QSignalBlocker blocker(m_newsTable);
     m_newsTable->setRowCount(m_entries.size());
     for (int row = 0; row < m_entries.size(); ++row) {
-        const NewsEntry &entry = m_entries.at(row);
-        auto *headline = readOnlyItem(clippedTableText(entry.headlineText.isEmpty()
-            ? tr("<IDS %1 fehlt>").arg(entry.headlineIds)
-            : entry.headlineText, 90));
+    const NewsEntry &entry = m_entries.at(row);
+    auto *headline = readOnlyItem(clippedTableText(entry.headlineText.isEmpty()
+        ? tr("<IDS %1 fehlt>").arg(entry.headlineIds)
+        : entry.headlineText, 90));
         headline->setData(Qt::UserRole, row);
         headline->setToolTip(entry.headlineText);
         m_newsTable->setItem(row, NewsHeadlineColumn, headline);
@@ -528,7 +529,16 @@ void NewsRumorEditor::populateNewsTable()
         m_newsTable->setItem(row, NewsIconColumn, readOnlyItem(entry.icon));
         m_newsTable->setItem(row, NewsRankColumn, readOnlyItem(entry.rank));
         const bool missingIds = entry.headlineText.isEmpty() || entry.bodyText.isEmpty();
-        m_newsTable->setItem(row, NewsIssueColumn, readOnlyItem(missingIds ? tr("IDS fehlt") : QString()));
+        const QStringList invalid = invalidBases(entry.bases);
+        QStringList issues;
+        if (missingIds)
+            issues.append(tr("IDS fehlt"));
+        if (!invalid.isEmpty())
+            issues.append(tr("Base fehlt"));
+        auto *issueItem = readOnlyItem(issues.join(QStringLiteral(", ")));
+        if (!invalid.isEmpty())
+            issueItem->setToolTip(tr("Nicht gefundene Bases:\n%1").arg(invalid.join(QLatin1Char('\n'))));
+        m_newsTable->setItem(row, NewsIssueColumn, issueItem);
     }
     refreshFilters();
 }
@@ -641,6 +651,10 @@ void NewsRumorEditor::showEntryInDetail(int entryIndex)
                                    .arg(entry.headlineIds)
                                    .arg(entry.textIds)
                                    .arg(entry.bases.size()));
+    const QStringList invalid = invalidBases(entry.bases);
+    if (!invalid.isEmpty()) {
+        m_detailHintLabel->setText(m_detailHintLabel->text() + tr(" | Nicht gefunden: %1").arg(invalid.join(QStringLiteral(", "))));
+    }
     m_populating = false;
 }
 
@@ -696,6 +710,7 @@ bool NewsRumorEditor::applyDetailToCurrentEntry()
 
 bool NewsRumorEditor::save()
 {
+    const int savedEntryIndex = m_currentEntryIndex;
     m_saving = true;
     applyDetailToCurrentEntry();
     m_saving = false;
@@ -704,19 +719,62 @@ bool NewsRumorEditor::save()
         return false;
     }
 
+    bool needsIdsDataset = false;
+    for (const NewsEntry &entry : m_entries) {
+        if (entry.removed || !entry.modified)
+            continue;
+        const bool needsHeadlineWrite = entry.sectionIndex < 0 || entry.headlineIds <= 0 ||
+            (entry.headlineTextDirty && entry.headlineText != entry.originalHeadlineText);
+        const bool needsBodyWrite = entry.sectionIndex < 0 || entry.textIds <= 0 ||
+            (entry.bodyTextDirty && entry.bodyText != entry.originalBodyText);
+        if (needsHeadlineWrite || needsBodyWrite) {
+            needsIdsDataset = true;
+            break;
+        }
+    }
+
+    IdsDataset idsDataset;
+    QString targetDll;
+    if (needsIdsDataset) {
+        m_statusLabel->setText(tr("IDS-Daten werden vorbereitet..."));
+        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        idsDataset = IdsDataService::loadFromGameRoot(m_gameRoot);
+        targetDll = IdsDataService::defaultCreationDllName(idsDataset);
+        if (targetDll.trimmed().isEmpty()) {
+            QMessageBox::warning(this, tr("News speichern"), tr("Keine Ziel-DLL fÃ¼r IDS-Texte gefunden."));
+            return false;
+        }
+    }
+
     for (NewsEntry &entry : m_entries) {
         if (entry.removed || !entry.modified)
             continue;
+        const QStringList invalid = invalidBases(entry.bases);
+        if (!invalid.isEmpty()) {
+            QMessageBox::warning(this,
+                                 tr("News speichern"),
+                                 tr("Diese News enthält Base-Zuweisungen, die nicht in universe.ini existieren:\n\n%1")
+                                     .arg(invalid.join(QLatin1Char('\n'))));
+            return false;
+        }
         QString error;
         const bool needsHeadlineWrite = entry.sectionIndex < 0 || entry.headlineIds <= 0 ||
             (entry.headlineTextDirty && entry.headlineText != entry.originalHeadlineText);
         const bool needsBodyWrite = entry.sectionIndex < 0 || entry.textIds <= 0 ||
             (entry.bodyTextDirty && entry.bodyText != entry.originalBodyText);
-        if (needsHeadlineWrite && !saveIdsText(entry.headlineIds, entry.headlineText, &entry.headlineIds, &error)) {
+        if (needsHeadlineWrite) {
+            m_statusLabel->setText(tr("Headline IDS %1 wird gespeichert...").arg(entry.headlineIds));
+            QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        }
+        if (needsHeadlineWrite && !saveIdsText(idsDataset, targetDll, entry.headlineIds, entry.headlineText, &entry.headlineIds, &error)) {
             QMessageBox::warning(this, tr("News speichern"), tr("Headline konnte nicht gespeichert werden: %1").arg(error));
             return false;
         }
-        if (needsBodyWrite && !saveIdsText(entry.textIds, entry.bodyText, &entry.textIds, &error)) {
+        if (needsBodyWrite) {
+            m_statusLabel->setText(tr("Text IDS %1 wird gespeichert...").arg(entry.textIds));
+            QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        }
+        if (needsBodyWrite && !saveIdsText(idsDataset, targetDll, entry.textIds, entry.bodyText, &entry.textIds, &error)) {
             QMessageBox::warning(this, tr("News speichern"), tr("Text konnte nicht gespeichert werden: %1").arg(error));
             return false;
         }
@@ -725,6 +783,8 @@ bool NewsRumorEditor::save()
     }
 
     QString error;
+    m_statusLabel->setText(tr("news.ini wird gespeichert..."));
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
     if (!writeNewsFile(&error)) {
         QMessageBox::warning(this, tr("News speichern"), error);
         return false;
@@ -738,12 +798,20 @@ bool NewsRumorEditor::save()
         entry.bodyTextDirty = false;
         entry.originalHeadlineText = entry.headlineText;
         entry.originalBodyText = entry.bodyText;
+        entry.categoryText = resolvedIdsText(entry.categoryIds);
+        entry.text = entry.bodyText;
+        entry.ids = entry.textIds;
+        entry.searchBlob = QStringLiteral("%1 %2 %3 %4 %5 %6 %7")
+            .arg(entry.headlineText, entry.bodyText, QString::number(entry.headlineIds), QString::number(entry.textIds),
+                 csvList(entry.bases), entry.rank, entry.icon)
+            .toLower();
     }
     for (int i = m_entries.size() - 1; i >= 0; --i) {
         if (m_entries.at(i).removed)
             m_entries.removeAt(i);
     }
     rebuildBaseCounts();
+    m_currentEntryIndex = savedEntryIndex >= 0 && savedEntryIndex < m_entries.size() ? savedEntryIndex : -1;
     setDirty(false);
     m_statusLabel->setText(tr("Gespeichert: %1").arg(m_newsPath));
     return true;
@@ -761,6 +829,32 @@ bool NewsRumorEditor::saveIdsText(int currentId, const QString &text, int *outId
     if (targetDll.trimmed().isEmpty()) {
         if (errorMessage)
             *errorMessage = tr("Keine Ziel-DLL für IDS-Texte gefunden.");
+        return false;
+    }
+    int newId = currentId;
+    if (!IdsDataService::writeStringEntry(dataset, targetDll, currentId, text, &newId, errorMessage))
+        return false;
+    if (outId)
+        *outId = newId;
+    m_idsTextByNumber.insert(QString::number(newId), text);
+    return true;
+}
+
+bool NewsRumorEditor::saveIdsText(const IdsDataset &dataset,
+                                  const QString &targetDll,
+                                  int currentId,
+                                  const QString &text,
+                                  int *outId,
+                                  QString *errorMessage)
+{
+    if (text.trimmed().isEmpty()) {
+        if (errorMessage)
+            *errorMessage = tr("Text ist leer.");
+        return false;
+    }
+    if (targetDll.trimmed().isEmpty()) {
+        if (errorMessage)
+            *errorMessage = tr("Keine Ziel-DLL fÃ¼r IDS-Texte gefunden.");
         return false;
     }
     int newId = currentId;
@@ -1041,6 +1135,24 @@ QStringList NewsRumorEditor::detailBases() const
         result.append(base);
     }
     return result;
+}
+
+QStringList NewsRumorEditor::invalidBases(const QStringList &bases) const
+{
+    QStringList invalid;
+    QSet<QString> seen;
+    for (const QString &base : bases) {
+        const QString clean = base.trimmed();
+        if (clean.isEmpty())
+            continue;
+        const QString key = keyOf(clean);
+        if (seen.contains(key))
+            continue;
+        seen.insert(key);
+        if (!m_baseIndexByKey.contains(key))
+            invalid.append(clean);
+    }
+    return invalid;
 }
 
 int NewsRumorEditor::selectedEntryIndex() const
