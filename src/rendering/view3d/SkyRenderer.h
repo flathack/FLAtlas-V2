@@ -17,6 +17,7 @@ class SkyRenderer : public Qt3DCore::QEntity {
 public:
     explicit SkyRenderer(Qt3DCore::QNode *parent = nullptr);
 
+    void setCenter(const QVector3D &center);
     void setRadius(float radius);
 
 private:

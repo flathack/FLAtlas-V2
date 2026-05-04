@@ -42,7 +42,6 @@
 #include <QPalette>
 #include <QRegularExpression>
 #include <QShowEvent>
-#include <QSurfaceFormat>
 #include <QTimer>
 #include <QWheelEvent>
 #include <QtConcurrent/QtConcurrent>
@@ -240,13 +239,7 @@ SceneView3D::SceneView3D(QWidget *parent) : QWidget(parent)
     layout->setSpacing(0);
 
 #ifdef FLATLAS_HAS_QT3D
-    QSurfaceFormat format = QSurfaceFormat::defaultFormat();
-    format.setAlphaBufferSize(0);
-    format.setDepthBufferSize(24);
-    format.setStencilBufferSize(8);
-
     m_3dWindow = new Qt3DExtras::Qt3DWindow();
-    m_3dWindow->setFormat(format);
     m_3dWindow->setOpacity(1.0);
     m_container = QWidget::createWindowContainer(m_3dWindow, this);
     m_container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -436,6 +429,12 @@ void SceneView3D::setupScene()
     lightEntity->addComponent(lightTransform);
 
     m_skyRenderer = new SkyRenderer(m_rootEntity);
+    m_skyRenderer->setRadius(2500000.0f);
+    m_skyRenderer->setCenter(m_camera->position());
+    connect(m_orbitCamera, &OrbitCamera::cameraChanged, this, [this]() {
+        if (m_skyRenderer && m_camera)
+            m_skyRenderer->setCenter(m_camera->position());
+    });
 
     m_selectionManager = new SelectionManager(this);
     connect(m_selectionManager, &SelectionManager::objectSelected,

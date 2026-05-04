@@ -286,7 +286,11 @@ QImage TextureLoader::loadDDSFromData(const QByteArray &data)
 
 QImage TextureLoader::loadDDS(const QString &filePath)
 {
-    QFile file(filePath);
+    const QString path = filePath.trimmed();
+    if (path.isEmpty())
+        return {};
+
+    QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
         return {};
     return loadDDSFromData(file.readAll());
@@ -381,7 +385,11 @@ QImage TextureLoader::loadTGAFromData(const QByteArray &data)
 
 QImage TextureLoader::loadTGA(const QString &filePath)
 {
-    QFile file(filePath);
+    const QString path = filePath.trimmed();
+    if (path.isEmpty())
+        return {};
+
+    QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
         return {};
     return loadTGAFromData(file.readAll());
@@ -391,33 +399,41 @@ QImage TextureLoader::loadTGA(const QString &filePath)
 
 QImage TextureLoader::loadTXM(const QString &filePath)
 {
+    const QString path = filePath.trimmed();
+    if (path.isEmpty())
+        return {};
+
     // TXM files in Freelancer are essentially DDS files embedded in UTF containers.
     // Try loading as DDS first (some TXM files are just renamed DDS).
-    QImage img = loadDDS(filePath);
+    QImage img = loadDDS(path);
     if (!img.isNull())
         return img;
 
     // Fallback: try loading as TGA
-    return loadTGA(filePath);
+    return loadTGA(path);
 }
 
 // ─── Auto-detect ──────────────────────────────────────────
 
 QImage TextureLoader::load(const QString &filePath)
 {
-    QString ext = QFileInfo(filePath).suffix().toLower();
+    const QString path = filePath.trimmed();
+    if (path.isEmpty())
+        return {};
+
+    QString ext = QFileInfo(path).suffix().toLower();
     if (ext == "dds")
-        return loadDDS(filePath);
+        return loadDDS(path);
     if (ext == "tga")
-        return loadTGA(filePath);
+        return loadTGA(path);
     if (ext == "txm")
-        return loadTXM(filePath);
+        return loadTXM(path);
 
     // Try DDS first, then TGA
-    QImage img = loadDDS(filePath);
+    QImage img = loadDDS(path);
     if (!img.isNull())
         return img;
-    return loadTGA(filePath);
+    return loadTGA(path);
 }
 
 } // namespace flatlas::infrastructure

@@ -508,8 +508,9 @@ QImage FreelancerMaterialResolver::loadBestPlanetTexture(const QString &archetyp
 {
     QHash<QString, QImage> candidates;
 
-    for (const QString &sourcePath : sourcePaths) {
-        if (sourcePath.trimmed().isEmpty())
+    for (const QString &rawSourcePath : sourcePaths) {
+        const QString sourcePath = rawSourcePath.trimmed();
+        if (sourcePath.isEmpty())
             continue;
 
         const QFileInfo sourceInfo(sourcePath);

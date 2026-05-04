@@ -78,7 +78,7 @@ Qt3DRender::QGeometryRenderer *createInsideSkySphere(Qt3DCore::QNode *owner)
     }
 
     QByteArray indexBlob;
-    indexBlob.reserve(rings * slices * 6 * static_cast<int>(sizeof(quint32)));
+    indexBlob.reserve(rings * slices * 12 * static_cast<int>(sizeof(quint32)));
     for (int ring = 0; ring < rings; ++ring) {
         for (int slice = 0; slice < slices; ++slice) {
             const quint32 topLeft = static_cast<quint32>(ring * (slices + 1) + slice);
@@ -86,12 +86,21 @@ Qt3DRender::QGeometryRenderer *createInsideSkySphere(Qt3DCore::QNode *owner)
             const quint32 topRight = topLeft + 1;
             const quint32 bottomRight = bottomLeft + 1;
 
+            // Keep the sphere visible from inside and outside. Some Qt3D
+            // materials/drivers cull one side, which otherwise leaves a black
+            // clear color instead of the panorama.
             appendPod(indexBlob, topLeft);
             appendPod(indexBlob, bottomRight);
             appendPod(indexBlob, bottomLeft);
             appendPod(indexBlob, topLeft);
             appendPod(indexBlob, topRight);
             appendPod(indexBlob, bottomRight);
+            appendPod(indexBlob, topLeft);
+            appendPod(indexBlob, bottomLeft);
+            appendPod(indexBlob, bottomRight);
+            appendPod(indexBlob, topLeft);
+            appendPod(indexBlob, bottomRight);
+            appendPod(indexBlob, topRight);
         }
     }
 
@@ -126,14 +135,14 @@ Qt3DRender::QGeometryRenderer *createInsideSkySphere(Qt3DCore::QNode *owner)
     auto *indexAttr = new Qt3DCore::QAttribute(geometry);
     indexAttr->setAttributeType(Qt3DCore::QAttribute::IndexAttribute);
     indexAttr->setVertexBaseType(Qt3DCore::QAttribute::UnsignedInt);
-    indexAttr->setCount(rings * slices * 6);
+    indexAttr->setCount(rings * slices * 12);
     indexAttr->setBuffer(indexBuffer);
     geometry->addAttribute(indexAttr);
 
     auto *renderer = new Qt3DRender::QGeometryRenderer(owner);
     renderer->setGeometry(geometry);
     renderer->setPrimitiveType(Qt3DRender::QGeometryRenderer::Triangles);
-    renderer->setVertexCount(rings * slices * 6);
+    renderer->setVertexCount(rings * slices * 12);
     return renderer;
 }
 
@@ -157,6 +166,12 @@ SkyRenderer::SkyRenderer(Qt3DCore::QNode *parent)
     addComponent(m_mesh);
     addComponent(m_material);
     addComponent(m_transform);
+}
+
+void SkyRenderer::setCenter(const QVector3D &center)
+{
+    if (m_transform)
+        m_transform->setTranslation(center);
 }
 
 void SkyRenderer::setRadius(float radius)
