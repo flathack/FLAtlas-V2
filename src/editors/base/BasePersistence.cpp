@@ -199,6 +199,13 @@ bool BasePersistence::save(const BaseData &base, const QString &filePath)
         return false;
     QTextStream out(&file);
     out << text;
+    if (base.equipment.isEmpty()
+        && base.commodities.isEmpty()
+        && base.shipPackages.isEmpty()
+        && base.shipPackageLevels.isEmpty()) {
+        return true;
+    }
+
     QString marketError;
     if (!BaseEquipmentService::save(filePath, base.nickname, base.equipment, base.commodities, base.shipPackages, base.shipPackageLevels, &marketError))
         return false;

@@ -101,7 +101,8 @@ void TestBaseEditService::createStagesFilesAndObject()
             sawBaseIni = true;
             QVERIFY(write.content.contains("[BaseInfo]"));
             QVERIFY(write.content.contains("[Room]"));
-        } else if (write.absolutePath.endsWith(".ini", Qt::CaseInsensitive)) {
+        } else if (write.absolutePath.contains(QStringLiteral("/ROOMS/"), Qt::CaseInsensitive)
+                   || write.absolutePath.contains(QStringLiteral("\\ROOMS\\"), Qt::CaseInsensitive)) {
             sawRoom = true;
             QVERIFY(write.content.contains("[Room_Info]"));
         }

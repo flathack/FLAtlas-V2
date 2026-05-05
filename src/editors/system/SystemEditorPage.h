@@ -81,6 +81,7 @@ signals:
     void selectionStatusChanged(const QString &message);
     void loadingProgressChanged(int percent, const QString &message);
     void open3DSystemViewRequested();
+    void modelPreviewRequested(const QString &modelPath, const QString &displayLabel);
 
 private:
     enum class EditorTool {

@@ -44,8 +44,6 @@
 #include "rendering/view3d/ModelViewport3D.h"
 #include "rendering/view3d/SceneView3D.h"
 #include "core/UndoManager.h"
-#include "ui/MainWindow.h"
-
 #include <QDialog>
 #include <QApplication>
 #include <QEvent>
@@ -4147,12 +4145,7 @@ void SystemEditorPage::setupRightSidebar()
 
         BaseEditDialog dialog(state, overrides, this);
         connect(&dialog, &BaseEditDialog::roomActivationRequested, this, [this](const QString &roomName, const QString &modelPath) {
-            auto *mainWindow = qobject_cast<MainWindow *>(window());
-            if (!mainWindow || !mainWindow->showModelInViewer(modelPath, tr("Room Preview: %1").arg(roomName))) {
-                QMessageBox::warning(this,
-                                     tr("Room Preview"),
-                                     tr("Der ausgewaehlte Room konnte nicht im Haupt-3D-Viewer angezeigt werden."));
-            }
+            emit modelPreviewRequested(modelPath, tr("Room Preview: %1").arg(roomName));
         });
         if (dialog.exec() != QDialog::Accepted)
             return;
@@ -7261,12 +7254,7 @@ void SystemEditorPage::onCreateBase()
 
     BaseEditDialog dialog(initialState, overrides, this);
     connect(&dialog, &BaseEditDialog::roomActivationRequested, this, [this](const QString &roomName, const QString &modelPath) {
-        auto *mainWindow = qobject_cast<MainWindow *>(window());
-        if (!mainWindow || !mainWindow->showModelInViewer(modelPath, tr("Room Preview: %1").arg(roomName))) {
-            QMessageBox::warning(this,
-                                 tr("Room Preview"),
-                                 tr("Der ausgewaehlte Room konnte nicht im Haupt-3D-Viewer angezeigt werden."));
-        }
+        emit modelPreviewRequested(modelPath, tr("Room Preview: %1").arg(roomName));
     });
     if (dialog.exec() != QDialog::Accepted)
         return;

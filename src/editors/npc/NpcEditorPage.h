@@ -88,6 +88,8 @@ class NpcEditorPage : public QWidget {
     Q_OBJECT
 public:
     explicit NpcEditorPage(QWidget *parent = nullptr);
+    int baseCount() const;
+    int npcCount() const;
 
 signals:
     void titleChanged(const QString &title);

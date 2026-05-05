@@ -367,6 +367,19 @@ NpcEditorPage::NpcEditorPage(QWidget *parent)
     reloadCurrentContext();
 }
 
+int NpcEditorPage::baseCount() const
+{
+    return m_bases.size();
+}
+
+int NpcEditorPage::npcCount() const
+{
+    int count = 0;
+    for (const NpcBaseRecord &base : m_bases)
+        count += base.npcs.size();
+    return count;
+}
+
 void NpcEditorPage::setupUi()
 {
     auto *root = new QVBoxLayout(this);
