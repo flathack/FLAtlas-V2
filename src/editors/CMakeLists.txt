@@ -36,6 +36,7 @@ add_library(flatlas_editors STATIC
     npc/MbaseOperations.h npc/MbaseOperations.cpp
     faction/FactionEditorPage.h faction/FactionEditorPage.cpp
     faction/FactionEditorService.h faction/FactionEditorService.cpp
+    faction/FactionReferenceDialog.h faction/FactionReferenceDialog.cpp
     ini/IniEditorPage.h ini/IniEditorPage.cpp
     ini/IniCodeEditor.h ini/IniCodeEditor.cpp
     ini/IniFindReplaceDialog.h ini/IniFindReplaceDialog.cpp

@@ -166,6 +166,15 @@ QHash<QString, QString> builtInTranslations(const QString &language)
     addPair(t, QStringLiteral("Discard"), QStringLiteral("Verwerfen"), language);
     addPair(t, QStringLiteral("Cancel"), QStringLiteral("Abbrechen"), language);
     addPair(t, QStringLiteral("Untitled"), QStringLiteral("Unbenannt"), language);
+    addPair(t, QStringLiteral("New Faction"), QStringLiteral("Neue Fraktion"), language);
+    addPair(t, QStringLiteral("Ingame name"), QStringLiteral("Ingame-Name"), language);
+    addPair(t, QStringLiteral("Short name"), QStringLiteral("Kurzname"), language);
+    addPair(t, QStringLiteral("Infocard text"), QStringLiteral("Infocard-Text"), language);
+    addPair(t, QStringLiteral("Faction template"), QStringLiteral("Fraktionsvorlage"), language);
+    addPair(t, QStringLiteral("Legality"), QStringLiteral("Legalität"), language);
+    addPair(t, QStringLiteral("Uses ingame name if empty"), QStringLiteral("Nutzt den Ingame-Namen, wenn leer"), language);
+    addPair(t, QStringLiteral("Minimal faction defaults"), QStringLiteral("Minimale Fraktions-Defaults"), language);
+    addPair(t, QStringLiteral("Could not create faction:\n%1"), QStringLiteral("Fraktion konnte nicht erstellt werden:\n%1"), language);
 
     addPair(t, QStringLiteral("Error"), QStringLiteral("Fehler"), language);
     addPair(t, QStringLiteral("Could not save file."), QStringLiteral("Datei konnte nicht gespeichert werden."), language);

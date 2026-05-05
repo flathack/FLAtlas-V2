@@ -5,8 +5,29 @@
 
 #include <QObject>
 #include <QString>
+#include <QList>
 
 namespace flatlas::editors {
+
+struct FactionReferenceRecord {
+    QString scope;
+    QString source;
+    QString field;
+    QString filePath;
+    int lineNumber = 0;
+    QString text;
+    bool blocksDelete = true;
+    bool externalFileReference = false;
+};
+
+struct FactionCreationRequest {
+    QString nickname;
+    QString ingameName;
+    QString shortName;
+    QString infocardText;
+    QString templateNickname;
+    QString legality;
+};
 
 class FactionEditorService : public QObject {
     Q_OBJECT
@@ -24,8 +45,15 @@ public:
     flatlas::domain::Faction *faction(const QString &nickname);
     const flatlas::domain::Faction *faction(const QString &nickname) const;
 
+    bool addFaction(const FactionCreationRequest &request, QString *errorMessage = nullptr);
     bool addFaction(const QString &nickname, const QString &ingameName, QString *errorMessage = nullptr);
-    void deactivateFaction(const QString &nickname);
+    QList<FactionReferenceRecord> referencesForFaction(const QString &nickname) const;
+    bool deactivateFaction(const QString &nickname,
+                           const QString &replacementNickname,
+                           QString *errorMessage = nullptr);
+    bool deleteFaction(const QString &nickname,
+                       const QString &replacementNickname,
+                       QString *errorMessage = nullptr);
     void setIds(const QString &nickname, const QString &idsName, const QString &idsInfo, const QString &idsShortName);
     void setProperties(const QString &nickname,
                        const flatlas::domain::FactionPropData &props,
@@ -42,6 +70,9 @@ signals:
 
 private:
     void setDirty(bool dirty);
+    void replaceOrRemoveFactionLinks(const QString &nickname, const QString &replacementNickname);
+    bool rewriteExternalReferences(const QString &nickname, const QString &replacementNickname, QString *errorMessage);
+    bool hasBlockingReferences(const QString &nickname) const;
 
     flatlas::infrastructure::FactionRepository m_repository;
     flatlas::domain::FactionWorld m_world;

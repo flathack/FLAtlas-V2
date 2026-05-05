@@ -124,6 +124,7 @@ void FactionWorld::addFaction(const QString &nickname)
         {QStringLiteral("random_mission_failure"), 0.0},
         {QStringLiteral("random_mission_abortion"), 0.0},
     };
+    faction.reputations.append({trimmed, 0.91});
     for (const QString &other : sortedNicknames()) {
         faction.reputations.append({other, 0.0});
         faction.empathyRates.append({other, 0.0});
@@ -219,6 +220,8 @@ QList<FactionValidationIssue> FactionWorld::validate() const
             issues.append({FactionValidationSeverity::Warning, faction.nickname, QStringLiteral("Missing in faction_prop.ini")});
         if (faction.idsName.trimmed().isEmpty())
             issues.append({FactionValidationSeverity::Warning, faction.nickname, QStringLiteral("Missing ids_name")});
+        if (faction.idsInfo.trimmed().isEmpty())
+            issues.append({FactionValidationSeverity::Warning, faction.nickname, QStringLiteral("Missing ids_info")});
         if (faction.props.legality.trimmed().isEmpty())
             issues.append({FactionValidationSeverity::Warning, faction.nickname, QStringLiteral("Missing legality")});
         if (!faction.props.affiliation.trimmed().isEmpty()

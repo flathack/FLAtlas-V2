@@ -20,6 +20,15 @@ flatlas_add_test(test_PathUtils      test_PathUtils.cpp      flatlas_core)
 flatlas_add_test(test_DomainModels   test_DomainModels.cpp   flatlas_domain)
 flatlas_add_test(test_FactionData    test_FactionData.cpp    flatlas_domain)
 flatlas_add_test(test_FactionRepository test_FactionRepository.cpp flatlas_infrastructure)
+add_executable(test_FactionEditorService
+    test_FactionEditorService.cpp
+    ${CMAKE_SOURCE_DIR}/src/editors/faction/FactionEditorService.cpp
+    ${CMAKE_SOURCE_DIR}/src/editors/faction/FactionEditorService.h
+)
+target_include_directories(test_FactionEditorService PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_FactionEditorService PRIVATE Qt6::Test Qt6::Widgets flatlas_infrastructure)
+target_link_options(test_FactionEditorService PRIVATE -Wl,--allow-multiple-definition)
+add_test(NAME test_FactionEditorService COMMAND test_FactionEditorService)
 
 # Phase 1 core tests
 flatlas_add_test(test_Config      test_Config.cpp      flatlas_core)

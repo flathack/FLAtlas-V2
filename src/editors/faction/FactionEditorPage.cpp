@@ -1,10 +1,12 @@
 #include "FactionEditorPage.h"
 
 #include "core/EditingContext.h"
+#include "FactionReferenceDialog.h"
 #include "infrastructure/freelancer/IdsDataService.h"
 
 #include <QCheckBox>
 #include <QColor>
+#include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -113,10 +115,36 @@ void FactionEditorPage::buildUi()
         auto *layout = new QFormLayout(&dialog);
         auto *nicknameEdit = new QLineEdit(&dialog);
         auto *nameEdit = new QLineEdit(&dialog);
+        auto *shortNameEdit = new QLineEdit(&dialog);
+        auto *infocardEdit = new QTextEdit(&dialog);
+        auto *templateCombo = new QComboBox(&dialog);
+        auto *legalityEdit = new QLineEdit(&dialog);
         nicknameEdit->setPlaceholderText(QStringLiteral("fc_example_grp"));
         nameEdit->setPlaceholderText(tr("Ingame name"));
+        shortNameEdit->setPlaceholderText(tr("Uses ingame name if empty"));
+        infocardEdit->setPlaceholderText(tr("Uses ingame name if empty"));
+        infocardEdit->setFixedHeight(72);
+        legalityEdit->setText(QStringLiteral("lawful"));
+        const QStringList nicknames = m_service->world().sortedNicknames();
+        for (const QString &candidate : nicknames) {
+            const auto *faction = m_service->world().faction(candidate);
+            if (!faction || !faction->inFactionProp)
+                continue;
+            templateCombo->addItem(factionDisplayLabel(candidate), candidate);
+        }
+        if (templateCombo->count() == 0)
+            templateCombo->addItem(tr("Minimal faction defaults"), QString());
+        const int libertyIndex = templateCombo->findData(QStringLiteral("li_n_grp"));
+        if (libertyIndex >= 0)
+            templateCombo->setCurrentIndex(libertyIndex);
+        else
+            templateCombo->setCurrentIndex(0);
         layout->addRow(tr("Nickname"), nicknameEdit);
         layout->addRow(tr("Ingame name"), nameEdit);
+        layout->addRow(tr("Short name"), shortNameEdit);
+        layout->addRow(tr("Infocard text"), infocardEdit);
+        layout->addRow(tr("Faction template"), templateCombo);
+        layout->addRow(tr("Legality"), legalityEdit);
         auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
         layout->addRow(buttons);
         connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
@@ -124,10 +152,16 @@ void FactionEditorPage::buildUi()
         if (dialog.exec() != QDialog::Accepted)
             return;
         const QString nickname = nicknameEdit->text().trimmed();
-        const QString ingameName = nameEdit->text().trimmed();
+        FactionCreationRequest request;
+        request.nickname = nickname;
+        request.ingameName = nameEdit->text().trimmed();
+        request.shortName = shortNameEdit->text().trimmed();
+        request.infocardText = infocardEdit->toPlainText().trimmed();
+        request.templateNickname = templateCombo->currentData().toString();
+        request.legality = legalityEdit->text().trimmed();
         saveEditorsToFaction();
         QString error;
-        if (!m_service->addFaction(nickname, ingameName, &error)) {
+        if (!m_service->addFaction(request, &error)) {
             QMessageBox::warning(this, tr("Faction Editor"), tr("Could not create faction:\n%1").arg(error));
             return;
         }
@@ -151,13 +185,21 @@ void FactionEditorPage::buildUi()
     toolbar->addAction(tr("Deactivate"), this, [this]() {
         if (m_currentNickname.isEmpty())
             return;
-        if (QMessageBox::question(this, tr("Deactivate Faction"),
-                                  tr("Deactivate %1 and remove reputation/empathy references to it?").arg(m_currentNickname))
-            != QMessageBox::Yes)
-            return;
-        m_service->deactivateFaction(m_currentNickname);
-        refreshFactionList();
-        loadFactionToEditors(m_currentNickname);
+        saveEditorsToFaction();
+        FactionReferenceDialog dialog(m_service, m_currentNickname, this);
+        connect(&dialog, &FactionReferenceDialog::factionChanged, this, [this](const QString &nickname) {
+            refreshFactionList();
+            refreshValidation();
+            if (nickname.isEmpty()) {
+                const QStringList nicknames = m_service->world().sortedNicknames();
+                m_currentNickname.clear();
+                if (!nicknames.isEmpty())
+                    selectFaction(nicknames.first());
+                return;
+            }
+            loadFactionToEditors(nickname);
+        });
+        dialog.exec();
     });
 
     m_pathLabel = new QLabel(this);

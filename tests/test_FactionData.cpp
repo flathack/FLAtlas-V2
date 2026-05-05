@@ -25,6 +25,8 @@ private slots:
 
         QVERIFY(world.contains(QStringLiteral("LI_LSF_GRP")));
         QCOMPARE(world.faction(QStringLiteral("li_lsf_grp"))->nickname, QStringLiteral("li_lsf_grp"));
+        QCOMPARE(world.reputation(QStringLiteral("li_lsf_grp"), QStringLiteral("li_lsf_grp"), 9.0), 0.91);
+        QCOMPARE(world.reputation(QStringLiteral("rh_n_grp"), QStringLiteral("rh_n_grp"), 9.0), 0.91);
         QCOMPARE(world.reputation(QStringLiteral("li_lsf_grp"), QStringLiteral("rh_n_grp"), 9.0), 0.0);
         QCOMPARE(world.reputation(QStringLiteral("rh_n_grp"), QStringLiteral("LI_LSF_GRP"), 9.0), 0.0);
         QCOMPARE(world.empathyRate(QStringLiteral("li_lsf_grp"), QStringLiteral("rh_n_grp"), 9.0), 0.0);
