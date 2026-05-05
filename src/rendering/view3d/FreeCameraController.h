@@ -26,9 +26,16 @@ public:
     bool isEnabled() const { return m_enabled; }
     void setFreelancerFlightModeEnabled(bool enabled);
     void setFreelancerFlightProfile(float normalSpeed, float cruiseSpeed, float cruiseChargeTime);
+    void setThirdPersonCamera(float fovX, float zNear);
+    void beginCruise();
+    void cancelCruise();
 
     void setSpeed(float speed);
     float speed() const { return m_speed; }
+    QVector3D shipPosition() const { return m_position; }
+    QVector3D shipForward() const { return forwardVector(); }
+    bool cruiseActive() const { return m_cruiseActive; }
+    bool cruiseCharging() const { return m_cruiseCharging; }
     float minSpeed() const { return m_minSpeed; }
     float maxSpeed() const { return m_maxSpeed; }
 
@@ -72,6 +79,9 @@ private:
     float m_cruiseSpeed = 300.0f;
     float m_cruiseChargeTime = 5.0f;
     float m_cruiseChargeElapsed = 0.0f;
+    float m_thirdPersonDistance = 620.0f;
+    float m_thirdPersonHeight = 155.0f;
+    float m_thirdPersonLookAhead = 850.0f;
 };
 
 } // namespace flatlas::rendering

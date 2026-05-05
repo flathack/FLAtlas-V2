@@ -46,6 +46,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPalette>
+#include <QQuaternion>
 #include <QRegularExpression>
 #include <QShowEvent>
 #include <QTimer>
@@ -506,6 +507,74 @@ void SceneView3D::setFreeCameraFlightProfile(float normalSpeed, float cruiseSpee
 #endif
 }
 
+void SceneView3D::setThirdPersonCamera(float fovX, float zNear)
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (m_freeCamera)
+        m_freeCamera->setThirdPersonCamera(fovX, zNear);
+#else
+    Q_UNUSED(fovX);
+    Q_UNUSED(zNear);
+#endif
+}
+
+void SceneView3D::setFlightShipModel(const QString &modelPath)
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (!m_sceneRoot)
+        return;
+
+    if (m_flightShipEntity) {
+        delete m_flightShipEntity;
+        m_flightShipEntity = nullptr;
+        m_flightShipTransform = nullptr;
+    }
+
+    m_flightShipEntity = new Qt3DCore::QEntity(m_sceneRoot);
+    m_flightShipTransform = new Qt3DCore::QTransform(m_flightShipEntity);
+    m_flightShipEntity->addComponent(m_flightShipTransform);
+
+    int rendered = 0;
+    if (!modelPath.trimmed().isEmpty()) {
+        const flatlas::infrastructure::DecodedModel decoded = flatlas::rendering::ModelCache::instance().load(modelPath);
+        if (decoded.isValid())
+            rendered = addModelNodeRecursive(decoded.rootNode, m_flightShipEntity, QStringLiteral("__flight_ship"), modelPath);
+    }
+
+    if (rendered <= 0) {
+        auto *mesh = new Qt3DExtras::QCuboidMesh(m_flightShipEntity);
+        mesh->setXExtent(80.0f);
+        mesh->setYExtent(28.0f);
+        mesh->setZExtent(160.0f);
+        auto *material = MaterialFactory::createDefault(QColor(70, 170, 230), m_flightShipEntity);
+        m_flightShipEntity->addComponent(mesh);
+        m_flightShipEntity->addComponent(material);
+    }
+
+    m_flightShipEntity->setEnabled(m_flightModeEnabled);
+    updateFlightShipTransform();
+    requestViewportUpdate();
+#else
+    Q_UNUSED(modelPath);
+#endif
+}
+
+void SceneView3D::beginCruise()
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (m_freeCamera)
+        m_freeCamera->beginCruise();
+#endif
+}
+
+void SceneView3D::cancelCruise()
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (m_freeCamera)
+        m_freeCamera->cancelCruise();
+#endif
+}
+
 bool SceneView3D::setFreeCameraStartObject(const QString &nickname)
 {
 #ifdef FLATLAS_HAS_QT3D
@@ -534,6 +603,8 @@ void SceneView3D::setFlightModeEnabled(bool enabled)
     if (m_freeCamera)
         m_freeCamera->setFreelancerFlightModeEnabled(enabled);
     setFreeCameraModeEnabled(enabled);
+    if (m_flightShipEntity)
+        m_flightShipEntity->setEnabled(enabled);
     applyDisplayFilter();
     applyZoneWireframeVisibility();
     requestViewportUpdate();
@@ -610,6 +681,7 @@ void SceneView3D::setupScene()
 
     m_freeCamera = new FreeCameraController(m_camera, this);
     connect(m_freeCamera, &FreeCameraController::cameraChanged, this, [this]() {
+        updateFlightShipTransform();
         updateCameraDependentScene();
         requestViewportUpdate();
     });
@@ -652,6 +724,8 @@ void SceneView3D::clearScene()
         *m_zoneBounds = ModelBounds();
 
     if (m_sceneRoot) {
+        m_flightShipEntity = nullptr;
+        m_flightShipTransform = nullptr;
         delete m_sceneRoot;
         m_sceneRoot = new Qt3DCore::QEntity(m_rootEntity);
         m_gridEntity = nullptr;
@@ -978,6 +1052,7 @@ void SceneView3D::tickFreeCamera()
     const qint64 elapsed = m_freeCameraClock.isValid() ? m_freeCameraClock.restart() : 16;
     const float deltaSeconds = qBound(0.001f, static_cast<float>(elapsed) / 1000.0f, 0.1f);
     m_freeCamera->update(deltaSeconds);
+    updateFlightShipTransform();
 #endif
 }
 
@@ -986,6 +1061,19 @@ void SceneView3D::updateCameraDependentScene()
 #ifdef FLATLAS_HAS_QT3D
     if (m_skyRenderer && m_camera)
         m_skyRenderer->setCenter(m_camera->position());
+#endif
+}
+
+void SceneView3D::updateFlightShipTransform()
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (!m_flightShipTransform || !m_freeCamera)
+        return;
+
+    const QVector3D forward = m_freeCamera->shipForward();
+    const QVector3D safeForward = forward.lengthSquared() > 0.0001f ? forward.normalized() : QVector3D(0.0f, 0.0f, -1.0f);
+    m_flightShipTransform->setTranslation(m_freeCamera->shipPosition());
+    m_flightShipTransform->setRotation(QQuaternion::rotationTo(QVector3D(0.0f, 0.0f, -1.0f), safeForward));
 #endif
 }
 

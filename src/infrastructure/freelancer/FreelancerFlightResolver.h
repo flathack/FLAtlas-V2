@@ -12,6 +12,12 @@ struct FreelancerShipPackage {
     QString hullGood;
     QString engineNickname;
     QString loadoutNickname;
+    QString modelPath;
+};
+
+struct FreelancerThirdPersonCamera {
+    float fovX = 70.0f;
+    float zNear = 2.0f;
 };
 
 struct FreelancerEngineStats {
@@ -35,6 +41,8 @@ public:
     static FreelancerShipPackage resolveShipPackage(const QString &gameRoot, const QString &packageNickname);
     static FreelancerEngineStats resolveEngine(const QString &gameRoot, const QString &engineNickname);
     static float resolveCruiseSpeed(const QString &gameRoot);
+    static QString resolveShipModelPath(const QString &gameRoot, const QString &shipArchetype);
+    static FreelancerThirdPersonCamera resolveThirdPersonCamera(const QString &gameRoot);
     static FreelancerFlightStats resolveFlightStats(const QString &gameRoot, const QString &packageNickname);
 
 private:

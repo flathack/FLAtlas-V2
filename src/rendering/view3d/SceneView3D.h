@@ -17,6 +17,7 @@ class QTimer;
 #ifdef FLATLAS_HAS_QT3D
 namespace Qt3DExtras { class Qt3DWindow; }
 namespace Qt3DCore { class QEntity; }
+namespace Qt3DCore { class QTransform; }
 namespace Qt3DRender { class QCamera; class QMaterial; class QPointLight; }
 #endif
 
@@ -54,6 +55,10 @@ public:
     float freeCameraSpeed() const;
     void setFreeCameraSpeed(float speed);
     void setFreeCameraFlightProfile(float normalSpeed, float cruiseSpeed, float cruiseChargeTime);
+    void setThirdPersonCamera(float fovX, float zNear);
+    void setFlightShipModel(const QString &modelPath);
+    void beginCruise();
+    void cancelCruise();
     bool setFreeCameraStartObject(const QString &nickname);
     void setFlightModeEnabled(bool enabled);
     bool isFlightModeEnabled() const { return m_flightModeEnabled; }
@@ -106,6 +111,7 @@ private:
     void applyZoneWireframeVisibility();
     void tickFreeCamera();
     void updateCameraDependentScene();
+    void updateFlightShipTransform();
 
     Qt3DExtras::Qt3DWindow *m_3dWindow = nullptr;
     QWidget *m_container = nullptr;
@@ -113,6 +119,8 @@ private:
     Qt3DCore::QEntity *m_sceneRoot = nullptr;
     Qt3DCore::QEntity *m_gridEntity = nullptr;
     Qt3DCore::QEntity *m_objectsRoot = nullptr;
+    Qt3DCore::QEntity *m_flightShipEntity = nullptr;
+    Qt3DCore::QTransform *m_flightShipTransform = nullptr;
     Qt3DCore::QEntity *m_zonesRoot = nullptr;
     Qt3DRender::QCamera *m_camera = nullptr;
     Qt3DRender::QPointLight *m_light = nullptr;

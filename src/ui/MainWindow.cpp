@@ -268,30 +268,48 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     freeCamButton->setToolTip(QObject::tr("Free camera mode: left drag looks around, W/S move forward/back, A/D strafe, Space/Ctrl move up/down, mouse wheel changes speed."));
     leftLayout->insertWidget(4, freeCamButton);
 
-    auto *flightModeButton = new QPushButton(QObject::tr("Flight Mode"), leftSidebar);
+    auto *flightModeButton = new QPushButton(QObject::tr("Enable Flight Mode"), leftSidebar);
     flightModeButton->setCheckable(true);
     flightModeButton->setToolTip(QObject::tr("Fly the system using Freelancer ship speed data. C charges/cancels cruise. Zones are hidden while active."));
     leftLayout->insertWidget(5, flightModeButton);
 
+    auto *cruiseButton = new QPushButton(QObject::tr("Cruise"), leftSidebar);
+    cruiseButton->setToolTip(QObject::tr("Charge cruise speed"));
+    leftLayout->insertWidget(6, cruiseButton);
+
+    auto *normalSpeedButton = new QPushButton(QObject::tr("Normal Speed"), leftSidebar);
+    normalSpeedButton->setToolTip(QObject::tr("Cancel cruise and return to normal engine speed"));
+    leftLayout->insertWidget(7, normalSpeedButton);
+
     auto *shipCombo = new QComboBox(leftSidebar);
     shipCombo->setToolTip(QObject::tr("Ship package from goods.ini"));
-    leftLayout->insertWidget(6, shipCombo);
+    leftLayout->insertWidget(8, shipCombo);
 
     auto *startCombo = new QComboBox(leftSidebar);
     startCombo->setToolTip(QObject::tr("Flight start point"));
-    leftLayout->insertWidget(7, startCombo);
+    leftLayout->insertWidget(9, startCombo);
 
     auto *flightStatsLabel = new QLabel(leftSidebar);
     flightStatsLabel->setWordWrap(true);
-    leftLayout->insertWidget(8, flightStatsLabel);
+    leftLayout->insertWidget(10, flightStatsLabel);
+
+    const QList<QWidget *> flightModeControls = {
+        cruiseButton,
+        normalSpeedButton,
+        shipCombo,
+        startCombo,
+        flightStatsLabel,
+    };
+    for (QWidget *control : flightModeControls)
+        control->setVisible(false);
 
     auto *freeCamSpeedLabel = new QLabel(leftSidebar);
     freeCamSpeedLabel->setVisible(false);
-    leftLayout->insertWidget(9, freeCamSpeedLabel);
+    leftLayout->insertWidget(11, freeCamSpeedLabel);
 
     auto *centerButton = new QPushButton(QObject::tr("Center to Object"), leftSidebar);
     centerButton->setEnabled(false);
-    leftLayout->insertWidget(10, centerButton);
+    leftLayout->insertWidget(12, centerButton);
 
     auto updateFreeCamSpeedLabel = [freeCamSpeedLabel](float speed) {
         freeCamSpeedLabel->setText(QObject::tr("Free Cam Speed: %1").arg(QString::number(speed, 'f', 0)));
@@ -317,6 +335,7 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     auto applyFlightSelection = [view, shipCombo, startCombo, flightStatsLabel, gameRoot]() {
         const QString packageNickname = shipCombo->currentData().toString();
         const auto stats = flatlas::infrastructure::FreelancerFlightResolver::resolveFlightStats(gameRoot, packageNickname);
+        const auto thirdPersonCamera = flatlas::infrastructure::FreelancerFlightResolver::resolveThirdPersonCamera(gameRoot);
         if (!startCombo->currentData().toString().isEmpty())
             view->setFreeCameraStartObject(startCombo->currentData().toString());
         else
@@ -324,6 +343,8 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
         const float normalSpeed = stats.engine.maxSpeed > 0.0f ? stats.engine.maxSpeed : 80.0f;
         view->setFreeCameraFlightProfile(normalSpeed, stats.cruiseSpeed, stats.engine.cruiseChargeTime);
         view->setFreeCameraSpeed(normalSpeed);
+        view->setThirdPersonCamera(thirdPersonCamera.fovX, thirdPersonCamera.zNear);
+        view->setFlightShipModel(stats.ship.modelPath);
         flightStatsLabel->setText(QObject::tr("Ship: %1\nEngine: %2\nSpeed: %3  Cruise: %4  Charge: %5s")
                                       .arg(stats.ship.nickname.isEmpty() ? QObject::tr("default") : stats.ship.nickname,
                                            stats.engine.nickname.isEmpty() ? QObject::tr("unknown") : stats.engine.nickname)
@@ -354,18 +375,33 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     });
     QObject::connect(view, &flatlas::rendering::SceneView3D::freeCameraSpeedChanged,
                      freeCamSpeedLabel, updateFreeCamSpeedLabel);
+    QObject::connect(cruiseButton, &QPushButton::clicked, view, [view]() {
+        view->beginCruise();
+    });
+    QObject::connect(normalSpeedButton, &QPushButton::clicked, view, [view]() {
+        view->cancelCruise();
+    });
     QObject::connect(shipCombo, &QComboBox::currentIndexChanged, page, [applyFlightSelection](int) {
         applyFlightSelection();
     });
     QObject::connect(startCombo, &QComboBox::currentIndexChanged, page, [applyFlightSelection](int) {
         applyFlightSelection();
     });
-    QObject::connect(flightModeButton, &QPushButton::toggled, view, [view, wireframesCheck, freeCamButton, freeCamSpeedLabel, applyFlightSelection](bool checked) {
+    QObject::connect(flightModeButton, &QPushButton::toggled, view, [view,
+                                                                     wireframesCheck,
+                                                                     freeCamButton,
+                                                                     freeCamSpeedLabel,
+                                                                     flightModeButton,
+                                                                     flightModeControls,
+                                                                     applyFlightSelection](bool checked) {
         applyFlightSelection();
         view->setFlightModeEnabled(checked);
+        flightModeButton->setText(checked ? QObject::tr("Disable Flight Mode") : QObject::tr("Enable Flight Mode"));
         wireframesCheck->setEnabled(!checked);
         freeCamButton->setEnabled(!checked);
         freeCamSpeedLabel->setVisible(checked || view->isFreeCameraModeEnabled());
+        for (QWidget *control : flightModeControls)
+            control->setVisible(checked);
         if (checked) {
             QSignalBlocker blocker(freeCamButton);
             freeCamButton->setChecked(true);

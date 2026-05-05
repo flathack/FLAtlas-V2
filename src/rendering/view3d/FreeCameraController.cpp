@@ -53,6 +53,35 @@ void FreeCameraController::setFreelancerFlightProfile(float normalSpeed, float c
         setSpeed(m_normalFlightSpeed);
 }
 
+void FreeCameraController::setThirdPersonCamera(float fovX, float zNear)
+{
+    if (!m_camera)
+        return;
+    m_camera->lens()->setPerspectiveProjection(qBound(35.0f, fovX, 120.0f),
+                                               16.0f / 9.0f,
+                                               qMax(0.1f, zNear),
+                                               6000000.0f);
+}
+
+void FreeCameraController::beginCruise()
+{
+    if (!m_enabled || !m_freelancerFlightMode || m_cruiseActive || m_cruiseCharging)
+        return;
+    m_cruiseCharging = true;
+    m_cruiseChargeElapsed = 0.0f;
+    setSpeed(m_normalFlightSpeed);
+}
+
+void FreeCameraController::cancelCruise()
+{
+    if (!m_freelancerFlightMode)
+        return;
+    m_cruiseActive = false;
+    m_cruiseCharging = false;
+    m_cruiseChargeElapsed = 0.0f;
+    setSpeed(m_normalFlightSpeed);
+}
+
 void FreeCameraController::setSpeed(float speed)
 {
     const float nextSpeed = qBound(m_freelancerFlightMode ? 1.0f : m_minSpeed, speed, m_maxSpeed);
@@ -109,8 +138,12 @@ void FreeCameraController::update(float deltaSeconds)
 
     if (m_pressedKeys.contains(Qt::Key_W) || m_pressedKeys.contains(Qt::Key_Up))
         movement += forward;
-    if (m_pressedKeys.contains(Qt::Key_S) || m_pressedKeys.contains(Qt::Key_Down))
-        movement -= forward;
+    if (m_freelancerFlightMode && m_cruiseActive)
+        movement += forward;
+    if (m_pressedKeys.contains(Qt::Key_S) || m_pressedKeys.contains(Qt::Key_Down)) {
+        if (!m_freelancerFlightMode)
+            movement -= forward;
+    }
     if (m_pressedKeys.contains(Qt::Key_D))
         movement += right;
     if (m_pressedKeys.contains(Qt::Key_A))
@@ -183,16 +216,15 @@ void FreeCameraController::handleKeyPress(QKeyEvent *event)
     if (!event || !m_enabled || event->isAutoRepeat())
         return;
     if (m_freelancerFlightMode && event->key() == Qt::Key_C) {
-        if (m_cruiseActive || m_cruiseCharging) {
-            m_cruiseActive = false;
-            m_cruiseCharging = false;
-            m_cruiseChargeElapsed = 0.0f;
-            setSpeed(m_normalFlightSpeed);
-        } else {
-            m_cruiseCharging = true;
-            m_cruiseChargeElapsed = 0.0f;
-            setSpeed(m_normalFlightSpeed);
-        }
+        if (m_cruiseActive || m_cruiseCharging)
+            cancelCruise();
+        else
+            beginCruise();
+        event->accept();
+        return;
+    }
+    if (m_freelancerFlightMode && event->key() == Qt::Key_S) {
+        cancelCruise();
         event->accept();
         return;
     }
@@ -213,8 +245,15 @@ void FreeCameraController::applyCamera()
     if (!m_camera)
         return;
     const QVector3D forward = forwardVector();
-    m_camera->setPosition(m_position);
-    m_camera->setViewCenter(m_position + forward);
+    if (m_freelancerFlightMode) {
+        const QVector3D cameraPosition =
+            m_position - forward * m_thirdPersonDistance + QVector3D(0.0f, m_thirdPersonHeight, 0.0f);
+        m_camera->setPosition(cameraPosition);
+        m_camera->setViewCenter(m_position + forward * m_thirdPersonLookAhead);
+    } else {
+        m_camera->setPosition(m_position);
+        m_camera->setViewCenter(m_position + forward);
+    }
     m_camera->setUpVector(QVector3D(0.0f, 1.0f, 0.0f));
     emit cameraChanged();
 }

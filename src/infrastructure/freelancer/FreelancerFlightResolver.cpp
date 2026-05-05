@@ -78,6 +78,7 @@ QVector<FreelancerShipPackage> FreelancerFlightResolver::loadShipPackages(const 
                 break;
             }
         }
+        package.modelPath = resolveShipModelPath(gameRoot, package.shipArchetype);
 
         if (package.nickname.isEmpty() || seen.contains(package.nickname.toLower()))
             continue;
@@ -155,11 +156,57 @@ float FreelancerFlightResolver::resolveCruiseSpeed(const QString &gameRoot)
     return 300.0f;
 }
 
+QString FreelancerFlightResolver::resolveShipModelPath(const QString &gameRoot, const QString &shipArchetype)
+{
+    const QString path = dataPath(gameRoot, QStringLiteral("SHIPS/shiparch.ini"));
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
+    if (path.isEmpty() || dataDir.isEmpty())
+        return {};
+
+    const QString requested = shipArchetype.trimmed();
+    if (requested.isEmpty())
+        return {};
+
+    const IniDocument doc = IniParser::parseFile(path);
+    for (const IniSection &section : doc) {
+        if (section.name.compare(QStringLiteral("Ship"), Qt::CaseInsensitive) != 0)
+            continue;
+        if (sectionNickname(section).compare(requested, Qt::CaseInsensitive) != 0)
+            continue;
+
+        const QString relativeModelPath = section.value(QStringLiteral("DA_archetype")).trimmed();
+        if (relativeModelPath.isEmpty())
+            return {};
+        return flatlas::core::PathUtils::ciResolvePath(dataDir, relativeModelPath);
+    }
+    return {};
+}
+
+FreelancerThirdPersonCamera FreelancerFlightResolver::resolveThirdPersonCamera(const QString &gameRoot)
+{
+    FreelancerThirdPersonCamera camera;
+    const QString path = dataPath(gameRoot, QStringLiteral("cameras.ini"));
+    if (path.isEmpty())
+        return camera;
+
+    const IniDocument doc = IniParser::parseFile(path);
+    for (const IniSection &section : doc) {
+        if (section.name.compare(QStringLiteral("ThirdPersonCamera"), Qt::CaseInsensitive) != 0)
+            continue;
+        camera.fovX = floatValue(section, QStringLiteral("fovx"), camera.fovX);
+        camera.zNear = floatValue(section, QStringLiteral("znear"), camera.zNear);
+        return camera;
+    }
+    return camera;
+}
+
 FreelancerFlightStats FreelancerFlightResolver::resolveFlightStats(const QString &gameRoot,
                                                                    const QString &packageNickname)
 {
     FreelancerFlightStats stats;
     stats.ship = resolveShipPackage(gameRoot, packageNickname);
+    if (stats.ship.modelPath.isEmpty())
+        stats.ship.modelPath = resolveShipModelPath(gameRoot, stats.ship.shipArchetype);
     stats.engine = resolveEngine(gameRoot, stats.ship.engineNickname);
     stats.cruiseSpeed = resolveCruiseSpeed(gameRoot);
     return stats;

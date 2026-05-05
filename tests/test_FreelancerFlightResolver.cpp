@@ -45,9 +45,18 @@ void TestFreelancerFlightResolver::resolvesShipEngineAndCruiseStats()
                              "max_force = 48000\n"
                              "linear_drag = 600\n"
                              "cruise_charge_time = 4.5\n"));
+    writeText(dir.filePath(QStringLiteral("DATA/SHIPS/shiparch.ini")),
+              QStringLiteral("[Ship]\n"
+                             "nickname = li_elite\n"
+                             "DA_archetype = ships/liberty/li_elite/li_elite.cmp\n"));
+    writeText(dir.filePath(QStringLiteral("DATA/SHIPS/LIBERTY/LI_ELITE/li_elite.cmp")), QString());
     writeText(dir.filePath(QStringLiteral("DATA/constants.ini")),
               QStringLiteral("[EngineEquipConsts]\n"
                              "CRUISE_SPEED = 320\n"));
+    writeText(dir.filePath(QStringLiteral("DATA/cameras.ini")),
+              QStringLiteral("[ThirdPersonCamera]\n"
+                             "fovx = 72\n"
+                             "znear = 3\n"));
 
     const FreelancerFlightStats stats =
         FreelancerFlightResolver::resolveFlightStats(dir.path(), QStringLiteral("li_elite_package"));
@@ -55,10 +64,15 @@ void TestFreelancerFlightResolver::resolvesShipEngineAndCruiseStats()
     QCOMPARE(stats.ship.nickname, QStringLiteral("li_elite_package"));
     QCOMPARE(stats.ship.shipArchetype, QStringLiteral("li_elite"));
     QCOMPARE(stats.ship.engineNickname, QStringLiteral("ge_gf1_engine_01"));
+    QVERIFY(stats.ship.modelPath.endsWith(QStringLiteral("li_elite.cmp"), Qt::CaseInsensitive));
     QCOMPARE(stats.engine.nickname, QStringLiteral("ge_gf1_engine_01"));
     QCOMPARE(stats.engine.maxSpeed, 80.0f);
     QCOMPARE(stats.engine.cruiseChargeTime, 4.5f);
     QCOMPARE(stats.cruiseSpeed, 320.0f);
+
+    const FreelancerThirdPersonCamera camera = FreelancerFlightResolver::resolveThirdPersonCamera(dir.path());
+    QCOMPARE(camera.fovX, 72.0f);
+    QCOMPARE(camera.zNear, 3.0f);
 }
 
 QTEST_MAIN(TestFreelancerFlightResolver)
