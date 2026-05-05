@@ -79,6 +79,9 @@ void FlightHud::drawSpeedBar(QPainter &p)
     switch (m_controller->state()) {
     case FlightController::Docked:    stateStr = QStringLiteral("DOCKED"); break;
     case FlightController::Normal:    stateStr = QStringLiteral("NORMAL"); break;
+    case FlightController::CruiseCharging:
+        stateStr = QStringLiteral("CRUISE %1%").arg(static_cast<int>(m_controller->cruiseChargeProgress() * 100.0f));
+        break;
     case FlightController::Cruise:    stateStr = QStringLiteral("CRUISE"); break;
     case FlightController::Formation: stateStr = QStringLiteral("FORMATION"); break;
     }

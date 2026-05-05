@@ -484,6 +484,62 @@ float SceneView3D::freeCameraSpeed() const
 #endif
 }
 
+void SceneView3D::setFreeCameraSpeed(float speed)
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (m_freeCamera)
+        m_freeCamera->setSpeed(speed);
+#else
+    Q_UNUSED(speed);
+#endif
+}
+
+void SceneView3D::setFreeCameraFlightProfile(float normalSpeed, float cruiseSpeed, float cruiseChargeTime)
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (m_freeCamera)
+        m_freeCamera->setFreelancerFlightProfile(normalSpeed, cruiseSpeed, cruiseChargeTime);
+#else
+    Q_UNUSED(normalSpeed);
+    Q_UNUSED(cruiseSpeed);
+    Q_UNUSED(cruiseChargeTime);
+#endif
+}
+
+bool SceneView3D::setFreeCameraStartObject(const QString &nickname)
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (!m_freeCamera)
+        return false;
+    const QVector3D center = m_objectCentersByNickname.value(nickname, QVector3D());
+    if (!m_objectCentersByNickname.contains(nickname) && !nickname.isEmpty())
+        return false;
+    const QVector3D spawn = center + QVector3D(0.0f, 350.0f, 1200.0f);
+    m_freeCamera->setPose(spawn, QVector3D(0.0f, -0.12f, -1.0f));
+    updateCameraDependentScene();
+    requestViewportUpdate();
+    return true;
+#else
+    Q_UNUSED(nickname);
+    return false;
+#endif
+}
+
+void SceneView3D::setFlightModeEnabled(bool enabled)
+{
+    if (m_flightModeEnabled == enabled)
+        return;
+    m_flightModeEnabled = enabled;
+#ifdef FLATLAS_HAS_QT3D
+    if (m_freeCamera)
+        m_freeCamera->setFreelancerFlightModeEnabled(enabled);
+    setFreeCameraModeEnabled(enabled);
+    applyDisplayFilter();
+    applyZoneWireframeVisibility();
+    requestViewportUpdate();
+#endif
+}
+
 void SceneView3D::setViewportActive(bool active)
 {
 #ifdef FLATLAS_HAS_QT3D
@@ -854,7 +910,7 @@ void SceneView3D::applyDisplayFilter()
         if (!zone)
             continue;
         if (Qt3DCore::QEntity *entity = m_sceneEntitiesByNickname.value(zone->nickname(), nullptr))
-            setEntityTreeEnabled(entity, zoneVisibleForFilter(m_displayFilterSettings, *zone));
+            setEntityTreeEnabled(entity, !m_flightModeEnabled && zoneVisibleForFilter(m_displayFilterSettings, *zone));
     }
 #endif
 }
@@ -908,7 +964,7 @@ void SceneView3D::applyZoneWireframeVisibility()
 #ifdef FLATLAS_HAS_QT3D
     for (auto it = m_zoneWireEntitiesByNickname.begin(); it != m_zoneWireEntitiesByNickname.end(); ++it) {
         if (it.value())
-            it.value()->setEnabled(m_zoneWireframesVisible);
+            it.value()->setEnabled(m_zoneWireframesVisible && !m_flightModeEnabled);
     }
 #endif
 }

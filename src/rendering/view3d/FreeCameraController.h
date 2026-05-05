@@ -24,6 +24,8 @@ public:
 
     void setEnabled(bool enabled);
     bool isEnabled() const { return m_enabled; }
+    void setFreelancerFlightModeEnabled(bool enabled);
+    void setFreelancerFlightProfile(float normalSpeed, float cruiseSpeed, float cruiseChargeTime);
 
     void setSpeed(float speed);
     float speed() const { return m_speed; }
@@ -31,6 +33,7 @@ public:
     float maxSpeed() const { return m_maxSpeed; }
 
     void synchronizeFromCamera();
+    void setPose(const QVector3D &position, const QVector3D &forward);
     void update(float deltaSeconds);
 
     void handleMousePress(QMouseEvent *event);
@@ -62,6 +65,13 @@ private:
     float m_minSpeed = 250.0f;
     float m_maxSpeed = 500000.0f;
     float m_mouseSensitivity = 0.18f;
+    bool m_freelancerFlightMode = false;
+    bool m_cruiseCharging = false;
+    bool m_cruiseActive = false;
+    float m_normalFlightSpeed = 80.0f;
+    float m_cruiseSpeed = 300.0f;
+    float m_cruiseChargeTime = 5.0f;
+    float m_cruiseChargeElapsed = 0.0f;
 };
 
 } // namespace flatlas::rendering

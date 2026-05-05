@@ -33,6 +33,7 @@
 #include "domain/ZoneItem.h"
 #include "domain/UniverseData.h"
 #include "infrastructure/freelancer/UniverseScanner.h"
+#include "infrastructure/freelancer/FreelancerFlightResolver.h"
 #include "core/PathUtils.h"
 
 #include <QCloseEvent>
@@ -44,6 +45,7 @@
 #include <QSettings>
 #include <QApplication>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QProgressDialog>
@@ -266,18 +268,70 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     freeCamButton->setToolTip(QObject::tr("Free camera mode: left drag looks around, W/S move forward/back, A/D strafe, Space/Ctrl move up/down, mouse wheel changes speed."));
     leftLayout->insertWidget(4, freeCamButton);
 
+    auto *flightModeButton = new QPushButton(QObject::tr("Flight Mode"), leftSidebar);
+    flightModeButton->setCheckable(true);
+    flightModeButton->setToolTip(QObject::tr("Fly the system using Freelancer ship speed data. C charges/cancels cruise. Zones are hidden while active."));
+    leftLayout->insertWidget(5, flightModeButton);
+
+    auto *shipCombo = new QComboBox(leftSidebar);
+    shipCombo->setToolTip(QObject::tr("Ship package from goods.ini"));
+    leftLayout->insertWidget(6, shipCombo);
+
+    auto *startCombo = new QComboBox(leftSidebar);
+    startCombo->setToolTip(QObject::tr("Flight start point"));
+    leftLayout->insertWidget(7, startCombo);
+
+    auto *flightStatsLabel = new QLabel(leftSidebar);
+    flightStatsLabel->setWordWrap(true);
+    leftLayout->insertWidget(8, flightStatsLabel);
+
     auto *freeCamSpeedLabel = new QLabel(leftSidebar);
     freeCamSpeedLabel->setVisible(false);
-    leftLayout->insertWidget(5, freeCamSpeedLabel);
+    leftLayout->insertWidget(9, freeCamSpeedLabel);
 
     auto *centerButton = new QPushButton(QObject::tr("Center to Object"), leftSidebar);
     centerButton->setEnabled(false);
-    leftLayout->insertWidget(6, centerButton);
+    leftLayout->insertWidget(10, centerButton);
 
     auto updateFreeCamSpeedLabel = [freeCamSpeedLabel](float speed) {
         freeCamSpeedLabel->setText(QObject::tr("Free Cam Speed: %1").arg(QString::number(speed, 'f', 0)));
     };
     updateFreeCamSpeedLabel(view->freeCameraSpeed());
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    const QVector<flatlas::infrastructure::FreelancerShipPackage> shipPackages =
+        flatlas::infrastructure::FreelancerFlightResolver::loadShipPackages(gameRoot);
+    for (const auto &package : shipPackages)
+        shipCombo->addItem(package.nickname, package.nickname);
+    if (shipCombo->count() <= 0)
+        shipCombo->addItem(QObject::tr("Default ship"), QString());
+
+    startCombo->addItem(QObject::tr("System origin"), QString());
+    if (document) {
+        for (const auto &obj : document->objects()) {
+            if (obj)
+                startCombo->addItem(obj->nickname(), obj->nickname());
+        }
+    }
+
+    auto applyFlightSelection = [view, shipCombo, startCombo, flightStatsLabel, gameRoot]() {
+        const QString packageNickname = shipCombo->currentData().toString();
+        const auto stats = flatlas::infrastructure::FreelancerFlightResolver::resolveFlightStats(gameRoot, packageNickname);
+        if (!startCombo->currentData().toString().isEmpty())
+            view->setFreeCameraStartObject(startCombo->currentData().toString());
+        else
+            view->setFreeCameraStartObject(QString());
+        const float normalSpeed = stats.engine.maxSpeed > 0.0f ? stats.engine.maxSpeed : 80.0f;
+        view->setFreeCameraFlightProfile(normalSpeed, stats.cruiseSpeed, stats.engine.cruiseChargeTime);
+        view->setFreeCameraSpeed(normalSpeed);
+        flightStatsLabel->setText(QObject::tr("Ship: %1\nEngine: %2\nSpeed: %3  Cruise: %4  Charge: %5s")
+                                      .arg(stats.ship.nickname.isEmpty() ? QObject::tr("default") : stats.ship.nickname,
+                                           stats.engine.nickname.isEmpty() ? QObject::tr("unknown") : stats.engine.nickname)
+                                      .arg(QString::number(normalSpeed, 'f', 0),
+                                           QString::number(stats.cruiseSpeed, 'f', 0),
+                                           QString::number(stats.engine.cruiseChargeTime, 'f', 1)));
+    };
+    applyFlightSelection();
 
     QObject::connect(zoomSlider, &QSlider::valueChanged, view, [view](int value) {
         view->setZoomLevel(value);
@@ -300,6 +354,23 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     });
     QObject::connect(view, &flatlas::rendering::SceneView3D::freeCameraSpeedChanged,
                      freeCamSpeedLabel, updateFreeCamSpeedLabel);
+    QObject::connect(shipCombo, &QComboBox::currentIndexChanged, page, [applyFlightSelection](int) {
+        applyFlightSelection();
+    });
+    QObject::connect(startCombo, &QComboBox::currentIndexChanged, page, [applyFlightSelection](int) {
+        applyFlightSelection();
+    });
+    QObject::connect(flightModeButton, &QPushButton::toggled, view, [view, wireframesCheck, freeCamButton, freeCamSpeedLabel, applyFlightSelection](bool checked) {
+        applyFlightSelection();
+        view->setFlightModeEnabled(checked);
+        wireframesCheck->setEnabled(!checked);
+        freeCamButton->setEnabled(!checked);
+        freeCamSpeedLabel->setVisible(checked || view->isFreeCameraModeEnabled());
+        if (checked) {
+            QSignalBlocker blocker(freeCamButton);
+            freeCamButton->setChecked(true);
+        }
+    });
 
     auto filterSettings = std::make_shared<flatlas::rendering::SystemDisplayFilterSettings>(initialFilterSettings);
     auto applyTreeFilter = [tree, searchEdit, document, filterSettings]() {
@@ -1193,6 +1264,14 @@ void MainWindow::restoreOpenToolTabs()
             });
             connect(editor, &flatlas::editors::SystemEditorPage::open3DSystemViewRequested,
                     this, [this, editor]() { open3DSystemEditorFor(editor); });
+            connect(editor, &flatlas::editors::SystemEditorPage::modelPreviewRequested,
+                    this, [this](const QString &modelPath, const QString &displayLabel) {
+                if (!showModelInViewer(modelPath, displayLabel)) {
+                    QMessageBox::warning(this,
+                                         tr("Room Preview"),
+                                         tr("Der ausgewaehlte Room konnte nicht im Haupt-3D-Viewer angezeigt werden."));
+                }
+            });
             m_centerTabs->setCurrentIndex(idx);
             continue;
         }
@@ -1700,6 +1779,14 @@ void MainWindow::openSystemFromUniverse(const QString &nickname,
     connect(editor, &flatlas::editors::SystemEditorPage::open3DSystemViewRequested,
             this, [this, editor]() {
         open3DSystemEditorFor(editor);
+    });
+    connect(editor, &flatlas::editors::SystemEditorPage::modelPreviewRequested,
+            this, [this](const QString &modelPath, const QString &displayLabel) {
+        if (!showModelInViewer(modelPath, displayLabel)) {
+            QMessageBox::warning(this,
+                                 tr("Room Preview"),
+                                 tr("Der ausgewaehlte Room konnte nicht im Haupt-3D-Viewer angezeigt werden."));
+        }
     });
 
     updateLoadProgress(100, tr("Opened system: %1").arg(nickname));

@@ -14,6 +14,8 @@ FlightController::FlightController(QObject *parent)
 void FlightController::setState(State s)
 {
     if (m_state == s) return;
+    if (s != CruiseCharging)
+        m_cruiseChargeElapsed = 0.0f;
     m_state = s;
     emit stateChanged(m_state);
 }
@@ -21,7 +23,10 @@ void FlightController::setState(State s)
 void FlightController::toggleCruise()
 {
     if (m_state == Docked) return;
-    setState(m_state == Cruise ? Normal : Cruise);
+    if (m_state == Cruise || m_state == CruiseCharging)
+        setState(Normal);
+    else
+        setState(CruiseCharging);
 }
 
 void FlightController::dock()
@@ -62,10 +67,32 @@ void FlightController::setForward(const QVector3D &fwd)
     m_forward = fwd.normalized();
 }
 
+float FlightController::cruiseChargeProgress() const
+{
+    if (m_state == Cruise)
+        return 1.0f;
+    if (m_state != CruiseCharging)
+        return 0.0f;
+    if (m_cruiseChargeTime <= 0.0f)
+        return 1.0f;
+    return qBound(0.0f, m_cruiseChargeElapsed / m_cruiseChargeTime, 1.0f);
+}
+
+void FlightController::setCruiseChargeTime(float seconds)
+{
+    m_cruiseChargeTime = qMax(0.0f, seconds);
+}
+
 void FlightController::update(float dt)
 {
     if (m_state == Docked || dt <= 0.0f)
         return;
+
+    if (m_state == CruiseCharging) {
+        m_cruiseChargeElapsed += dt;
+        if (m_cruiseChargeTime <= 0.0f || m_cruiseChargeElapsed >= m_cruiseChargeTime)
+            setState(Cruise);
+    }
 
     // --- Steering: rotate forward vector ---
     float yawAngle = m_steerYaw * m_turnRate * dt;
@@ -85,6 +112,8 @@ void FlightController::update(float dt)
     float targetSpeed = 0.0f;
     if (m_state == Cruise) {
         targetSpeed = m_cruiseSpeed;
+    } else if (m_state == CruiseCharging) {
+        targetSpeed = m_maxSpeed;
     } else if (m_afterburner) {
         targetSpeed = m_afterburnerSpeed;
     } else {

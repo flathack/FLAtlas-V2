@@ -11,7 +11,7 @@ namespace flatlas::rendering {
 class FlightController : public QObject {
     Q_OBJECT
 public:
-    enum State { Docked, Normal, Cruise, Formation };
+    enum State { Docked, Normal, CruiseCharging, Cruise, Formation };
     Q_ENUM(State)
 
     explicit FlightController(QObject *parent = nullptr);
@@ -46,8 +46,11 @@ public:
     // --- Tuning ---
     float maxSpeed() const { return m_maxSpeed; }
     float cruiseSpeed() const { return m_cruiseSpeed; }
+    float cruiseChargeTime() const { return m_cruiseChargeTime; }
+    float cruiseChargeProgress() const;
     void setMaxSpeed(float s) { m_maxSpeed = s; }
     void setCruiseSpeed(float s) { m_cruiseSpeed = s; }
+    void setCruiseChargeTime(float seconds);
 
 signals:
     void stateChanged(State newState);
@@ -69,6 +72,8 @@ private:
     // Tuning constants
     float m_maxSpeed = 300.0f;
     float m_cruiseSpeed = 1500.0f;
+    float m_cruiseChargeTime = 5.0f;
+    float m_cruiseChargeElapsed = 0.0f;
     float m_afterburnerSpeed = 600.0f;
     float m_acceleration = 400.0f;
     float m_deceleration = 200.0f;

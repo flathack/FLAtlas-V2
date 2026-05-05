@@ -37,6 +37,8 @@ void TestFlightMode::testFlightControllerStates()
     QCOMPARE(ctrl.state(), FlightController::Normal);
 
     ctrl.toggleCruise();
+    QCOMPARE(ctrl.state(), FlightController::CruiseCharging);
+    ctrl.update(ctrl.cruiseChargeTime());
     QCOMPARE(ctrl.state(), FlightController::Cruise);
 
     ctrl.toggleCruise();

@@ -20,6 +20,7 @@ flatlas_add_test(test_PathUtils      test_PathUtils.cpp      flatlas_core)
 flatlas_add_test(test_DomainModels   test_DomainModels.cpp   flatlas_domain)
 flatlas_add_test(test_FactionData    test_FactionData.cpp    flatlas_domain)
 flatlas_add_test(test_FactionRepository test_FactionRepository.cpp flatlas_infrastructure)
+flatlas_add_test(test_FreelancerFlightResolver test_FreelancerFlightResolver.cpp flatlas_infrastructure)
 add_executable(test_FactionEditorService
     test_FactionEditorService.cpp
     ${CMAKE_SOURCE_DIR}/src/editors/faction/FactionEditorService.cpp

@@ -52,6 +52,11 @@ public:
     void setFreeCameraModeEnabled(bool enabled);
     bool isFreeCameraModeEnabled() const;
     float freeCameraSpeed() const;
+    void setFreeCameraSpeed(float speed);
+    void setFreeCameraFlightProfile(float normalSpeed, float cruiseSpeed, float cruiseChargeTime);
+    bool setFreeCameraStartObject(const QString &nickname);
+    void setFlightModeEnabled(bool enabled);
+    bool isFlightModeEnabled() const { return m_flightModeEnabled; }
 
 #ifdef FLATLAS_HAS_QT3D
 public slots:
@@ -143,6 +148,7 @@ private:
     SystemDisplayFilterSettings m_displayFilterSettings;
     int m_zoomLevel = 50;
     bool m_zoneWireframesVisible = true;
+    bool m_flightModeEnabled = false;
 };
 
 } // namespace flatlas::rendering

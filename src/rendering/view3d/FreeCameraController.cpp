@@ -25,14 +25,37 @@ void FreeCameraController::setEnabled(bool enabled)
     m_enabled = enabled;
     m_pressedKeys.clear();
     m_looking = false;
+    m_cruiseCharging = false;
+    m_cruiseActive = false;
+    m_cruiseChargeElapsed = 0.0f;
     if (m_enabled)
         synchronizeFromCamera();
     emit enabledChanged(m_enabled);
 }
 
+void FreeCameraController::setFreelancerFlightModeEnabled(bool enabled)
+{
+    if (m_freelancerFlightMode == enabled)
+        return;
+    m_freelancerFlightMode = enabled;
+    m_cruiseCharging = false;
+    m_cruiseActive = false;
+    m_cruiseChargeElapsed = 0.0f;
+    setSpeed(m_freelancerFlightMode ? m_normalFlightSpeed : m_speed);
+}
+
+void FreeCameraController::setFreelancerFlightProfile(float normalSpeed, float cruiseSpeed, float cruiseChargeTime)
+{
+    m_normalFlightSpeed = qMax(1.0f, normalSpeed);
+    m_cruiseSpeed = qMax(m_normalFlightSpeed, cruiseSpeed);
+    m_cruiseChargeTime = qMax(0.0f, cruiseChargeTime);
+    if (m_freelancerFlightMode && !m_cruiseActive)
+        setSpeed(m_normalFlightSpeed);
+}
+
 void FreeCameraController::setSpeed(float speed)
 {
-    const float nextSpeed = qBound(m_minSpeed, speed, m_maxSpeed);
+    const float nextSpeed = qBound(m_freelancerFlightMode ? 1.0f : m_minSpeed, speed, m_maxSpeed);
     if (qFuzzyCompare(m_speed, nextSpeed))
         return;
     m_speed = nextSpeed;
@@ -54,10 +77,30 @@ void FreeCameraController::synchronizeFromCamera()
     applyCamera();
 }
 
+void FreeCameraController::setPose(const QVector3D &position, const QVector3D &forward)
+{
+    const QVector3D normalized = forward.lengthSquared() > 0.0001f
+        ? forward.normalized()
+        : QVector3D(0.0f, 0.0f, -1.0f);
+    m_position = position;
+    m_pitch = qRadiansToDegrees(std::asin(qBound(-1.0f, normalized.y(), 1.0f)));
+    m_yaw = qRadiansToDegrees(std::atan2(normalized.x(), normalized.z()));
+    applyCamera();
+}
+
 void FreeCameraController::update(float deltaSeconds)
 {
     if (!m_enabled || !m_camera || deltaSeconds <= 0.0f)
         return;
+
+    if (m_freelancerFlightMode && m_cruiseCharging) {
+        m_cruiseChargeElapsed += deltaSeconds;
+        if (m_cruiseChargeTime <= 0.0f || m_cruiseChargeElapsed >= m_cruiseChargeTime) {
+            m_cruiseCharging = false;
+            m_cruiseActive = true;
+            setSpeed(m_cruiseSpeed);
+        }
+    }
 
     QVector3D movement;
     const QVector3D forward = forwardVector();
@@ -126,6 +169,10 @@ void FreeCameraController::handleWheel(QWheelEvent *event)
 {
     if (!event || !m_enabled)
         return;
+    if (m_freelancerFlightMode) {
+        event->accept();
+        return;
+    }
     const float factor = event->angleDelta().y() > 0 ? 1.25f : 0.8f;
     setSpeed(m_speed * factor);
     event->accept();
@@ -135,6 +182,20 @@ void FreeCameraController::handleKeyPress(QKeyEvent *event)
 {
     if (!event || !m_enabled || event->isAutoRepeat())
         return;
+    if (m_freelancerFlightMode && event->key() == Qt::Key_C) {
+        if (m_cruiseActive || m_cruiseCharging) {
+            m_cruiseActive = false;
+            m_cruiseCharging = false;
+            m_cruiseChargeElapsed = 0.0f;
+            setSpeed(m_normalFlightSpeed);
+        } else {
+            m_cruiseCharging = true;
+            m_cruiseChargeElapsed = 0.0f;
+            setSpeed(m_normalFlightSpeed);
+        }
+        event->accept();
+        return;
+    }
     m_pressedKeys.insert(event->key());
     event->accept();
 }

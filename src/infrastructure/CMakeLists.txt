@@ -14,6 +14,7 @@ add_library(flatlas_infrastructure STATIC
     io/CsvImporter.h io/CsvImporter.cpp
     freelancer/FreelancerPaths.h freelancer/FreelancerPaths.cpp
     freelancer/FreelancerMaterialResolver.h freelancer/FreelancerMaterialResolver.cpp
+    freelancer/FreelancerFlightResolver.h freelancer/FreelancerFlightResolver.cpp
     freelancer/UniverseScanner.h freelancer/UniverseScanner.cpp
     freelancer/IdsStringTable.h freelancer/IdsStringTable.cpp
     freelancer/IdsDataService.h freelancer/IdsDataService.cpp
