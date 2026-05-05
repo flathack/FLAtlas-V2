@@ -5,6 +5,8 @@
 #include "rendering/preview/ModelViewerPage.h"
 #include "core/EditingContext.h"
 
+#include <QDir>
+#include <QFileInfo>
 #include <QTreeWidget>
 
 class TestModelViewerPageTradeLane : public QObject {
@@ -17,11 +19,18 @@ private slots:
 void TestModelViewerPageTradeLane::initTestCase()
 {
     qputenv("QT3D_RENDERER", "opengl");
+    const QString testModPath = QStringLiteral("C:/Users/steve/Github/FL-Installationen/TESTMOD1");
+    if (!QFileInfo::exists(QDir(testModPath).filePath(QStringLiteral("DATA/SOLAR/DOCKABLE/TLR_lod.3db")))
+        && !QFileInfo::exists(QDir(testModPath).filePath(QStringLiteral("DATA/SOLAR/dockable/TLR_lod.3db")))
+        && !QFileInfo::exists(QDir(testModPath).filePath(QStringLiteral("DATA/SOLAR/dockable/tlr_lod.3db")))) {
+        QSKIP("TESTMOD1 Freelancer model fixture is not available in this environment.");
+    }
+
     flatlas::core::ModProfile profile;
     profile.id = QStringLiteral("testmod1");
     profile.name = QStringLiteral("TESTMOD1");
     profile.mode = QStringLiteral("direct");
-    profile.directPath = QStringLiteral("C:/Users/steve/Github/FL-Installationen/TESTMOD1");
+    profile.directPath = testModPath;
     auto &context = flatlas::core::EditingContext::instance();
     context.addProfile(profile);
     QVERIFY(context.setEditingProfile(profile.id));
