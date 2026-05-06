@@ -38,7 +38,9 @@ add_executable(FLAtlas
 if(MINGW)
     target_link_libraries(FLAtlas PRIVATE
         -Wl,--start-group
+        -Wl,--whole-archive
         flatlas_ui
+        -Wl,--no-whole-archive
         flatlas_editors
         flatlas_rendering
         flatlas_infrastructure

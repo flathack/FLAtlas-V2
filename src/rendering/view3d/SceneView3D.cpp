@@ -611,6 +611,13 @@ void SceneView3D::setFlightModeEnabled(bool enabled)
 #endif
 }
 
+void SceneView3D::refreshThemeColors()
+{
+#ifdef FLATLAS_HAS_QT3D
+    loadDocument(m_document);
+#endif
+}
+
 void SceneView3D::setViewportActive(bool active)
 {
 #ifdef FLATLAS_HAS_QT3D
@@ -709,6 +716,7 @@ void SceneView3D::clearScene()
     m_markerEntitiesByNickname.clear();
     m_markerMaterialsByNickname.clear();
     m_ringEntitiesByHostNickname.clear();
+    m_atmosphereZoneEntitiesByObjectNickname.clear();
     m_sceneEntitiesByNickname.clear();
     m_zoneWireEntitiesByNickname.clear();
     m_nicknamesByModelPath.clear();
@@ -810,6 +818,53 @@ void SceneView3D::addZone(const std::shared_ptr<flatlas::domain::ZoneItem> &zone
 #endif
 }
 
+void SceneView3D::addAtmosphereZone(const flatlas::domain::SolarObject &obj)
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (!m_zonesRoot)
+        return;
+
+    using Type = flatlas::domain::SolarObject::Type;
+    const QString archetype = obj.archetype().trimmed().toLower();
+    const bool isAtmosphereHost = obj.type() == Type::Planet
+        || obj.type() == Type::Sun
+        || archetype.contains(QStringLiteral("planet"))
+        || archetype.contains(QStringLiteral("sun"))
+        || archetype.contains(QStringLiteral("star"));
+    if (!isAtmosphereHost)
+        return;
+
+    bool ok = false;
+    const float atmosphereRange = rawEntryValue(obj, QStringLiteral("atmosphere_range")).toFloat(&ok);
+    if (!ok || atmosphereRange <= 0.0f)
+        return;
+
+    flatlas::domain::ZoneItem atmosphere;
+    atmosphere.setNickname(obj.nickname() + QStringLiteral("::atmosphere"));
+    atmosphere.setPosition(obj.position());
+    atmosphere.setShape(flatlas::domain::ZoneItem::Sphere);
+    atmosphere.setSize(QVector3D(atmosphereRange, atmosphereRange, atmosphereRange));
+    atmosphere.setZoneType(QStringLiteral("atmosphere"));
+
+    const ZoneVisualStyle style = ZoneColorScheme::styleForZone(atmosphere);
+    const ZoneGeometryBuildResult result = ZoneGeometryBuilder::buildZone(atmosphere, style, m_zonesRoot);
+    if (!result.valid)
+        return;
+
+    m_atmosphereZoneEntitiesByObjectNickname.insert(obj.nickname(), result.rootEntity);
+    if (result.wireEntity) {
+        m_zoneWireEntitiesByNickname.insert(atmosphere.nickname(), result.wireEntity);
+        result.wireEntity->setEnabled(m_zoneWireframesVisible);
+    }
+    if (m_sceneBounds)
+        m_sceneBounds->include(result.bounds);
+    if (m_zoneBounds)
+        m_zoneBounds->include(result.bounds);
+#else
+    Q_UNUSED(obj);
+#endif
+}
+
 void SceneView3D::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObject> &obj)
 {
 #ifdef FLATLAS_HAS_QT3D
@@ -855,6 +910,8 @@ void SceneView3D::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObj
         m_objectBounds->include(obj->position() + QVector3D(radius, radius, radius));
         m_objectBounds->include(obj->position() - QVector3D(radius, radius, radius));
     }
+
+    addAtmosphereZone(*obj);
 
     const QString modelPath = modelPathForObject(*obj);
     if (radiusSphere && obj->type() == flatlas::domain::SolarObject::Planet) {
@@ -973,6 +1030,8 @@ void SceneView3D::applyDisplayFilter()
         if (Qt3DCore::QEntity *entity = m_sceneEntitiesByNickname.value(obj->nickname(), nullptr))
             setEntityTreeEnabled(entity, objectVisibleForFilter(m_displayFilterSettings, *obj));
         const bool visible = objectVisibleForFilter(m_displayFilterSettings, *obj);
+        if (Qt3DCore::QEntity *atmosphere = m_atmosphereZoneEntitiesByObjectNickname.value(obj->nickname(), nullptr))
+            setEntityTreeEnabled(atmosphere, visible && !m_flightModeEnabled);
         for (Qt3DCore::QEntity *ringEntity : m_ringEntitiesByHostNickname.value(obj->nickname()))
             setEntityTreeEnabled(ringEntity, visible);
         if (m_nicknamesWithRenderedModel.contains(obj->nickname())) {

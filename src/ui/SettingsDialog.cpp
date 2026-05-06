@@ -3,8 +3,10 @@
 #include "core/Config.h"
 #include "core/I18n.h"
 #include "core/Theme.h"
+#include "core/ThemeColors.h"
 
 #include <QCheckBox>
+#include <QColorDialog>
 #include <QComboBox>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
@@ -148,6 +150,38 @@ void SettingsDialog::setupUi()
     generalLayout->addRow(QString(), m_restoreTabsCheckBox);
     tabs->addTab(generalTab, tr("Allgemein"));
 
+    auto *themeColorsTab = new QWidget(tabs);
+    auto *themeColorsLayout = new QFormLayout(themeColorsTab);
+    for (const flatlas::core::ThemeColorChoice &choice : flatlas::core::ThemeColors::choices()) {
+        auto *button = new QPushButton(themeColorsTab);
+        button->setProperty("themeColorKey", choice.key);
+        m_themeColorButtons.insert(choice.key, button);
+        connect(button, &QPushButton::clicked, this, [this, key = choice.key]() {
+            const QColor stored(m_themeColorButtons.value(key)->property("themeColorValue").toString());
+            const QColor current = stored.isValid() ? stored : flatlas::core::ThemeColors::color(key);
+            const QColor selected = QColorDialog::getColor(current, this, tr("Theme Color"));
+            if (!selected.isValid())
+                return;
+            QPushButton *button = m_themeColorButtons.value(key);
+            if (!button)
+                return;
+            const QString colorName = selected.name(QColor::HexRgb);
+            button->setProperty("themeColorValue", colorName);
+            button->setText(colorName.toUpper());
+            button->setStyleSheet(QStringLiteral(
+                "QPushButton {"
+                "  background-color: %1;"
+                "  color: %2;"
+                "  border: 1px solid rgba(0,0,0,90);"
+                "  min-width: 92px;"
+                "  padding: 5px 10px;"
+                "}"
+            ).arg(colorName, selected.lightness() > 145 ? QStringLiteral("#101418") : QStringLiteral("#ffffff")));
+        });
+        themeColorsLayout->addRow(choice.label + QLatin1Char(':'), button);
+    }
+    tabs->addTab(themeColorsTab, tr("Theme Colors"));
+
     auto *pinnedTab = new QWidget(tabs);
     auto *pinnedLayout = new QVBoxLayout(pinnedTab);
     auto *pinnedHint = new QLabel(tr("Ausgewaehlte Tools werden dauerhaft als Tabs angezeigt. Der Mod Manager ist immer aktiv."), pinnedTab);
@@ -229,6 +263,9 @@ void SettingsDialog::loadSettings()
     const QStringList pinned = config.getStringList(QStringLiteral("pinnedTools"), defaultPinnedTools());
     for (auto it = m_toolChecks.begin(); it != m_toolChecks.end(); ++it)
         it.value()->setChecked(it.key() == QStringLiteral("modManager") || pinned.contains(it.key()));
+
+    for (auto it = m_themeColorButtons.constBegin(); it != m_themeColorButtons.constEnd(); ++it)
+        updateThemeColorButton(it.key());
 }
 
 void SettingsDialog::saveSettings()
@@ -244,6 +281,11 @@ void SettingsDialog::saveSettings()
     config.setString(QStringLiteral("language"), lang);
     config.setBool(QStringLiteral("updateCheckEnabled"), m_updateCheckBox->isChecked());
     config.setBool(QStringLiteral("restoreOpenTabs"), m_restoreTabsCheckBox->isChecked());
+    for (auto it = m_themeColorButtons.constBegin(); it != m_themeColorButtons.constEnd(); ++it) {
+        const QColor color(it.value()->property("themeColorValue").toString());
+        if (color.isValid())
+            flatlas::core::ThemeColors::setColor(it.key(), color);
+    }
 
     QStringList pinned;
     for (auto it = m_toolChecks.constBegin(); it != m_toolChecks.constEnd(); ++it) {
@@ -271,6 +313,7 @@ void SettingsDialog::resetToDefaults()
     config.setBool(QStringLiteral("updateCheckEnabled"), true);
     config.setBool(QStringLiteral("restoreOpenTabs"), false);
     config.setStringList(QStringLiteral("pinnedTools"), defaultPinnedTools());
+    flatlas::core::ThemeColors::resetToDefaults();
     config.save();
     QSettings().clear();
     flatlas::core::Theme::instance().apply(QStringLiteral("dark"));
@@ -279,6 +322,27 @@ void SettingsDialog::resetToDefaults()
     m_pinnedToolsChanged = true;
     loadSettings();
     QMessageBox::information(this, tr("Werkseinstellungen"), tr("Die Einstellungen wurden zurueckgesetzt."));
+}
+
+void SettingsDialog::updateThemeColorButton(const QString &key)
+{
+    QPushButton *button = m_themeColorButtons.value(key);
+    if (!button)
+        return;
+
+    const QColor color = flatlas::core::ThemeColors::color(key);
+    const QString colorName = color.name(QColor::HexRgb);
+    button->setProperty("themeColorValue", colorName);
+    button->setText(colorName.toUpper());
+    button->setStyleSheet(QStringLiteral(
+        "QPushButton {"
+        "  background-color: %1;"
+        "  color: %2;"
+        "  border: 1px solid rgba(0,0,0,90);"
+        "  min-width: 92px;"
+        "  padding: 5px 10px;"
+        "}"
+    ).arg(colorName, color.lightness() > 145 ? QStringLiteral("#101418") : QStringLiteral("#ffffff")));
 }
 
 QString SettingsDialog::toolsDirectory() const

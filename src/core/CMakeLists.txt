@@ -4,6 +4,7 @@ add_library(flatlas_core STATIC
     EditingContext.h EditingContext.cpp
     I18n.h I18n.cpp
     Theme.h Theme.cpp
+    ThemeColors.h ThemeColors.cpp
     Logger.h Logger.cpp
     PathUtils.h PathUtils.cpp
     UndoManager.h UndoManager.cpp

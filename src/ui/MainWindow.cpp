@@ -1228,6 +1228,8 @@ void MainWindow::openSettingsDialog()
     createMenus();
     if (dlg.requiresPinnedToolRefresh() || dlg.resetRequested())
         applyPinnedToolSettings();
+    for (auto *view : findChildren<flatlas::rendering::SceneView3D *>())
+        view->refreshThemeColors();
     saveOpenToolTabs();
 }
 

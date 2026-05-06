@@ -24,6 +24,7 @@ private:
     void loadSettings();
     void saveSettings();
     void resetToDefaults();
+    void updateThemeColorButton(const QString &key);
     void startSuiteDownload(const QString &key, const QString &name, const QString &repoApiUrl);
     void downloadReleaseAsset(const QString &name, const QUrl &url);
     void updateSuiteButtons();
@@ -36,6 +37,7 @@ private:
     QCheckBox *m_updateCheckBox = nullptr;
     QCheckBox *m_restoreTabsCheckBox = nullptr;
     QHash<QString, QCheckBox *> m_toolChecks;
+    QHash<QString, QPushButton *> m_themeColorButtons;
     QHash<QString, QPushButton *> m_suiteButtons;
     QLabel *m_suiteStatusLabel = nullptr;
     QNetworkAccessManager *m_network = nullptr;

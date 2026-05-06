@@ -1,5 +1,7 @@
 #include "ZoneColorScheme.h"
 
+#include "core/ThemeColors.h"
+
 namespace flatlas::rendering {
 
 namespace {
@@ -35,28 +37,33 @@ ZoneVisualStyle ZoneColorScheme::styleForZone(const flatlas::domain::ZoneItem &z
     const int damage = zone.damage();
 
     if (name.contains(QStringLiteral("death")) || name.contains(QStringLiteral("destroy_vignette")) || damage > 0)
-        return makeStyle(QStringLiteral("death"), QColor(235, 45, 45), 30);
+        return makeStyle(QStringLiteral("death"), flatlas::core::ThemeColors::color(QStringLiteral("zoneDeath")), 30);
+
+    if (name.contains(QStringLiteral("atmosphere"))
+        || zoneType.contains(QStringLiteral("atmosphere")))
+        return makeStyle(QStringLiteral("atmosphere"), flatlas::core::ThemeColors::color(QStringLiteral("zoneAtmosphere")), 24);
+
+    if (name.contains(QStringLiteral("asteroid"))
+        || name.contains(QStringLiteral("debris"))
+        || zoneType.contains(QStringLiteral("asteroid"))
+        || zoneType.contains(QStringLiteral("debris")))
+        return makeStyle(QStringLiteral("asteroid"), flatlas::core::ThemeColors::color(QStringLiteral("zoneAsteroid")), 28);
 
     if (name.contains(QStringLiteral("nebula"))
         || name.contains(QStringLiteral("badlands"))
-        || name.contains(QStringLiteral("asteroid"))
-        || name.contains(QStringLiteral("debris"))
-        || zoneType.contains(QStringLiteral("nebula"))
-        || zoneType.contains(QStringLiteral("asteroid"))
-        || zoneType.contains(QStringLiteral("debris"))) {
-        return makeStyle(QStringLiteral("asteroid/nebula"), QColor(45, 145, 255), 28);
-    }
+        || zoneType.contains(QStringLiteral("nebula")))
+        return makeStyle(QStringLiteral("nebula"), flatlas::core::ThemeColors::color(QStringLiteral("zoneNebula")), 28);
 
     if (name.contains(QStringLiteral("pop"))
         || !popType.isEmpty()
         || usage.contains(QStringLiteral("population"))
         || pathLabel.contains(QStringLiteral("pop"))) {
-        return makeStyle(QStringLiteral("population"), QColor(245, 205, 55), 28);
+        return makeStyle(QStringLiteral("population"), flatlas::core::ThemeColors::color(QStringLiteral("zonePopulation")), 28);
     }
 
     Q_UNUSED(usage);
     Q_UNUSED(pathLabel);
-    return makeStyle(QStringLiteral("generic"), QColor(155, 165, 175), 18);
+    return makeStyle(QStringLiteral("generic"), flatlas::core::ThemeColors::color(QStringLiteral("zoneGeneric")), 18);
 }
 
 } // namespace flatlas::rendering

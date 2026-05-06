@@ -62,6 +62,7 @@ public:
     bool setFreeCameraStartObject(const QString &nickname);
     void setFlightModeEnabled(bool enabled);
     bool isFlightModeEnabled() const { return m_flightModeEnabled; }
+    void refreshThemeColors();
 
 #ifdef FLATLAS_HAS_QT3D
 public slots:
@@ -86,6 +87,7 @@ private:
     void clearScene();
     void addNavigationGrid();
     void addSolarObject(const std::shared_ptr<flatlas::domain::SolarObject> &obj);
+    void addAtmosphereZone(const flatlas::domain::SolarObject &obj);
     void addPlanetaryRing(const flatlas::domain::SolarObject &obj);
     void addZone(const std::shared_ptr<flatlas::domain::ZoneItem> &zone);
     void updateSceneCamera();
@@ -132,6 +134,7 @@ private:
     QHash<QString, Qt3DCore::QEntity *> m_markerEntitiesByNickname;
     QHash<QString, Qt3DRender::QMaterial *> m_markerMaterialsByNickname;
     QHash<QString, QList<Qt3DCore::QEntity *>> m_ringEntitiesByHostNickname;
+    QHash<QString, Qt3DCore::QEntity *> m_atmosphereZoneEntitiesByObjectNickname;
     QHash<QString, Qt3DCore::QEntity *> m_sceneEntitiesByNickname;
     QHash<QString, Qt3DCore::QEntity *> m_zoneWireEntitiesByNickname;
     QHash<QString, QStringList> m_nicknamesByModelPath;
