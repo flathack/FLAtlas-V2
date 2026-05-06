@@ -295,7 +295,7 @@ SceneView3D::SceneView3D(QWidget *parent) : QWidget(parent)
     layout->setSpacing(0);
 
 #ifdef FLATLAS_HAS_QT3D
-    m_3dWindow = new Qt3DExtras::Qt3DWindow();
+    m_3dWindow = new Qt3DExtras::Qt3DWindow(nullptr, Qt3DRender::API::OpenGL);
     m_3dWindow->setOpacity(1.0);
     m_container = QWidget::createWindowContainer(m_3dWindow, this);
     m_container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
