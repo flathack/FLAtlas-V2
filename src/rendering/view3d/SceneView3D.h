@@ -60,6 +60,10 @@ public:
     void beginCruise();
     void cancelCruise();
     bool setFreeCameraStartObject(const QString &nickname);
+    QWidget *createTransformGizmoWidget(QWidget *parent);
+    void setTransformGizmoEnabled(bool enabled);
+    void finishTransformGizmoEdit();
+    void cancelCameraInteraction();
     void setFlightModeEnabled(bool enabled);
     bool isFlightModeEnabled() const { return m_flightModeEnabled; }
     void refreshThemeColors();
@@ -78,6 +82,7 @@ signals:
 protected:
 #ifdef FLATLAS_HAS_QT3D
     bool eventFilter(QObject *watched, QEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
     void showEvent(QShowEvent *event) override;
     void hideEvent(QHideEvent *event) override;
 #endif
@@ -114,6 +119,14 @@ private:
     void tickFreeCamera();
     void updateCameraDependentScene();
     void updateFlightShipTransform();
+    flatlas::domain::SolarObject *solarObjectByNickname(const QString &nickname) const;
+    void updateSelectionMarker(const QString &nickname);
+    void updateHoverMarker(const QString &nickname);
+    void updateTransformGizmo();
+    void beginGizmoDrag(int handle, const QPoint &screenPos);
+    void updateGizmoDrag(const QPoint &screenPos);
+    void finishGizmoDrag();
+    void applyGizmoTransform(const QVector3D &position, const QVector3D &rotation);
 
     Qt3DExtras::Qt3DWindow *m_3dWindow = nullptr;
     QWidget *m_container = nullptr;
@@ -123,6 +136,8 @@ private:
     Qt3DCore::QEntity *m_objectsRoot = nullptr;
     Qt3DCore::QEntity *m_flightShipEntity = nullptr;
     Qt3DCore::QTransform *m_flightShipTransform = nullptr;
+    Qt3DCore::QEntity *m_gizmoRoot = nullptr;
+    Qt3DCore::QTransform *m_gizmoTransform = nullptr;
     Qt3DCore::QEntity *m_zonesRoot = nullptr;
     Qt3DRender::QCamera *m_camera = nullptr;
     Qt3DRender::QPointLight *m_light = nullptr;
@@ -131,8 +146,11 @@ private:
     SelectionManager *m_selectionManager = nullptr;
     SkyRenderer *m_skyRenderer = nullptr;
     QHash<QString, Qt3DCore::QEntity *> m_modelHostsByNickname;
+    QHash<QString, Qt3DCore::QTransform *> m_objectTransformsByNickname;
     QHash<QString, Qt3DCore::QEntity *> m_markerEntitiesByNickname;
     QHash<QString, Qt3DRender::QMaterial *> m_markerMaterialsByNickname;
+    QHash<QString, Qt3DCore::QEntity *> m_selectionMarkerEntitiesByNickname;
+    QHash<QString, Qt3DCore::QEntity *> m_hoverMarkerEntitiesByNickname;
     QHash<QString, QList<Qt3DCore::QEntity *>> m_ringEntitiesByHostNickname;
     QHash<QString, Qt3DCore::QEntity *> m_atmosphereZoneEntitiesByObjectNickname;
     QHash<QString, Qt3DCore::QEntity *> m_sceneEntitiesByNickname;
@@ -149,6 +167,14 @@ private:
     QTimer *m_freeCameraTimer = nullptr;
     QElapsedTimer m_freeCameraClock;
     int m_loadGeneration = 0;
+    int m_activeGizmoHandle = 0;
+    bool m_pendingLeftOrbitDrag = false;
+    bool m_leftOrbitDragging = false;
+    QPoint m_leftOrbitDragStartPos;
+    QPoint m_gizmoDragStartScreenPos;
+    QVector3D m_gizmoDragStartPosition;
+    QVector3D m_gizmoDragStartRotation;
+    QString m_gizmoDragNickname;
 #endif
 
     flatlas::domain::SystemDocument *m_document = nullptr;
@@ -160,6 +186,7 @@ private:
     int m_zoomLevel = 50;
     bool m_zoneWireframesVisible = true;
     bool m_flightModeEnabled = false;
+    bool m_transformGizmoEnabled = false;
 };
 
 } // namespace flatlas::rendering

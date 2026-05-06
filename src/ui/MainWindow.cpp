@@ -279,6 +279,23 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     wireframesCheck->setChecked(true);
     leftLayout->insertWidget(3, wireframesCheck);
 
+    QWidget *gizmoPanel = nullptr;
+    QPushButton *finishMoveButton = nullptr;
+    QWidget *gizmoWidget = nullptr;
+    if (QWidget *createdGizmo = view->createTransformGizmoWidget(leftSidebar)) {
+        gizmoPanel = new QWidget(leftSidebar);
+        auto *gizmoLayout = new QVBoxLayout(gizmoPanel);
+        gizmoLayout->setContentsMargins(0, 0, 0, 0);
+        gizmoLayout->setSpacing(6);
+        finishMoveButton = new QPushButton(QObject::tr("Speichern && Beenden"), gizmoPanel);
+        finishMoveButton->setToolTip(QObject::tr("MOVE bearbeiten beenden und die aktuelle Objektposition behalten"));
+        gizmoLayout->addWidget(finishMoveButton);
+        gizmoLayout->addWidget(createdGizmo, 0, Qt::AlignHCenter);
+        gizmoPanel->setVisible(false);
+        gizmoWidget = gizmoPanel;
+        leftLayout->insertWidget(leftLayout->indexOf(tree) + 1, gizmoPanel, 0, Qt::AlignHCenter);
+    }
+
     auto *freeCamButton = commandBar->addAction(QObject::tr("Free Cam"));
     freeCamButton->setCheckable(true);
     freeCamButton->setToolTip(QObject::tr("Free camera mode: left drag looks around, W/S move forward/back, A/D strafe, Space/Ctrl move up/down, mouse wheel changes speed."));
@@ -287,25 +304,30 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     flightModeButton->setCheckable(true);
     flightModeButton->setToolTip(QObject::tr("Fly the system using Freelancer ship speed data. C charges/cancels cruise. Zones are hidden while active."));
 
+    commandBar->addSeparator();
+    auto *moveModeButton = commandBar->addAction(QObject::tr("MOVE"));
+    moveModeButton->setCheckable(true);
+    moveModeButton->setToolTip(QObject::tr("Show transform gizmo below the object list"));
+
     auto *cruiseButton = new QPushButton(QObject::tr("Cruise"), leftSidebar);
     cruiseButton->setToolTip(QObject::tr("Charge cruise speed"));
-    leftLayout->insertWidget(6, cruiseButton);
+    leftLayout->addWidget(cruiseButton);
 
     auto *normalSpeedButton = new QPushButton(QObject::tr("Normal Speed"), leftSidebar);
     normalSpeedButton->setToolTip(QObject::tr("Cancel cruise and return to normal engine speed"));
-    leftLayout->insertWidget(7, normalSpeedButton);
+    leftLayout->addWidget(normalSpeedButton);
 
     auto *shipCombo = new QComboBox(leftSidebar);
     shipCombo->setToolTip(QObject::tr("Ship package from goods.ini"));
-    leftLayout->insertWidget(8, shipCombo);
+    leftLayout->addWidget(shipCombo);
 
     auto *startCombo = new QComboBox(leftSidebar);
     startCombo->setToolTip(QObject::tr("Flight start point"));
-    leftLayout->insertWidget(9, startCombo);
+    leftLayout->addWidget(startCombo);
 
     auto *flightStatsLabel = new QLabel(leftSidebar);
     flightStatsLabel->setWordWrap(true);
-    leftLayout->insertWidget(10, flightStatsLabel);
+    leftLayout->addWidget(flightStatsLabel);
 
     const QList<QWidget *> flightModeControls = {
         cruiseButton,
@@ -319,11 +341,20 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
 
     auto *freeCamSpeedLabel = new QLabel(leftSidebar);
     freeCamSpeedLabel->setVisible(false);
-    leftLayout->insertWidget(11, freeCamSpeedLabel);
+    leftLayout->addWidget(freeCamSpeedLabel);
 
     commandBar->addSeparator();
     auto *centerButton = commandBar->addAction(QObject::tr("Center to Object"));
     centerButton->setEnabled(false);
+
+    auto updateGizmoVisibility = [tree, moveModeButton, gizmoWidget]() {
+        if (!gizmoWidget)
+            return;
+        const auto selected = tree->selectedItems();
+        const bool hasSelectedObject = !selected.isEmpty()
+            && selected.first()->data(0, Qt::UserRole + 1).toString() == QStringLiteral("object");
+        gizmoWidget->setVisible(moveModeButton->isChecked() && hasSelectedObject);
+    };
 
     auto updateFreeCamSpeedLabel = [freeCamSpeedLabel](float speed) {
         freeCamSpeedLabel->setText(QObject::tr("Free Cam Speed: %1").arg(QString::number(speed, 'f', 0)));
@@ -407,12 +438,17 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
                                                                      freeCamSpeedLabel,
                                                                      flightModeButton,
                                                                      flightModeControls,
+                                                                     moveModeButton,
+                                                                     updateGizmoVisibility,
                                                                      applyFlightSelection](bool checked) {
         applyFlightSelection();
         view->setFlightModeEnabled(checked);
         flightModeButton->setText(checked ? QObject::tr("Disable Flight Mode") : QObject::tr("Enable Flight Mode"));
         wireframesCheck->setEnabled(!checked);
         freeCamButton->setEnabled(!checked);
+        moveModeButton->setEnabled(!checked);
+        if (checked)
+            moveModeButton->setChecked(false);
         freeCamSpeedLabel->setVisible(checked || view->isFreeCameraModeEnabled());
         for (QWidget *control : flightModeControls)
             control->setVisible(checked);
@@ -420,7 +456,26 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
             QSignalBlocker blocker(freeCamButton);
             freeCamButton->setChecked(true);
         }
+        updateGizmoVisibility();
     });
+    QObject::connect(moveModeButton, &QAction::toggled, page, [updateGizmoVisibility](bool) {
+        updateGizmoVisibility();
+    });
+    QObject::connect(moveModeButton, &QAction::toggled, view, [view](bool checked) {
+        if (checked) {
+            view->cancelCameraInteraction();
+            view->setTransformGizmoEnabled(true);
+        } else {
+            view->finishTransformGizmoEdit();
+        }
+    });
+    if (finishMoveButton) {
+        QObject::connect(finishMoveButton, &QPushButton::clicked, page, [moveModeButton, view]() {
+            view->finishTransformGizmoEdit();
+            if (moveModeButton->isChecked())
+                moveModeButton->setChecked(false);
+        });
+    }
 
     auto filterSettings = std::make_shared<flatlas::rendering::SystemDisplayFilterSettings>(initialFilterSettings);
     auto applyTreeFilter = [tree, searchEdit, document, filterSettings]() {
@@ -500,6 +555,9 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
         if (!nickname.isEmpty())
             view->selectObject(nickname);
     });
+    QObject::connect(tree, &QTreeWidget::itemSelectionChanged, page, [updateGizmoVisibility]() {
+        updateGizmoVisibility();
+    });
 
     QObject::connect(centerButton, &QAction::triggered, view, [view]() {
         view->centerOnSelectedObject();
@@ -517,6 +575,9 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
             tree->scrollToItem(matches.first());
             centerButton->setEnabled(matches.first()->data(0, Qt::UserRole + 1).toString() == QStringLiteral("object"));
         }
+    });
+    QObject::connect(view, &flatlas::rendering::SceneView3D::objectSelected, page, [updateGizmoVisibility](const QString &) {
+        updateGizmoVisibility();
     });
 
     applyTreeFilter();

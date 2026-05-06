@@ -84,6 +84,24 @@ void OrbitCamera::handleWheel(QWheelEvent *event)
     updateCamera();
 }
 
+void OrbitCamera::beginRotateAt(const QPoint &pos)
+{
+    m_lastMousePos = pos;
+    m_rotating = true;
+    m_panning = false;
+}
+
+void OrbitCamera::endRotate()
+{
+    m_rotating = false;
+}
+
+void OrbitCamera::cancelMouseInteraction()
+{
+    m_rotating = false;
+    m_panning = false;
+}
+
 void OrbitCamera::resetView()
 {
     m_target = m_defaultTarget;

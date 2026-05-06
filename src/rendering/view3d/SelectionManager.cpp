@@ -22,22 +22,33 @@ void SelectionManager::registerEntity(const QString &nickname, Qt3DCore::QEntity
     info.entity = entity;
     info.material = material;
     info.originalDiffuse = diffuseColor(material);
-    m_entities.insert(nickname, info);
+    m_entities[nickname].append(info);
 
     // Add object picker
     auto *picker = new Qt3DRender::QObjectPicker(entity);
-    picker->setHoverEnabled(false);
+    picker->setHoverEnabled(true);
     entity->addComponent(picker);
 
     connect(picker, &Qt3DRender::QObjectPicker::clicked,
             this, [this, nickname](Qt3DRender::QPickEvent *event) {
         onPicked(event, nickname);
     });
+    connect(picker, &Qt3DRender::QObjectPicker::entered,
+            this, [this, nickname]() {
+        if (!m_pickingSuppressed)
+            setHovered(nickname);
+    });
+    connect(picker, &Qt3DRender::QObjectPicker::exited,
+            this, [this, nickname]() {
+        if (m_hoveredNickname == nickname)
+            setHovered(QString());
+    });
 }
 
 void SelectionManager::clear()
 {
     m_selectedNickname.clear();
+    m_hoveredNickname.clear();
     m_entities.clear();
 }
 
@@ -61,19 +72,44 @@ void SelectionManager::select(const QString &nickname)
 
 void SelectionManager::onPicked(Qt3DRender::QPickEvent * /*event*/, const QString &nickname)
 {
+    if (m_pickingSuppressed)
+        return;
     select(nickname);
+}
+
+void SelectionManager::setHovered(const QString &nickname)
+{
+    if (m_hoveredNickname == nickname)
+        return;
+    if (!m_hoveredNickname.isEmpty() && m_hoveredNickname != m_selectedNickname)
+        applyHoverHighlight(m_hoveredNickname, false);
+    m_hoveredNickname = nickname;
+    if (!m_hoveredNickname.isEmpty() && m_hoveredNickname != m_selectedNickname)
+        applyHoverHighlight(m_hoveredNickname, true);
+    emit objectHovered(m_hoveredNickname);
 }
 
 void SelectionManager::applyHighlight(const QString &nickname, bool highlighted)
 {
-    auto it = m_entities.find(nickname);
-    if (it == m_entities.end())
+    const auto infos = m_entities.value(nickname);
+    if (infos.isEmpty())
         return;
 
-    if (highlighted)
-        setDiffuseColor(it->material, m_highlightColor);
-    else
-        setDiffuseColor(it->material, it->originalDiffuse);
+    for (const EntityInfo &info : infos) {
+        if (highlighted)
+            setDiffuseColor(info.material, m_highlightColor);
+        else
+            setDiffuseColor(info.material, nickname == m_hoveredNickname ? m_hoverColor : info.originalDiffuse);
+    }
+}
+
+void SelectionManager::applyHoverHighlight(const QString &nickname, bool highlighted)
+{
+    const auto infos = m_entities.value(nickname);
+    if (infos.isEmpty())
+        return;
+    for (const EntityInfo &info : infos)
+        setDiffuseColor(info.material, highlighted ? m_hoverColor : info.originalDiffuse);
 }
 
 QColor SelectionManager::diffuseColor(Qt3DRender::QMaterial *material)

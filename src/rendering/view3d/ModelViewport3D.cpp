@@ -107,7 +107,7 @@ void ModelViewport3D::setupUi()
 
 #ifdef FLATLAS_HAS_QT3D
     try {
-        m_window = new Qt3DExtras::Qt3DWindow(nullptr, Qt3DRender::API::OpenGL);
+        m_window = new Qt3DExtras::Qt3DWindow();
         m_container = QWidget::createWindowContainer(m_window, this);
         if (m_container) {
             m_container->setFocusPolicy(Qt::StrongFocus);

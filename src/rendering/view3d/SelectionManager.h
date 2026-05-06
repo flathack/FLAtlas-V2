@@ -6,6 +6,7 @@
 #include <QObject>
 #include <QString>
 #include <QHash>
+#include <QVector>
 #include <Qt3DCore/QEntity>
 #include <Qt3DRender/QObjectPicker>
 #include <Qt3DRender/QPickEvent>
@@ -32,13 +33,18 @@ public:
 
     /// Current selection.
     QString selectedNickname() const { return m_selectedNickname; }
+    QString hoveredNickname() const { return m_hoveredNickname; }
+    void setPickingSuppressed(bool suppressed) { m_pickingSuppressed = suppressed; }
 
 signals:
     void objectSelected(const QString &nickname);
+    void objectHovered(const QString &nickname);
 
 private:
     void onPicked(Qt3DRender::QPickEvent *event, const QString &nickname);
+    void setHovered(const QString &nickname);
     void applyHighlight(const QString &nickname, bool highlighted);
+    void applyHoverHighlight(const QString &nickname, bool highlighted);
     static QColor diffuseColor(Qt3DRender::QMaterial *material);
     static void setDiffuseColor(Qt3DRender::QMaterial *material, const QColor &color);
 
@@ -48,9 +54,12 @@ private:
         QColor originalDiffuse;
     };
 
-    QHash<QString, EntityInfo> m_entities;
+    QHash<QString, QVector<EntityInfo>> m_entities;
     QString m_selectedNickname;
+    QString m_hoveredNickname;
     QColor m_highlightColor{255, 255, 0};  // Yellow highlight
+    QColor m_hoverColor{120, 220, 255};
+    bool m_pickingSuppressed = false;
 };
 
 } // namespace flatlas::rendering

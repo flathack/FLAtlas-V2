@@ -22,20 +22,26 @@
 #include "infrastructure/freelancer/FreelancerMaterialResolver.h"
 #include "rendering/preview/ModelCache.h"
 
+#include <QApplication>
 #include <Qt3DCore/QAttribute>
 #include <Qt3DCore/QBuffer>
 #include <Qt3DCore/QEntity>
 #include <Qt3DCore/QGeometry>
 #include <Qt3DCore/QTransform>
 #include <Qt3DExtras/QCuboidMesh>
+#include <Qt3DExtras/QCylinderMesh>
 #include <Qt3DExtras/QForwardRenderer>
+#include <Qt3DExtras/QPhongAlphaMaterial>
 #include <Qt3DExtras/QPhongMaterial>
 #include <Qt3DExtras/QSphereMesh>
+#include <Qt3DExtras/QTorusMesh>
 #include <Qt3DExtras/Qt3DWindow>
 #include <Qt3DRender/QCamera>
 #include <Qt3DRender/QGeometryRenderer>
 #include <Qt3DRender/QMaterial>
+#include <Qt3DRender/QObjectPicker>
 #include <Qt3DRender/QPointLight>
+#include <Qt3DRender/QPickEvent>
 #include <Qt3DRender/QRenderSettings>
 
 #include <QByteArray>
@@ -44,9 +50,12 @@
 #include <QFutureWatcher>
 #include <QHideEvent>
 #include <QKeyEvent>
+#include <QLineF>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QPalette>
 #include <QQuaternion>
+#include <QResizeEvent>
 #include <QRegularExpression>
 #include <QShowEvent>
 #include <QTimer>
@@ -54,6 +63,7 @@
 #include <QtConcurrent/QtConcurrent>
 
 #include <cmath>
+#include <functional>
 #include <limits>
 #endif
 
@@ -65,6 +75,137 @@ namespace {
 constexpr double kFreelancerNavCellWorld = 30000.0;
 constexpr int kFreelancerNavCellsPerAxis = 8;
 constexpr double kFreelancerReferenceNavMapScale = 1.36;
+
+enum GizmoHandle {
+    GizmoNone = 0,
+    GizmoMoveX,
+    GizmoMoveY,
+    GizmoMoveZ,
+    GizmoRotateYaw,
+    GizmoRotatePitch,
+};
+
+class TransformGizmoOverlay final : public QWidget {
+public:
+    explicit TransformGizmoOverlay(QWidget *parent = nullptr)
+        : QWidget(parent)
+    {
+        setFixedSize(136, 136);
+        setMouseTracking(true);
+        setAttribute(Qt::WA_TranslucentBackground, true);
+        setCursor(Qt::ArrowCursor);
+        setToolTip(QObject::tr("Transform gizmo: drag colored axes to move the selected object, drag rings to rotate it."));
+    }
+
+    std::function<void(int, const QPoint &)> beginDrag;
+    std::function<void(const QPoint &)> drag;
+    std::function<void()> finishDrag;
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+
+        const QPointF center(width() * 0.5, height() * 0.5);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(8, 12, 20, 180));
+        painter.drawRoundedRect(rect().adjusted(0, 0, -1, -1), 6, 6);
+
+        auto drawAxis = [&painter, &center](const QPointF &end, const QColor &color) {
+            QPen pen(color, 3.0);
+            pen.setCapStyle(Qt::RoundCap);
+            painter.setPen(pen);
+            painter.drawLine(center, end);
+            painter.setBrush(color);
+            painter.setPen(Qt::NoPen);
+            painter.drawEllipse(end, 6, 6);
+        };
+
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(QPen(QColor(255, 210, 75), 3.0));
+        painter.drawEllipse(center, 44, 23);
+        painter.setPen(QPen(QColor(255, 135, 220), 3.0));
+        painter.drawEllipse(center, 23, 44);
+
+        drawAxis(center + QPointF(43, 0), QColor(245, 80, 80));
+        drawAxis(center + QPointF(0, -43), QColor(80, 220, 120));
+        drawAxis(center + QPointF(-32, 32), QColor(95, 145, 255));
+
+        painter.setPen(QPen(QColor(230, 235, 245), 1.0));
+        painter.drawText(QRectF(center.x() + 49, center.y() - 10, 16, 20), Qt::AlignCenter, QStringLiteral("X"));
+        painter.drawText(QRectF(center.x() - 8, center.y() - 65, 16, 20), Qt::AlignCenter, QStringLiteral("Y"));
+        painter.drawText(QRectF(center.x() - 54, center.y() + 31, 16, 20), Qt::AlignCenter, QStringLiteral("Z"));
+    }
+
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() != Qt::LeftButton) {
+            event->ignore();
+            return;
+        }
+        m_activeHandle = hitHandle(event->pos());
+        if (m_activeHandle == GizmoNone) {
+            event->ignore();
+            return;
+        }
+        if (beginDrag)
+            beginDrag(m_activeHandle, event->pos());
+        event->accept();
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        if (m_activeHandle == GizmoNone) {
+            setCursor(hitHandle(event->pos()) == GizmoNone ? Qt::ArrowCursor : Qt::SizeAllCursor);
+            return;
+        }
+        if (drag)
+            drag(event->pos());
+        event->accept();
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (m_activeHandle != GizmoNone && event->button() == Qt::LeftButton) {
+            m_activeHandle = GizmoNone;
+            if (finishDrag)
+                finishDrag();
+            event->accept();
+            return;
+        }
+        event->ignore();
+    }
+
+private:
+    int hitHandle(const QPoint &pos) const
+    {
+        const QPointF center(width() * 0.5, height() * 0.5);
+        const QPointF point(pos);
+        const QPointF local = point - center;
+        const double distance = std::hypot(local.x(), local.y());
+        if (QLineF(point, center + QPointF(43, 0)).length() <= 12.0)
+            return GizmoMoveX;
+        if (QLineF(point, center + QPointF(0, -43)).length() <= 12.0)
+            return GizmoMoveY;
+        if (QLineF(point, center + QPointF(-32, 32)).length() <= 12.0)
+            return GizmoMoveZ;
+
+        const double yaw = std::abs((local.x() * local.x()) / (44.0 * 44.0)
+                                    + (local.y() * local.y()) / (23.0 * 23.0) - 1.0);
+        if (yaw < 0.22)
+            return GizmoRotateYaw;
+        const double pitch = std::abs((local.x() * local.x()) / (23.0 * 23.0)
+                                      + (local.y() * local.y()) / (44.0 * 44.0) - 1.0);
+        if (pitch < 0.22)
+            return GizmoRotatePitch;
+        if (distance <= 10.0)
+            return GizmoMoveY;
+        return GizmoNone;
+    }
+
+    int m_activeHandle = GizmoNone;
+};
 
 double navGridHalfExtentWorld(double navMapScale)
 {
@@ -134,6 +275,14 @@ QColor objectColor(flatlas::domain::SolarObject::Type type)
     default:
         return QColor(165, 175, 185);
     }
+}
+
+Qt3DExtras::QPhongMaterial *gizmoMaterial(const QColor &color, Qt3DCore::QNode *owner)
+{
+    auto *material = new Qt3DExtras::QPhongMaterial(owner);
+    material->setDiffuse(color);
+    material->setAmbient(color.darker(135));
+    return material;
 }
 
 float markerRadius(flatlas::domain::SolarObject::Type type)
@@ -295,7 +444,7 @@ SceneView3D::SceneView3D(QWidget *parent) : QWidget(parent)
     layout->setSpacing(0);
 
 #ifdef FLATLAS_HAS_QT3D
-    m_3dWindow = new Qt3DExtras::Qt3DWindow(nullptr, Qt3DRender::API::OpenGL);
+    m_3dWindow = new Qt3DExtras::Qt3DWindow();
     m_3dWindow->setOpacity(1.0);
     m_container = QWidget::createWindowContainer(m_3dWindow, this);
     m_container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -307,7 +456,7 @@ SceneView3D::SceneView3D(QWidget *parent) : QWidget(parent)
     QPalette containerPalette = m_container->palette();
     containerPalette.setColor(QPalette::Window, QColor(6, 10, 18));
     m_container->setPalette(containerPalette);
-    m_container->setToolTip(tr("Left drag rotates, right drag pans, mouse wheel zooms."));
+    m_container->setToolTip(tr("Left click selects, left drag rotates, right drag pans, mouse wheel zooms."));
     m_container->installEventFilter(this);
     m_3dWindow->installEventFilter(this);
     layout->addWidget(m_container, 1);
@@ -396,10 +545,8 @@ void SceneView3D::selectObject(const QString &nickname)
 #ifdef FLATLAS_HAS_QT3D
     if (!m_selectionManager)
         return;
-    if (nickname.isEmpty() || m_objectCentersByNickname.contains(nickname))
+    if (m_objectCentersByNickname.contains(nickname))
         m_selectionManager->select(nickname);
-    else
-        m_selectionManager->select(QString());
 #else
     Q_UNUSED(nickname);
 #endif
@@ -594,6 +741,77 @@ bool SceneView3D::setFreeCameraStartObject(const QString &nickname)
 #endif
 }
 
+QWidget *SceneView3D::createTransformGizmoWidget(QWidget *parent)
+{
+#ifdef FLATLAS_HAS_QT3D
+    auto *widget = new TransformGizmoOverlay(parent);
+    widget->beginDrag = [this](int handle, const QPoint &pos) {
+        beginGizmoDrag(handle, pos);
+    };
+    widget->drag = [this](const QPoint &pos) {
+        updateGizmoDrag(pos);
+    };
+    widget->finishDrag = [this]() {
+        finishGizmoDrag();
+    };
+    return widget;
+#else
+    Q_UNUSED(parent);
+    return nullptr;
+#endif
+}
+
+void SceneView3D::setTransformGizmoEnabled(bool enabled)
+{
+    m_transformGizmoEnabled = enabled;
+#ifdef FLATLAS_HAS_QT3D
+    if (!enabled)
+        finishTransformGizmoEdit();
+    else
+        cancelCameraInteraction();
+    updateTransformGizmo();
+    requestViewportUpdate();
+#endif
+}
+
+void SceneView3D::finishTransformGizmoEdit()
+{
+    m_transformGizmoEnabled = false;
+#ifdef FLATLAS_HAS_QT3D
+    if (m_activeGizmoHandle != GizmoNone)
+        finishGizmoDrag();
+    m_activeGizmoHandle = GizmoNone;
+    m_gizmoDragNickname.clear();
+    m_pendingLeftOrbitDrag = false;
+    m_leftOrbitDragging = false;
+    if (m_selectionManager)
+        m_selectionManager->setPickingSuppressed(false);
+    if (m_orbitCamera)
+        m_orbitCamera->cancelMouseInteraction();
+    if (m_container && m_container->mouseGrabber() == m_container)
+        m_container->releaseMouse();
+    if (m_gizmoRoot)
+        m_gizmoRoot->setEnabled(false);
+    requestViewportUpdate();
+#endif
+}
+
+void SceneView3D::cancelCameraInteraction()
+{
+#ifdef FLATLAS_HAS_QT3D
+    m_pendingLeftOrbitDrag = false;
+    m_leftOrbitDragging = false;
+    m_activeGizmoHandle = GizmoNone;
+    m_gizmoDragNickname.clear();
+    if (m_selectionManager)
+        m_selectionManager->setPickingSuppressed(false);
+    if (m_orbitCamera)
+        m_orbitCamera->cancelMouseInteraction();
+    if (m_container && m_container->mouseGrabber() == m_container)
+        m_container->releaseMouse();
+#endif
+}
+
 void SceneView3D::setFlightModeEnabled(bool enabled)
 {
     if (m_flightModeEnabled == enabled)
@@ -607,6 +825,7 @@ void SceneView3D::setFlightModeEnabled(bool enabled)
         m_flightShipEntity->setEnabled(enabled);
     applyDisplayFilter();
     applyZoneWireframeVisibility();
+    updateTransformGizmo();
     requestViewportUpdate();
 #endif
 }
@@ -700,7 +919,17 @@ void SceneView3D::setupScene()
 
     m_selectionManager = new SelectionManager(this);
     connect(m_selectionManager, &SelectionManager::objectSelected,
-            this, &SceneView3D::objectSelected);
+            this, [this](const QString &nickname) {
+        updateSelectionMarker(nickname);
+        updateHoverMarker(m_selectionManager ? m_selectionManager->hoveredNickname() : QString());
+        updateTransformGizmo();
+        emit objectSelected(nickname);
+    });
+    connect(m_selectionManager, &SelectionManager::objectHovered,
+            this, [this](const QString &nickname) {
+        updateHoverMarker(nickname);
+        requestViewportUpdate();
+    });
 
     m_3dWindow->setRootEntity(m_rootEntity);
 #endif
@@ -711,10 +940,18 @@ void SceneView3D::clearScene()
 #ifdef FLATLAS_HAS_QT3D
     ++m_loadGeneration;
     if (m_selectionManager)
-    m_selectionManager->clear();
+        m_selectionManager->clear();
+    if (m_gizmoRoot) {
+        delete m_gizmoRoot;
+        m_gizmoRoot = nullptr;
+        m_gizmoTransform = nullptr;
+    }
     m_modelHostsByNickname.clear();
+    m_objectTransformsByNickname.clear();
     m_markerEntitiesByNickname.clear();
     m_markerMaterialsByNickname.clear();
+    m_selectionMarkerEntitiesByNickname.clear();
+    m_hoverMarkerEntitiesByNickname.clear();
     m_ringEntitiesByHostNickname.clear();
     m_atmosphereZoneEntitiesByObjectNickname.clear();
     m_sceneEntitiesByNickname.clear();
@@ -739,6 +976,7 @@ void SceneView3D::clearScene()
         m_gridEntity = nullptr;
         m_zonesRoot = new Qt3DCore::QEntity(m_sceneRoot);
         m_objectsRoot = new Qt3DCore::QEntity(m_sceneRoot);
+        updateTransformGizmo();
     }
 #endif
 }
@@ -877,6 +1115,7 @@ void SceneView3D::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObj
     objectTransform->setTranslation(obj->position());
     objectTransform->setRotation(ZoneGeometryBuilder::rotationFromFreelancer(obj->rotation()));
     objectEntity->addComponent(objectTransform);
+    m_objectTransformsByNickname.insert(obj->nickname(), objectTransform);
 
     auto *modelHost = new Qt3DCore::QEntity(objectEntity);
     m_modelHostsByNickname.insert(obj->nickname(), modelHost);
@@ -901,6 +1140,34 @@ void SceneView3D::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObj
 
     if (m_selectionManager)
         m_selectionManager->registerEntity(obj->nickname(), markerEntity, markerMaterial);
+
+    auto *selectionMarker = new Qt3DCore::QEntity(objectEntity);
+    auto *selectionMesh = new Qt3DExtras::QSphereMesh(selectionMarker);
+    selectionMesh->setRadius(qMax(radius * 1.18f, radius + 250.0f));
+    selectionMesh->setRings(16);
+    selectionMesh->setSlices(24);
+    auto *selectionMaterial = new Qt3DExtras::QPhongAlphaMaterial(selectionMarker);
+    selectionMaterial->setDiffuse(QColor(255, 230, 40, 92));
+    selectionMaterial->setAmbient(QColor(255, 230, 40, 70));
+    selectionMaterial->setAlpha(0.36f);
+    selectionMarker->addComponent(selectionMesh);
+    selectionMarker->addComponent(selectionMaterial);
+    selectionMarker->setEnabled(false);
+    m_selectionMarkerEntitiesByNickname.insert(obj->nickname(), selectionMarker);
+
+    auto *hoverMarker = new Qt3DCore::QEntity(objectEntity);
+    auto *hoverMesh = new Qt3DExtras::QSphereMesh(hoverMarker);
+    hoverMesh->setRadius(qMax(radius * 1.10f, radius + 150.0f));
+    hoverMesh->setRings(12);
+    hoverMesh->setSlices(18);
+    auto *hoverMaterial = new Qt3DExtras::QPhongAlphaMaterial(hoverMarker);
+    hoverMaterial->setDiffuse(QColor(80, 220, 255, 72));
+    hoverMaterial->setAmbient(QColor(80, 220, 255, 55));
+    hoverMaterial->setAlpha(0.28f);
+    hoverMarker->addComponent(hoverMesh);
+    hoverMarker->addComponent(hoverMaterial);
+    hoverMarker->setEnabled(false);
+    m_hoverMarkerEntitiesByNickname.insert(obj->nickname(), hoverMarker);
 
     if (m_sceneBounds) {
         m_sceneBounds->include(obj->position() + QVector3D(radius, radius, radius));
@@ -1167,6 +1434,250 @@ bool SceneView3D::shouldRenderAsRadiusSphere(const flatlas::domain::SolarObject 
         || archetype.contains(QStringLiteral("star"));
 }
 
+flatlas::domain::SolarObject *SceneView3D::solarObjectByNickname(const QString &nickname) const
+{
+    if (!m_document)
+        return nullptr;
+    for (const auto &obj : m_document->objects()) {
+        if (obj && obj->nickname() == nickname)
+            return obj.get();
+    }
+    return nullptr;
+}
+
+void SceneView3D::updateSelectionMarker(const QString &nickname)
+{
+#ifdef FLATLAS_HAS_QT3D
+    for (auto it = m_selectionMarkerEntitiesByNickname.begin();
+         it != m_selectionMarkerEntitiesByNickname.end();
+         ++it) {
+        if (it.value())
+            it.value()->setEnabled(it.key() == nickname);
+    }
+    requestViewportUpdate();
+#else
+    Q_UNUSED(nickname);
+#endif
+}
+
+void SceneView3D::updateHoverMarker(const QString &nickname)
+{
+#ifdef FLATLAS_HAS_QT3D
+    const QString selected = m_selectionManager ? m_selectionManager->selectedNickname() : QString();
+    for (auto it = m_hoverMarkerEntitiesByNickname.begin();
+         it != m_hoverMarkerEntitiesByNickname.end();
+         ++it) {
+        if (it.value())
+            it.value()->setEnabled(it.key() == nickname && it.key() != selected);
+    }
+    requestViewportUpdate();
+#else
+    Q_UNUSED(nickname);
+#endif
+}
+
+void SceneView3D::updateTransformGizmo()
+{
+#ifdef FLATLAS_HAS_QT3D
+    const QString nickname = m_selectionManager ? m_selectionManager->selectedNickname() : QString();
+    const bool visible = m_transformGizmoEnabled
+        && !m_flightModeEnabled
+        && !nickname.isEmpty()
+        && m_objectCentersByNickname.contains(nickname)
+        && m_sceneRoot;
+
+    if (!visible) {
+        if (m_gizmoRoot)
+            m_gizmoRoot->setEnabled(false);
+        return;
+    }
+
+    const bool creatingGizmo = !m_gizmoRoot;
+    if (creatingGizmo && m_selectionManager)
+        m_selectionManager->setPickingSuppressed(true);
+
+    if (!m_gizmoRoot) {
+        m_gizmoRoot = new Qt3DCore::QEntity(m_sceneRoot);
+        m_gizmoTransform = new Qt3DCore::QTransform(m_gizmoRoot);
+        m_gizmoRoot->addComponent(m_gizmoTransform);
+
+        auto addAxis = [this](const QColor &color,
+                              const QVector3D &translation,
+                              const QQuaternion &rotation,
+                              int handle) {
+            auto *entity = new Qt3DCore::QEntity(m_gizmoRoot);
+            auto *mesh = new Qt3DExtras::QCylinderMesh(entity);
+            mesh->setRadius(260.0f);
+            mesh->setLength(7200.0f);
+            mesh->setRings(1);
+            mesh->setSlices(16);
+            auto *transform = new Qt3DCore::QTransform(entity);
+            transform->setTranslation(translation);
+            transform->setRotation(rotation);
+            entity->addComponent(mesh);
+            entity->addComponent(transform);
+            entity->addComponent(gizmoMaterial(color, entity));
+            auto *picker = new Qt3DRender::QObjectPicker(entity);
+            picker->setHoverEnabled(false);
+            entity->addComponent(picker);
+            connect(picker, &Qt3DRender::QObjectPicker::pressed,
+                    this, [this, handle](Qt3DRender::QPickEvent *event) {
+                if (!m_transformGizmoEnabled)
+                    return;
+                if (m_selectionManager)
+                    m_selectionManager->setPickingSuppressed(true);
+                beginGizmoDrag(handle, event ? event->position().toPoint() : QPoint());
+            });
+        };
+
+        addAxis(QColor(245, 80, 80),
+                QVector3D(3600.0f, 0.0f, 0.0f),
+                QQuaternion::fromAxisAndAngle(0.0f, 0.0f, 1.0f, 90.0f),
+                GizmoMoveX);
+        addAxis(QColor(80, 220, 120),
+                QVector3D(0.0f, 3600.0f, 0.0f),
+                QQuaternion(),
+                GizmoMoveY);
+        addAxis(QColor(95, 145, 255),
+                QVector3D(0.0f, 0.0f, 3600.0f),
+                QQuaternion::fromAxisAndAngle(1.0f, 0.0f, 0.0f, 90.0f),
+                GizmoMoveZ);
+
+        auto addRing = [this](const QColor &color, const QQuaternion &rotation, int handle) {
+            auto *entity = new Qt3DCore::QEntity(m_gizmoRoot);
+            auto *mesh = new Qt3DExtras::QTorusMesh(entity);
+            mesh->setRadius(7800.0f);
+            mesh->setMinorRadius(170.0f);
+            mesh->setRings(64);
+            mesh->setSlices(10);
+            auto *transform = new Qt3DCore::QTransform(entity);
+            transform->setRotation(rotation);
+            entity->addComponent(mesh);
+            entity->addComponent(transform);
+            entity->addComponent(gizmoMaterial(color, entity));
+            auto *picker = new Qt3DRender::QObjectPicker(entity);
+            picker->setHoverEnabled(false);
+            entity->addComponent(picker);
+            connect(picker, &Qt3DRender::QObjectPicker::pressed,
+                    this, [this, handle](Qt3DRender::QPickEvent *event) {
+                if (!m_transformGizmoEnabled)
+                    return;
+                if (m_selectionManager)
+                    m_selectionManager->setPickingSuppressed(true);
+                beginGizmoDrag(handle, event ? event->position().toPoint() : QPoint());
+            });
+        };
+        addRing(QColor(255, 210, 75), QQuaternion(), GizmoRotateYaw);
+        addRing(QColor(255, 135, 220),
+                QQuaternion::fromAxisAndAngle(1.0f, 0.0f, 0.0f, 90.0f),
+                GizmoRotatePitch);
+    }
+
+    m_gizmoRoot->setEnabled(true);
+    m_gizmoTransform->setTranslation(m_objectCentersByNickname.value(nickname));
+    if (creatingGizmo && m_selectionManager) {
+        QTimer::singleShot(0, this, [this]() {
+            if (m_selectionManager && m_activeGizmoHandle == GizmoNone && !m_leftOrbitDragging)
+                m_selectionManager->setPickingSuppressed(false);
+        });
+    }
+#endif
+}
+
+void SceneView3D::beginGizmoDrag(int handle, const QPoint &screenPos)
+{
+    if (!m_transformGizmoEnabled || !m_selectionManager || handle == GizmoNone)
+        return;
+    const QString nickname = m_selectionManager->selectedNickname();
+    flatlas::domain::SolarObject *obj = solarObjectByNickname(nickname);
+    if (!obj)
+        return;
+
+    m_activeGizmoHandle = handle;
+    m_gizmoDragNickname = nickname;
+    m_gizmoDragStartScreenPos = screenPos;
+    m_gizmoDragStartPosition = obj->position();
+    m_gizmoDragStartRotation = obj->rotation();
+}
+
+void SceneView3D::updateGizmoDrag(const QPoint &screenPos)
+{
+    if (!m_transformGizmoEnabled) {
+        if (m_activeGizmoHandle != GizmoNone)
+            finishGizmoDrag();
+        return;
+    }
+    if (m_activeGizmoHandle == GizmoNone)
+        return;
+
+    flatlas::domain::SolarObject *obj = solarObjectByNickname(m_gizmoDragNickname);
+    if (!obj)
+        return;
+
+    const QPoint delta = screenPos - m_gizmoDragStartScreenPos;
+    const float distance = m_camera
+        ? (m_camera->position() - m_gizmoDragStartPosition).length()
+        : 80000.0f;
+    const float moveScale = qBound(40.0f, distance / 450.0f, 900.0f);
+    QVector3D position = m_gizmoDragStartPosition;
+    QVector3D rotation = m_gizmoDragStartRotation;
+
+    switch (m_activeGizmoHandle) {
+    case GizmoMoveX:
+        position.setX(position.x() + static_cast<float>(delta.x()) * moveScale);
+        break;
+    case GizmoMoveY:
+        position.setY(position.y() - static_cast<float>(delta.y()) * moveScale);
+        break;
+    case GizmoMoveZ:
+        position.setZ(position.z() + static_cast<float>(delta.x() - delta.y()) * moveScale * 0.5f);
+        break;
+    case GizmoRotateYaw:
+        rotation.setY(rotation.y() + static_cast<float>(delta.x()) * 0.45f);
+        break;
+    case GizmoRotatePitch:
+        rotation.setX(rotation.x() - static_cast<float>(delta.y()) * 0.45f);
+        break;
+    default:
+        break;
+    }
+
+    applyGizmoTransform(position, rotation);
+}
+
+void SceneView3D::finishGizmoDrag()
+{
+    if (m_activeGizmoHandle == GizmoNone)
+        return;
+    m_activeGizmoHandle = GizmoNone;
+    m_gizmoDragNickname.clear();
+    if (m_selectionManager)
+        m_selectionManager->setPickingSuppressed(false);
+}
+
+void SceneView3D::applyGizmoTransform(const QVector3D &position, const QVector3D &rotation)
+{
+    if (!m_transformGizmoEnabled)
+        return;
+
+    flatlas::domain::SolarObject *obj = solarObjectByNickname(m_gizmoDragNickname);
+    if (!obj)
+        return;
+
+    obj->setPosition(position);
+    obj->setRotation(rotation);
+    m_objectCentersByNickname.insert(obj->nickname(), position);
+
+    if (Qt3DCore::QTransform *transform = m_objectTransformsByNickname.value(obj->nickname(), nullptr)) {
+        transform->setTranslation(position);
+        transform->setRotation(ZoneGeometryBuilder::rotationFromFreelancer(rotation));
+    }
+    if (m_orbitCamera && m_selectionManager && obj->nickname() == m_selectionManager->selectedNickname())
+        m_orbitCamera->setTarget(position);
+    updateTransformGizmo();
+    requestViewportUpdate();
+}
+
 void SceneView3D::scheduleModelLoading()
 {
     if (m_nicknamesByModelPath.isEmpty())
@@ -1365,6 +1876,11 @@ bool SceneView3D::eventFilter(QObject *watched, QEvent *event)
         setViewportActive(isVisible());
         break;
     case QEvent::MouseButtonPress:
+        if (m_activeGizmoHandle != GizmoNone) {
+            if (!m_transformGizmoEnabled)
+                finishGizmoDrag();
+            return true;
+        }
         if (m_freeCamera && m_freeCamera->isEnabled()) {
             if (auto *mouseEvent = static_cast<QMouseEvent *>(event);
                 mouseEvent->button() == Qt::LeftButton && m_container) {
@@ -1373,16 +1889,51 @@ bool SceneView3D::eventFilter(QObject *watched, QEvent *event)
             m_freeCamera->handleMousePress(static_cast<QMouseEvent *>(event));
             return true;
         }
+        if (auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            mouseEvent->button() == Qt::LeftButton) {
+            m_pendingLeftOrbitDrag = true;
+            m_leftOrbitDragging = false;
+            m_leftOrbitDragStartPos = mouseEvent->pos();
+            return QWidget::eventFilter(watched, event);
+        }
         m_orbitCamera->handleMousePress(static_cast<QMouseEvent *>(event));
         return true;
     case QEvent::MouseMove:
+        if (m_activeGizmoHandle != GizmoNone) {
+            if (!m_transformGizmoEnabled) {
+                finishGizmoDrag();
+                return true;
+            }
+            updateGizmoDrag(static_cast<QMouseEvent *>(event)->pos());
+            return true;
+        }
         if (m_freeCamera && m_freeCamera->isEnabled()) {
             m_freeCamera->handleMouseMove(static_cast<QMouseEvent *>(event));
             return true;
         }
+        if (auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            mouseEvent->buttons().testFlag(Qt::LeftButton)) {
+            const int dragDistance = (mouseEvent->pos() - m_leftOrbitDragStartPos).manhattanLength();
+            if (m_pendingLeftOrbitDrag && !m_leftOrbitDragging && dragDistance >= QApplication::startDragDistance()) {
+                m_leftOrbitDragging = true;
+                m_pendingLeftOrbitDrag = false;
+                if (m_selectionManager)
+                    m_selectionManager->setPickingSuppressed(true);
+                m_orbitCamera->beginRotateAt(m_leftOrbitDragStartPos);
+            }
+            if (m_leftOrbitDragging) {
+                m_orbitCamera->handleMouseMove(mouseEvent);
+                return true;
+            }
+            return QWidget::eventFilter(watched, event);
+        }
         m_orbitCamera->handleMouseMove(static_cast<QMouseEvent *>(event));
         return true;
     case QEvent::MouseButtonRelease:
+        if (m_activeGizmoHandle != GizmoNone) {
+            finishGizmoDrag();
+            return true;
+        }
         if (m_freeCamera && m_freeCamera->isEnabled()) {
             m_freeCamera->handleMouseRelease(static_cast<QMouseEvent *>(event));
             if (auto *mouseEvent = static_cast<QMouseEvent *>(event);
@@ -1390,6 +1941,19 @@ bool SceneView3D::eventFilter(QObject *watched, QEvent *event)
                 m_container->releaseMouse();
             }
             return true;
+        }
+        if (auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            mouseEvent->button() == Qt::LeftButton) {
+            const bool wasDragging = m_leftOrbitDragging;
+            if (m_leftOrbitDragging)
+                m_orbitCamera->endRotate();
+            if (m_selectionManager)
+                m_selectionManager->setPickingSuppressed(false);
+            m_pendingLeftOrbitDrag = false;
+            m_leftOrbitDragging = false;
+            if (wasDragging)
+                return true;
+            return QWidget::eventFilter(watched, event);
         }
         m_orbitCamera->handleMouseRelease(static_cast<QMouseEvent *>(event));
         return true;
@@ -1416,6 +1980,11 @@ bool SceneView3D::eventFilter(QObject *watched, QEvent *event)
         break;
     }
     return QWidget::eventFilter(watched, event);
+}
+
+void SceneView3D::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
 }
 
 void SceneView3D::showEvent(QShowEvent *event)

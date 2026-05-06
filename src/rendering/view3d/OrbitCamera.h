@@ -40,6 +40,9 @@ public:
     void handleMouseMove(QMouseEvent *event);
     void handleMouseRelease(QMouseEvent *event);
     void handleWheel(QWheelEvent *event);
+    void beginRotateAt(const QPoint &pos);
+    void endRotate();
+    void cancelMouseInteraction();
 
     /// Reset to default view.
     void resetView();

@@ -75,7 +75,7 @@ void CharacterPreview::setupUi()
 
     // 3D view
 #ifdef FLATLAS_HAS_QT3D
-    m_3dWindow = new Qt3DExtras::Qt3DWindow(nullptr, Qt3DRender::API::OpenGL);
+    m_3dWindow = new Qt3DExtras::Qt3DWindow();
     m_container = QWidget::createWindowContainer(m_3dWindow, this);
     mainLayout->addWidget(m_container, 1);
     setupScene();
