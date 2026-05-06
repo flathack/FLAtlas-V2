@@ -12,7 +12,7 @@
 #include <memory>
 
 namespace flatlas::domain { class SystemDocument; class SolarObject; }
-namespace flatlas::rendering { class MapScene; class SystemMapView; class SceneView3D; }
+namespace flatlas::rendering { class MapScene; class SystemMapView; class SceneView3D; class ZoneLegendWidget; }
 namespace flatlas::editors {
 struct CreateFieldZoneResult;
 struct CreateExclusionZoneResult;
@@ -337,6 +337,7 @@ private:
     std::unique_ptr<flatlas::domain::SystemDocument> m_document;
     flatlas::rendering::MapScene *m_mapScene = nullptr;
     flatlas::rendering::SystemMapView *m_mapView = nullptr;
+    flatlas::rendering::ZoneLegendWidget *m_zoneLegendWidget = nullptr;
     QToolBar *m_toolBar = nullptr;
     QSplitter *m_splitter = nullptr;
     QSplitter *m_leftSidebarSplitter = nullptr;

@@ -32,6 +32,7 @@ public:
                       const std::function<void(int current, int total)> &progressCallback = {});
     void clear();
     void setLightSources(const QVector<LightSourceVisual> &lightSources);
+    void refreshZoneColors();
 
     void setGridVisible(bool visible);
     bool isGridVisible() const;

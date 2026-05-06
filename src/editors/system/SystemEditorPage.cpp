@@ -38,6 +38,7 @@
 #include "rendering/preview/ModelCache.h"
 #include "rendering/view2d/MapScene.h"
 #include "rendering/view2d/SystemMapView.h"
+#include "rendering/view2d/ZoneLegendWidget.h"
 #include "rendering/view2d/items/LightSourceItem.h"
 #include "rendering/view2d/items/SolarObjectItem.h"
 #include "rendering/view2d/items/ZoneItem2D.h"
@@ -2794,7 +2795,14 @@ void SystemEditorPage::setupUi()
                                    palette().color(QPalette::Base));
     loadDisplayFilterSettings();
     m_mapView->setDisplayFilterSettings(m_displayFilterSettings);
-    m_splitter->addWidget(m_mapView);
+    auto *mapHost = new QWidget(this);
+    auto *mapHostLayout = new QVBoxLayout(mapHost);
+    mapHostLayout->setContentsMargins(0, 0, 0, 0);
+    mapHostLayout->setSpacing(0);
+    mapHostLayout->addWidget(m_mapView, 1);
+    m_zoneLegendWidget = new ZoneLegendWidget(mapHost);
+    mapHostLayout->addWidget(m_zoneLegendWidget);
+    m_splitter->addWidget(mapHost);
 
     setupRightSidebar();
     m_splitter->addWidget(m_rightSidebar);

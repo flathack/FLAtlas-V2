@@ -233,6 +233,20 @@ void MapScene::setLightSources(const QVector<LightSourceVisual> &lightSources)
         addLightSource(lightSource);
 }
 
+void MapScene::refreshZoneColors()
+{
+    if (!m_document)
+        return;
+
+    for (const auto &zone : m_document->zones()) {
+        if (!zone)
+            continue;
+        ZoneItem2D *item = m_zoneItemsByNickname.value(zone->nickname().trimmed().toLower(), nullptr);
+        if (item)
+            item->updateFromZone(*zone);
+    }
+}
+
 void MapScene::setGridVisible(bool visible)
 {
     if (m_gridVisible != visible) {

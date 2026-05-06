@@ -28,6 +28,8 @@
 #include "tools/KeyboardShortcutOverviewDialog.h"
 #include "tools/PathFinderDialog.h"
 #include "rendering/preview/ModelViewerPage.h"
+#include "rendering/view2d/MapScene.h"
+#include "rendering/view2d/ZoneLegendWidget.h"
 #include "rendering/view3d/SceneView3D.h"
 #include "domain/SystemDocument.h"
 #include "domain/ZoneItem.h"
@@ -73,6 +75,7 @@
 #include <QFont>
 #include <QPalette>
 #include <QTimer>
+#include <QToolBar>
 
 #include <exception>
 #include <memory>
@@ -213,14 +216,27 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     leftLayout->addWidget(tree, 1);
     splitter->addWidget(leftSidebar);
 
-    auto *view = new flatlas::rendering::SceneView3D(splitter);
+    auto *viewHost = new QWidget(splitter);
+    auto *viewLayout = new QVBoxLayout(viewHost);
+    viewLayout->setContentsMargins(0, 0, 0, 0);
+    viewLayout->setSpacing(0);
+
+    auto *commandBar = new QToolBar(viewHost);
+    commandBar->setIconSize(QSize(16, 16));
+    commandBar->setMovable(false);
+    viewLayout->addWidget(commandBar);
+
+    auto *view = new flatlas::rendering::SceneView3D(viewHost);
     view->setArchetypeModelPaths(modelPaths);
     view->setArchetypeDisplayRadii(displayRadii);
     view->setArchetypeTextureSourcePaths(textureSourcePaths);
     view->setGameRoot(flatlas::core::EditingContext::instance().primaryGamePath());
     view->setDisplayFilterSettings(initialFilterSettings);
     view->loadDocument(document);
-    splitter->addWidget(view);
+    viewLayout->addWidget(view, 1);
+    auto *legend = new flatlas::rendering::ZoneLegendWidget(viewHost);
+    viewLayout->addWidget(legend);
+    splitter->addWidget(viewHost);
     splitter->setStretchFactor(0, 0);
     splitter->setStretchFactor(1, 1);
     splitter->setSizes({280, 1000});
@@ -263,15 +279,13 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     wireframesCheck->setChecked(true);
     leftLayout->insertWidget(3, wireframesCheck);
 
-    auto *freeCamButton = new QPushButton(QObject::tr("Free Cam"), leftSidebar);
+    auto *freeCamButton = commandBar->addAction(QObject::tr("Free Cam"));
     freeCamButton->setCheckable(true);
     freeCamButton->setToolTip(QObject::tr("Free camera mode: left drag looks around, W/S move forward/back, A/D strafe, Space/Ctrl move up/down, mouse wheel changes speed."));
-    leftLayout->insertWidget(4, freeCamButton);
 
-    auto *flightModeButton = new QPushButton(QObject::tr("Enable Flight Mode"), leftSidebar);
+    auto *flightModeButton = commandBar->addAction(QObject::tr("Enable Flight Mode"));
     flightModeButton->setCheckable(true);
     flightModeButton->setToolTip(QObject::tr("Fly the system using Freelancer ship speed data. C charges/cancels cruise. Zones are hidden while active."));
-    leftLayout->insertWidget(5, flightModeButton);
 
     auto *cruiseButton = new QPushButton(QObject::tr("Cruise"), leftSidebar);
     cruiseButton->setToolTip(QObject::tr("Charge cruise speed"));
@@ -307,9 +321,9 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     freeCamSpeedLabel->setVisible(false);
     leftLayout->insertWidget(11, freeCamSpeedLabel);
 
-    auto *centerButton = new QPushButton(QObject::tr("Center to Object"), leftSidebar);
+    commandBar->addSeparator();
+    auto *centerButton = commandBar->addAction(QObject::tr("Center to Object"));
     centerButton->setEnabled(false);
-    leftLayout->insertWidget(12, centerButton);
 
     auto updateFreeCamSpeedLabel = [freeCamSpeedLabel](float speed) {
         freeCamSpeedLabel->setText(QObject::tr("Free Cam Speed: %1").arg(QString::number(speed, 'f', 0)));
@@ -364,7 +378,7 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     QObject::connect(wireframesCheck, &QCheckBox::toggled, view, [view](bool checked) {
         view->setZoneWireframesVisible(checked);
     });
-    QObject::connect(freeCamButton, &QPushButton::toggled, view, [view](bool checked) {
+    QObject::connect(freeCamButton, &QAction::toggled, view, [view](bool checked) {
         view->setFreeCameraModeEnabled(checked);
     });
     QObject::connect(view, &flatlas::rendering::SceneView3D::freeCameraModeChanged,
@@ -387,7 +401,7 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     QObject::connect(startCombo, &QComboBox::currentIndexChanged, page, [applyFlightSelection](int) {
         applyFlightSelection();
     });
-    QObject::connect(flightModeButton, &QPushButton::toggled, view, [view,
+    QObject::connect(flightModeButton, &QAction::toggled, view, [view,
                                                                      wireframesCheck,
                                                                      freeCamButton,
                                                                      freeCamSpeedLabel,
@@ -487,7 +501,7 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
             view->selectObject(nickname);
     });
 
-    QObject::connect(centerButton, &QPushButton::clicked, view, [view]() {
+    QObject::connect(centerButton, &QAction::triggered, view, [view]() {
         view->centerOnSelectedObject();
     });
 
@@ -1230,6 +1244,10 @@ void MainWindow::openSettingsDialog()
         applyPinnedToolSettings();
     for (auto *view : findChildren<flatlas::rendering::SceneView3D *>())
         view->refreshThemeColors();
+    for (auto *scene : findChildren<flatlas::rendering::MapScene *>())
+        scene->refreshZoneColors();
+    for (auto *legend : findChildren<flatlas::rendering::ZoneLegendWidget *>())
+        legend->refreshThemeColors();
     saveOpenToolTabs();
 }
 
