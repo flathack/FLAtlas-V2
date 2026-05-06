@@ -28,6 +28,7 @@ QVector<ThemeColorChoice> ThemeColors::choices()
     return {
         {QStringLiteral("zoneNebula"), QObject::tr("Nebula fields"), QColor(45, 145, 255)},
         {QStringLiteral("zoneAsteroid"), QObject::tr("Asteroid fields"), QColor(140, 92, 48)},
+        {QStringLiteral("zoneMinefield"), QObject::tr("Mine fields"), QColor(255, 145, 35)},
         {QStringLiteral("zonePopulation"), QObject::tr("Zone population fields"), QColor(40, 220, 220)},
         {QStringLiteral("zoneAtmosphere"), QObject::tr("Planet and sun atmospheres"), QColor(255, 190, 75)},
         {QStringLiteral("zoneDeath"), QObject::tr("Damage zones"), QColor(235, 45, 45)},

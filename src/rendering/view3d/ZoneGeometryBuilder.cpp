@@ -131,38 +131,57 @@ void appendLine(QVector<QVector3D> &points, const QVector3D &a, const QVector3D 
     points.append(b);
 }
 
-void appendEllipseRing(QVector<QVector3D> &points, const QVector3D &scale, int axis)
+void appendEllipseRing(QVector<QVector3D> &points, const QVector3D &scale, int axis, float axisOffsetRatio = 0.0f)
 {
+    const float offsetRatio = qBound(-0.95f, axisOffsetRatio, 0.95f);
+    const float radiusFactor = std::sqrt(qMax(0.0f, 1.0f - offsetRatio * offsetRatio));
     QVector3D previous;
     for (int i = 0; i <= kCircleSegments; ++i) {
         const float angle = static_cast<float>(2.0 * M_PI * i / kCircleSegments);
         QVector3D current;
         if (axis == 0)
-            current = QVector3D(0.0f, std::cos(angle) * scale.y(), std::sin(angle) * scale.z());
+            current = QVector3D(scale.x() * offsetRatio,
+                                std::cos(angle) * scale.y() * radiusFactor,
+                                std::sin(angle) * scale.z() * radiusFactor);
         else if (axis == 1)
-            current = QVector3D(std::cos(angle) * scale.x(), 0.0f, std::sin(angle) * scale.z());
+            current = QVector3D(std::cos(angle) * scale.x() * radiusFactor,
+                                scale.y() * offsetRatio,
+                                std::sin(angle) * scale.z() * radiusFactor);
         else
-            current = QVector3D(std::cos(angle) * scale.x(), std::sin(angle) * scale.y(), 0.0f);
+            current = QVector3D(std::cos(angle) * scale.x() * radiusFactor,
+                                std::sin(angle) * scale.y() * radiusFactor,
+                                scale.z() * offsetRatio);
         if (i > 0)
             appendLine(points, previous, current);
         previous = current;
     }
 }
 
-QVector<QVector3D> ellipsoidWirePoints(const QVector3D &scale)
+QVector<QVector3D> ellipsoidWirePoints(const QVector3D &scale, bool dense)
 {
     QVector<QVector3D> points;
-    points.reserve(kCircleSegments * 6);
+    points.reserve(kCircleSegments * (dense ? 30 : 6));
     appendEllipseRing(points, scale, 0);
     appendEllipseRing(points, scale, 1);
     appendEllipseRing(points, scale, 2);
+    if (dense) {
+        for (const float offset : {-0.5f, 0.5f}) {
+            appendEllipseRing(points, scale, 0, offset);
+            appendEllipseRing(points, scale, 1, offset);
+            appendEllipseRing(points, scale, 2, offset);
+        }
+        for (const float offset : {-0.25f, 0.25f}) {
+            appendEllipseRing(points, scale, 0, offset);
+            appendEllipseRing(points, scale, 2, offset);
+        }
+    }
     return points;
 }
 
-QVector<QVector3D> cylinderWirePoints(float radius, float length)
+QVector<QVector3D> cylinderWirePoints(float radius, float length, bool dense)
 {
     QVector<QVector3D> points;
-    points.reserve(kCircleSegments * 6 + 16);
+    points.reserve(kCircleSegments * (dense ? 10 : 6) + 64);
     const float halfLength = length * 0.5f;
     QVector<QVector3D> top;
     QVector<QVector3D> bottom;
@@ -180,12 +199,23 @@ QVector<QVector3D> cylinderWirePoints(float radius, float length)
         appendLine(points, top.at(i), top.at(next));
         appendLine(points, bottom.at(i), bottom.at(next));
     }
-    for (int i = 0; i < 8; i += 2)
+    if (dense) {
+        QVector<QVector3D> middle;
+        middle.reserve(kCircleSegments);
+        for (int i = 0; i < kCircleSegments; ++i) {
+            const float angle = static_cast<float>(2.0 * M_PI * i / kCircleSegments);
+            middle.append(QVector3D(std::cos(angle) * radius, 0.0f, std::sin(angle) * radius));
+        }
+        for (int i = 0; i < kCircleSegments; ++i)
+            appendLine(points, middle.at(i), middle.at((i + 1) % kCircleSegments));
+    }
+    const int verticalLineCount = dense ? 8 : 4;
+    for (int i = 0; i < verticalLineCount; ++i)
         appendLine(points, top.at(i * kCircleSegments / 8), bottom.at(i * kCircleSegments / 8));
     return points;
 }
 
-QVector<QVector3D> boxWirePoints(const QVector3D &half)
+QVector<QVector3D> boxWirePoints(const QVector3D &half, bool dense)
 {
     const QVector<QVector3D> c{
         {-half.x(), -half.y(), -half.z()},
@@ -206,6 +236,12 @@ QVector<QVector3D> boxWirePoints(const QVector3D &half)
     };
     for (int i = 0; i < 24; i += 2)
         appendLine(points, c.at(edges[i]), c.at(edges[i + 1]));
+    if (dense) {
+        appendLine(points, c.at(0), c.at(6));
+        appendLine(points, c.at(1), c.at(7));
+        appendLine(points, c.at(2), c.at(4));
+        appendLine(points, c.at(3), c.at(5));
+    }
     return points;
 }
 
@@ -319,36 +355,42 @@ ZoneGeometryBuildResult ZoneGeometryBuilder::buildZone(const flatlas::domain::Zo
     QVector<QVector3D> wirePoints;
     using Shape = flatlas::domain::ZoneItem::Shape;
     if (zone.shape() == Shape::Box) {
-        wirePoints = boxWirePoints(geometry.halfExtents);
-        auto *volume = new Qt3DCore::QEntity(root);
-        auto *mesh = new Qt3DExtras::QCuboidMesh(volume);
-        mesh->setXExtent(geometry.halfExtents.x() * 2.0f);
-        mesh->setYExtent(geometry.halfExtents.y() * 2.0f);
-        mesh->setZExtent(geometry.halfExtents.z() * 2.0f);
-        volume->addComponent(mesh);
-        volume->addComponent(makeFillMaterial(style.fillColor, style.fillVisible ? style.opacity : 0.035f, volume));
+        wirePoints = boxWirePoints(geometry.halfExtents, style.denseWire);
+        if (style.fillVisible) {
+            auto *volume = new Qt3DCore::QEntity(root);
+            auto *mesh = new Qt3DExtras::QCuboidMesh(volume);
+            mesh->setXExtent(geometry.halfExtents.x() * 2.0f);
+            mesh->setYExtent(geometry.halfExtents.y() * 2.0f);
+            mesh->setZExtent(geometry.halfExtents.z() * 2.0f);
+            volume->addComponent(mesh);
+            volume->addComponent(makeFillMaterial(style.fillColor, style.opacity, volume));
+        }
     } else if (zone.shape() == Shape::Cylinder) {
-        wirePoints = cylinderWirePoints(geometry.cylinderRadius, geometry.cylinderLength);
-        auto *volume = new Qt3DCore::QEntity(root);
-        auto *mesh = new Qt3DExtras::QCylinderMesh(volume);
-        mesh->setRadius(geometry.cylinderRadius);
-        mesh->setLength(geometry.cylinderLength);
-        mesh->setRings(1);
-        mesh->setSlices(32);
-        volume->addComponent(mesh);
-        volume->addComponent(makeFillMaterial(style.fillColor, style.fillVisible ? style.opacity : 0.035f, volume));
+        wirePoints = cylinderWirePoints(geometry.cylinderRadius, geometry.cylinderLength, style.denseWire);
+        if (style.fillVisible) {
+            auto *volume = new Qt3DCore::QEntity(root);
+            auto *mesh = new Qt3DExtras::QCylinderMesh(volume);
+            mesh->setRadius(geometry.cylinderRadius);
+            mesh->setLength(geometry.cylinderLength);
+            mesh->setRings(1);
+            mesh->setSlices(32);
+            volume->addComponent(mesh);
+            volume->addComponent(makeFillMaterial(style.fillColor, style.opacity, volume));
+        }
     } else {
-        wirePoints = ellipsoidWirePoints(geometry.sphereScale);
-        auto *volume = new Qt3DCore::QEntity(root);
-        auto *mesh = new Qt3DExtras::QSphereMesh(volume);
-        mesh->setRadius(1.0f);
-        mesh->setRings(12);
-        mesh->setSlices(24);
-        auto *transform = new Qt3DCore::QTransform(volume);
-        transform->setScale3D(geometry.sphereScale);
-        volume->addComponent(mesh);
-        volume->addComponent(transform);
-        volume->addComponent(makeFillMaterial(style.fillColor, style.fillVisible ? style.opacity : 0.035f, volume));
+        wirePoints = ellipsoidWirePoints(geometry.sphereScale, style.denseWire);
+        if (style.fillVisible) {
+            auto *volume = new Qt3DCore::QEntity(root);
+            auto *mesh = new Qt3DExtras::QSphereMesh(volume);
+            mesh->setRadius(1.0f);
+            mesh->setRings(12);
+            mesh->setSlices(24);
+            auto *transform = new Qt3DCore::QTransform(volume);
+            transform->setScale3D(geometry.sphereScale);
+            volume->addComponent(mesh);
+            volume->addComponent(transform);
+            volume->addComponent(makeFillMaterial(style.fillColor, style.opacity, volume));
+        }
     }
 
     auto *wire = new Qt3DCore::QEntity(root);

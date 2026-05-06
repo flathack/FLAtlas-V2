@@ -16,6 +16,7 @@ struct ZoneVisualStyle {
     QColor selectedWireColor;
     float opacity = 0.18f;
     bool fillVisible = true;
+    bool denseWire = false;
 };
 
 class ZoneColorScheme {
