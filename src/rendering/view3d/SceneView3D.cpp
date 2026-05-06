@@ -285,6 +285,28 @@ Qt3DExtras::QPhongMaterial *gizmoMaterial(const QColor &color, Qt3DCore::QNode *
     return material;
 }
 
+void configureObjectSphereMesh(Qt3DExtras::QSphereMesh *mesh, bool radiusSphere)
+{
+    if (!mesh)
+        return;
+    if (radiusSphere) {
+        mesh->setRings(64);
+        mesh->setSlices(96);
+        return;
+    }
+    mesh->setRings(8);
+    mesh->setSlices(12);
+}
+
+Qt3DCore::QTransform *createPlanetSurfaceTransform(Qt3DCore::QEntity *entity)
+{
+    auto *transform = new Qt3DCore::QTransform(entity);
+    // Match V1: Qt3D winds some textured planet spheres inward. Mirroring one
+    // axis puts the textured side on the visible outside of the planet shell.
+    transform->setScale3D(QVector3D(-1.0f, 1.0f, 1.0f));
+    return transform;
+}
+
 float markerRadius(flatlas::domain::SolarObject::Type type)
 {
     using Type = flatlas::domain::SolarObject::Type;
@@ -1128,12 +1150,13 @@ void SceneView3D::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObj
     auto *markerEntity = new Qt3DCore::QEntity(objectEntity);
     auto *markerMesh = new Qt3DExtras::QSphereMesh(markerEntity);
     markerMesh->setRadius(radius);
-    markerMesh->setRings(8);
-    markerMesh->setSlices(12);
+    configureObjectSphereMesh(markerMesh, radiusSphere);
     auto *markerMaterial = new Qt3DExtras::QPhongMaterial(markerEntity);
     markerMaterial->setDiffuse(baseColor);
     markerMaterial->setAmbient(baseColor.darker(175));
     markerEntity->addComponent(markerMesh);
+    if (radiusSphere && obj->type() == flatlas::domain::SolarObject::Planet)
+        markerEntity->addComponent(createPlanetSurfaceTransform(markerEntity));
     markerEntity->addComponent(markerMaterial);
     m_markerEntitiesByNickname.insert(obj->nickname(), markerEntity);
     m_markerMaterialsByNickname.insert(obj->nickname(), markerMaterial);
