@@ -1,5 +1,6 @@
 #include "IdsDataService.h"
 
+#include "core/Config.h"
 #include "core/PathUtils.h"
 #include "infrastructure/freelancer/ResourceDllWriter.h"
 #include "infrastructure/io/DllResources.h"
@@ -491,6 +492,10 @@ int predictedSlotForDll(const IdsDataset &dataset, const QString &dllName)
 
 QString IdsDataService::defaultCreationDllName(const IdsDataset &dataset)
 {
+    const QString configured = flatlas::core::Config::instance().getString(QStringLiteral("idsCreationTargetDll")).trimmed();
+    if (!configured.isEmpty())
+        return QFileInfo(configured).fileName();
+
     if (!dataset.freelancerIniPath.isEmpty())
         return ResourceDllWriter::targetFlatlasResourceDll(dataset.freelancerIniPath);
 

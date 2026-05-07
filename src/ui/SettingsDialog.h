@@ -32,6 +32,11 @@ private:
     void exportConfig();
     void createConfigBackup();
     void applyConfigJson();
+    void refreshIdsTargetDllSettings();
+    void chooseIdsTargetDll();
+    void saveIdsTargetDllSettings();
+    void resetIdsTargetDll();
+    void migrateFlatlasIdsEntries();
     void updateThemeColorButton(const QString &key);
     void startSuiteDownload(const QString &key, const QString &name, const QString &repoApiUrl);
     void downloadReleaseAsset(const QString &name, const QUrl &url);
@@ -51,6 +56,8 @@ private:
     QLineEdit *m_configPathEdit = nullptr;
     QTextEdit *m_configJsonEdit = nullptr;
     QLabel *m_configStatusLabel = nullptr;
+    QLineEdit *m_idsTargetDllEdit = nullptr;
+    QLabel *m_idsTargetStatusLabel = nullptr;
     QNetworkAccessManager *m_network = nullptr;
     bool m_pinnedToolsChanged = false;
     bool m_resetRequested = false;

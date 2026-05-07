@@ -1,9 +1,12 @@
 #include "SettingsDialog.h"
 
 #include "core/Config.h"
+#include "core/EditingContext.h"
 #include "core/I18n.h"
 #include "core/Theme.h"
 #include "core/ThemeColors.h"
+#include "infrastructure/freelancer/IdsDataService.h"
+#include "infrastructure/freelancer/ResourceDllWriter.h"
 
 #include <QCheckBox>
 #include <QColorDialog>
@@ -23,6 +26,7 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMessageBox>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -39,6 +43,11 @@
 
 namespace flatlas::ui {
 namespace {
+
+using flatlas::infrastructure::IdsDataService;
+using flatlas::infrastructure::IdsDataset;
+using flatlas::infrastructure::IdsEntryRecord;
+using flatlas::infrastructure::ResourceDllWriter;
 
 QStringList defaultPinnedTools()
 {
@@ -105,6 +114,24 @@ QString firstExeInDirectory(const QString &dirPath)
             return exe;
     }
     return {};
+}
+
+QString activeGamePath()
+{
+    const auto &ctx = flatlas::core::EditingContext::instance();
+    return ctx.hasContext() ? ctx.primaryGamePath() : QString();
+}
+
+QString idsEntrySummary(const IdsEntryRecord &entry)
+{
+    const QString kind = entry.hasHtmlValue ? QStringLiteral("ids_info") : QStringLiteral("string");
+    QString text = entry.hasHtmlValue ? entry.plainText : entry.stringValue;
+    text = text.simplified();
+    if (text.size() > 90)
+        text = text.left(87) + QStringLiteral("...");
+    if (text.isEmpty())
+        text = QStringLiteral("-");
+    return QStringLiteral("%1 | %2 | %3").arg(entry.globalId).arg(kind, text);
 }
 
 }
@@ -275,6 +302,44 @@ void SettingsDialog::setupUi()
     connect(backupButton, &QPushButton::clicked, this, &SettingsDialog::createConfigBackup);
     connect(applyJsonButton, &QPushButton::clicked, this, &SettingsDialog::applyConfigJson);
 
+    auto *idsTab = new QWidget(tabs);
+    auto *idsLayout = new QVBoxLayout(idsTab);
+    auto *idsHint = new QLabel(tr("Neue IDS-Strings und Infocards werden standardmaessig in der FLAtlas-DLL angelegt. Hier kann eine Mod-eigene Resource-DLL als Ziel gesetzt werden."), idsTab);
+    idsHint->setWordWrap(true);
+    idsLayout->addWidget(idsHint);
+
+    auto *idsPathRow = new QWidget(idsTab);
+    auto *idsPathLayout = new QHBoxLayout(idsPathRow);
+    idsPathLayout->setContentsMargins(0, 0, 0, 0);
+    m_idsTargetDllEdit = new QLineEdit(idsPathRow);
+    m_idsTargetDllEdit->setPlaceholderText(ResourceDllWriter::preferredFlatlasDllName());
+    idsPathLayout->addWidget(m_idsTargetDllEdit, 1);
+    auto *chooseIdsDllButton = new QPushButton(tr("DLL waehlen"), idsPathRow);
+    idsPathLayout->addWidget(chooseIdsDllButton);
+    idsLayout->addWidget(idsPathRow);
+
+    auto *idsActionsRow = new QWidget(idsTab);
+    auto *idsActionsLayout = new QHBoxLayout(idsActionsRow);
+    idsActionsLayout->setContentsMargins(0, 0, 0, 0);
+    auto *saveIdsTargetButton = new QPushButton(tr("Ziel speichern"), idsActionsRow);
+    auto *resetIdsTargetButton = new QPushButton(tr("FLAtlas-DLL verwenden"), idsActionsRow);
+    auto *migrateIdsButton = new QPushButton(tr("FLAtlas-Eintraege uebernehmen"), idsActionsRow);
+    idsActionsLayout->addWidget(saveIdsTargetButton);
+    idsActionsLayout->addWidget(resetIdsTargetButton);
+    idsActionsLayout->addStretch();
+    idsActionsLayout->addWidget(migrateIdsButton);
+    idsLayout->addWidget(idsActionsRow);
+
+    m_idsTargetStatusLabel = new QLabel(idsTab);
+    m_idsTargetStatusLabel->setWordWrap(true);
+    idsLayout->addWidget(m_idsTargetStatusLabel);
+    idsLayout->addStretch();
+    tabs->addTab(idsTab, tr("IDS/Infocards"));
+    connect(chooseIdsDllButton, &QPushButton::clicked, this, &SettingsDialog::chooseIdsTargetDll);
+    connect(saveIdsTargetButton, &QPushButton::clicked, this, &SettingsDialog::saveIdsTargetDllSettings);
+    connect(resetIdsTargetButton, &QPushButton::clicked, this, &SettingsDialog::resetIdsTargetDll);
+    connect(migrateIdsButton, &QPushButton::clicked, this, &SettingsDialog::migrateFlatlasIdsEntries);
+
     auto *resetTab = new QWidget(tabs);
     auto *resetLayout = new QVBoxLayout(resetTab);
     auto *resetHint = new QLabel(tr("Setzt FLAtlas auf Werkseinstellungen zurueck. Mod-Installationen und Spieldaten werden nicht geloescht."), resetTab);
@@ -312,6 +377,7 @@ void SettingsDialog::loadSettings()
         updateThemeColorButton(it.key());
 
     refreshConfigManager();
+    refreshIdsTargetDllSettings();
 }
 
 void SettingsDialog::saveSettings()
@@ -457,6 +523,166 @@ void SettingsDialog::applyConfigJson()
     }
     loadSettings();
     m_configStatusLabel->setText(tr("JSON uebernommen."));
+}
+
+void SettingsDialog::refreshIdsTargetDllSettings()
+{
+    if (!m_idsTargetDllEdit || !m_idsTargetStatusLabel)
+        return;
+
+    auto &config = flatlas::core::Config::instance();
+    const QString configured = config.getString(QStringLiteral("idsCreationTargetDll")).trimmed();
+    QString displayed = configured;
+    QString status = tr("Aktuelles Ziel: FLAtlas-Standard (%1).").arg(ResourceDllWriter::preferredFlatlasDllName());
+
+    const QString gamePath = activeGamePath();
+    if (!gamePath.isEmpty()) {
+        const IdsDataset dataset = IdsDataService::loadFromGameRoot(gamePath);
+        const QString effective = IdsDataService::defaultCreationDllName(dataset);
+        if (displayed.isEmpty())
+            displayed = effective;
+        status = tr("Aktiver Kontext: %1\nWirksame Ziel-DLL: %2").arg(gamePath, effective);
+    } else if (!configured.isEmpty()) {
+        status = tr("Wirksame Ziel-DLL: %1. Kein aktiver Freelancer-Kontext geladen.").arg(configured);
+    }
+
+    m_idsTargetDllEdit->setText(displayed);
+    m_idsTargetStatusLabel->setText(status);
+}
+
+void SettingsDialog::chooseIdsTargetDll()
+{
+    QString startDir;
+    const QString gamePath = activeGamePath();
+    if (!gamePath.isEmpty()) {
+        const IdsDataset dataset = IdsDataService::loadFromGameRoot(gamePath);
+        startDir = dataset.exeDir;
+    }
+
+    const QString path = QFileDialog::getOpenFileName(this,
+                                                      tr("Ziel-DLL fuer IDS/Infocards waehlen"),
+                                                      startDir,
+                                                      tr("DLL-Dateien (*.dll);;Alle Dateien (*.*)"));
+    if (path.isEmpty())
+        return;
+    m_idsTargetDllEdit->setText(QFileInfo(path).fileName());
+}
+
+void SettingsDialog::saveIdsTargetDllSettings()
+{
+    const QString dllName = QFileInfo(m_idsTargetDllEdit->text().trimmed()).fileName();
+    if (dllName.isEmpty()) {
+        resetIdsTargetDll();
+        return;
+    }
+    if (!dllName.endsWith(QStringLiteral(".dll"), Qt::CaseInsensitive)) {
+        QMessageBox::warning(this, tr("IDS/Infocards"), tr("Bitte eine DLL-Datei als Ziel angeben."));
+        return;
+    }
+
+    auto &config = flatlas::core::Config::instance();
+    config.setString(QStringLiteral("idsCreationTargetDll"), dllName);
+    config.save();
+    refreshIdsTargetDllSettings();
+    m_idsTargetStatusLabel->setText(tr("IDS-/Infocard-Ziel gespeichert: %1").arg(dllName));
+}
+
+void SettingsDialog::resetIdsTargetDll()
+{
+    auto &config = flatlas::core::Config::instance();
+    config.setString(QStringLiteral("idsCreationTargetDll"), QString());
+    config.save();
+    refreshIdsTargetDllSettings();
+    m_idsTargetStatusLabel->setText(tr("Neue Eintraege verwenden wieder die FLAtlas-DLL."));
+}
+
+void SettingsDialog::migrateFlatlasIdsEntries()
+{
+    const QString gamePath = activeGamePath();
+    if (gamePath.isEmpty()) {
+        QMessageBox::information(this, tr("IDS/Infocards"), tr("Es ist kein Freelancer-Kontext geladen."));
+        return;
+    }
+
+    saveIdsTargetDllSettings();
+    const QString targetDll = QFileInfo(m_idsTargetDllEdit->text().trimmed()).fileName();
+    if (targetDll.isEmpty())
+        return;
+    if (ResourceDllWriter::isFlatlasResourceDll(targetDll)) {
+        QMessageBox::information(this, tr("IDS/Infocards"), tr("Als Ziel ist bereits die FLAtlas-DLL ausgewaehlt."));
+        return;
+    }
+
+    const IdsDataset dataset = IdsDataService::loadFromGameRoot(gamePath);
+    QVector<IdsEntryRecord> flatlasEntries;
+    for (const IdsEntryRecord &entry : dataset.entries) {
+        if (ResourceDllWriter::isFlatlasResourceDll(entry.dllName))
+            flatlasEntries.append(entry);
+    }
+
+    if (flatlasEntries.isEmpty()) {
+        QMessageBox::information(this, tr("IDS/Infocards"), tr("In der FLAtlas-DLL wurden keine Eintraege gefunden."));
+        return;
+    }
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("FLAtlas-Eintraege uebernehmen"));
+    dialog.resize(760, 480);
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *hint = new QLabel(tr("Waehle die Eintraege aus, die neu in %1 angelegt werden sollen. Bestehende FLAtlas-Eintraege und freelancer.ini-Zeilen bleiben erhalten.").arg(targetDll), &dialog);
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+
+    auto *list = new QListWidget(&dialog);
+    for (int i = 0; i < flatlasEntries.size(); ++i) {
+        auto *item = new QListWidgetItem(idsEntrySummary(flatlasEntries.at(i)), list);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(Qt::Checked);
+        item->setData(Qt::UserRole, i);
+    }
+    layout->addWidget(list, 1);
+
+    auto *buttons = new QDialogButtonBox(&dialog);
+    auto *copyButton = buttons->addButton(tr("Auswahl uebernehmen"), QDialogButtonBox::AcceptRole);
+    buttons->addButton(tr("Skippen"), QDialogButtonBox::RejectRole);
+    layout->addWidget(buttons);
+    connect(copyButton, &QPushButton::clicked, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    if (dialog.exec() != QDialog::Accepted) {
+        m_idsTargetStatusLabel->setText(tr("Ziel-DLL geaendert, Uebernahme geskippt."));
+        return;
+    }
+
+    int copied = 0;
+    QString errorMessage;
+    for (int row = 0; row < list->count(); ++row) {
+        QListWidgetItem *item = list->item(row);
+        if (item->checkState() != Qt::Checked)
+            continue;
+        const int entryIndex = item->data(Qt::UserRole).toInt();
+        if (entryIndex < 0 || entryIndex >= flatlasEntries.size())
+            continue;
+
+        const IdsEntryRecord &entry = flatlasEntries.at(entryIndex);
+        int newGlobalId = 0;
+        if (entry.hasStringValue) {
+            if (!IdsDataService::writeStringEntry(dataset, targetDll, 0, entry.stringValue, &newGlobalId, &errorMessage)) {
+                QMessageBox::warning(this, tr("IDS/Infocards"), errorMessage);
+                return;
+            }
+            ++copied;
+        }
+        if (entry.hasHtmlValue) {
+            if (!IdsDataService::writeInfocardEntry(dataset, targetDll, 0, entry.htmlValue, &newGlobalId, &errorMessage)) {
+                QMessageBox::warning(this, tr("IDS/Infocards"), errorMessage);
+                return;
+            }
+            ++copied;
+        }
+    }
+
+    m_idsTargetStatusLabel->setText(tr("%1 Eintraege wurden in %2 angelegt.").arg(copied).arg(targetDll));
 }
 
 void SettingsDialog::updateThemeColorButton(const QString &key)

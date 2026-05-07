@@ -307,6 +307,20 @@ Qt3DCore::QTransform *createPlanetSurfaceTransform(Qt3DCore::QEntity *entity)
     return transform;
 }
 
+Qt3DCore::QTransform *createSelectionCircleTransform(float objectRadius, Qt3DCore::QEntity *entity)
+{
+    auto *transform = new Qt3DCore::QTransform(entity);
+    transform->setTranslation(QVector3D(0.0f, -qMax(objectRadius * 1.05f, objectRadius + 120.0f), 0.0f));
+    transform->setRotation(QQuaternion::fromAxisAndAngle(1.0f, 0.0f, 0.0f, 90.0f));
+    return transform;
+}
+
+bool isPlanetLikeObject(const flatlas::domain::SolarObject &obj)
+{
+    return obj.type() == flatlas::domain::SolarObject::Planet
+        || obj.archetype().contains(QStringLiteral("planet"), Qt::CaseInsensitive);
+}
+
 float markerRadius(flatlas::domain::SolarObject::Type type)
 {
     using Type = flatlas::domain::SolarObject::Type;
@@ -1144,6 +1158,7 @@ void SceneView3D::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObj
 
     const QColor baseColor = objectColor(obj->type());
     const bool radiusSphere = shouldRenderAsRadiusSphere(*obj);
+    const bool planetLike = isPlanetLikeObject(*obj);
     const float radius = radiusSphere ? displayRadiusForObject(*obj) : markerRadius(obj->type());
     m_objectCentersByNickname.insert(obj->nickname(), obj->position());
     m_objectRadiiByNickname.insert(obj->nickname(), radius);
@@ -1155,7 +1170,7 @@ void SceneView3D::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObj
     markerMaterial->setDiffuse(baseColor);
     markerMaterial->setAmbient(baseColor.darker(175));
     markerEntity->addComponent(markerMesh);
-    if (radiusSphere && obj->type() == flatlas::domain::SolarObject::Planet)
+    if (radiusSphere && planetLike)
         markerEntity->addComponent(createPlanetSurfaceTransform(markerEntity));
     markerEntity->addComponent(markerMaterial);
     m_markerEntitiesByNickname.insert(obj->nickname(), markerEntity);
@@ -1165,15 +1180,18 @@ void SceneView3D::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObj
         m_selectionManager->registerEntity(obj->nickname(), markerEntity, markerMaterial);
 
     auto *selectionMarker = new Qt3DCore::QEntity(objectEntity);
-    auto *selectionMesh = new Qt3DExtras::QSphereMesh(selectionMarker);
-    selectionMesh->setRadius(qMax(radius * 1.18f, radius + 250.0f));
-    selectionMesh->setRings(16);
-    selectionMesh->setSlices(24);
+    auto *selectionMesh = new Qt3DExtras::QTorusMesh(selectionMarker);
+    selectionMesh->setRadius(qMax(radius * 1.05f, radius + 260.0f));
+    selectionMesh->setMinorRadius(qMax(radius * 0.035f, 70.0f));
+    selectionMesh->setRings(96);
+    selectionMesh->setSlices(8);
+    auto *selectionTransform = createSelectionCircleTransform(radius, selectionMarker);
     auto *selectionMaterial = new Qt3DExtras::QPhongAlphaMaterial(selectionMarker);
-    selectionMaterial->setDiffuse(QColor(255, 230, 40, 92));
-    selectionMaterial->setAmbient(QColor(255, 230, 40, 70));
-    selectionMaterial->setAlpha(0.36f);
+    selectionMaterial->setDiffuse(QColor(50, 155, 255, 185));
+    selectionMaterial->setAmbient(QColor(50, 155, 255, 140));
+    selectionMaterial->setAlpha(0.72f);
     selectionMarker->addComponent(selectionMesh);
+    selectionMarker->addComponent(selectionTransform);
     selectionMarker->addComponent(selectionMaterial);
     selectionMarker->setEnabled(false);
     m_selectionMarkerEntitiesByNickname.insert(obj->nickname(), selectionMarker);
@@ -1204,7 +1222,7 @@ void SceneView3D::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObj
     addAtmosphereZone(*obj);
 
     const QString modelPath = modelPathForObject(*obj);
-    if (radiusSphere && obj->type() == flatlas::domain::SolarObject::Planet) {
+    if (radiusSphere && planetLike) {
         QStringList textureSources = m_archetypeTextureSourcePaths.value(obj->archetype().trimmed().toLower());
         if (textureSources.isEmpty() && !modelPath.isEmpty())
             textureSources.append(modelPath);

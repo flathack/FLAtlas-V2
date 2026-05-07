@@ -1,5 +1,6 @@
 #include <QtTest/QtTest>
 
+#include "core/Config.h"
 #include "infrastructure/freelancer/IdsDataService.h"
 #include "infrastructure/freelancer/ResourceDllWriter.h"
 
@@ -17,6 +18,7 @@ class TestIdsDataService : public QObject {
 private slots:
     void testScanMissingAndReferences();
     void testAssignFieldValue();
+    void testConfiguredCreationDllOverridesFlatlasDefault();
     void testCreateEntriesPersistInFlatlasDll();
 };
 
@@ -133,6 +135,21 @@ void TestIdsDataService::testAssignFieldValue()
     QVERIFY(ini.open(QIODevice::ReadOnly | QIODevice::Text));
     const QString text = QString::fromUtf8(ini.readAll());
     QVERIFY(text.contains(QStringLiteral("ids_name = 196609")));
+}
+
+void TestIdsDataService::testConfiguredCreationDllOverridesFlatlasDefault()
+{
+    IdsDataset dataset;
+    dataset.freelancerIniPath = QStringLiteral("C:/fake/EXE/freelancer.ini");
+    dataset.resourceDlls = {QStringLiteral("NameResources.dll"),
+                            ResourceDllWriter::preferredFlatlasDllName()};
+
+    auto &config = flatlas::core::Config::instance();
+    config.setString(QStringLiteral("idsCreationTargetDll"), QStringLiteral("my_mod_resources.dll"));
+    QCOMPARE(IdsDataService::defaultCreationDllName(dataset), QStringLiteral("my_mod_resources.dll"));
+
+    config.setString(QStringLiteral("idsCreationTargetDll"), QString());
+    QCOMPARE(IdsDataService::defaultCreationDllName(dataset), ResourceDllWriter::preferredFlatlasDllName());
 }
 
 void TestIdsDataService::testCreateEntriesPersistInFlatlasDll()

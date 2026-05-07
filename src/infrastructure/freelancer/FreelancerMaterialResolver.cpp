@@ -548,6 +548,9 @@ QImage FreelancerMaterialResolver::loadBestPlanetTexture(const QString &archetyp
     QString bestKey;
     QImage bestImage;
     int bestScore = std::numeric_limits<int>::min();
+    QString bestNonCapKey;
+    QImage bestNonCapImage;
+    int bestNonCapScore = std::numeric_limits<int>::min();
     for (auto it = candidates.constBegin(); it != candidates.constEnd(); ++it) {
         const int score = planetTextureScore(archetype, it.key(), it.value());
         if (score > bestScore) {
@@ -555,9 +558,15 @@ QImage FreelancerMaterialResolver::loadBestPlanetTexture(const QString &archetyp
             bestKey = it.key();
             bestImage = it.value();
         }
+        if (!isPlanetCapTextureName(it.key()) && score > bestNonCapScore) {
+            bestNonCapScore = score;
+            bestNonCapKey = it.key();
+            bestNonCapImage = it.value();
+        }
     }
     Q_UNUSED(bestKey);
-    return bestImage;
+    Q_UNUSED(bestNonCapKey);
+    return !bestNonCapImage.isNull() ? bestNonCapImage : bestImage;
 }
 
 } // namespace flatlas::infrastructure
