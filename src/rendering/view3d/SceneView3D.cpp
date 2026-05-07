@@ -1977,12 +1977,12 @@ void SceneView3D::applyPlanetTextures(
                            QVector3D(0.0f, 1.0f, 0.0f),
                            QVector3D(1.0f, 0.0f, 0.0f),
                            QVector3D(0.0f, 0.0f, -1.0f),
-                           1.001f);
+                           1.0f);
                 addSegment(it.value().cap,
                            QVector3D(0.0f, -1.0f, 0.0f),
                            QVector3D(1.0f, 0.0f, 0.0f),
                            QVector3D(0.0f, 0.0f, 1.0f),
-                           1.001f);
+                           1.0f);
             }
             if (!segments.isEmpty()) {
                 marker->setEnabled(false);
