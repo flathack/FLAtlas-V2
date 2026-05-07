@@ -19,6 +19,7 @@ private slots:
     void testScanMissingAndReferences();
     void testAssignFieldValue();
     void testConfiguredCreationDllOverridesFlatlasDefault();
+    void testConfiguredCreationDllPredictsTargetSlot();
     void testCreateEntriesPersistInFlatlasDll();
 };
 
@@ -150,6 +151,32 @@ void TestIdsDataService::testConfiguredCreationDllOverridesFlatlasDefault()
 
     config.setString(QStringLiteral("idsCreationTargetDll"), QString());
     QCOMPARE(IdsDataService::defaultCreationDllName(dataset), ResourceDllWriter::preferredFlatlasDllName());
+}
+
+void TestIdsDataService::testConfiguredCreationDllPredictsTargetSlot()
+{
+    IdsDataset dataset;
+    dataset.freelancerIniPath = QStringLiteral("C:/fake/EXE/freelancer.ini");
+    dataset.resourceDlls = {QStringLiteral("NameResources.dll"),
+                            ResourceDllWriter::preferredFlatlasDllName()};
+
+    auto &config = flatlas::core::Config::instance();
+    config.setString(QStringLiteral("idsCreationTargetDll"), QStringLiteral("mod_resources.dll"));
+
+    QCOMPARE(IdsDataService::defaultCreationDllName(dataset), QStringLiteral("mod_resources.dll"));
+    QCOMPARE(IdsDataService::nextAvailableGlobalId(dataset), ResourceDllWriter::makeGlobalId(3, 1));
+
+    dataset.resourceDlls.append(QStringLiteral("mod_resources.dll"));
+    IdsEntryRecord existing;
+    existing.globalId = ResourceDllWriter::makeGlobalId(3, 1);
+    existing.localId = 1;
+    existing.dllSlot = 3;
+    existing.dllName = QStringLiteral("mod_resources.dll");
+    existing.hasHtmlValue = true;
+    dataset.entries.append(existing);
+    QCOMPARE(IdsDataService::nextAvailableGlobalId(dataset), ResourceDllWriter::makeGlobalId(3, 2));
+
+    config.setString(QStringLiteral("idsCreationTargetDll"), QString());
 }
 
 void TestIdsDataService::testCreateEntriesPersistInFlatlasDll()

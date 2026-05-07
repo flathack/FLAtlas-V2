@@ -690,10 +690,11 @@ void IdsEditorPage::beginCreateMode(IdsUsageType usageType)
     m_tableView->clearSelection();
     m_ignoreSelectionRefresh = false;
 
-    m_editorModeLabel->setText(tr("Creating new %1 entry").arg(IdsDataService::usageTypeLabel(usageType)));
-    m_entryMetaLabel->setText(tr("New entries are created in the FLAtlas resource DLL."));
     refreshTargetDllSelection();
     refreshCreatePreviewId();
+    const QString targetDll = IdsDataService::defaultCreationDllName(m_dataset);
+    m_editorModeLabel->setText(tr("Creating new %1 entry").arg(IdsDataService::usageTypeLabel(usageType)));
+    m_entryMetaLabel->setText(tr("New entries are created in %1.").arg(targetDll));
     m_targetDllCombo->setEnabled(false);
 
     if (usageType == IdsUsageType::IdsInfo) {

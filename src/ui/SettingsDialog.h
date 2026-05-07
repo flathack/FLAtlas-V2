@@ -35,8 +35,10 @@ private:
     void refreshIdsTargetDllSettings();
     void chooseIdsTargetDll();
     void saveIdsTargetDllSettings();
+    bool saveIdsTargetDllSettings(bool offerMigration);
     void resetIdsTargetDll();
     void migrateFlatlasIdsEntries();
+    void migrateFlatlasIdsEntriesToTarget(const QString &targetDll, bool showNoEntriesMessage);
     void updateThemeColorButton(const QString &key);
     void startSuiteDownload(const QString &key, const QString &name, const QString &repoApiUrl);
     void downloadReleaseAsset(const QString &name, const QUrl &url);

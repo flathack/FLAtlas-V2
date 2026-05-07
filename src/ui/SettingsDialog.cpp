@@ -336,7 +336,7 @@ void SettingsDialog::setupUi()
     idsLayout->addStretch();
     tabs->addTab(idsTab, tr("IDS/Infocards"));
     connect(chooseIdsDllButton, &QPushButton::clicked, this, &SettingsDialog::chooseIdsTargetDll);
-    connect(saveIdsTargetButton, &QPushButton::clicked, this, &SettingsDialog::saveIdsTargetDllSettings);
+    connect(saveIdsTargetButton, &QPushButton::clicked, this, [this]() { saveIdsTargetDllSettings(); });
     connect(resetIdsTargetButton, &QPushButton::clicked, this, &SettingsDialog::resetIdsTargetDll);
     connect(migrateIdsButton, &QPushButton::clicked, this, &SettingsDialog::migrateFlatlasIdsEntries);
 
@@ -570,21 +570,31 @@ void SettingsDialog::chooseIdsTargetDll()
 
 void SettingsDialog::saveIdsTargetDllSettings()
 {
+    saveIdsTargetDllSettings(true);
+}
+
+bool SettingsDialog::saveIdsTargetDllSettings(bool offerMigration)
+{
     const QString dllName = QFileInfo(m_idsTargetDllEdit->text().trimmed()).fileName();
     if (dllName.isEmpty()) {
         resetIdsTargetDll();
-        return;
+        return true;
     }
     if (!dllName.endsWith(QStringLiteral(".dll"), Qt::CaseInsensitive)) {
         QMessageBox::warning(this, tr("IDS/Infocards"), tr("Bitte eine DLL-Datei als Ziel angeben."));
-        return;
+        return false;
     }
 
     auto &config = flatlas::core::Config::instance();
+    const QString previous = QFileInfo(config.getString(QStringLiteral("idsCreationTargetDll")).trimmed()).fileName();
+    const bool targetChanged = previous.compare(dllName, Qt::CaseInsensitive) != 0;
     config.setString(QStringLiteral("idsCreationTargetDll"), dllName);
     config.save();
     refreshIdsTargetDllSettings();
     m_idsTargetStatusLabel->setText(tr("IDS-/Infocard-Ziel gespeichert: %1").arg(dllName));
+    if (offerMigration && targetChanged && !ResourceDllWriter::isFlatlasResourceDll(dllName))
+        migrateFlatlasIdsEntriesToTarget(dllName, false);
+    return true;
 }
 
 void SettingsDialog::resetIdsTargetDll()
@@ -604,12 +614,27 @@ void SettingsDialog::migrateFlatlasIdsEntries()
         return;
     }
 
-    saveIdsTargetDllSettings();
+    if (!saveIdsTargetDllSettings(false))
+        return;
     const QString targetDll = QFileInfo(m_idsTargetDllEdit->text().trimmed()).fileName();
     if (targetDll.isEmpty())
         return;
     if (ResourceDllWriter::isFlatlasResourceDll(targetDll)) {
         QMessageBox::information(this, tr("IDS/Infocards"), tr("Als Ziel ist bereits die FLAtlas-DLL ausgewaehlt."));
+        return;
+    }
+
+    migrateFlatlasIdsEntriesToTarget(targetDll, true);
+}
+
+void SettingsDialog::migrateFlatlasIdsEntriesToTarget(const QString &targetDll, bool showNoEntriesMessage)
+{
+    const QString gamePath = activeGamePath();
+    if (gamePath.isEmpty()) {
+        if (showNoEntriesMessage)
+            QMessageBox::information(this, tr("IDS/Infocards"), tr("Es ist kein Freelancer-Kontext geladen."));
+        else
+            m_idsTargetStatusLabel->setText(tr("Ziel-DLL geaendert. Kein aktiver Freelancer-Kontext fuer die Uebernahme geladen."));
         return;
     }
 
@@ -621,7 +646,10 @@ void SettingsDialog::migrateFlatlasIdsEntries()
     }
 
     if (flatlasEntries.isEmpty()) {
-        QMessageBox::information(this, tr("IDS/Infocards"), tr("In der FLAtlas-DLL wurden keine Eintraege gefunden."));
+        if (showNoEntriesMessage)
+            QMessageBox::information(this, tr("IDS/Infocards"), tr("In der FLAtlas-DLL wurden keine Eintraege gefunden."));
+        else
+            m_idsTargetStatusLabel->setText(tr("Ziel-DLL geaendert. In der FLAtlas-DLL wurden keine Eintraege gefunden."));
         return;
     }
 
