@@ -4,11 +4,13 @@
 #include "FactionReferenceDialog.h"
 #include "infrastructure/freelancer/IdsDataService.h"
 
+#include <QApplication>
 #include <QCheckBox>
 #include <QColor>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QEventLoop>
 #include <QFormLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -22,9 +24,12 @@
 #include <QSplitter>
 #include <QTableWidget>
 #include <QTextEdit>
+#include <QTimer>
 #include <QToolBar>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 namespace flatlas::editors {
 
@@ -86,7 +91,11 @@ FactionEditorPage::FactionEditorPage(QWidget *parent)
     connect(m_service, &FactionEditorService::dirtyChanged, this, [this](bool) {
         emit titleChanged(title());
     });
-    loadFromContext();
+    connect(&flatlas::core::EditingContext::instance(),
+            &flatlas::core::EditingContext::contextChanged,
+            this,
+            [this](const QString &) { scheduleLoadFromContext(); });
+    scheduleLoadFromContext();
 }
 
 bool FactionEditorPage::save(QString *errorMessage)
@@ -181,7 +190,7 @@ void FactionEditorPage::buildUi()
             "QToolButton:pressed { background: #26763a; }"));
     }
     toolbar->addAction(tr("Validate"), this, [this]() { saveEditorsToFaction(); refreshValidation(); });
-    toolbar->addAction(tr("Reload"), this, [this]() { loadFromContext(); });
+    toolbar->addAction(tr("Reload"), this, [this]() { scheduleLoadFromContext(); });
     toolbar->addAction(tr("Deactivate"), this, [this]() {
         if (m_currentNickname.isEmpty())
             return;
@@ -301,18 +310,39 @@ void FactionEditorPage::buildUi()
     });
 }
 
+void FactionEditorPage::scheduleLoadFromContext()
+{
+    if (m_pathLabel)
+        m_pathLabel->setText(tr("Faction-Daten werden geladen..."));
+    QTimer::singleShot(0, this, &FactionEditorPage::loadFromContext);
+}
+
 void FactionEditorPage::loadFromContext()
 {
+    reportLoadingProgress(0, tr("Faction Editor: Daten werden vorbereitet..."));
     const QString root = flatlas::core::EditingContext::instance().primaryGamePath();
     m_pathLabel->setText(root.isEmpty() ? tr("No active editing context") : root);
+    reportLoadingProgress(20, tr("Faction Editor: IDS-Texte werden geladen..."));
     refreshIdsTextCache();
     QString warnings;
+    reportLoadingProgress(50, tr("Faction Editor: Faction-Dateien werden geladen..."));
     m_service->load(root, &warnings);
     if (!warnings.trimmed().isEmpty())
         m_pathLabel->setText(QStringLiteral("%1  -  %2").arg(m_pathLabel->text(), warnings.split(QLatin1Char('\n')).join(QStringLiteral("; "))));
     const QStringList nicknames = m_service->world().sortedNicknames();
+    reportLoadingProgress(80, tr("Faction Editor: Tabellen werden gefuellt..."));
     if (!nicknames.isEmpty())
         selectFaction(nicknames.first());
+    refreshFactionList();
+    refreshValidation();
+    emit titleChanged(title());
+    reportLoadingProgress(100, tr("Faction Editor: %1 Factions geladen").arg(nicknames.size()));
+}
+
+void FactionEditorPage::reportLoadingProgress(int percent, const QString &message)
+{
+    emit loadingProgressChanged(std::clamp(percent, 0, 100), message);
+    qApp->processEvents(QEventLoop::ExcludeUserInputEvents);
 }
 
 void FactionEditorPage::refreshIdsTextCache()

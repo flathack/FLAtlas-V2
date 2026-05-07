@@ -9,6 +9,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -28,6 +29,8 @@
 #include <QTextStream>
 #include <QTimer>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 using flatlas::infrastructure::IdsDataService;
 using flatlas::infrastructure::IdsDataset;
@@ -119,8 +122,8 @@ NewsRumorEditor::NewsRumorEditor(QWidget *parent)
 {
     setupUi();
     connect(&flatlas::core::EditingContext::instance(), &flatlas::core::EditingContext::contextChanged,
-            this, [this]() { loadFromContext(); });
-    QTimer::singleShot(0, this, &NewsRumorEditor::loadFromContext);
+            this, [this]() { scheduleLoadFromContext(); });
+    scheduleLoadFromContext();
 }
 
 void NewsRumorEditor::setupUi()
@@ -264,7 +267,7 @@ void NewsRumorEditor::setupUi()
     m_statusLabel = new QLabel(this);
     mainLayout->addWidget(m_statusLabel);
 
-    connect(reloadButton, &QPushButton::clicked, this, &NewsRumorEditor::loadFromContext);
+    connect(reloadButton, &QPushButton::clicked, this, &NewsRumorEditor::scheduleLoadFromContext);
     connect(openButton, &QPushButton::clicked, this, [this]() {
         const QString path = QFileDialog::getOpenFileName(this, tr("News-Datei öffnen"), QString(), tr("INI Files (*.ini);;All Files (*)"));
         if (!path.isEmpty())
@@ -323,17 +326,35 @@ void NewsRumorEditor::setupUi()
     connect(m_autoselectCheck, &QCheckBox::toggled, this, markDetailDirty);
 }
 
+void NewsRumorEditor::scheduleLoadFromContext()
+{
+    if (m_statusLabel)
+        m_statusLabel->setText(tr("News-Daten werden geladen..."));
+    QTimer::singleShot(0, this, &NewsRumorEditor::loadFromContext);
+}
+
 void NewsRumorEditor::loadFromContext()
 {
     QString error;
+    reportLoadingProgress(0, tr("News Editor: Daten werden vorbereitet..."));
     if (!loadWorkspace(flatlas::core::EditingContext::instance().primaryGamePath(), &error)) {
         clearData();
         m_statusLabel->setText(error.isEmpty() ? tr("Keine aktive Mod-Installation.") : error);
+        reportLoadingProgress(100, error.isEmpty() ? tr("News Editor: keine aktive Mod-Installation") : error);
     }
+}
+
+void NewsRumorEditor::reportLoadingProgress(int percent, const QString &message)
+{
+    emit loadingProgressChanged(std::clamp(percent, 0, 100), message);
+    if (m_statusLabel)
+        m_statusLabel->setText(message);
+    qApp->processEvents(QEventLoop::ExcludeUserInputEvents);
 }
 
 bool NewsRumorEditor::loadWorkspace(const QString &gameRoot, QString *errorMessage)
 {
+    reportLoadingProgress(5, tr("News Editor: Kontext wird geprueft..."));
     const QString resolvedGameRoot = gameRoot.trimmed();
     if (resolvedGameRoot.isEmpty()) {
         if (errorMessage)
@@ -341,6 +362,7 @@ bool NewsRumorEditor::loadWorkspace(const QString &gameRoot, QString *errorMessa
         return false;
     }
 
+    reportLoadingProgress(15, tr("News Editor: Pfade werden gesucht..."));
     const QString dataDir = flatlas::core::PathUtils::ciResolvePath(resolvedGameRoot, QStringLiteral("DATA"));
     const QString newsPath = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("MISSIONS/news.ini"));
     if (dataDir.isEmpty() || newsPath.isEmpty()) {
@@ -352,15 +374,20 @@ bool NewsRumorEditor::loadWorkspace(const QString &gameRoot, QString *errorMessa
     clearData();
     m_gameRoot = resolvedGameRoot;
     m_newsPath = newsPath;
+    reportLoadingProgress(30, tr("News Editor: IDS-Texte werden geladen..."));
     loadIds(resolvedGameRoot);
+    reportLoadingProgress(50, tr("News Editor: Bases werden geladen..."));
     loadBases(dataDir);
+    reportLoadingProgress(70, tr("News Editor: news.ini wird gelesen..."));
     loadNewsFile(newsPath);
+    reportLoadingProgress(88, tr("News Editor: Tabellen werden gefuellt..."));
     rebuildBaseCounts();
     populateBaseTable();
     populateNewsTable();
     setDirty(false);
     emit titleChanged(tr("News Editor"));
     refreshStatus();
+    reportLoadingProgress(100, tr("News Editor: %1 Eintraege geladen").arg(m_entries.size()));
     return true;
 }
 

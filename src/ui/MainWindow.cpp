@@ -78,6 +78,7 @@
 #include <QTimer>
 #include <QToolBar>
 
+#include <algorithm>
 #include <exception>
 #include <memory>
 
@@ -990,10 +991,10 @@ void MainWindow::createPanels()
 
     auto *indicatorRow = new QHBoxLayout();
     indicatorRow->setSpacing(8);
-    auto *percentLabel = new QLabel(QStringLiteral("100%"), this);
-    percentLabel->setStyleSheet(QStringLiteral("color: #44aa88; font-weight: bold; font-size: 11px;"));
-    percentLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    indicatorRow->addWidget(percentLabel);
+    m_progressPercentLabel = new QLabel(QStringLiteral("100%"), this);
+    m_progressPercentLabel->setStyleSheet(QStringLiteral("color: #44aa88; font-weight: bold; font-size: 11px;"));
+    m_progressPercentLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    indicatorRow->addWidget(m_progressPercentLabel);
     auto *activityBtn = new QPushButton(tr("Activity"), this);
     activityBtn->setStyleSheet(
         QStringLiteral("QPushButton { background: transparent; color: #7788aa; border: none;"
@@ -1014,6 +1015,10 @@ void MainWindow::createPanels()
     m_progressBar->setStyleSheet(
         QStringLiteral("QProgressBar { background: #151c28; border: none; }"
                         "QProgressBar::chunk { background: #e67e22; }"));
+    connect(m_progressBar, &QProgressBar::valueChanged, this, [this](int value) {
+        if (m_progressPercentLabel)
+            m_progressPercentLabel->setText(QStringLiteral("%1%").arg(std::clamp(value, 0, 100)));
+    });
     mainLayout->addWidget(m_progressBar);
 
     // --- Content splitter: Pages | Properties ---
@@ -1549,12 +1554,7 @@ bool MainWindow::openToolByKey(const QString &key, bool pinned)
     if (key == QStringLiteral("npcEditor")) {
         auto *editor = new flatlas::editors::NpcEditorPage(this);
         const int idx = addToolTab(editor, tr("NPC Editor"));
-        connect(editor, &flatlas::editors::NpcEditorPage::titleChanged,
-                this, [this, editor](const QString &title) {
-            int i = m_centerTabs->indexOf(editor);
-            if (i >= 0)
-                m_centerTabs->setTabText(i, title);
-        });
+        connectNpcEditorPage(editor);
         if (!pinned)
             m_centerTabs->setCurrentIndex(idx);
         return true;
@@ -1562,12 +1562,7 @@ bool MainWindow::openToolByKey(const QString &key, bool pinned)
     if (key == QStringLiteral("factionEditor")) {
         auto *editor = new flatlas::editors::FactionEditorPage(this);
         const int idx = addToolTab(editor, tr("Faction Editor"));
-        connect(editor, &flatlas::editors::FactionEditorPage::titleChanged,
-                this, [this, editor](const QString &title) {
-            int i = m_centerTabs->indexOf(editor);
-            if (i >= 0)
-                m_centerTabs->setTabText(i, title);
-        });
+        connectFactionEditorPage(editor);
         if (!pinned)
             m_centerTabs->setCurrentIndex(idx);
         return true;
@@ -1575,12 +1570,7 @@ bool MainWindow::openToolByKey(const QString &key, bool pinned)
     if (key == QStringLiteral("newsRumorEditor")) {
         auto *editor = new flatlas::editors::NewsRumorEditor(this);
         const int idx = addToolTab(editor, tr("News Editor"));
-        connect(editor, &flatlas::editors::NewsRumorEditor::titleChanged,
-                this, [this, editor](const QString &title) {
-            int i = m_centerTabs->indexOf(editor);
-            if (i >= 0)
-                m_centerTabs->setTabText(i, title);
-        });
+        connectNewsRumorEditor(editor);
         if (!pinned)
             m_centerTabs->setCurrentIndex(idx);
         return true;
@@ -1588,6 +1578,7 @@ bool MainWindow::openToolByKey(const QString &key, bool pinned)
     if (key == QStringLiteral("modelViewer")) {
         auto *page = new flatlas::rendering::ModelViewerPage(this);
         const int idx = addToolTab(page, tr("3D Model Viewer"));
+        connectModelViewerPage(page);
         if (!pinned)
             m_centerTabs->setCurrentIndex(idx);
         return true;
@@ -2065,12 +2056,7 @@ void MainWindow::openNpcEditor()
     int idx = m_centerTabs->addTab(editor, iconForWidget(editor), tr("NPC Editor"));
     m_centerTabs->setCurrentIndex(idx);
 
-    connect(editor, &flatlas::editors::NpcEditorPage::titleChanged,
-            this, [this, editor](const QString &title) {
-        int i = m_centerTabs->indexOf(editor);
-        if (i >= 0)
-            m_centerTabs->setTabText(i, title);
-    });
+    connectNpcEditorPage(editor);
 
     statusBar()->showMessage(tr("NPC Editor opened"), 3000);
 }
@@ -2082,12 +2068,7 @@ void MainWindow::openFactionEditor()
     int idx = m_centerTabs->addTab(editor, iconForWidget(editor), tr("Faction Editor"));
     m_centerTabs->setCurrentIndex(idx);
 
-    connect(editor, &flatlas::editors::FactionEditorPage::titleChanged,
-            this, [this, editor](const QString &title) {
-        int i = m_centerTabs->indexOf(editor);
-        if (i >= 0)
-            m_centerTabs->setTabText(i, title);
-    });
+    connectFactionEditorPage(editor);
 
     statusBar()->showMessage(tr("Faction Editor opened"), 3000);
 }
@@ -2099,12 +2080,7 @@ void MainWindow::openNewsRumorEditor()
     int idx = m_centerTabs->addTab(editor, iconForWidget(editor), tr("News Editor"));
     m_centerTabs->setCurrentIndex(idx);
 
-    connect(editor, &flatlas::editors::NewsRumorEditor::titleChanged,
-            this, [this, editor](const QString &title) {
-        int i = m_centerTabs->indexOf(editor);
-        if (i >= 0)
-            m_centerTabs->setTabText(i, title);
-    });
+    connectNewsRumorEditor(editor);
 
     statusBar()->showMessage(tr("News Editor opened"), 3000);
 }
@@ -2113,6 +2089,84 @@ void MainWindow::openModelViewer()
 {
     if (ensureModelViewerPage())
         statusBar()->showMessage(tr("3D Model Viewer opened"), 3000);
+}
+
+void MainWindow::connectNpcEditorPage(flatlas::editors::NpcEditorPage *editor)
+{
+    if (!editor)
+        return;
+    connect(editor, &flatlas::editors::NpcEditorPage::titleChanged,
+            this, [this, editor](const QString &title) {
+        int i = m_centerTabs->indexOf(editor);
+        if (i >= 0)
+            m_centerTabs->setTabText(i, title);
+    });
+    connect(editor, &flatlas::editors::NpcEditorPage::loadingProgressChanged,
+            this, [this](int percent, const QString &message) {
+        if (m_progressBar) {
+            m_progressBar->setValue(std::clamp(percent, 0, 100));
+            m_progressBar->update();
+        }
+        if (!message.trimmed().isEmpty())
+            statusBar()->showMessage(message, percent >= 100 ? 3000 : 0);
+    });
+}
+
+void MainWindow::connectFactionEditorPage(flatlas::editors::FactionEditorPage *editor)
+{
+    if (!editor)
+        return;
+    connect(editor, &flatlas::editors::FactionEditorPage::titleChanged,
+            this, [this, editor](const QString &title) {
+        int i = m_centerTabs->indexOf(editor);
+        if (i >= 0)
+            m_centerTabs->setTabText(i, title);
+    });
+    connect(editor, &flatlas::editors::FactionEditorPage::loadingProgressChanged,
+            this, [this](int percent, const QString &message) {
+        if (m_progressBar) {
+            m_progressBar->setValue(std::clamp(percent, 0, 100));
+            m_progressBar->update();
+        }
+        if (!message.trimmed().isEmpty())
+            statusBar()->showMessage(message, percent >= 100 ? 3000 : 0);
+    });
+}
+
+void MainWindow::connectNewsRumorEditor(flatlas::editors::NewsRumorEditor *editor)
+{
+    if (!editor)
+        return;
+    connect(editor, &flatlas::editors::NewsRumorEditor::titleChanged,
+            this, [this, editor](const QString &title) {
+        int i = m_centerTabs->indexOf(editor);
+        if (i >= 0)
+            m_centerTabs->setTabText(i, title);
+    });
+    connect(editor, &flatlas::editors::NewsRumorEditor::loadingProgressChanged,
+            this, [this](int percent, const QString &message) {
+        if (m_progressBar) {
+            m_progressBar->setValue(std::clamp(percent, 0, 100));
+            m_progressBar->update();
+        }
+        if (!message.trimmed().isEmpty())
+            statusBar()->showMessage(message, percent >= 100 ? 3000 : 0);
+    });
+}
+
+void MainWindow::connectModelViewerPage(flatlas::rendering::ModelViewerPage *page)
+{
+    if (!page)
+        return;
+    connect(page, &flatlas::rendering::ModelViewerPage::loadingProgressChanged,
+            this, [this](int percent, const QString &message) {
+        if (m_progressBar) {
+            m_progressBar->setValue(std::clamp(percent, 0, 100));
+            m_progressBar->update();
+        }
+        if (!message.trimmed().isEmpty())
+            statusBar()->showMessage(message, percent >= 100 ? 3000 : 0);
+    });
 }
 
 flatlas::rendering::ModelViewerPage *MainWindow::ensureModelViewerPage()
@@ -2127,6 +2181,7 @@ flatlas::rendering::ModelViewerPage *MainWindow::ensureModelViewerPage()
     try {
         auto *page = new flatlas::rendering::ModelViewerPage(this);
         const int idx = m_centerTabs->addTab(page, iconForWidget(page), tr("3D Model Viewer"));
+        connectModelViewerPage(page);
         m_centerTabs->setCurrentIndex(idx);
         return page;
     } catch (const std::exception &ex) {

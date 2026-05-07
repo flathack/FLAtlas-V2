@@ -9,11 +9,13 @@
 
 #include <QAbstractItemView>
 #include <QAction>
+#include <QApplication>
 #include <QComboBox>
 #include <QDateTime>
 #include <QDir>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -34,6 +36,7 @@
 #include <QTabWidget>
 #include <QTextStream>
 #include <QToolBar>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -363,8 +366,8 @@ NpcEditorPage::NpcEditorPage(QWidget *parent)
     connect(&flatlas::core::EditingContext::instance(),
             &flatlas::core::EditingContext::contextChanged,
             this,
-            [this](const QString &) { reloadCurrentContext(); });
-    reloadCurrentContext();
+            [this](const QString &) { scheduleReloadCurrentContext(); });
+    scheduleReloadCurrentContext();
 }
 
 int NpcEditorPage::baseCount() const
@@ -572,7 +575,7 @@ void NpcEditorPage::setupToolBar()
 {
     m_toolBar = new QToolBar(this);
     m_toolBar->setMovable(false);
-    m_reloadAction = m_toolBar->addAction(tr("Neu laden"), this, &NpcEditorPage::reloadCurrentContext);
+    m_reloadAction = m_toolBar->addAction(tr("Neu laden"), this, &NpcEditorPage::scheduleReloadCurrentContext);
     m_toolBar->addSeparator();
     m_newNpcAction = m_toolBar->addAction(tr("Neuer NPC"), this, &NpcEditorPage::onNewNpc);
     m_deleteNpcAction = m_toolBar->addAction(tr("NPC loeschen"), this, &NpcEditorPage::onDeleteNpc);
@@ -589,20 +592,75 @@ void NpcEditorPage::setupToolBar()
     connect(m_baseCombo, &QComboBox::currentIndexChanged, this, &NpcEditorPage::onBaseChanged);
 }
 
+void NpcEditorPage::scheduleReloadCurrentContext()
+{
+    if (m_reloadQueued)
+        return;
+    m_reloadQueued = true;
+    if (m_statusLabel)
+        m_statusLabel->setText(tr("NPC-Daten werden geladen..."));
+    QTimer::singleShot(0, this, [this]() {
+        m_reloadQueued = false;
+        reloadCurrentContext();
+    });
+}
+
 void NpcEditorPage::reloadCurrentContext()
 {
+    if (m_loading) {
+        scheduleReloadCurrentContext();
+        return;
+    }
+
+    m_loading = true;
+    if (m_reloadAction)
+        m_reloadAction->setEnabled(false);
+    if (m_newNpcAction)
+        m_newNpcAction->setEnabled(false);
+    if (m_deleteNpcAction)
+        m_deleteNpcAction->setEnabled(false);
+    if (m_bottomSaveButton)
+        m_bottomSaveButton->setEnabled(false);
+
     const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
     QString error;
+    reportLoadingProgress(0, tr("NPC Editor: Daten werden vorbereitet..."));
     if (!loadGameRoot(gameRoot, &error)) {
         m_statusLabel->setText(error.isEmpty() ? tr("Kein aktiver Mod-Kontext.") : error);
         emit titleChanged(tr("NPC Editor"));
+        reportLoadingProgress(100, error.isEmpty() ? tr("NPC Editor: kein aktiver Mod-Kontext") : error);
+        m_loading = false;
+        if (m_reloadAction)
+            m_reloadAction->setEnabled(true);
+        if (m_newNpcAction)
+            m_newNpcAction->setEnabled(false);
+        if (m_deleteNpcAction)
+            m_deleteNpcAction->setEnabled(false);
+        if (m_bottomSaveButton)
+            m_bottomSaveButton->setEnabled(false);
         return;
     }
-    emit titleChanged(tr("NPC Editor - %1").arg(QFileInfo(gameRoot).fileName()));
+    emit titleChanged(tr("NPC Editor"));
+    reportLoadingProgress(100, tr("NPC Editor: %1 NPCs geladen").arg(npcCount()));
+    m_loading = false;
+    if (m_reloadAction)
+        m_reloadAction->setEnabled(true);
+    if (m_newNpcAction)
+        m_newNpcAction->setEnabled(!m_bases.isEmpty());
+    setEditorEnabled(currentNpc() != nullptr);
+}
+
+void NpcEditorPage::reportLoadingProgress(int percent, const QString &message)
+{
+    emit loadingProgressChanged(std::clamp(percent, 0, 100), message);
+    if (m_statusLabel)
+        m_statusLabel->setText(message);
+    qApp->processEvents(QEventLoop::ExcludeUserInputEvents);
 }
 
 bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
 {
+    reportLoadingProgress(2, tr("NPC Editor: Kontext wird geprueft..."));
     m_gameRoot = gameRoot.trimmed();
     m_mbasesDoc.clear();
     m_systems.clear();
@@ -624,6 +682,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
         return false;
     }
 
+    reportLoadingProgress(8, tr("NPC Editor: Freelancer-Pfade werden gesucht..."));
     const QString dataDir = dataDirForGameRoot(m_gameRoot);
     const QString universePath = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("UNIVERSE/universe.ini"));
     m_mbasesPath = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("MISSIONS/mbases.ini"));
@@ -634,6 +693,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
         return false;
     }
 
+    reportLoadingProgress(18, tr("NPC Editor: IDS-Texte werden geladen..."));
     const IdsDataset idsDataset = IdsDataService::loadFromGameRoot(m_gameRoot);
     for (const auto &entry : idsDataset.entries) {
         QString value = entry.hasStringValue ? entry.stringValue : entry.plainText;
@@ -650,6 +710,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
             m_idsTextByNumber.insert(QString::number(it.key()), it.value());
     }
 
+    reportLoadingProgress(30, tr("NPC Editor: Ressourcen-DLL wird gelesen..."));
     // Bribe text IDs in mbases.ini are local string-table IDs (commonly
     // 16100/16101) from resources.dll, not global Freelancer IDS values.
     // Some mods do not list resources.dll in [Resources], so load it directly.
@@ -664,6 +725,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
         }
     }
 
+    reportLoadingProgress(38, tr("NPC Editor: Fraktionen werden geladen..."));
     const QString initialWorldPath = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("initialworld.ini"));
     const IniDocument initialWorldDoc = IniParser::parseFile(initialWorldPath);
     for (const IniSection &section : initialWorldDoc) {
@@ -676,6 +738,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
             m_factionDisplayByNickname.insert(keyOf(nickname), display);
     }
 
+    reportLoadingProgress(48, tr("NPC Editor: Universe und Bases werden geladen..."));
     const IniDocument universeDoc = IniParser::parseFile(universePath);
     QSet<QString> seenSystems;
     QHash<QString, int> baseIndexByNickname;
@@ -732,6 +795,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
     for (int i = 0; i < m_bases.size(); ++i)
         baseIndexByNickname.insert(keyOf(m_bases.at(i).nickname), i);
 
+    reportLoadingProgress(62, tr("NPC Editor: Base-Raeume werden gelesen..."));
     for (NpcBaseRecord &base : m_bases) {
         const QString absoluteBaseFile = flatlas::core::PathUtils::ciResolvePath(dataDir, base.fileRelativePath);
         const IniDocument baseDoc = absoluteBaseFile.isEmpty() ? IniDocument{} : IniParser::parseFile(absoluteBaseFile);
@@ -745,6 +809,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
         }
     }
 
+    reportLoadingProgress(74, tr("NPC Editor: mbases.ini wird ausgewertet..."));
     m_mbasesDoc = IniParser::parseFile(m_mbasesPath);
     QHash<int, int> bribePriceCounts;
     NpcBaseRecord *currentBase = nullptr;
@@ -854,6 +919,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
         m_modBribePrice = bestPrice;
     }
 
+    reportLoadingProgress(90, tr("NPC Editor: Outfit- und Voice-Listen werden geladen..."));
     const QString bodyparts = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("CHARACTERS/bodyparts.ini"));
     for (const IniSection &section : IniParser::parseFile(bodyparts)) {
         if (section.name.compare(QStringLiteral("Body"), Qt::CaseInsensitive) == 0)
@@ -882,6 +948,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
     m_handChoices.sort(Qt::CaseInsensitive);
     m_voiceChoices.sort(Qt::CaseInsensitive);
     m_factionChoices.sort(Qt::CaseInsensitive);
+    reportLoadingProgress(96, tr("NPC Editor: Oberflaeche wird gefuellt..."));
     populateChoiceLists();
     populateRumorChoices();
     populateSelectors();

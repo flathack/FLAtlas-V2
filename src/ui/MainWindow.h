@@ -18,6 +18,7 @@ namespace flatlas::editors { class ModManagerPage; }
 namespace flatlas::editors { class ModSettingsPage; }
 namespace flatlas::editors { class NpcEditorPage; }
 namespace flatlas::editors { class FactionEditorPage; }
+namespace flatlas::editors { class NewsRumorEditor; }
 namespace flatlas::tools { class HelpBrowser; }
 namespace flatlas::tools { class KeyboardShortcutOverviewDialog; }
 namespace flatlas::rendering { class ModelViewerPage; }
@@ -52,6 +53,10 @@ private:
     void openFactionEditor();
     void openNewsRumorEditor();
     void openModelViewer();
+    void connectNpcEditorPage(flatlas::editors::NpcEditorPage *editor);
+    void connectFactionEditorPage(flatlas::editors::FactionEditorPage *editor);
+    void connectNewsRumorEditor(flatlas::editors::NewsRumorEditor *editor);
+    void connectModelViewerPage(flatlas::rendering::ModelViewerPage *page);
     void openSettingsDialog();
     void applyPinnedToolSettings();
     void restoreOpenToolTabs();
@@ -84,6 +89,7 @@ private:
     flatlas::tools::HelpBrowser *m_helpBrowser = nullptr;
     flatlas::tools::KeyboardShortcutOverviewDialog *m_shortcutOverviewDialog = nullptr;
     QLabel *m_editingLabel = nullptr;
+    QLabel *m_progressPercentLabel = nullptr;
     QPushButton *m_settingsButton = nullptr;
     QProgressBar *m_progressBar = nullptr;
     bool m_openToolTabsRestored = false;

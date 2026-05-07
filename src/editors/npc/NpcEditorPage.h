@@ -93,14 +93,17 @@ public:
 
 signals:
     void titleChanged(const QString &title);
+    void loadingProgressChanged(int percent, const QString &message);
 
 private:
     void setupUi();
     void setupToolBar();
+    void scheduleReloadCurrentContext();
     void reloadCurrentContext();
     bool loadGameRoot(const QString &gameRoot, QString *errorMessage = nullptr);
     bool saveCurrentFile(QString *errorMessage = nullptr);
     bool applyIdsNameEdits(QString *errorMessage);
+    void reportLoadingProgress(int percent, const QString &message);
 
     void populateSelectors();
     void populateBaseSelector();
@@ -164,6 +167,8 @@ private:
     QString m_editorBaseNickname;
     int m_editorNpcIndex = -1;
     bool m_populating = false;
+    bool m_loading = false;
+    bool m_reloadQueued = false;
 
     QToolBar *m_toolBar = nullptr;
     QAction *m_reloadAction = nullptr;

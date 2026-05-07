@@ -7,10 +7,12 @@
 #include "core/EditingContext.h"
 #include "core/PathUtils.h"
 
+#include <QApplication>
 #include <QCheckBox>
 #include <QDesktopServices>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QEventLoop>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -26,6 +28,7 @@
 #include <QTimer>
 
 #include <utility>
+#include <algorithm>
 
 namespace flatlas::rendering {
 
@@ -70,7 +73,7 @@ ModelViewerPage::ModelViewerPage(QWidget *parent)
     topRow->addWidget(m_summaryLabel);
 
     m_refreshButton = new QPushButton(tr("Refresh"), this);
-    connect(m_refreshButton, &QPushButton::clicked, this, [this]() { rebuildEntries(); });
+    connect(m_refreshButton, &QPushButton::clicked, this, [this]() { scheduleRebuildEntries(); });
     topRow->addWidget(m_refreshButton);
 
     m_loadFileButton = new QPushButton(tr("Open Model File..."), this);
@@ -195,7 +198,7 @@ ModelViewerPage::ModelViewerPage(QWidget *parent)
     // the UI until all model entries have been enumerated.
     m_summaryLabel->setText(tr("Loading..."));
     updateButtons();
-    QTimer::singleShot(0, this, &ModelViewerPage::rebuildEntries);
+    scheduleRebuildEntries();
 }
 
 bool ModelViewerPage::loadModelPath(const QString &modelPath, const QString &displayLabel)
@@ -279,10 +282,26 @@ bool ModelViewerPage::ensureViewport()
     return true;
 }
 
+void ModelViewerPage::scheduleRebuildEntries()
+{
+    m_summaryLabel->setText(tr("Loading..."));
+    reportLoadingProgress(0, tr("3D Model Viewer: Modellliste wird vorbereitet..."));
+    QTimer::singleShot(0, this, &ModelViewerPage::rebuildEntries);
+}
+
 void ModelViewerPage::rebuildEntries()
 {
+    reportLoadingProgress(15, tr("3D Model Viewer: Freelancer-Modelle werden gesucht..."));
     m_entries = flatlas::infrastructure::ModelAssetScanner::scanCurrentContext();
+    reportLoadingProgress(80, tr("3D Model Viewer: Modellbaum wird aufgebaut..."));
     rebuildTree();
+    reportLoadingProgress(100, tr("3D Model Viewer: %1 Modelle geladen").arg(m_entries.size()));
+}
+
+void ModelViewerPage::reportLoadingProgress(int percent, const QString &message)
+{
+    emit loadingProgressChanged(std::clamp(percent, 0, 100), message);
+    qApp->processEvents(QEventLoop::ExcludeUserInputEvents);
 }
 
 void ModelViewerPage::rebuildTree()

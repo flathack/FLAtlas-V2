@@ -25,10 +25,15 @@ public:
     explicit ModelViewerPage(QWidget *parent = nullptr);
     bool loadModelPath(const QString &modelPath, const QString &displayLabel = QString());
 
+signals:
+    void loadingProgressChanged(int percent, const QString &message);
+
 private:
     const flatlas::infrastructure::ModelAssetEntry *findEntryByModelPath(const QString &modelPath) const;
     bool ensureViewport();
+    void scheduleRebuildEntries();
     void rebuildEntries();
+    void reportLoadingProgress(int percent, const QString &message);
     void rebuildTree();
     void setCurrentEntry(const flatlas::infrastructure::ModelAssetEntry *entry);
     void loadEntryIntoViewport(const flatlas::infrastructure::ModelAssetEntry *entry);

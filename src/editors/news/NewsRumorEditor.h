@@ -73,13 +73,16 @@ public:
 
 signals:
     void titleChanged(const QString &title);
+    void loadingProgressChanged(int percent, const QString &message);
 
 private:
     enum NewsColumn { NewsHeadlineColumn = 0, NewsPreviewColumn, NewsBasesColumn, NewsIconColumn, NewsRankColumn, NewsIssueColumn, NewsColumnCount };
     enum BaseColumn { BaseNameColumn = 0, BaseNicknameColumn, BaseSystemColumn, BaseNewsCountColumn, BaseColumnCount };
 
     void setupUi();
+    void scheduleLoadFromContext();
     void loadFromContext();
+    void reportLoadingProgress(int percent, const QString &message);
     bool loadWorkspace(const QString &gameRoot, QString *errorMessage = nullptr);
     void clearData();
     void loadIds(const QString &gameRoot);

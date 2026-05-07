@@ -25,10 +25,13 @@ public:
 
 signals:
     void titleChanged(const QString &title);
+    void loadingProgressChanged(int percent, const QString &message);
 
 private:
     void buildUi();
+    void scheduleLoadFromContext();
     void loadFromContext();
+    void reportLoadingProgress(int percent, const QString &message);
     void refreshIdsTextCache();
     void refreshFactionList();
     void selectFaction(const QString &nickname);
