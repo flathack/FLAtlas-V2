@@ -1,4 +1,7 @@
 #include <QtTest>
+#include <QFileInfo>
+#include <QStringList>
+#include "infrastructure/freelancer/FreelancerMaterialResolver.h"
 #include "infrastructure/io/TextureLoader.h"
 
 using namespace flatlas::infrastructure;
@@ -171,6 +174,48 @@ private slots:
 
         img = TextureLoader::load(QStringLiteral("test.txm"));
         QVERIFY(img.isNull());
+    }
+
+    void loadPlanetTextureFromFreelancerHdMipsNode()
+    {
+        const QString dataRoot = QStringLiteral("C:/Users/steve/Github/FL-Installationen/Freelancer-HD/DATA");
+        auto verifyPlanet = [](const QString &archetype,
+                               const QString &txmPath,
+                               const QString &matPath,
+                               const QString &sphPath) {
+            const QImage image = FreelancerMaterialResolver::loadBestPlanetTexture(
+                archetype, QStringList{txmPath, matPath, sphPath});
+            QVERIFY(!image.isNull());
+            QVERIFY(image.width() > 0);
+            QVERIFY(image.height() > 0);
+            QVERIFY2(image.width() >= image.height() * 2 - 1,
+                     qPrintable(QStringLiteral("%1 produced %2x%3")
+                                    .arg(archetype)
+                                    .arg(image.width())
+                                    .arg(image.height())));
+        };
+
+        QString txmPath = dataRoot + QStringLiteral("/SOLAR/PLANETS/planet_earthgrncld.txm");
+        QString matPath = dataRoot + QStringLiteral("/SOLAR/PLANETS/PLANET_EARTHGRNCLD/planet_earthgrncld.mat");
+        QString sphPath = dataRoot
+                          + QStringLiteral("/SOLAR/PLANETS/PLANET_EARTHGRNCLD/planet_earthgrncld_4000.sph");
+        if (!QFileInfo::exists(txmPath) || !QFileInfo::exists(matPath) || !QFileInfo::exists(sphPath))
+            QSKIP("Freelancer-HD reference planet files are not available on this machine.");
+        verifyPlanet(QStringLiteral("planet_earthgrncld_4000"), txmPath, matPath, sphPath);
+
+        txmPath = dataRoot + QStringLiteral("/SOLAR/PLANETS/planet_rckbrn.txm");
+        matPath = dataRoot + QStringLiteral("/SOLAR/PLANETS/PLANET_RCKBRN/planet_rckbrn.mat");
+        sphPath = dataRoot + QStringLiteral("/SOLAR/PLANETS/PLANET_RCKBRN/planet_rckbrn_2000.sph");
+        if (!QFileInfo::exists(txmPath) || !QFileInfo::exists(matPath) || !QFileInfo::exists(sphPath))
+            QSKIP("Freelancer-HD Malta reference planet files are not available on this machine.");
+        verifyPlanet(QStringLiteral("planet_rckbrn_2000"), txmPath, matPath, sphPath);
+
+        txmPath = dataRoot + QStringLiteral("/SOLAR/PLANETS/planet_icelndwat.txm");
+        matPath = dataRoot + QStringLiteral("/SOLAR/PLANETS/PLANET_ICELNDWAT/planet_icelndwat.mat");
+        sphPath = dataRoot + QStringLiteral("/SOLAR/PLANETS/PLANET_ICELNDWAT/planet_icelndwat_3000.sph");
+        if (!QFileInfo::exists(txmPath) || !QFileInfo::exists(matPath) || !QFileInfo::exists(sphPath))
+            QSKIP("Freelancer-HD Rh01_01 reference planet files are not available on this machine.");
+        verifyPlanet(QStringLiteral("planet_icelndwat_3000"), txmPath, matPath, sphPath);
     }
 };
 

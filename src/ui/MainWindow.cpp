@@ -918,6 +918,7 @@ void MainWindow::createMenus()
     cornerLayout->addWidget(m_editingLabel);
 
     auto *launchBtn = new QPushButton(tr("Launch FL"), this);
+    launchBtn->setIcon(flatlas::ui::launchIcon());
     launchBtn->setStyleSheet(
         QStringLiteral("QPushButton { background: #28a745; color: white; border: none;"
                         " padding: 5px 16px; border-radius: 3px; font-weight: bold; }"

@@ -23,6 +23,7 @@ private:
     static QString findDataRoot(const QString &path);
     static QStringList textureCandidatesForMesh(const QString &modelPath, const MeshData &mesh);
     static QImage resolveEmbeddedTextureForMesh(const QString &modelPath, const MeshData &mesh);
+    static QImage loadTextureFromSphereMaterialChain(const QStringList &sourcePaths);
 
     static QMutex s_cacheMutex;
     static QHash<QString, QHash<QString, QStringList>> s_materialTextureMapCache;

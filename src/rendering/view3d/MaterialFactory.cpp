@@ -16,7 +16,7 @@ QImage makePreviewTextureOpaque(const QImage &image)
     if (image.isNull() || !image.hasAlphaChannel())
         return image;
 
-    QImage opaque = image.convertToFormat(QImage::Format_RGBA8888);
+    QImage opaque = image.convertToFormat(QImage::Format_ARGB32);
     for (int y = 0; y < opaque.height(); ++y) {
         auto *row = reinterpret_cast<QRgb *>(opaque.scanLine(y));
         for (int x = 0; x < opaque.width(); ++x)
