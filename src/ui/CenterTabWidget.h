@@ -2,6 +2,7 @@
 #include <QObject>
 #include <QSet>
 
+class QIcon;
 class QTabBar;
 class QStackedWidget;
 class QWidget;
@@ -21,7 +22,9 @@ public:
     QStackedWidget *contentWidget() const;
 
     int addTab(QWidget *widget, const QString &label);
+    int addTab(QWidget *widget, const QIcon &icon, const QString &label);
     int addPinnedTab(QWidget *widget, const QString &label);
+    int addPinnedTab(QWidget *widget, const QIcon &icon, const QString &label);
     void removeTab(int index, bool force = false);
     void setCurrentIndex(int index);
     int currentIndex() const;

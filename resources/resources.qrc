@@ -5,6 +5,7 @@
     </qresource>
     <qresource prefix="/images">
         <file alias="Splash-Screen.png">images/Splash-Screen.png</file>
+        <file alias="Splash-Screen-Blue.png">images/Splash-Screen-Blue.png</file>
         <file alias="star-background.png">images/star-background.png</file>
         <file alias="wallpaper-dark.png">images/wallpaper-dark.png</file>
         <file alias="wallpaper-white.png">images/wallpaper-white.png</file>

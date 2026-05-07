@@ -1,4 +1,6 @@
 #include "CenterTabWidget.h"
+#include <QIcon>
+#include <QSize>
 #include <QTabBar>
 #include <QStackedWidget>
 #include <QVariant>
@@ -16,6 +18,7 @@ CenterTabWidget::CenterTabWidget(QObject *parent)
     m_tabBar->setDocumentMode(true);
     m_tabBar->setTabsClosable(true);
     m_tabBar->setElideMode(Qt::ElideRight);
+    m_tabBar->setIconSize(QSize(28, 28));
 
     connect(m_tabBar, &QTabBar::currentChanged, this, [this](int index) {
         if (QWidget *page = widgetForTab(index))
@@ -41,7 +44,14 @@ QStackedWidget *CenterTabWidget::contentWidget() const { return m_stack; }
 
 int CenterTabWidget::addTab(QWidget *widget, const QString &label)
 {
+    return addTab(widget, QIcon(), label);
+}
+
+int CenterTabWidget::addTab(QWidget *widget, const QIcon &icon, const QString &label)
+{
     int idx = m_tabBar->addTab(label);
+    if (!icon.isNull())
+        m_tabBar->setTabIcon(idx, icon);
     m_tabBar->setTabData(idx, QVariant::fromValue(static_cast<QObject *>(widget)));
     m_stack->addWidget(widget);
     return idx;
@@ -49,8 +59,15 @@ int CenterTabWidget::addTab(QWidget *widget, const QString &label)
 
 int CenterTabWidget::addPinnedTab(QWidget *widget, const QString &label)
 {
+    return addPinnedTab(widget, QIcon(), label);
+}
+
+int CenterTabWidget::addPinnedTab(QWidget *widget, const QIcon &icon, const QString &label)
+{
     int idx = m_pinnedCount;
     m_tabBar->insertTab(idx, label);
+    if (!icon.isNull())
+        m_tabBar->setTabIcon(idx, icon);
     m_tabBar->setTabData(idx, QVariant::fromValue(static_cast<QObject *>(widget)));
     m_stack->addWidget(widget);
     m_pinnedWidgets.insert(widget);

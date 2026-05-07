@@ -2,6 +2,7 @@
 #include "WelcomePage.h"
 #include "PropertiesPanel.h"
 #include "CenterTabWidget.h"
+#include "ToolIcons.h"
 #include "SettingsDialog.h"
 #include "core/Config.h"
 #include "core/EditingContext.h"
@@ -130,6 +131,33 @@ bool isContextBoundTab(QWidget *widget)
         || qobject_cast<flatlas::editors::NpcEditorPage *>(widget)
         || qobject_cast<flatlas::editors::FactionEditorPage *>(widget)
         || qobject_cast<flatlas::editors::NewsRumorEditor *>(widget);
+}
+
+QIcon iconForWidget(QWidget *widget)
+{
+    if (!widget)
+        return {};
+    if (widget->objectName().startsWith(QStringLiteral("system3d:")))
+        return flatlas::ui::toolIcon(QStringLiteral("system3d"));
+    const QString key = toolKeyForWidget(widget);
+    if (!key.isEmpty())
+        return flatlas::ui::toolIcon(key);
+    if (qobject_cast<flatlas::editors::SystemEditorPage *>(widget))
+        return flatlas::ui::toolIcon(QStringLiteral("systemEditor"));
+    if (qobject_cast<flatlas::editors::IniEditorPage *>(widget))
+        return flatlas::ui::toolIcon(QStringLiteral("iniEditor"));
+    if (qobject_cast<flatlas::rendering::SceneView3D *>(widget))
+        return flatlas::ui::toolIcon(QStringLiteral("system3d"));
+    if (qobject_cast<flatlas::ui::WelcomePage *>(widget))
+        return flatlas::ui::toolIcon(QStringLiteral("welcome"));
+    return {};
+}
+
+QAction *addMenuAction(QMenu *menu, const QIcon &icon, const QString &text, QObject *receiver, auto slot)
+{
+    auto *action = menu->addAction(icon, text);
+    QObject::connect(action, &QAction::triggered, receiver, slot);
+    return action;
 }
 
 bool objectVisibleForFilter(const flatlas::rendering::SystemDisplayFilterSettings &settings,
@@ -607,6 +635,7 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
     setWindowTitle(tr("FL Atlas V2 v%1").arg(qApp->applicationVersion()));
+    setWindowIcon(QIcon(QStringLiteral(":/icons/FLAtlas-V2-ICON.png")));
     setMinimumSize(960, 620);
     resize(1600, 900);
 
@@ -721,20 +750,23 @@ void MainWindow::createMenus()
 {
     // --- File ---
     auto *fileMenu = menuBar()->addMenu(tr("&File"));
-    fileMenu->addAction(tr("&Save"), QKeySequence::Save, this, [this]() { saveCurrentFile(); });
+    auto *saveAction = fileMenu->addAction(tr("&Save"), QKeySequence::Save, this, [this]() { saveCurrentFile(); });
+    saveAction->setIcon(flatlas::ui::saveIcon());
     fileMenu->addSeparator();
-    fileMenu->addAction(tr("&Settings..."), this, [this]() { openSettingsDialog(); });
+    addMenuAction(fileMenu, flatlas::ui::settingsIcon(), tr("&Settings..."), this, [this]() { openSettingsDialog(); });
     fileMenu->addSeparator();
     fileMenu->addAction(tr("E&xit"), QKeySequence::Quit, this, &QWidget::close);
 
     // --- Edit ---
     auto *editMenu = menuBar()->addMenu(tr("&Edit"));
-    editMenu->addAction(tr("&Undo"), QKeySequence::Undo, this, []() {
+    auto *undoAction = editMenu->addAction(tr("&Undo"), QKeySequence::Undo, this, []() {
         flatlas::core::UndoManager::instance().undo();
     });
-    editMenu->addAction(tr("&Redo"), QKeySequence::Redo, this, []() {
+    undoAction->setIcon(flatlas::ui::toolIcon(QStringLiteral("iniEditor")));
+    auto *redoAction = editMenu->addAction(tr("&Redo"), QKeySequence::Redo, this, []() {
         flatlas::core::UndoManager::instance().redo();
     });
+    redoAction->setIcon(flatlas::ui::toolIcon(QStringLiteral("iniEditor")));
 
     // --- View ---
     auto *viewMenu = menuBar()->addMenu(tr("&View"));
@@ -745,19 +777,19 @@ void MainWindow::createMenus()
     auto *toolsMenu = menuBar()->addMenu(tr("&Tools"));
 
     // -- Editors --
-    toolsMenu->addAction(tr("Open &File Editor..."), this, [this]() { openIniFile(); });
-    toolsMenu->addAction(tr("&Trade Routes"), this, [this]() { openTradeRoutes(); });
-    toolsMenu->addAction(tr("&IDS Editor"), this, [this]() { openIdsEditor(); });
-    toolsMenu->addAction(tr("&Mod Manager"), this, [this]() { openModManager(); });
-    toolsMenu->addAction(tr("Mod &Settings"), this, [this]() { openModSettings(); });
-    toolsMenu->addAction(tr("&NPC Editor"), this, [this]() { openNpcEditor(); });
-    toolsMenu->addAction(tr("&Faction Editor"), this, [this]() { openFactionEditor(); });
-    toolsMenu->addAction(tr("&News Editor"), this, [this]() { openNewsRumorEditor(); });
+    addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("iniEditor")), tr("Open &File Editor..."), this, [this]() { openIniFile(); });
+    addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("tradeRoutes")), tr("&Trade Routes"), this, [this]() { openTradeRoutes(); });
+    addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("idsEditor")), tr("&IDS Editor"), this, [this]() { openIdsEditor(); });
+    addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("modManager")), tr("&Mod Manager"), this, [this]() { openModManager(); });
+    addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("modSettings")), tr("Mod &Settings"), this, [this]() { openModSettings(); });
+    addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("npcEditor")), tr("&NPC Editor"), this, [this]() { openNpcEditor(); });
+    addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("factionEditor")), tr("&Faction Editor"), this, [this]() { openFactionEditor(); });
+    addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("newsRumorEditor")), tr("&News Editor"), this, [this]() { openNewsRumorEditor(); });
     toolsMenu->addSeparator();
 
     // -- Tools --
-    toolsMenu->addAction(tr("&3D Model Viewer"), this, [this]() { openModelViewer(); });
-    toolsMenu->addAction(tr("&Shortest Path..."), this, [this]() {
+    addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("modelViewer")), tr("&3D Model Viewer"), this, [this]() { openModelViewer(); });
+    addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("universe")), tr("&Shortest Path..."), this, [this]() {
         // Versuche UniverseData vom aktiven UniverseEditorPage zu holen
         const flatlas::domain::UniverseData *udata = nullptr;
         if (m_centerTabs) {
@@ -777,7 +809,7 @@ void MainWindow::createMenus()
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->show();
     });
-    toolsMenu->addAction(tr("&Launch Freelancer..."), this, &MainWindow::launchFreelancerFromContext);
+    addMenuAction(toolsMenu, flatlas::ui::launchIcon(), tr("&Launch Freelancer..."), this, &MainWindow::launchFreelancerFromContext);
 
     auto *externalToolsMenu = menuBar()->addMenu(tr("Externe Tools"));
     const QJsonObject externalTools = installedExternalTools();
@@ -789,7 +821,7 @@ void MainWindow::createMenus()
         if (exePath.isEmpty())
             continue;
         hasExternalTools = true;
-        externalToolsMenu->addAction(name, this, [this, exePath, name]() {
+        addMenuAction(externalToolsMenu, flatlas::ui::launchIcon(), name, this, [this, exePath, name]() {
             if (!QFileInfo::exists(exePath)) {
                 QMessageBox::warning(this, tr("Externe Tools"), tr("%1 wurde nicht gefunden:\n%2").arg(name, exePath));
                 return;
@@ -804,6 +836,7 @@ void MainWindow::createMenus()
 
     // --- Settings ---
     auto *settingsMenu = menuBar()->addMenu(tr("&Settings"));
+    settingsMenu->setIcon(flatlas::ui::settingsIcon());
     auto *themeMenu = settingsMenu->addMenu(tr("&Theme"));
     for (const auto &theme : flatlas::core::Theme::instance().availableThemes()) {
         themeMenu->addAction(theme, this, [theme]() {
@@ -824,10 +857,11 @@ void MainWindow::createMenus()
 
     // --- Help ---
     auto *helpMenu = menuBar()->addMenu(tr("&Help"));
-    helpMenu->addAction(tr("&Help Contents"), QKeySequence::HelpContents, this, [this]() {
+    auto *helpContentsAction = helpMenu->addAction(tr("&Help Contents"), QKeySequence::HelpContents, this, [this]() {
         showContextHelp();
     });
-    helpMenu->addAction(tr("Keyboard &Shortcuts"), this, [this]() {
+    helpContentsAction->setIcon(flatlas::ui::helpIcon());
+    addMenuAction(helpMenu, flatlas::ui::helpIcon(), tr("Keyboard &Shortcuts"), this, [this]() {
         showShortcutOverview();
     });
     helpMenu->addSeparator();
@@ -1000,7 +1034,7 @@ void MainWindow::createPanels()
 
     // Mod Manager as pinned tab (always visible, not closable)
     auto *modManagerPage = new flatlas::editors::ModManagerPage(this);
-    m_centerTabs->addPinnedTab(modManagerPage, tr("Mod Manager"));
+    m_centerTabs->addPinnedTab(modManagerPage, iconForWidget(modManagerPage), tr("Mod Manager"));
     connect(modManagerPage, &flatlas::editors::ModManagerPage::titleChanged,
             this, [this, modManagerPage](const QString &title) {
         int i = m_centerTabs->indexOf(modManagerPage);
@@ -1014,7 +1048,7 @@ void MainWindow::createPanels()
         m_centerTabs->setCurrentIndex(0);
     } else {
         auto *welcomePage = new flatlas::ui::WelcomePage(this);
-        int welcomeIdx = m_centerTabs->addTab(welcomePage, tr("Welcome"));
+        int welcomeIdx = m_centerTabs->addTab(welcomePage, iconForWidget(welcomePage), tr("Welcome"));
         m_centerTabs->setCurrentIndex(welcomeIdx);
         connect(welcomePage, &flatlas::ui::WelcomePage::openModManagerRequested,
                 this, [this]() { m_centerTabs->setCurrentIndex(0); });
@@ -1081,9 +1115,10 @@ void MainWindow::applyThemeStyling()
     m_centerTabs->tabBar()->setStyleSheet(
         QStringLiteral("QTabBar { background: transparent; }"
                        "QTabBar::tab {"
-                       " padding: 8px 16px;"
+                       " padding: 6px 16px;"
                        " margin-right: 2px;"
                        " min-width: 130px;"
+                       " min-height: 34px;"
                        " border: 1px solid %3;"
                        " border-bottom: 2px solid transparent;"
                        " background: %1; color: %2; }"
@@ -1372,7 +1407,7 @@ void MainWindow::restoreOpenToolTabs()
                 continue;
             }
             const QString ingameName;
-            int idx = m_centerTabs->addTab(editor, formatSystemTabTitle(editor->document()->name(), ingameName));
+            int idx = m_centerTabs->addTab(editor, iconForWidget(editor), formatSystemTabTitle(editor->document()->name(), ingameName));
             connect(editor, &flatlas::editors::SystemEditorPage::titleChanged,
                     this, [this, editor, ingameName](const QString &title) {
                 int i = m_centerTabs->indexOf(editor);
@@ -1455,7 +1490,8 @@ bool MainWindow::openToolByKey(const QString &key, bool pinned)
     }
 
     auto addToolTab = [this, pinned](QWidget *widget, const QString &title) {
-        return pinned ? m_centerTabs->addPinnedTab(widget, title) : m_centerTabs->addTab(widget, title);
+        const QIcon icon = iconForWidget(widget);
+        return pinned ? m_centerTabs->addPinnedTab(widget, icon, title) : m_centerTabs->addTab(widget, icon, title);
     };
 
     if (key == QStringLiteral("tradeRoutes")) {
@@ -1614,7 +1650,7 @@ void MainWindow::openIniFile()
     auto *editor = new flatlas::editors::IniEditorPage(this);
     editor->openWorkspace(preferredRoot);
 
-    int idx = m_centerTabs->addTab(editor, tr("File Editor"));
+    int idx = m_centerTabs->addTab(editor, iconForWidget(editor), tr("File Editor"));
     m_centerTabs->setCurrentIndex(idx);
 
     connect(editor, &flatlas::editors::IniEditorPage::titleChanged,
@@ -1650,7 +1686,7 @@ void MainWindow::openIniFile(const QString &filePath, const QString &searchText,
         const QString preferredRoot = flatlas::core::EditingContext::instance().primaryGamePath();
         editor->openWorkspace(preferredRoot);
 
-        int idx = m_centerTabs->addTab(editor, tr("File Editor"));
+        int idx = m_centerTabs->addTab(editor, iconForWidget(editor), tr("File Editor"));
         m_centerTabs->setCurrentIndex(idx);
 
         connect(editor, &flatlas::editors::IniEditorPage::titleChanged,
@@ -1775,7 +1811,7 @@ void MainWindow::openUniverseFromContext()
     }
 
     const int systemCount = editor->data() ? editor->data()->systemCount() : 0;
-    int idx = m_centerTabs->addPinnedTab(editor,
+    int idx = m_centerTabs->addPinnedTab(editor, iconForWidget(editor),
         QStringLiteral("Universe (%1)").arg(systemCount));
     m_centerTabs->setCurrentIndex(idx);
 
@@ -1880,7 +1916,7 @@ void MainWindow::openSystemFromUniverse(const QString &nickname,
         return;
     }
 
-    int idx = m_centerTabs->addTab(editor, formatSystemTabTitle(editor->document()->name(), ingameName));
+    int idx = m_centerTabs->addTab(editor, iconForWidget(editor), formatSystemTabTitle(editor->document()->name(), ingameName));
     m_centerTabs->setCurrentIndex(idx);
 
     connect(editor, &flatlas::editors::SystemEditorPage::titleChanged,
@@ -1937,7 +1973,7 @@ void MainWindow::open3DSystemEditorFor(flatlas::editors::SystemEditorPage *edito
                                     editor,
                                     this);
 
-    const int idx = m_centerTabs->addTab(view, tr("3D: %1").arg(systemName));
+    const int idx = m_centerTabs->addTab(view, iconForWidget(view), tr("3D: %1").arg(systemName));
     m_centerTabs->setCurrentIndex(idx);
     statusBar()->showMessage(tr("3D system view opened: %1").arg(systemName), 3000);
 }
@@ -1958,7 +1994,7 @@ void MainWindow::openTradeRoutes()
         }
     }
 
-    int idx = m_centerTabs->addTab(page, tr("Trade Routes"));
+    int idx = m_centerTabs->addTab(page, iconForWidget(page), tr("Trade Routes"));
     m_centerTabs->setCurrentIndex(idx);
 
     connect(page, &flatlas::editors::TradeRoutePage::titleChanged,
@@ -1982,7 +2018,7 @@ void MainWindow::openIdsEditor()
             editor->loadFreelancerDir(exeDir);
     }
 
-    int idx = m_centerTabs->addTab(editor, tr("IDS Editor"));
+    int idx = m_centerTabs->addTab(editor, iconForWidget(editor), tr("IDS Editor"));
     m_centerTabs->setCurrentIndex(idx);
 
     connect(editor, &flatlas::editors::IdsEditorPage::titleChanged,
@@ -2009,7 +2045,7 @@ void MainWindow::openModSettings()
 {
     auto *editor = new flatlas::editors::ModSettingsPage(this);
 
-    int idx = m_centerTabs->addTab(editor, tr("Mod Settings"));
+    int idx = m_centerTabs->addTab(editor, iconForWidget(editor), tr("Mod Settings"));
     m_centerTabs->setCurrentIndex(idx);
 
     connect(editor, &flatlas::editors::ModSettingsPage::titleChanged,
@@ -2026,7 +2062,7 @@ void MainWindow::openNpcEditor()
 {
     auto *editor = new flatlas::editors::NpcEditorPage(this);
 
-    int idx = m_centerTabs->addTab(editor, tr("NPC Editor"));
+    int idx = m_centerTabs->addTab(editor, iconForWidget(editor), tr("NPC Editor"));
     m_centerTabs->setCurrentIndex(idx);
 
     connect(editor, &flatlas::editors::NpcEditorPage::titleChanged,
@@ -2043,7 +2079,7 @@ void MainWindow::openFactionEditor()
 {
     auto *editor = new flatlas::editors::FactionEditorPage(this);
 
-    int idx = m_centerTabs->addTab(editor, tr("Faction Editor"));
+    int idx = m_centerTabs->addTab(editor, iconForWidget(editor), tr("Faction Editor"));
     m_centerTabs->setCurrentIndex(idx);
 
     connect(editor, &flatlas::editors::FactionEditorPage::titleChanged,
@@ -2060,7 +2096,7 @@ void MainWindow::openNewsRumorEditor()
 {
     auto *editor = new flatlas::editors::NewsRumorEditor(this);
 
-    int idx = m_centerTabs->addTab(editor, tr("News Editor"));
+    int idx = m_centerTabs->addTab(editor, iconForWidget(editor), tr("News Editor"));
     m_centerTabs->setCurrentIndex(idx);
 
     connect(editor, &flatlas::editors::NewsRumorEditor::titleChanged,
@@ -2090,7 +2126,7 @@ flatlas::rendering::ModelViewerPage *MainWindow::ensureModelViewerPage()
 
     try {
         auto *page = new flatlas::rendering::ModelViewerPage(this);
-        const int idx = m_centerTabs->addTab(page, tr("3D Model Viewer"));
+        const int idx = m_centerTabs->addTab(page, iconForWidget(page), tr("3D Model Viewer"));
         m_centerTabs->setCurrentIndex(idx);
         return page;
     } catch (const std::exception &ex) {

@@ -5,6 +5,7 @@ add_library(flatlas_ui STATIC
     BrowserPanel.h BrowserPanel.cpp
     PropertiesPanel.h PropertiesPanel.cpp
     CenterTabWidget.h CenterTabWidget.cpp
+    ToolIcons.h ToolIcons.cpp
     SettingsDialog.h SettingsDialog.cpp
     StatusBarManager.h StatusBarManager.cpp
 )
