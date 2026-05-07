@@ -1,6 +1,8 @@
 #include <QtTest>
 #include <QTemporaryDir>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include "core/Config.h"
@@ -65,6 +67,76 @@ private slots:
         QVERIFY(doc.isObject());
         QCOMPARE(doc.object().value(QStringLiteral("saved_key")).toString(),
                  QStringLiteral("saved_value"));
+    }
+
+    void exportToFile()
+    {
+        QTemporaryDir tmpDir;
+        QVERIFY(tmpDir.isValid());
+        const QString path = tmpDir.path() + QStringLiteral("/exported.json");
+
+        auto &cfg = Config::instance();
+        cfg.clear();
+        cfg.setString(QStringLiteral("export_key"), QStringLiteral("exported"));
+        QVERIFY(cfg.exportTo(path));
+
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+        QVERIFY(doc.isObject());
+        QCOMPARE(doc.object().value(QStringLiteral("export_key")).toString(), QStringLiteral("exported"));
+    }
+
+    void importFromFileCreatesBackup()
+    {
+        QTemporaryDir tmpDir;
+        QVERIFY(tmpDir.isValid());
+        const QString activePath = tmpDir.path() + QStringLiteral("/config.json");
+        const QString importPath = tmpDir.path() + QStringLiteral("/import.json");
+
+        auto &cfg = Config::instance();
+        cfg.clear();
+        cfg.load(activePath);
+        cfg.setString(QStringLiteral("old_key"), QStringLiteral("old"));
+        QVERIFY(cfg.save());
+        QDir(tmpDir.path() + QStringLiteral("/backups")).removeRecursively();
+
+        QJsonObject imported;
+        imported[QStringLiteral("new_key")] = QStringLiteral("new");
+        QFile importFile(importPath);
+        QVERIFY(importFile.open(QIODevice::WriteOnly));
+        importFile.write(QJsonDocument(imported).toJson());
+        importFile.close();
+
+        QVERIFY(cfg.importFrom(importPath));
+        QCOMPARE(cfg.getString(QStringLiteral("new_key")), QStringLiteral("new"));
+        QCOMPARE(cfg.getString(QStringLiteral("old_key")), QString());
+
+        QDir backupDir(tmpDir.path() + QStringLiteral("/backups"));
+        const auto backups = backupDir.entryList({QStringLiteral("config-*.json")}, QDir::Files);
+        QCOMPARE(backups.size(), 1);
+    }
+
+    void createBackupCopiesCurrentFile()
+    {
+        QTemporaryDir tmpDir;
+        QVERIFY(tmpDir.isValid());
+        const QString path = tmpDir.path() + QStringLiteral("/config.json");
+
+        auto &cfg = Config::instance();
+        cfg.clear();
+        cfg.load(path);
+        cfg.setString(QStringLiteral("backup_key"), QStringLiteral("backup_value"));
+        QVERIFY(cfg.save());
+
+        QString backupPath;
+        QVERIFY(cfg.createBackup(&backupPath));
+        QVERIFY(QFileInfo::exists(backupPath));
+
+        QFile backupFile(backupPath);
+        QVERIFY(backupFile.open(QIODevice::ReadOnly));
+        const QJsonDocument doc = QJsonDocument::fromJson(backupFile.readAll());
+        QCOMPARE(doc.object().value(QStringLiteral("backup_key")).toString(), QStringLiteral("backup_value"));
     }
 
     void loadFromFile()

@@ -1,13 +1,42 @@
 #include "Config.h"
 
 #include <QDir>
+#include <QDateTime>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QSaveFile>
+#include <QSettings>
 #include <QStandardPaths>
 
 namespace flatlas::core {
+namespace {
+
+constexpr int maxBackupCount = 10;
+
+QString configPathSettingsKey()
+{
+    return QStringLiteral("config/path");
+}
+
+QString backupsDirectoryFor(const QString &path)
+{
+    return QDir(QFileInfo(path).absolutePath()).absoluteFilePath(QStringLiteral("backups"));
+}
+
+void pruneBackups(const QString &path)
+{
+    QDir dir(backupsDirectoryFor(path));
+    const QString baseName = QFileInfo(path).completeBaseName();
+    const QFileInfoList backups = dir.entryInfoList({baseName + QStringLiteral("-*.json")},
+                                                    QDir::Files,
+                                                    QDir::Time);
+    for (int i = maxBackupCount; i < backups.size(); ++i)
+        QFile::remove(backups.at(i).absoluteFilePath());
+}
+
+} // namespace
 
 Config &Config::instance()
 {
@@ -21,9 +50,15 @@ QString Config::defaultConfigPath()
            + QStringLiteral("/config.json");
 }
 
+QString Config::configuredConfigPath()
+{
+    return QSettings().value(configPathSettingsKey(), defaultConfigPath()).toString();
+}
+
 bool Config::load(const QString &path)
 {
-    m_filePath = path.isEmpty() ? defaultConfigPath() : path;
+    m_filePath = path.isEmpty() ? configuredConfigPath() : path;
+    m_data = {};
 
     QFile file(m_filePath);
     if (file.open(QIODevice::ReadOnly)) {
@@ -85,14 +120,85 @@ bool Config::save(const QString &path) const
 
     QDir().mkpath(QFileInfo(target).absolutePath());
 
-    QFile file(target);
+    if (path.isEmpty() && QFileInfo::exists(target))
+        createBackup();
+
+    QSaveFile file(target);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
         return false;
 
     QJsonDocument doc(m_data);
-    file.write(doc.toJson(QJsonDocument::Indented));
-    file.close();
-    return true;
+    if (file.write(doc.toJson(QJsonDocument::Indented)) < 0)
+        return false;
+    return file.commit();
+}
+
+bool Config::setConfigPath(const QString &path)
+{
+    if (path.trimmed().isEmpty())
+        return false;
+
+    const QString target = QFileInfo(path).absoluteFilePath();
+    QDir().mkpath(QFileInfo(target).absolutePath());
+    QSettings().setValue(configPathSettingsKey(), target);
+    m_filePath = target;
+    return save();
+}
+
+bool Config::importFrom(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return false;
+
+    QJsonParseError err;
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject())
+        return false;
+
+    m_data = doc.object();
+    return save();
+}
+
+bool Config::exportTo(const QString &path) const
+{
+    return save(path);
+}
+
+bool Config::createBackup(QString *backupPath) const
+{
+    if (m_filePath.isEmpty() || !QFileInfo::exists(m_filePath))
+        return false;
+
+    const QString backupDir = backupsDirectoryFor(m_filePath);
+    QDir().mkpath(backupDir);
+
+    const QFileInfo sourceInfo(m_filePath);
+    const QString timestamp = QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyyMMdd-HHmmss-zzz"));
+    const QString target = QDir(backupDir).absoluteFilePath(
+        QStringLiteral("%1-%2.json").arg(sourceInfo.completeBaseName(), timestamp));
+    const bool copied = QFile::copy(m_filePath, target);
+    if (copied) {
+        if (backupPath)
+            *backupPath = target;
+        pruneBackups(m_filePath);
+    }
+    return copied;
+}
+
+QString Config::filePath() const
+{
+    return m_filePath;
+}
+
+QJsonObject Config::data() const
+{
+    return m_data;
+}
+
+void Config::setData(const QJsonObject &data)
+{
+    m_data = data;
 }
 
 // --- getters / setters ---

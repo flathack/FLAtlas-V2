@@ -13,9 +13,18 @@ class Config
 public:
     static Config &instance();
     static QString defaultConfigPath();
+    static QString configuredConfigPath();
 
     bool load(const QString &path = {});
     bool save(const QString &path = {}) const;
+    bool setConfigPath(const QString &path);
+    bool importFrom(const QString &path);
+    bool exportTo(const QString &path) const;
+    bool createBackup(QString *backupPath = nullptr) const;
+
+    QString filePath() const;
+    QJsonObject data() const;
+    void setData(const QJsonObject &data);
 
     QString getString(const QString &key, const QString &defaultValue = {}) const;
     void setString(const QString &key, const QString &value);

@@ -6,8 +6,10 @@
 class QCheckBox;
 class QComboBox;
 class QLabel;
+class QLineEdit;
 class QNetworkAccessManager;
 class QPushButton;
+class QTextEdit;
 
 namespace flatlas::ui {
 
@@ -24,6 +26,12 @@ private:
     void loadSettings();
     void saveSettings();
     void resetToDefaults();
+    void refreshConfigManager();
+    void chooseConfigPath();
+    void importConfig();
+    void exportConfig();
+    void createConfigBackup();
+    void applyConfigJson();
     void updateThemeColorButton(const QString &key);
     void startSuiteDownload(const QString &key, const QString &name, const QString &repoApiUrl);
     void downloadReleaseAsset(const QString &name, const QUrl &url);
@@ -40,6 +48,9 @@ private:
     QHash<QString, QPushButton *> m_themeColorButtons;
     QHash<QString, QPushButton *> m_suiteButtons;
     QLabel *m_suiteStatusLabel = nullptr;
+    QLineEdit *m_configPathEdit = nullptr;
+    QTextEdit *m_configJsonEdit = nullptr;
+    QLabel *m_configStatusLabel = nullptr;
     QNetworkAccessManager *m_network = nullptr;
     bool m_pinnedToolsChanged = false;
     bool m_resetRequested = false;

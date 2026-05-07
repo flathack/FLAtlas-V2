@@ -13,6 +13,7 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -21,6 +22,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -31,6 +33,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTabWidget>
+#include <QTextEdit>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -231,6 +234,47 @@ void SettingsDialog::setupUi()
     suiteLayout->addStretch();
     tabs->addTab(suiteTab, tr("FL Suite Apps"));
 
+    auto *configTab = new QWidget(tabs);
+    auto *configLayout = new QVBoxLayout(configTab);
+    auto *pathRow = new QWidget(configTab);
+    auto *pathLayout = new QHBoxLayout(pathRow);
+    pathLayout->setContentsMargins(0, 0, 0, 0);
+    m_configPathEdit = new QLineEdit(pathRow);
+    m_configPathEdit->setReadOnly(true);
+    pathLayout->addWidget(m_configPathEdit, 1);
+    auto *choosePathButton = new QPushButton(tr("Speicherort waehlen"), pathRow);
+    pathLayout->addWidget(choosePathButton);
+    configLayout->addWidget(pathRow);
+
+    auto *actionsRow = new QWidget(configTab);
+    auto *actionsLayout = new QHBoxLayout(actionsRow);
+    actionsLayout->setContentsMargins(0, 0, 0, 0);
+    auto *importButton = new QPushButton(tr("Import"), actionsRow);
+    auto *exportButton = new QPushButton(tr("Export"), actionsRow);
+    auto *backupButton = new QPushButton(tr("Backup anlegen"), actionsRow);
+    auto *applyJsonButton = new QPushButton(tr("JSON uebernehmen"), actionsRow);
+    actionsLayout->addWidget(importButton);
+    actionsLayout->addWidget(exportButton);
+    actionsLayout->addWidget(backupButton);
+    actionsLayout->addStretch();
+    actionsLayout->addWidget(applyJsonButton);
+    configLayout->addWidget(actionsRow);
+
+    m_configJsonEdit = new QTextEdit(configTab);
+    m_configJsonEdit->setAcceptRichText(false);
+    m_configJsonEdit->setLineWrapMode(QTextEdit::NoWrap);
+    configLayout->addWidget(m_configJsonEdit, 1);
+
+    m_configStatusLabel = new QLabel(configTab);
+    m_configStatusLabel->setWordWrap(true);
+    configLayout->addWidget(m_configStatusLabel);
+    tabs->addTab(configTab, tr("Config"));
+    connect(choosePathButton, &QPushButton::clicked, this, &SettingsDialog::chooseConfigPath);
+    connect(importButton, &QPushButton::clicked, this, &SettingsDialog::importConfig);
+    connect(exportButton, &QPushButton::clicked, this, &SettingsDialog::exportConfig);
+    connect(backupButton, &QPushButton::clicked, this, &SettingsDialog::createConfigBackup);
+    connect(applyJsonButton, &QPushButton::clicked, this, &SettingsDialog::applyConfigJson);
+
     auto *resetTab = new QWidget(tabs);
     auto *resetLayout = new QVBoxLayout(resetTab);
     auto *resetHint = new QLabel(tr("Setzt FLAtlas auf Werkseinstellungen zurueck. Mod-Installationen und Spieldaten werden nicht geloescht."), resetTab);
@@ -266,6 +310,8 @@ void SettingsDialog::loadSettings()
 
     for (auto it = m_themeColorButtons.constBegin(); it != m_themeColorButtons.constEnd(); ++it)
         updateThemeColorButton(it.key());
+
+    refreshConfigManager();
 }
 
 void SettingsDialog::saveSettings()
@@ -297,6 +343,7 @@ void SettingsDialog::saveSettings()
     config.setStringList(QStringLiteral("pinnedTools"), pinned);
     m_pinnedToolsChanged = oldPinned != pinned.join(QLatin1Char('|'));
     config.save();
+    refreshConfigManager();
 }
 
 void SettingsDialog::resetToDefaults()
@@ -322,6 +369,94 @@ void SettingsDialog::resetToDefaults()
     m_pinnedToolsChanged = true;
     loadSettings();
     QMessageBox::information(this, tr("Werkseinstellungen"), tr("Die Einstellungen wurden zurueckgesetzt."));
+}
+
+void SettingsDialog::refreshConfigManager()
+{
+    const auto &config = flatlas::core::Config::instance();
+    if (m_configPathEdit)
+        m_configPathEdit->setText(config.filePath());
+    if (m_configJsonEdit)
+        m_configJsonEdit->setPlainText(QString::fromUtf8(
+            QJsonDocument(config.data()).toJson(QJsonDocument::Indented)));
+}
+
+void SettingsDialog::chooseConfigPath()
+{
+    auto &config = flatlas::core::Config::instance();
+    const QString current = config.filePath().isEmpty() ? flatlas::core::Config::defaultConfigPath() : config.filePath();
+    const QString path = QFileDialog::getSaveFileName(this,
+                                                      tr("Config-Speicherort waehlen"),
+                                                      current,
+                                                      tr("JSON-Dateien (*.json);;Alle Dateien (*)"));
+    if (path.isEmpty())
+        return;
+
+    if (!config.setConfigPath(path)) {
+        QMessageBox::warning(this, tr("Config"), tr("Der neue Speicherort konnte nicht geschrieben werden."));
+        return;
+    }
+    m_configStatusLabel->setText(tr("Config-Speicherort aktualisiert."));
+    refreshConfigManager();
+}
+
+void SettingsDialog::importConfig()
+{
+    const QString path = QFileDialog::getOpenFileName(this,
+                                                      tr("Config importieren"),
+                                                      {},
+                                                      tr("JSON-Dateien (*.json);;Alle Dateien (*)"));
+    if (path.isEmpty())
+        return;
+    if (!flatlas::core::Config::instance().importFrom(path)) {
+        QMessageBox::warning(this, tr("Config"), tr("Die Config konnte nicht importiert werden."));
+        return;
+    }
+    loadSettings();
+    m_configStatusLabel->setText(tr("Config importiert."));
+}
+
+void SettingsDialog::exportConfig()
+{
+    const QString path = QFileDialog::getSaveFileName(this,
+                                                      tr("Config exportieren"),
+                                                      flatlas::core::Config::instance().filePath(),
+                                                      tr("JSON-Dateien (*.json);;Alle Dateien (*)"));
+    if (path.isEmpty())
+        return;
+    if (!flatlas::core::Config::instance().exportTo(path)) {
+        QMessageBox::warning(this, tr("Config"), tr("Die Config konnte nicht exportiert werden."));
+        return;
+    }
+    m_configStatusLabel->setText(tr("Config exportiert."));
+}
+
+void SettingsDialog::createConfigBackup()
+{
+    QString backupPath;
+    if (!flatlas::core::Config::instance().createBackup(&backupPath)) {
+        QMessageBox::warning(this, tr("Config"), tr("Es konnte kein Backup angelegt werden."));
+        return;
+    }
+    m_configStatusLabel->setText(tr("Backup angelegt: %1").arg(backupPath));
+}
+
+void SettingsDialog::applyConfigJson()
+{
+    QJsonParseError err;
+    const QJsonDocument doc = QJsonDocument::fromJson(m_configJsonEdit->toPlainText().toUtf8(), &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) {
+        QMessageBox::warning(this, tr("Config"), tr("Das JSON ist ungueltig oder kein Objekt."));
+        return;
+    }
+    auto &config = flatlas::core::Config::instance();
+    config.setData(doc.object());
+    if (!config.save()) {
+        QMessageBox::warning(this, tr("Config"), tr("Die Config konnte nicht gespeichert werden."));
+        return;
+    }
+    loadSettings();
+    m_configStatusLabel->setText(tr("JSON uebernommen."));
 }
 
 void SettingsDialog::updateThemeColorButton(const QString &key)
