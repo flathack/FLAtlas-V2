@@ -22,7 +22,7 @@ namespace Qt3DRender { class QCamera; class QMaterial; class QPointLight; }
 #endif
 
 namespace flatlas::domain { class SystemDocument; class SolarObject; class ZoneItem; }
-namespace flatlas::infrastructure { struct DecodedModel; struct ModelNode; }
+namespace flatlas::infrastructure { struct DecodedModel; struct ModelNode; struct PlanetSurfaceTextureSet; }
 
 namespace flatlas::rendering {
 
@@ -103,7 +103,7 @@ private:
     void scheduleModelLoading();
     void schedulePlanetTextureLoading();
     void attachLoadedModels(const QHash<QString, flatlas::infrastructure::DecodedModel> &models, int generation);
-    void applyPlanetTextures(const QHash<QString, QImage> &textures, int generation);
+    void applyPlanetTextures(const QHash<QString, flatlas::infrastructure::PlanetSurfaceTextureSet> &textures, int generation);
     int addModelNodeRecursive(const flatlas::infrastructure::ModelNode &node,
                               Qt3DCore::QEntity *parent,
                               const QString &nickname,
@@ -149,6 +149,7 @@ private:
     QHash<QString, Qt3DCore::QTransform *> m_objectTransformsByNickname;
     QHash<QString, Qt3DCore::QEntity *> m_markerEntitiesByNickname;
     QHash<QString, Qt3DRender::QMaterial *> m_markerMaterialsByNickname;
+    QHash<QString, QList<Qt3DCore::QEntity *>> m_planetSegmentEntitiesByNickname;
     QHash<QString, Qt3DCore::QEntity *> m_selectionMarkerEntitiesByNickname;
     QHash<QString, Qt3DCore::QEntity *> m_hoverMarkerEntitiesByNickname;
     QHash<QString, QList<Qt3DCore::QEntity *>> m_ringEntitiesByHostNickname;

@@ -219,6 +219,12 @@ void appendGridPoint(QByteArray &blob, const QVector3D &point)
     blob.append(reinterpret_cast<const char *>(values), static_cast<int>(sizeof(values)));
 }
 
+template <typename T>
+void appendPod(QByteArray &blob, const T &value)
+{
+    blob.append(reinterpret_cast<const char *>(&value), static_cast<int>(sizeof(T)));
+}
+
 Qt3DRender::QGeometryRenderer *buildGridLineRenderer(const QVector<QVector3D> &points, Qt3DCore::QNode *owner)
 {
     if (points.size() < 2)
@@ -247,6 +253,106 @@ Qt3DRender::QGeometryRenderer *buildGridLineRenderer(const QVector<QVector3D> &p
     renderer->setGeometry(geometry);
     renderer->setPrimitiveType(Qt3DRender::QGeometryRenderer::Lines);
     renderer->setVertexCount(points.size());
+    return renderer;
+}
+
+Qt3DRender::QGeometryRenderer *buildPlanetCubeFaceRenderer(float radius,
+                                                           const QVector3D &center,
+                                                           const QVector3D &uAxis,
+                                                           const QVector3D &vAxis,
+                                                           Qt3DCore::QNode *owner)
+{
+    constexpr int subdivisions = 40;
+    constexpr int vertexStride = 8 * static_cast<int>(sizeof(float));
+
+    QByteArray vertexBlob;
+    vertexBlob.reserve((subdivisions + 1) * (subdivisions + 1) * vertexStride);
+    for (int y = 0; y <= subdivisions; ++y) {
+        const float v = static_cast<float>(y) / static_cast<float>(subdivisions);
+        const float localV = v * 2.0f - 1.0f;
+        for (int x = 0; x <= subdivisions; ++x) {
+            const float u = static_cast<float>(x) / static_cast<float>(subdivisions);
+            const float localU = u * 2.0f - 1.0f;
+            const QVector3D normal = (center + uAxis * localU + vAxis * localV).normalized();
+
+            appendPod(vertexBlob, normal.x() * radius);
+            appendPod(vertexBlob, normal.y() * radius);
+            appendPod(vertexBlob, normal.z() * radius);
+            appendPod(vertexBlob, normal.x());
+            appendPod(vertexBlob, normal.y());
+            appendPod(vertexBlob, normal.z());
+            appendPod(vertexBlob, u);
+            appendPod(vertexBlob, 1.0f - v);
+        }
+    }
+
+    QByteArray indexBlob;
+    indexBlob.reserve(subdivisions * subdivisions * 6 * static_cast<int>(sizeof(quint32)));
+    for (int y = 0; y < subdivisions; ++y) {
+        for (int x = 0; x < subdivisions; ++x) {
+            const quint32 topLeft = static_cast<quint32>(y * (subdivisions + 1) + x);
+            const quint32 bottomLeft = static_cast<quint32>((y + 1) * (subdivisions + 1) + x);
+            const quint32 topRight = topLeft + 1;
+            const quint32 bottomRight = bottomLeft + 1;
+            appendPod(indexBlob, topLeft);
+            appendPod(indexBlob, topRight);
+            appendPod(indexBlob, bottomRight);
+            appendPod(indexBlob, topLeft);
+            appendPod(indexBlob, bottomRight);
+            appendPod(indexBlob, bottomLeft);
+        }
+    }
+
+    auto *geometry = new Qt3DCore::QGeometry(owner);
+    auto *vertexBuffer = new Qt3DCore::QBuffer(geometry);
+    vertexBuffer->setData(vertexBlob);
+
+    auto *positionAttr = new Qt3DCore::QAttribute(geometry);
+    positionAttr->setName(Qt3DCore::QAttribute::defaultPositionAttributeName());
+    positionAttr->setAttributeType(Qt3DCore::QAttribute::VertexAttribute);
+    positionAttr->setVertexBaseType(Qt3DCore::QAttribute::Float);
+    positionAttr->setVertexSize(3);
+    positionAttr->setByteStride(vertexStride);
+    positionAttr->setCount((subdivisions + 1) * (subdivisions + 1));
+    positionAttr->setBuffer(vertexBuffer);
+    geometry->addAttribute(positionAttr);
+
+    auto *normalAttr = new Qt3DCore::QAttribute(geometry);
+    normalAttr->setName(Qt3DCore::QAttribute::defaultNormalAttributeName());
+    normalAttr->setAttributeType(Qt3DCore::QAttribute::VertexAttribute);
+    normalAttr->setVertexBaseType(Qt3DCore::QAttribute::Float);
+    normalAttr->setVertexSize(3);
+    normalAttr->setByteStride(vertexStride);
+    normalAttr->setByteOffset(3 * static_cast<int>(sizeof(float)));
+    normalAttr->setCount((subdivisions + 1) * (subdivisions + 1));
+    normalAttr->setBuffer(vertexBuffer);
+    geometry->addAttribute(normalAttr);
+
+    auto *uvAttr = new Qt3DCore::QAttribute(geometry);
+    uvAttr->setName(Qt3DCore::QAttribute::defaultTextureCoordinateAttributeName());
+    uvAttr->setAttributeType(Qt3DCore::QAttribute::VertexAttribute);
+    uvAttr->setVertexBaseType(Qt3DCore::QAttribute::Float);
+    uvAttr->setVertexSize(2);
+    uvAttr->setByteStride(vertexStride);
+    uvAttr->setByteOffset(6 * static_cast<int>(sizeof(float)));
+    uvAttr->setCount((subdivisions + 1) * (subdivisions + 1));
+    uvAttr->setBuffer(vertexBuffer);
+    geometry->addAttribute(uvAttr);
+
+    auto *indexBuffer = new Qt3DCore::QBuffer(geometry);
+    indexBuffer->setData(indexBlob);
+
+    auto *indexAttr = new Qt3DCore::QAttribute(geometry);
+    indexAttr->setAttributeType(Qt3DCore::QAttribute::IndexAttribute);
+    indexAttr->setVertexBaseType(Qt3DCore::QAttribute::UnsignedInt);
+    indexAttr->setCount(subdivisions * subdivisions * 6);
+    indexAttr->setBuffer(indexBuffer);
+    geometry->addAttribute(indexAttr);
+
+    auto *renderer = new Qt3DRender::QGeometryRenderer(owner);
+    renderer->setGeometry(geometry);
+    renderer->setPrimitiveType(Qt3DRender::QGeometryRenderer::Triangles);
+    renderer->setVertexCount(subdivisions * subdivisions * 6);
     return renderer;
 }
 
@@ -974,6 +1080,7 @@ void SceneView3D::clearScene()
     m_objectTransformsByNickname.clear();
     m_markerEntitiesByNickname.clear();
     m_markerMaterialsByNickname.clear();
+    m_planetSegmentEntitiesByNickname.clear();
     m_selectionMarkerEntitiesByNickname.clear();
     m_hoverMarkerEntitiesByNickname.clear();
     m_ringEntitiesByHostNickname.clear();
@@ -1770,24 +1877,14 @@ void SceneView3D::schedulePlanetTextureLoading()
 
     const int generation = m_loadGeneration;
     const QHash<QString, QStringList> sourcePathsByNickname = m_planetTextureSourcePathsByNickname;
-    const QHash<QString, QString> archetypesByNickname = [&]() {
-        QHash<QString, QString> values;
-        if (!m_document)
-            return values;
-        for (const auto &obj : m_document->objects()) {
-            if (obj)
-                values.insert(obj->nickname(), obj->archetype());
-        }
-        return values;
-    }();
 
-    auto *watcher = new QFutureWatcher<QHash<QString, QImage>>(this);
+    auto *watcher = new QFutureWatcher<QHash<QString, flatlas::infrastructure::PlanetSurfaceTextureSet>>(this);
     connect(watcher,
-            &QFutureWatcher<QHash<QString, QImage>>::finished,
+            &QFutureWatcher<QHash<QString, flatlas::infrastructure::PlanetSurfaceTextureSet>>::finished,
             this,
             [this, watcher, generation]() {
         watcher->deleteLater();
-        QHash<QString, QImage> textures;
+        QHash<QString, flatlas::infrastructure::PlanetSurfaceTextureSet> textures;
         try {
             textures = watcher->result();
         } catch (...) {
@@ -1796,32 +1893,109 @@ void SceneView3D::schedulePlanetTextureLoading()
         applyPlanetTextures(textures, generation);
     });
 
-    watcher->setFuture(QtConcurrent::run([sourcePathsByNickname, archetypesByNickname]() {
-        QHash<QString, QImage> textures;
+    watcher->setFuture(QtConcurrent::run([sourcePathsByNickname]() {
+        QHash<QString, flatlas::infrastructure::PlanetSurfaceTextureSet> textures;
         for (auto it = sourcePathsByNickname.constBegin(); it != sourcePathsByNickname.constEnd(); ++it) {
-            const QImage texture = flatlas::infrastructure::FreelancerMaterialResolver::loadBestPlanetTexture(
-                archetypesByNickname.value(it.key()), it.value());
-            if (!texture.isNull())
+            const flatlas::infrastructure::PlanetSurfaceTextureSet texture =
+                flatlas::infrastructure::FreelancerMaterialResolver::loadPlanetSurfaceTextures(it.value());
+            if (texture.hasSegmentedSurface() || !texture.fallbackAtlas.isNull())
                 textures.insert(it.key(), texture);
         }
         return textures;
     }));
 }
 
-void SceneView3D::applyPlanetTextures(const QHash<QString, QImage> &textures, int generation)
+void SceneView3D::applyPlanetTextures(
+    const QHash<QString, flatlas::infrastructure::PlanetSurfaceTextureSet> &textures, int generation)
 {
     if (generation != m_loadGeneration)
         return;
 
     for (auto it = textures.constBegin(); it != textures.constEnd(); ++it) {
         Qt3DCore::QEntity *marker = m_markerEntitiesByNickname.value(it.key(), nullptr);
-        if (!marker || it.value().isNull())
+        if (!marker)
+            continue;
+
+        const auto oldSegments = m_planetSegmentEntitiesByNickname.take(it.key());
+        for (Qt3DCore::QEntity *segment : oldSegments)
+            delete segment;
+
+        if (it.value().hasSegmentedSurface()) {
+            const float radius = m_objectRadiiByNickname.value(it.key(), 1.0f);
+            auto *segmentParent = qobject_cast<Qt3DCore::QEntity *>(marker->parent());
+            if (!segmentParent)
+                segmentParent = marker;
+            QList<Qt3DCore::QEntity *> segments;
+            auto addSegment = [&](const QImage &image,
+                                  const QVector3D &center,
+                                  const QVector3D &uAxis,
+                                  const QVector3D &vAxis,
+                                  float radiusScale) {
+                if (image.isNull())
+                    return;
+
+                auto *segment = new Qt3DCore::QEntity(segmentParent);
+                Qt3DRender::QGeometryRenderer *renderer =
+                    buildPlanetCubeFaceRenderer(radius * radiusScale, center, uAxis, vAxis, segment);
+                if (!renderer) {
+                    delete segment;
+                    return;
+                }
+
+                Qt3DRender::QMaterial *material = MaterialFactory::createFromImage(image, segment);
+                segment->addComponent(renderer);
+                segment->addComponent(material);
+                segments.append(segment);
+                if (m_selectionManager)
+                    m_selectionManager->registerEntity(it.key(), segment, material);
+            };
+
+            addSegment(it.value().side1,
+                       QVector3D(0.0f, 0.0f, 1.0f),
+                       QVector3D(1.0f, 0.0f, 0.0f),
+                       QVector3D(0.0f, 1.0f, 0.0f),
+                       1.0f);
+            addSegment(it.value().side2,
+                       QVector3D(1.0f, 0.0f, 0.0f),
+                       QVector3D(0.0f, 0.0f, -1.0f),
+                       QVector3D(0.0f, 1.0f, 0.0f),
+                       1.0f);
+            addSegment(it.value().side1,
+                       QVector3D(0.0f, 0.0f, -1.0f),
+                       QVector3D(-1.0f, 0.0f, 0.0f),
+                       QVector3D(0.0f, 1.0f, 0.0f),
+                       1.0f);
+            addSegment(it.value().side2,
+                       QVector3D(-1.0f, 0.0f, 0.0f),
+                       QVector3D(0.0f, 0.0f, 1.0f),
+                       QVector3D(0.0f, 1.0f, 0.0f),
+                       1.0f);
+            if (!it.value().cap.isNull()) {
+                addSegment(it.value().cap,
+                           QVector3D(0.0f, 1.0f, 0.0f),
+                           QVector3D(1.0f, 0.0f, 0.0f),
+                           QVector3D(0.0f, 0.0f, -1.0f),
+                           1.001f);
+                addSegment(it.value().cap,
+                           QVector3D(0.0f, -1.0f, 0.0f),
+                           QVector3D(1.0f, 0.0f, 0.0f),
+                           QVector3D(0.0f, 0.0f, 1.0f),
+                           1.001f);
+            }
+            if (!segments.isEmpty()) {
+                marker->setEnabled(false);
+                m_planetSegmentEntitiesByNickname.insert(it.key(), segments);
+            }
+            continue;
+        }
+
+        if (it.value().fallbackAtlas.isNull())
             continue;
 
         if (Qt3DRender::QMaterial *oldMaterial = m_markerMaterialsByNickname.value(it.key(), nullptr))
             marker->removeComponent(oldMaterial);
 
-        Qt3DRender::QMaterial *textureMaterial = MaterialFactory::createFromImage(it.value(), marker);
+        Qt3DRender::QMaterial *textureMaterial = MaterialFactory::createFromImage(it.value().fallbackAtlas, marker);
         marker->addComponent(textureMaterial);
         m_markerMaterialsByNickname.insert(it.key(), textureMaterial);
 

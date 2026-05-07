@@ -346,7 +346,8 @@ QImage projectPlanetSideTextures(const QImage &side1, const QImage &side2)
         const double cosLatitude = std::cos(latitude);
         const double vertical = 0.5 - std::sin(latitude) * 0.5;
         for (int x = 0; x < projected.width(); ++x) {
-            const double longitude = ((static_cast<double>(x) + 0.5) / projected.width()) * M_PI * 2.0 - M_PI;
+            double longitude = ((static_cast<double>(x) + 0.5) / projected.width()) * M_PI * 2.0 - M_PI;
+
             const bool useSide1 = std::cos(longitude) >= 0.0;
             const double sideLongitude = useSide1
                                              ? longitude
@@ -705,7 +706,7 @@ QImage FreelancerMaterialResolver::loadTextureForMesh(const QString &modelPath, 
     return TextureLoader::load(path);
 }
 
-QImage FreelancerMaterialResolver::loadTextureFromSphereMaterialChain(const QStringList &sourcePaths)
+PlanetSurfaceTextureSet FreelancerMaterialResolver::loadPlanetSurfaceTextures(const QStringList &sourcePaths)
 {
     QString spherePath;
     for (const QString &sourcePath : sourcePaths) {
@@ -774,14 +775,15 @@ QImage FreelancerMaterialResolver::loadTextureFromSphereMaterialChain(const QStr
     };
 
     QHash<int, QImage> sideImages;
+    QImage capImage;
     QImage firstSurfaceImage;
     for (const QString &materialName : materialNames) {
-        if (isPlanetLayerTextureName(materialName))
+        if (!isPlanetCapTextureName(materialName) && isPlanetLayerTextureName(materialName))
             continue;
 
         QStringList textureValues = materialMap.value(normalizeMaterialKey(materialName));
         textureValues.erase(std::remove_if(textureValues.begin(), textureValues.end(), [](const QString &value) {
-                                return isPlanetLayerTextureName(value);
+                                return !isPlanetCapTextureName(value) && isPlanetLayerTextureName(value);
                             }),
                             textureValues.end());
         if (textureValues.isEmpty())
@@ -794,7 +796,9 @@ QImage FreelancerMaterialResolver::loadTextureFromSphereMaterialChain(const QStr
         const int sideIndex = planetSideIndex(materialName);
         if (sideIndex > 0 && !sideImages.contains(sideIndex))
             sideImages.insert(sideIndex, image);
-        if (firstSurfaceImage.isNull())
+        else if (isPlanetCapTextureName(materialName) && capImage.isNull())
+            capImage = image;
+        if (sideIndex > 0 && firstSurfaceImage.isNull())
             firstSurfaceImage = image;
     }
 
@@ -819,17 +823,34 @@ QImage FreelancerMaterialResolver::loadTextureFromSphereMaterialChain(const QStr
         }
     }
 
+    if (capImage.isNull()) {
+        for (const QString &alias : planetTextureAliases(QFileInfo(spherePath).completeBaseName())) {
+            if (alias.isEmpty())
+                continue;
+
+            const QImage image = resolveTextureImage(QStringList{alias + QStringLiteral("cap"),
+                                                                 alias + QStringLiteral("_cap")});
+            if (!image.isNull()) {
+                capImage = image;
+                break;
+            }
+        }
+    }
+
     const QImage sideAtlas = projectPlanetSideTextures(sideImages.value(1), sideImages.value(2));
-    if (!sideAtlas.isNull())
-        return sideAtlas;
-    return firstSurfaceImage;
+    PlanetSurfaceTextureSet textures;
+    textures.side1 = sideImages.value(1);
+    textures.side2 = sideImages.value(2);
+    textures.cap = capImage;
+    textures.fallbackAtlas = !sideAtlas.isNull() ? sideAtlas : firstSurfaceImage;
+    return textures;
 }
 
 QImage FreelancerMaterialResolver::loadBestPlanetTexture(const QString &archetype, const QStringList &sourcePaths)
 {
-    const QImage sphereMaterialTexture = loadTextureFromSphereMaterialChain(sourcePaths);
-    if (!sphereMaterialTexture.isNull())
-        return sphereMaterialTexture;
+    const PlanetSurfaceTextureSet sphereMaterialTextures = loadPlanetSurfaceTextures(sourcePaths);
+    if (!sphereMaterialTextures.fallbackAtlas.isNull())
+        return sphereMaterialTextures.fallbackAtlas;
 
     QHash<QString, QImage> candidates;
 

@@ -185,6 +185,12 @@ private slots:
                                const QString &sphPath) {
             const QImage image = FreelancerMaterialResolver::loadBestPlanetTexture(
                 archetype, QStringList{txmPath, matPath, sphPath});
+            const auto segments =
+                FreelancerMaterialResolver::loadPlanetSurfaceTextures(QStringList{txmPath, matPath, sphPath});
+            QVERIFY(segments.hasSegmentedSurface());
+            QVERIFY(!segments.side1.isNull());
+            QVERIFY(!segments.side2.isNull());
+            QVERIFY(!segments.cap.isNull());
             QVERIFY(!image.isNull());
             QVERIFY(image.width() > 0);
             QVERIFY(image.height() > 0);

@@ -10,10 +10,20 @@
 
 namespace flatlas::infrastructure {
 
+struct PlanetSurfaceTextureSet {
+    QImage side1;
+    QImage side2;
+    QImage cap;
+    QImage fallbackAtlas;
+
+    bool hasSegmentedSurface() const { return !side1.isNull() && !side2.isNull(); }
+};
+
 class FreelancerMaterialResolver {
 public:
     static QString resolveTexturePathForMesh(const QString &modelPath, const MeshData &mesh);
     static QImage loadTextureForMesh(const QString &modelPath, const MeshData &mesh);
+    static PlanetSurfaceTextureSet loadPlanetSurfaceTextures(const QStringList &sourcePaths);
     static QImage loadBestPlanetTexture(const QString &archetype, const QStringList &sourcePaths);
 
 private:
@@ -23,7 +33,6 @@ private:
     static QString findDataRoot(const QString &path);
     static QStringList textureCandidatesForMesh(const QString &modelPath, const MeshData &mesh);
     static QImage resolveEmbeddedTextureForMesh(const QString &modelPath, const MeshData &mesh);
-    static QImage loadTextureFromSphereMaterialChain(const QStringList &sourcePaths);
 
     static QMutex s_cacheMutex;
     static QHash<QString, QHash<QString, QStringList>> s_materialTextureMapCache;
