@@ -3,6 +3,10 @@
 #ifdef FLATLAS_HAS_QT3D
 
 #include "MaterialFactory.h"
+#include <Qt3DRender/QColorMask>
+#include <Qt3DRender/QEffect>
+#include <Qt3DRender/QRenderPass>
+#include <Qt3DRender/QTechnique>
 #include <Qt3DRender/QTextureWrapMode>
 #include <Qt3DRender/QPaintedTextureImage>
 #include <QPainter>
@@ -76,6 +80,31 @@ Qt3DExtras::QPhongMaterial *MaterialFactory::createDefault(const QColor &color,
     material->setSpecular(QColor(50, 50, 50));
     material->setShininess(25.0f);
     return material;
+}
+
+void MaterialFactory::preventFramebufferAlphaWrites(Qt3DRender::QMaterial *material)
+{
+    if (!material || !material->effect())
+        return;
+
+    // Qt3D alpha materials blend correctly inside the scene, but the native
+    // Qt3D window can expose framebuffer alpha to the desktop compositor. Keep
+    // RGB blending and block writes to the native-window alpha channel so stale
+    // widget pixels cannot leak through transparent geometry after tab switches.
+    for (Qt3DRender::QTechnique *technique : material->effect()->techniques()) {
+        if (!technique)
+            continue;
+        for (Qt3DRender::QRenderPass *pass : technique->renderPasses()) {
+            if (!pass)
+                continue;
+            auto *colorMask = new Qt3DRender::QColorMask(pass);
+            colorMask->setRedMasked(true);
+            colorMask->setGreenMasked(true);
+            colorMask->setBlueMasked(true);
+            colorMask->setAlphaMasked(false);
+            pass->addRenderState(colorMask);
+        }
+    }
 }
 
 Qt3DRender::QTexture2D *MaterialFactory::createTexture(const QImage &image,

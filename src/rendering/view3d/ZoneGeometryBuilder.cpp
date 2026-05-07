@@ -2,6 +2,8 @@
 
 #include "ZoneGeometryBuilder.h"
 
+#include "MaterialFactory.h"
+
 #include <Qt3DCore/QAttribute>
 #include <Qt3DCore/QBuffer>
 #include <Qt3DCore/QEntity>
@@ -12,11 +14,7 @@
 #include <Qt3DExtras/QPhongAlphaMaterial>
 #include <Qt3DExtras/QPhongMaterial>
 #include <Qt3DExtras/QSphereMesh>
-#include <Qt3DRender/QColorMask>
-#include <Qt3DRender/QEffect>
 #include <Qt3DRender/QGeometryRenderer>
-#include <Qt3DRender/QRenderPass>
-#include <Qt3DRender/QTechnique>
 
 #include <QByteArray>
 #include <QtMath>
@@ -260,41 +258,13 @@ void includeRotatedBounds(ModelBounds &bounds,
     }
 }
 
-void preventFramebufferAlphaWrites(Qt3DRender::QMaterial *material)
-{
-    if (!material || !material->effect())
-        return;
-
-    // QPhongAlphaMaterial correctly blends zones inside the Qt3D scene, but on
-    // Windows the native Qt3D window can expose its framebuffer alpha to the
-    // desktop compositor. If zone fragments write alpha < 1, widgets from the
-    // previously visible 2D tab may show through the 3D view exactly where
-    // transparent zones are drawn. Keep RGB blending, but prevent writes to the
-    // framebuffer alpha channel so objects inside zones remain visible/pickable
-    // without leaking stale UI pixels from behind the native window.
-    for (Qt3DRender::QTechnique *technique : material->effect()->techniques()) {
-        if (!technique)
-            continue;
-        for (Qt3DRender::QRenderPass *pass : technique->renderPasses()) {
-            if (!pass)
-                continue;
-            auto *colorMask = new Qt3DRender::QColorMask(pass);
-            colorMask->setRedMasked(true);
-            colorMask->setGreenMasked(true);
-            colorMask->setBlueMasked(true);
-            colorMask->setAlphaMasked(false);
-            pass->addRenderState(colorMask);
-        }
-    }
-}
-
 Qt3DExtras::QPhongAlphaMaterial *makeFillMaterial(const QColor &color, float alpha, Qt3DCore::QNode *owner)
 {
     auto *material = new Qt3DExtras::QPhongAlphaMaterial(owner);
     material->setDiffuse(color);
     material->setAmbient(color.darker(170));
     material->setAlpha(qBound(0.0f, alpha, 1.0f));
-    preventFramebufferAlphaWrites(material);
+    MaterialFactory::preventFramebufferAlphaWrites(material);
     return material;
 }
 
@@ -306,7 +276,7 @@ Qt3DExtras::QPhongAlphaMaterial *makeWireMaterial(const QColor &color, Qt3DCore:
     material->setDiffuse(wireColor);
     material->setAmbient(wireColor.darker(170));
     material->setAlpha(0.5f);
-    preventFramebufferAlphaWrites(material);
+    MaterialFactory::preventFramebufferAlphaWrites(material);
     return material;
 }
 

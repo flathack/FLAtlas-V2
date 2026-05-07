@@ -4,6 +4,7 @@
 #ifdef FLATLAS_HAS_QT3D
 
 #include <QImage>
+#include <QColor>
 #include <QString>
 #include <Qt3DExtras/QTextureMaterial>
 #include <Qt3DExtras/QPhongMaterial>
@@ -25,6 +26,9 @@ public:
     /// Create a default material with a solid color.
     static Qt3DExtras::QPhongMaterial *createDefault(const QColor &color,
                                                       Qt3DCore::QNode *parent);
+
+    /// Keep transparent Qt3D materials from exposing native-window framebuffer alpha.
+    static void preventFramebufferAlphaWrites(Qt3DRender::QMaterial *material);
 
     /// Create a Qt3D texture from a QImage.
     static Qt3DRender::QTexture2D *createTexture(const QImage &image,

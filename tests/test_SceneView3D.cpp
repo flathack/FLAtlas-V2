@@ -6,14 +6,20 @@
 
 #ifdef FLATLAS_HAS_QT3D
 #include "rendering/view3d/FreeCameraController.h"
+#include "rendering/view3d/MaterialFactory.h"
 #include "rendering/view3d/OrbitCamera.h"
 #include "rendering/view3d/ModelGeometryBuilder.h"
 #include "rendering/view3d/SelectionManager.h"
 #include <QMouseEvent>
 #include <QPointingDevice>
 #include <QWheelEvent>
+#include <Qt3DExtras/QPhongAlphaMaterial>
 #include <Qt3DRender/QCamera>
+#include <Qt3DRender/QColorMask>
+#include <Qt3DRender/QEffect>
 #include <Qt3DRender/QGeometryRenderer>
+#include <Qt3DRender/QRenderPass>
+#include <Qt3DRender/QTechnique>
 #endif
 
 using namespace flatlas::domain;
@@ -37,6 +43,7 @@ private slots:
     void testSelectionManagerSelectEmits();
     void testSelectionManagerReselect();
     void testSelectionManagerClear();
+    void testAlphaMaterialsDisableFramebufferAlphaWrites();
     void testFreeCameraWheelChangesSpeed();
     void testFreeCameraKeyboardMovement();
     void testFreeCameraMouseLook();
@@ -263,6 +270,33 @@ void TestSceneView3D::testSelectionManagerClear()
     mgr.select("test_obj");
     mgr.clear();
     QVERIFY(mgr.selectedNickname().isEmpty());
+}
+
+void TestSceneView3D::testAlphaMaterialsDisableFramebufferAlphaWrites()
+{
+    Qt3DExtras::QPhongAlphaMaterial material;
+    material.setAlpha(0.35f);
+
+    flatlas::rendering::MaterialFactory::preventFramebufferAlphaWrites(&material);
+
+    bool foundColorMask = false;
+    for (Qt3DRender::QTechnique *technique : material.effect()->techniques()) {
+        QVERIFY(technique);
+        for (Qt3DRender::QRenderPass *pass : technique->renderPasses()) {
+            QVERIFY(pass);
+            for (Qt3DRender::QRenderState *state : pass->renderStates()) {
+                const auto *mask = qobject_cast<const Qt3DRender::QColorMask *>(state);
+                if (!mask)
+                    continue;
+                foundColorMask = true;
+                QVERIFY(mask->isRedMasked());
+                QVERIFY(mask->isGreenMasked());
+                QVERIFY(mask->isBlueMasked());
+                QVERIFY(!mask->isAlphaMasked());
+            }
+        }
+    }
+    QVERIFY(foundColorMask);
 }
 
 void TestSceneView3D::testFreeCameraWheelChangesSpeed()

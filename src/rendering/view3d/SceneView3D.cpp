@@ -1283,6 +1283,7 @@ void SceneView3D::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObj
     selectionMaterial->setDiffuse(QColor(50, 155, 255, 185));
     selectionMaterial->setAmbient(QColor(50, 155, 255, 140));
     selectionMaterial->setAlpha(0.72f);
+    MaterialFactory::preventFramebufferAlphaWrites(selectionMaterial);
     selectionMarker->addComponent(selectionMesh);
     selectionMarker->addComponent(selectionTransform);
     selectionMarker->addComponent(selectionMaterial);
@@ -1298,6 +1299,7 @@ void SceneView3D::addSolarObject(const std::shared_ptr<flatlas::domain::SolarObj
     hoverMaterial->setDiffuse(QColor(80, 220, 255, 72));
     hoverMaterial->setAmbient(QColor(80, 220, 255, 55));
     hoverMaterial->setAlpha(0.28f);
+    MaterialFactory::preventFramebufferAlphaWrites(hoverMaterial);
     hoverMarker->addComponent(hoverMesh);
     hoverMarker->addComponent(hoverMaterial);
     hoverMarker->setEnabled(false);
