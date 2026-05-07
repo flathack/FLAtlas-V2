@@ -22,7 +22,6 @@
 #include "infrastructure/freelancer/FreelancerMaterialResolver.h"
 #include "rendering/preview/ModelCache.h"
 
-#include <QApplication>
 #include <Qt3DCore/QAttribute>
 #include <Qt3DCore/QBuffer>
 #include <Qt3DCore/QEntity>
@@ -492,7 +491,7 @@ SceneView3D::SceneView3D(QWidget *parent) : QWidget(parent)
     QPalette containerPalette = m_container->palette();
     containerPalette.setColor(QPalette::Window, QColor(6, 10, 18));
     m_container->setPalette(containerPalette);
-    m_container->setToolTip(tr("Left click selects, left drag rotates, right drag pans, mouse wheel zooms."));
+    m_container->setToolTip(tr("Left click selects, right drag rotates, middle drag pans, mouse wheel zooms."));
     m_container->installEventFilter(this);
     m_3dWindow->installEventFilter(this);
     layout->addWidget(m_container, 1);
@@ -818,8 +817,7 @@ void SceneView3D::finishTransformGizmoEdit()
         finishGizmoDrag();
     m_activeGizmoHandle = GizmoNone;
     m_gizmoDragNickname.clear();
-    m_pendingLeftOrbitDrag = false;
-    m_leftOrbitDragging = false;
+    m_cameraMouseInteractionActive = false;
     if (m_selectionManager)
         m_selectionManager->setPickingSuppressed(false);
     if (m_orbitCamera)
@@ -835,10 +833,9 @@ void SceneView3D::finishTransformGizmoEdit()
 void SceneView3D::cancelCameraInteraction()
 {
 #ifdef FLATLAS_HAS_QT3D
-    m_pendingLeftOrbitDrag = false;
-    m_leftOrbitDragging = false;
     m_activeGizmoHandle = GizmoNone;
     m_gizmoDragNickname.clear();
+    m_cameraMouseInteractionActive = false;
     if (m_selectionManager)
         m_selectionManager->setPickingSuppressed(false);
     if (m_orbitCamera)
@@ -915,8 +912,8 @@ void SceneView3D::setupScene()
     m_camera->lens()->setPerspectiveProjection(45.0f, 16.0f / 9.0f, 5.0f, 6000000.0f);
 
     m_orbitCamera = new OrbitCamera(m_camera, this);
-    m_orbitCamera->setRotateButton(Qt::LeftButton);
-    m_orbitCamera->setPanButton(Qt::RightButton);
+    m_orbitCamera->setRotateButton(Qt::RightButton);
+    m_orbitCamera->setPanButton(Qt::MiddleButton);
     m_orbitCamera->setResetState(QVector3D(0.0f, 0.0f, 0.0f), 80000.0f, 45.0f, 24.0f);
     m_orbitCamera->resetView();
 
@@ -1618,7 +1615,7 @@ void SceneView3D::updateTransformGizmo()
     m_gizmoTransform->setTranslation(m_objectCentersByNickname.value(nickname));
     if (creatingGizmo && m_selectionManager) {
         QTimer::singleShot(0, this, [this]() {
-            if (m_selectionManager && m_activeGizmoHandle == GizmoNone && !m_leftOrbitDragging)
+            if (m_selectionManager && m_activeGizmoHandle == GizmoNone)
                 m_selectionManager->setPickingSuppressed(false);
         });
     }
@@ -1932,10 +1929,13 @@ bool SceneView3D::eventFilter(QObject *watched, QEvent *event)
         }
         if (auto *mouseEvent = static_cast<QMouseEvent *>(event);
             mouseEvent->button() == Qt::LeftButton) {
-            m_pendingLeftOrbitDrag = true;
-            m_leftOrbitDragging = false;
-            m_leftOrbitDragStartPos = mouseEvent->pos();
             return QWidget::eventFilter(watched, event);
+        }
+        if (auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            mouseEvent->button() == Qt::RightButton || mouseEvent->button() == Qt::MiddleButton) {
+            m_cameraMouseInteractionActive = true;
+            if (m_selectionManager)
+                m_selectionManager->setPickingSuppressed(true);
         }
         m_orbitCamera->handleMousePress(static_cast<QMouseEvent *>(event));
         return true;
@@ -1954,18 +1954,6 @@ bool SceneView3D::eventFilter(QObject *watched, QEvent *event)
         }
         if (auto *mouseEvent = static_cast<QMouseEvent *>(event);
             mouseEvent->buttons().testFlag(Qt::LeftButton)) {
-            const int dragDistance = (mouseEvent->pos() - m_leftOrbitDragStartPos).manhattanLength();
-            if (m_pendingLeftOrbitDrag && !m_leftOrbitDragging && dragDistance >= QApplication::startDragDistance()) {
-                m_leftOrbitDragging = true;
-                m_pendingLeftOrbitDrag = false;
-                if (m_selectionManager)
-                    m_selectionManager->setPickingSuppressed(true);
-                m_orbitCamera->beginRotateAt(m_leftOrbitDragStartPos);
-            }
-            if (m_leftOrbitDragging) {
-                m_orbitCamera->handleMouseMove(mouseEvent);
-                return true;
-            }
             return QWidget::eventFilter(watched, event);
         }
         m_orbitCamera->handleMouseMove(static_cast<QMouseEvent *>(event));
@@ -1985,18 +1973,20 @@ bool SceneView3D::eventFilter(QObject *watched, QEvent *event)
         }
         if (auto *mouseEvent = static_cast<QMouseEvent *>(event);
             mouseEvent->button() == Qt::LeftButton) {
-            const bool wasDragging = m_leftOrbitDragging;
-            if (m_leftOrbitDragging)
-                m_orbitCamera->endRotate();
-            if (m_selectionManager)
-                m_selectionManager->setPickingSuppressed(false);
-            m_pendingLeftOrbitDrag = false;
-            m_leftOrbitDragging = false;
-            if (wasDragging)
-                return true;
             return QWidget::eventFilter(watched, event);
         }
         m_orbitCamera->handleMouseRelease(static_cast<QMouseEvent *>(event));
+        if (auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            m_cameraMouseInteractionActive
+            && (mouseEvent->button() == Qt::RightButton || mouseEvent->button() == Qt::MiddleButton)) {
+            m_cameraMouseInteractionActive = false;
+            if (m_selectionManager) {
+                QTimer::singleShot(0, this, [this]() {
+                    if (m_selectionManager && !m_cameraMouseInteractionActive && m_activeGizmoHandle == GizmoNone)
+                        m_selectionManager->setPickingSuppressed(false);
+                });
+            }
+        }
         return true;
     case QEvent::Wheel:
         if (m_freeCamera && m_freeCamera->isEnabled()) {

@@ -168,9 +168,7 @@ private:
     QElapsedTimer m_freeCameraClock;
     int m_loadGeneration = 0;
     int m_activeGizmoHandle = 0;
-    bool m_pendingLeftOrbitDrag = false;
-    bool m_leftOrbitDragging = false;
-    QPoint m_leftOrbitDragStartPos;
+    bool m_cameraMouseInteractionActive = false;
     QPoint m_gizmoDragStartScreenPos;
     QVector3D m_gizmoDragStartPosition;
     QVector3D m_gizmoDragStartRotation;

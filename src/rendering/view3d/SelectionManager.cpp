@@ -70,9 +70,11 @@ void SelectionManager::select(const QString &nickname)
     emit objectSelected(m_selectedNickname);
 }
 
-void SelectionManager::onPicked(Qt3DRender::QPickEvent * /*event*/, const QString &nickname)
+void SelectionManager::onPicked(Qt3DRender::QPickEvent *event, const QString &nickname)
 {
     if (m_pickingSuppressed)
+        return;
+    if (!event || event->button() != Qt3DRender::QPickEvent::LeftButton)
         return;
     select(nickname);
 }
