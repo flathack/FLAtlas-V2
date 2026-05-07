@@ -837,6 +837,20 @@ PlanetSurfaceTextureSet FreelancerMaterialResolver::loadPlanetSurfaceTextures(co
         }
     }
 
+    if (capImage.isNull()) {
+        for (const QString &path : std::as_const(resolverSources)) {
+            const auto embedded = extractUtfEmbeddedTextures(path);
+            for (auto it = embedded.constBegin(); it != embedded.constEnd(); ++it) {
+                if (isPlanetCapTextureName(it.key()) && !it.value().isNull()) {
+                    capImage = it.value();
+                    break;
+                }
+            }
+            if (!capImage.isNull())
+                break;
+        }
+    }
+
     const QImage sideAtlas = projectPlanetSideTextures(sideImages.value(1), sideImages.value(2));
     PlanetSurfaceTextureSet textures;
     textures.side1 = sideImages.value(1);

@@ -222,6 +222,13 @@ private slots:
         if (!QFileInfo::exists(txmPath) || !QFileInfo::exists(matPath) || !QFileInfo::exists(sphPath))
             QSKIP("Freelancer-HD Rh01_01 reference planet files are not available on this machine.");
         verifyPlanet(QStringLiteral("planet_icelndwat_3000"), txmPath, matPath, sphPath);
+
+        txmPath = dataRoot + QStringLiteral("/SOLAR/PLANETS/planet_desored.txm");
+        matPath = dataRoot + QStringLiteral("/SOLAR/PLANETS/PLANET_DESORED/planet_desored.mat");
+        sphPath = dataRoot + QStringLiteral("/SOLAR/PLANETS/PLANET_DESORED/planet_desored_1500.sph");
+        if (!QFileInfo::exists(txmPath) || !QFileInfo::exists(matPath) || !QFileInfo::exists(sphPath))
+            QSKIP("Freelancer-HD Li01_02 reference planet files are not available on this machine.");
+        verifyPlanet(QStringLiteral("planet_desored_1500"), txmPath, matPath, sphPath);
     }
 };
 
