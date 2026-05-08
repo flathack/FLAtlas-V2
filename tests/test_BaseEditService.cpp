@@ -450,6 +450,10 @@ void TestBaseEditService::createFromTemplateCopiesRoomContentAndNpcData()
     QVERIFY(virtualEquipment != nullptr);
     QVERIFY(virtualEquipment->enabled);
     QVERIFY(virtualEquipment->virtualRoom);
+    const BaseRoomState *physicalDeck = templateRoom(QStringLiteral("Deck"));
+    QVERIFY(physicalDeck != nullptr);
+    QVERIFY(physicalDeck->enabled);
+    QVERIFY(!physicalDeck->virtualRoom);
 
     SystemDocument document;
     document.setName("Hi01");
@@ -466,6 +470,7 @@ void TestBaseEditService::createFromTemplateCopiesRoomContentAndNpcData()
     QVERIFY2(BaseEditService::applyCreate(createState, QPointF(0.0, 0.0), gameRoot, {}, &result, &errorMessage), qPrintable(errorMessage));
 
     bool sawRoomCopy = false;
+    bool sawDeckCopy = false;
     bool sawNpcCopy = false;
     for (const BaseStagedWrite &write : result.stagedWrites) {
         if (write.absolutePath.endsWith("_bar.ini", Qt::CaseInsensitive)) {
@@ -489,6 +494,7 @@ void TestBaseEditService::createFromTemplateCopiesRoomContentAndNpcData()
             QVERIFY(!write.content.contains("Li01_03_Base"));
         }
         if (write.absolutePath.endsWith("_deck.ini", Qt::CaseInsensitive)) {
+            sawDeckCopy = true;
             const int launchpadIndex = write.content.indexOf("name = IDS_HOTSPOT_DECK");
             const int barIndex = write.content.indexOf("name = IDS_HOTSPOT_BAR");
             const int traderIndex = write.content.indexOf("name = IDS_HOTSPOT_COMMODITYTRADER_ROOM");
@@ -517,6 +523,7 @@ void TestBaseEditService::createFromTemplateCopiesRoomContentAndNpcData()
     }
 
     QVERIFY(sawRoomCopy);
+    QVERIFY(sawDeckCopy);
     QVERIFY(sawNpcCopy);
 }
 

@@ -641,7 +641,8 @@ bool loadBaseFileState(BaseEditState *state,
             if (normalizeKey(room.roomName) != normalizeKey(virtualRoom))
                 continue;
             room.enabled = true;
-            room.virtualRoom = true;
+            if (room.templateContent.trimmed().isEmpty())
+                room.virtualRoom = true;
             found = true;
             break;
         }
