@@ -417,6 +417,13 @@ bool isPlanetLikeObject(const flatlas::domain::SolarObject &obj)
         || obj.archetype().contains(QStringLiteral("planet"), Qt::CaseInsensitive);
 }
 
+float lightSourceMarkerRadius(const SystemLightSource &source)
+{
+    if (source.range > 0.0f)
+        return qBound(220.0f, source.range * 0.012f, 1100.0f);
+    return 520.0f;
+}
+
 float markerRadius(flatlas::domain::SolarObject::Type type)
 {
     using Type = flatlas::domain::SolarObject::Type;
@@ -632,6 +639,72 @@ void SceneView3D::setArchetypeTextureSourcePaths(const QHash<QString, QStringLis
 void SceneView3D::setGameRoot(const QString &gameRoot)
 {
     m_gameRoot = gameRoot;
+}
+
+void SceneView3D::setSystemLightSources(const QVector<SystemLightSource> &lightSources)
+{
+    m_systemLightSources = lightSources;
+
+#ifdef FLATLAS_HAS_QT3D
+    for (Qt3DCore::QEntity *entity : std::as_const(m_systemLightEntities))
+        delete entity;
+    m_systemLightEntities.clear();
+
+    if (!m_rootEntity)
+        return;
+
+    const bool useFallbackLight = m_systemLightSources.isEmpty();
+    if (m_defaultLightEntity)
+        m_defaultLightEntity->setEnabled(useFallbackLight);
+    if (useFallbackLight)
+        return;
+
+    for (const SystemLightSource &source : std::as_const(m_systemLightSources)) {
+        const QString type = source.type.trimmed().toUpper();
+        auto *lightEntity = new Qt3DCore::QEntity(m_rootEntity);
+        const QColor color = source.color.isValid() ? source.color : QColor(Qt::white);
+
+        auto *light = new Qt3DRender::QPointLight(lightEntity);
+        light->setColor(color);
+        light->setIntensity(type == QStringLiteral("DIRECTIONAL") ? 0.45f : 0.75f);
+        if (type == QStringLiteral("DIRECTIONAL")) {
+            light->setConstantAttenuation(1.0f);
+            light->setLinearAttenuation(0.0f);
+            light->setQuadraticAttenuation(0.0f);
+        } else {
+            if (source.attenuation.x() > 0.0f)
+                light->setConstantAttenuation(source.attenuation.x());
+            if (source.attenuation.y() > 0.0f)
+                light->setLinearAttenuation(source.attenuation.y());
+            if (source.attenuation.z() > 0.0f)
+                light->setQuadraticAttenuation(source.attenuation.z());
+            else if (source.range > 0.0f)
+                light->setQuadraticAttenuation(1.0f / (source.range * source.range));
+        }
+
+        auto *transform = new Qt3DCore::QTransform(lightEntity);
+        transform->setTranslation(source.position);
+        lightEntity->addComponent(light);
+        lightEntity->addComponent(transform);
+
+        auto *markerMesh = new Qt3DExtras::QSphereMesh(lightEntity);
+        markerMesh->setRadius(lightSourceMarkerRadius(source));
+        markerMesh->setRings(16);
+        markerMesh->setSlices(24);
+        auto *markerMaterial = new Qt3DExtras::QPhongMaterial(lightEntity);
+        markerMaterial->setDiffuse(color.lighter(145));
+        markerMaterial->setAmbient(color.lighter(185));
+        markerMaterial->setSpecular(QColor(255, 255, 220));
+        markerMaterial->setShininess(60.0f);
+        lightEntity->addComponent(markerMesh);
+        lightEntity->addComponent(markerMaterial);
+
+        m_systemLightEntities.append(lightEntity);
+    }
+    requestViewportUpdate();
+#else
+    Q_UNUSED(lightSources);
+#endif
 }
 
 void SceneView3D::setDisplayFilterSettings(const SystemDisplayFilterSettings &settings)
@@ -1018,14 +1091,15 @@ void SceneView3D::setupScene()
     renderer->setClearColor(QColor(6, 10, 18, 255));
     renderer->setFrustumCullingEnabled(false);
 
-    auto *lightEntity = new Qt3DCore::QEntity(m_rootEntity);
-    m_light = new Qt3DRender::QPointLight(lightEntity);
+    m_defaultLightEntity = new Qt3DCore::QEntity(m_rootEntity);
+    m_light = new Qt3DRender::QPointLight(m_defaultLightEntity);
     m_light->setColor(Qt::white);
     m_light->setIntensity(1.6f);
-    auto *lightTransform = new Qt3DCore::QTransform(lightEntity);
+    auto *lightTransform = new Qt3DCore::QTransform(m_defaultLightEntity);
     lightTransform->setTranslation(QVector3D(150000.0f, 200000.0f, 150000.0f));
-    lightEntity->addComponent(m_light);
-    lightEntity->addComponent(lightTransform);
+    m_defaultLightEntity->addComponent(m_light);
+    m_defaultLightEntity->addComponent(lightTransform);
+    setSystemLightSources(m_systemLightSources);
 
     m_skyRenderer = new SkyRenderer(m_rootEntity);
     m_skyRenderer->setRadius(2500000.0f);
@@ -1944,7 +2018,7 @@ void SceneView3D::applyPlanetTextures(
                     return;
                 }
 
-                Qt3DRender::QMaterial *material = MaterialFactory::createFromImage(image, segment);
+                Qt3DRender::QMaterial *material = MaterialFactory::createPlanetSurfaceFromImage(image, segment);
                 segment->addComponent(renderer);
                 segment->addComponent(material);
                 segments.append(segment);
@@ -1997,7 +2071,8 @@ void SceneView3D::applyPlanetTextures(
         if (Qt3DRender::QMaterial *oldMaterial = m_markerMaterialsByNickname.value(it.key(), nullptr))
             marker->removeComponent(oldMaterial);
 
-        Qt3DRender::QMaterial *textureMaterial = MaterialFactory::createFromImage(it.value().fallbackAtlas, marker);
+        Qt3DRender::QMaterial *textureMaterial =
+            MaterialFactory::createPlanetSurfaceFromImage(it.value().fallbackAtlas, marker);
         marker->addComponent(textureMaterial);
         m_markerMaterialsByNickname.insert(it.key(), textureMaterial);
 

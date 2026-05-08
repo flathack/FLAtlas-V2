@@ -455,6 +455,17 @@ bool parseIniVector3(const QString &raw, QVector3D *outValue)
     return true;
 }
 
+QColor parseIniColor(const QString &raw, const QColor &fallback = Qt::white)
+{
+    QVector3D values;
+    if (!parseIniVector3(raw, &values))
+        return fallback;
+
+    return QColor(qBound(0, static_cast<int>(std::round(values.x())), 255),
+                  qBound(0, static_cast<int>(std::round(values.y())), 255),
+                  qBound(0, static_cast<int>(std::round(values.z())), 255));
+}
+
 QString suggestIndexedNickname(const QString &prefix, const QStringList &existing, int width = 3)
 {
     int number = 1;
@@ -3782,6 +3793,34 @@ QHash<QString, float> SystemEditorPage::archetypeDisplayRadiiFor3DView() const
 QHash<QString, QStringList> SystemEditorPage::archetypeTextureSourcePathsFor3DView() const
 {
     return solarArchetypeTextureSourcePathsForPreview();
+}
+
+QVector<SystemLightSource> SystemEditorPage::lightSourcesFor3DView() const
+{
+    QVector<SystemLightSource> lightSources;
+    if (!m_document)
+        return lightSources;
+
+    const IniDocument extras = SystemPersistence::extraSections(m_document.get());
+    for (const IniSection &section : extras) {
+        if (section.name.compare(QStringLiteral("LightSource"), Qt::CaseInsensitive) != 0)
+            continue;
+
+        SystemLightSource lightSource;
+        lightSource.nickname = section.value(QStringLiteral("nickname")).trimmed();
+        if (!parseIniVector3(section.value(QStringLiteral("pos")).trimmed(), &lightSource.position))
+            continue;
+
+        lightSource.color = parseIniColor(section.value(QStringLiteral("color")).trimmed());
+        lightSource.type = section.value(QStringLiteral("type"), QStringLiteral("POINT")).trimmed();
+        bool okRange = false;
+        const float range = section.value(QStringLiteral("range")).trimmed().toFloat(&okRange);
+        if (okRange)
+            lightSource.range = range;
+        parseIniVector3(section.value(QStringLiteral("attenuation")).trimmed(), &lightSource.attenuation);
+        lightSources.append(lightSource);
+    }
+    return lightSources;
 }
 
 SystemDisplayFilterSettings SystemEditorPage::displayFilterSettingsFor3DView() const

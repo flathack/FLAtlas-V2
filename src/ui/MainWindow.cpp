@@ -209,6 +209,7 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
                             const QHash<QString, QString> &modelPaths,
                             const QHash<QString, float> &displayRadii,
                             const QHash<QString, QStringList> &textureSourcePaths,
+                            const QVector<flatlas::rendering::SystemLightSource> &lightSources,
                             const flatlas::rendering::SystemDisplayFilterSettings &initialFilterSettings,
                             const QString &tabKey,
                             flatlas::editors::SystemEditorPage *sourceEditor,
@@ -260,6 +261,7 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     view->setArchetypeDisplayRadii(displayRadii);
     view->setArchetypeTextureSourcePaths(textureSourcePaths);
     view->setGameRoot(flatlas::core::EditingContext::instance().primaryGamePath());
+    view->setSystemLightSources(lightSources);
     view->setDisplayFilterSettings(initialFilterSettings);
     view->loadDocument(document);
     viewLayout->addWidget(view, 1);
@@ -1951,6 +1953,9 @@ void MainWindow::open3DSystemEditorFor(flatlas::editors::SystemEditorPage *edito
     for (int i = 0; i < m_centerTabs->count(); ++i) {
         QWidget *widget = m_centerTabs->widget(i);
         if (widget && widget->objectName() == tabKey) {
+            const auto views = widget->findChildren<flatlas::rendering::SceneView3D *>();
+            for (flatlas::rendering::SceneView3D *view : views)
+                view->setSystemLightSources(editor->lightSourcesFor3DView());
             m_centerTabs->setCurrentIndex(i);
             return;
         }
@@ -1960,6 +1965,7 @@ void MainWindow::open3DSystemEditorFor(flatlas::editors::SystemEditorPage *edito
                                     editor->archetypeModelPathsFor3DView(),
                                     editor->archetypeDisplayRadiiFor3DView(),
                                     editor->archetypeTextureSourcePathsFor3DView(),
+                                    editor->lightSourcesFor3DView(),
                                     editor->displayFilterSettingsFor3DView(),
                                     tabKey,
                                     editor,

@@ -2,7 +2,9 @@
 // rendering/view3d/SceneView3D.h - practical 3D system editor viewport
 
 #include <QHash>
+#include <QColor>
 #include <QImage>
+#include <QVector>
 #include <QSet>
 #include <QStringList>
 #include <QElapsedTimer>
@@ -34,6 +36,15 @@ class SkyRenderer;
 struct ModelBounds;
 #endif
 
+struct SystemLightSource {
+    QString nickname;
+    QVector3D position;
+    QColor color = Qt::white;
+    float range = 0.0f;
+    QString type;
+    QVector3D attenuation;
+};
+
 class SceneView3D : public QWidget {
     Q_OBJECT
 public:
@@ -44,6 +55,7 @@ public:
     void setArchetypeDisplayRadii(const QHash<QString, float> &displayRadii);
     void setArchetypeTextureSourcePaths(const QHash<QString, QStringList> &textureSourcePaths);
     void setGameRoot(const QString &gameRoot);
+    void setSystemLightSources(const QVector<SystemLightSource> &lightSources);
     void setDisplayFilterSettings(const SystemDisplayFilterSettings &settings);
     void loadDocument(flatlas::domain::SystemDocument *doc);
     void selectObject(const QString &nickname);
@@ -132,6 +144,7 @@ private:
     QWidget *m_container = nullptr;
     Qt3DCore::QEntity *m_rootEntity = nullptr;
     Qt3DCore::QEntity *m_sceneRoot = nullptr;
+    Qt3DCore::QEntity *m_defaultLightEntity = nullptr;
     Qt3DCore::QEntity *m_gridEntity = nullptr;
     Qt3DCore::QEntity *m_objectsRoot = nullptr;
     Qt3DCore::QEntity *m_flightShipEntity = nullptr;
@@ -154,6 +167,7 @@ private:
     QHash<QString, Qt3DCore::QEntity *> m_hoverMarkerEntitiesByNickname;
     QHash<QString, QList<Qt3DCore::QEntity *>> m_ringEntitiesByHostNickname;
     QHash<QString, Qt3DCore::QEntity *> m_atmosphereZoneEntitiesByObjectNickname;
+    QList<Qt3DCore::QEntity *> m_systemLightEntities;
     QHash<QString, Qt3DCore::QEntity *> m_sceneEntitiesByNickname;
     QHash<QString, Qt3DCore::QEntity *> m_zoneWireEntitiesByNickname;
     QHash<QString, QStringList> m_nicknamesByModelPath;
@@ -180,6 +194,7 @@ private:
     QHash<QString, QString> m_archetypeModelPaths;
     QHash<QString, float> m_archetypeDisplayRadii;
     QHash<QString, QStringList> m_archetypeTextureSourcePaths;
+    QVector<SystemLightSource> m_systemLightSources;
     QString m_gameRoot;
     SystemDisplayFilterSettings m_displayFilterSettings;
     int m_zoomLevel = 50;

@@ -23,6 +23,10 @@ public:
     static Qt3DRender::QMaterial *createFromImage(const QImage &image,
                                                   Qt3DCore::QNode *parent);
 
+    /// Create a textured material for planet surfaces: lit, but without shiny per-tile highlights.
+    static Qt3DRender::QMaterial *createPlanetSurfaceFromImage(const QImage &image,
+                                                               Qt3DCore::QNode *parent);
+
     /// Create a default material with a solid color.
     static Qt3DExtras::QPhongMaterial *createDefault(const QColor &color,
                                                       Qt3DCore::QNode *parent);

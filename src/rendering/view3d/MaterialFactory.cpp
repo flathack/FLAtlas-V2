@@ -65,9 +65,26 @@ Qt3DRender::QMaterial *MaterialFactory::createFromImage(const QImage &image,
     texture->wrapMode()->setX(Qt3DRender::QTextureWrapMode::Repeat);
     texture->wrapMode()->setY(Qt3DRender::QTextureWrapMode::Repeat);
     material->setDiffuse(QVariant::fromValue(texture));
-    material->setAmbient(QColor(40, 40, 40));
-    material->setSpecular(QColor(30, 30, 30));
-    material->setShininess(20.0f);
+    material->setAmbient(QColor(22, 22, 22));
+    material->setSpecular(QColor(12, 12, 12));
+    material->setShininess(12.0f);
+    return material;
+}
+
+Qt3DRender::QMaterial *MaterialFactory::createPlanetSurfaceFromImage(const QImage &image,
+                                                                     Qt3DCore::QNode *parent)
+{
+    if (image.isNull())
+        return createDefault(QColor(80, 135, 210), parent);
+
+    auto *material = new Qt3DExtras::QDiffuseSpecularMaterial(parent);
+    auto *texture = createTexture(makePreviewTextureOpaque(image), material);
+    texture->wrapMode()->setX(Qt3DRender::QTextureWrapMode::ClampToEdge);
+    texture->wrapMode()->setY(Qt3DRender::QTextureWrapMode::ClampToEdge);
+    material->setDiffuse(QVariant::fromValue(texture));
+    material->setAmbient(QColor(28, 28, 28));
+    material->setSpecular(QColor(0, 0, 0));
+    material->setShininess(1.0f);
     return material;
 }
 

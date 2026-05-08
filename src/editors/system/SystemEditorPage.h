@@ -12,7 +12,7 @@
 #include <memory>
 
 namespace flatlas::domain { class SystemDocument; class SolarObject; }
-namespace flatlas::rendering { class MapScene; class SystemMapView; class SceneView3D; class ZoneLegendWidget; }
+namespace flatlas::rendering { class MapScene; class SystemMapView; class SceneView3D; class ZoneLegendWidget; struct SystemLightSource; }
 namespace flatlas::editors {
 struct CreateFieldZoneResult;
 struct CreateExclusionZoneResult;
@@ -73,6 +73,7 @@ public:
     QHash<QString, QString> archetypeModelPathsFor3DView() const;
     QHash<QString, float> archetypeDisplayRadiiFor3DView() const;
     QHash<QString, QStringList> archetypeTextureSourcePathsFor3DView() const;
+    QVector<flatlas::rendering::SystemLightSource> lightSourcesFor3DView() const;
     flatlas::rendering::SystemDisplayFilterSettings displayFilterSettingsFor3DView() const;
     void applyDisplayFilterSettingsFrom3DView(const flatlas::rendering::SystemDisplayFilterSettings &settings);
 
