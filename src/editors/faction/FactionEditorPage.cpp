@@ -19,6 +19,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSize>
+#include <QSizePolicy>
 #include <QSignalBlocker>
 #include <QSlider>
 #include <QSplitter>
@@ -72,6 +73,16 @@ QColor reputationColor(double value)
     if (value < -0.59)
         return QColor(150, 58, 50);
     return QColor(105, 110, 118);
+}
+
+void configureResolvedLabel(QLabel *label)
+{
+    if (!label)
+        return;
+    label->setWordWrap(true);
+    label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    label->setMinimumWidth(0);
+    label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
 }
 
 } // namespace
@@ -243,6 +254,9 @@ void FactionEditorPage::buildUi()
     m_idsInfoResolvedLabel = new QLabel(general);
     m_idsShortNameEdit = new QLineEdit(general);
     m_idsShortNameResolvedLabel = new QLabel(general);
+    configureResolvedLabel(m_idsNameResolvedLabel);
+    configureResolvedLabel(m_idsInfoResolvedLabel);
+    configureResolvedLabel(m_idsShortNameResolvedLabel);
     m_initialWorldCheck = new QCheckBox(tr("initialworld.ini"), general);
     m_empathyCheck = new QCheckBox(tr("empathy.ini"), general);
     m_factionPropCheck = new QCheckBox(tr("faction_prop.ini"), general);

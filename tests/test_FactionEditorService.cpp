@@ -69,6 +69,36 @@ class TestFactionEditorService : public QObject {
     Q_OBJECT
 
 private slots:
+    void unchangedEditorValuesDoNotSetDirty()
+    {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        writeFactionFixture(temp.path());
+
+        FactionEditorService service;
+        QString error;
+        QVERIFY2(service.load(temp.path(), &error), qPrintable(error));
+        QVERIFY(!service.isDirty());
+
+        const auto *loaded = service.faction(QStringLiteral("li_lsf_grp"));
+        QVERIFY(loaded);
+        const flatlas::domain::FactionPropData props = loaded->props;
+
+        service.setIds(QStringLiteral("li_lsf_grp"), loaded->idsName, loaded->idsInfo, loaded->idsShortName);
+        service.setProperties(QStringLiteral("li_lsf_grp"),
+                              props,
+                              loaded->inInitialWorld,
+                              loaded->inEmpathy,
+                              loaded->inFactionProp);
+        service.setReputation(QStringLiteral("li_lsf_grp"), QStringLiteral("rh_n_grp"), 0.5);
+        service.setEmpathyRate(QStringLiteral("li_lsf_grp"), QStringLiteral("rh_n_grp"), 0.25);
+
+        QVERIFY(!service.isDirty());
+
+        service.setIds(QStringLiteral("li_lsf_grp"), QStringLiteral("42"), loaded->idsInfo, loaded->idsShortName);
+        QVERIFY(service.isDirty());
+    }
+
     void deactivateCanReplaceReferencesAndThenDelete()
     {
         QTemporaryDir temp;

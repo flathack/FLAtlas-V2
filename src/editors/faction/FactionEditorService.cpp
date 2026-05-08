@@ -9,6 +9,10 @@
 #include <QSaveFile>
 #include <QTextStream>
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
 namespace flatlas::editors {
 
 namespace {
@@ -57,6 +61,36 @@ flatlas::domain::FactionPropData fallbackCreationProps(const QString &nickname)
     props.msgIdPrefix = defaultMsgIdPrefix(nickname);
     props.jumpPreference = QStringLiteral("jumpgate");
     return props;
+}
+
+bool factionPropsEqual(const flatlas::domain::FactionPropData &left,
+                       const flatlas::domain::FactionPropData &right)
+{
+    return left.affiliation == right.affiliation
+        && left.legality == right.legality
+        && left.nicknamePlurality == right.nicknamePlurality
+        && left.msgIdPrefix == right.msgIdPrefix
+        && left.jumpPreference == right.jumpPreference
+        && left.npcShips == right.npcShips
+        && left.voices == right.voices
+        && left.mcCostume == right.mcCostume
+        && left.spaceCostumes == right.spaceCostumes
+        && left.firstnameMale == right.firstnameMale
+        && left.firstnameFemale == right.firstnameFemale
+        && left.lastname == right.lastname
+        && left.rankDesig == right.rankDesig
+        && left.formationDesig == right.formationDesig
+        && left.largeShipDesig == right.largeShipDesig
+        && left.largeShipNames == right.largeShipNames
+        && left.scanForCargo == right.scanForCargo
+        && left.scanAnnounce == right.scanAnnounce
+        && left.scanChance == right.scanChance
+        && left.formations == right.formations;
+}
+
+bool nearlyEqual(double left, double right)
+{
+    return std::abs(left - right) <= 0.000001;
 }
 
 QString replaceFactionToken(const QString &line, const QString &nickname, const QString &replacement)
@@ -434,9 +468,17 @@ void FactionEditorService::setIds(const QString &nickname, const QString &idsNam
     auto *item = m_world.faction(nickname);
     if (!item)
         return;
-    item->idsName = idsName.trimmed();
-    item->idsInfo = idsInfo.trimmed();
-    item->idsShortName = idsShortName.trimmed();
+    const QString trimmedIdsName = idsName.trimmed();
+    const QString trimmedIdsInfo = idsInfo.trimmed();
+    const QString trimmedIdsShortName = idsShortName.trimmed();
+    if (item->idsName == trimmedIdsName
+        && item->idsInfo == trimmedIdsInfo
+        && item->idsShortName == trimmedIdsShortName) {
+        return;
+    }
+    item->idsName = trimmedIdsName;
+    item->idsInfo = trimmedIdsInfo;
+    item->idsShortName = trimmedIdsShortName;
     setDirty(true);
 }
 
@@ -449,9 +491,16 @@ void FactionEditorService::setProperties(const QString &nickname,
     auto *item = m_world.faction(nickname);
     if (!item)
         return;
-    item->props = props;
-    if (item->props.affiliation.trimmed().isEmpty())
-        item->props.affiliation = item->nickname;
+    flatlas::domain::FactionPropData normalizedProps = props;
+    if (normalizedProps.affiliation.trimmed().isEmpty())
+        normalizedProps.affiliation = item->nickname;
+    if (factionPropsEqual(item->props, normalizedProps)
+        && item->inInitialWorld == inInitialWorld
+        && item->inEmpathy == inEmpathy
+        && item->inFactionProp == inFactionProp) {
+        return;
+    }
+    item->props = normalizedProps;
     item->inInitialWorld = inInitialWorld;
     item->inEmpathy = inEmpathy;
     item->inFactionProp = inFactionProp;
@@ -460,12 +509,19 @@ void FactionEditorService::setProperties(const QString &nickname,
 
 void FactionEditorService::setReputation(const QString &source, const QString &target, double value)
 {
+    const double clampedValue = std::clamp(value, -1.0, 1.0);
+    const double currentValue = m_world.reputation(source, target, std::numeric_limits<double>::quiet_NaN());
+    if (!std::isnan(currentValue) && nearlyEqual(currentValue, clampedValue))
+        return;
     m_world.setReputation(source, target, value);
     setDirty(true);
 }
 
 void FactionEditorService::setEmpathyRate(const QString &source, const QString &target, double value)
 {
+    const double currentValue = m_world.empathyRate(source, target, std::numeric_limits<double>::quiet_NaN());
+    if (!std::isnan(currentValue) && nearlyEqual(currentValue, value))
+        return;
     m_world.setEmpathyRate(source, target, value);
     setDirty(true);
 }
