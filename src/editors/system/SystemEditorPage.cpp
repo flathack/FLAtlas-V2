@@ -80,6 +80,7 @@
 #include <QSet>
 #include <QBrush>
 #include <QFrame>
+#include <QDateTime>
 #include <QFileInfo>
 #include <QDesktopServices>
 #include <QDebug>
@@ -635,15 +636,50 @@ QString idsDisplayTextFromTable(const IdsStringTable &ids, int globalId)
     return globalId > 0 ? ids.getString(globalId).trimmed() : QString();
 }
 
+QString idsDisplayCacheSignature(const QString &gameRoot)
+{
+    const QString exeDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("EXE"));
+    if (exeDir.isEmpty())
+        return {};
+
+    QStringList parts;
+    const QString freelancerIniPath =
+        flatlas::core::PathUtils::ciResolvePath(exeDir, QStringLiteral("freelancer.ini"));
+    if (!freelancerIniPath.isEmpty()) {
+        const QFileInfo info(freelancerIniPath);
+        parts.append(QStringLiteral("ini:%1:%2")
+                         .arg(info.lastModified().toMSecsSinceEpoch())
+                         .arg(info.size()));
+    }
+
+    QDirIterator it(exeDir,
+                    QStringList{QStringLiteral("*.dll")},
+                    QDir::Files,
+                    QDirIterator::NoIteratorFlags);
+    while (it.hasNext()) {
+        const QFileInfo info(it.next());
+        parts.append(QStringLiteral("dll:%1:%2:%3")
+                         .arg(info.fileName().toLower())
+                         .arg(info.lastModified().toMSecsSinceEpoch())
+                         .arg(info.size()));
+    }
+
+    parts.sort(Qt::CaseInsensitive);
+    return parts.join(QLatin1Char('|'));
+}
+
 const IdsStringTable &selectionDisplayIdsTable(const QString &gameRoot)
 {
     static QString cachedGameRoot;
+    static QString cachedSignature;
     static IdsStringTable cachedIds;
 
-    if (cachedGameRoot == gameRoot)
+    const QString signature = idsDisplayCacheSignature(gameRoot);
+    if (cachedGameRoot == gameRoot && cachedSignature == signature)
         return cachedIds;
 
     cachedGameRoot = gameRoot;
+    cachedSignature = signature;
     cachedIds = IdsStringTable();
 
     const QString exeDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("EXE"));
