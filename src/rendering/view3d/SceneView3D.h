@@ -102,6 +102,9 @@ protected:
 private:
     void setupScene();
     void clearScene();
+    void connectDocumentSignals();
+    void rebuildDocumentScene(bool resetCamera);
+    void scheduleDocumentRefresh();
     void addNavigationGrid();
     void addSolarObject(const std::shared_ptr<flatlas::domain::SolarObject> &obj);
     void addAtmosphereZone(const flatlas::domain::SolarObject &obj);
@@ -173,7 +176,6 @@ private:
     QHash<QString, QStringList> m_nicknamesByModelPath;
     QHash<QString, QStringList> m_planetTextureSourcePathsByNickname;
     QSet<QString> m_nicknamesWithRenderedModel;
-    QSet<QString> m_linkedRingZoneNicknames;
     QHash<QString, QVector3D> m_objectCentersByNickname;
     QHash<QString, float> m_objectRadiiByNickname;
     ModelBounds *m_sceneBounds = nullptr;
@@ -201,6 +203,7 @@ private:
     bool m_zoneWireframesVisible = true;
     bool m_flightModeEnabled = false;
     bool m_transformGizmoEnabled = false;
+    bool m_documentRefreshPending = false;
 };
 
 } // namespace flatlas::rendering

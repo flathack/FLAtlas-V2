@@ -715,33 +715,99 @@ void SceneView3D::setDisplayFilterSettings(const SystemDisplayFilterSettings &se
 
 void SceneView3D::loadDocument(flatlas::domain::SystemDocument *doc)
 {
+    if (m_document && m_document != doc)
+        QObject::disconnect(m_document, nullptr, this, nullptr);
     m_document = doc;
+    connectDocumentSignals();
+    rebuildDocumentScene(true);
+}
+
+void SceneView3D::connectDocumentSignals()
+{
+    if (!m_document)
+        return;
+
+    QObject::disconnect(m_document, nullptr, this, nullptr);
+    auto connectObject = [this](const std::shared_ptr<flatlas::domain::SolarObject> &obj) {
+        if (!obj)
+            return;
+        QObject::disconnect(obj.get(), nullptr, this, nullptr);
+        connect(obj.get(), &flatlas::domain::SolarObject::changed,
+                this, [this]() { scheduleDocumentRefresh(); });
+    };
+    auto connectZone = [this](const std::shared_ptr<flatlas::domain::ZoneItem> &zone) {
+        if (!zone)
+            return;
+        QObject::disconnect(zone.get(), nullptr, this, nullptr);
+        connect(zone.get(), &flatlas::domain::ZoneItem::changed,
+                this, [this]() { scheduleDocumentRefresh(); });
+    };
+
+    for (const auto &obj : m_document->objects())
+        connectObject(obj);
+    for (const auto &zone : m_document->zones())
+        connectZone(zone);
+
+    connect(m_document, &flatlas::domain::SystemDocument::objectAdded,
+            this, [this, connectObject](const std::shared_ptr<flatlas::domain::SolarObject> &obj) {
+                connectObject(obj);
+                scheduleDocumentRefresh();
+            });
+    connect(m_document, &flatlas::domain::SystemDocument::objectRemoved,
+            this, [this](const std::shared_ptr<flatlas::domain::SolarObject> &) {
+                scheduleDocumentRefresh();
+            });
+    connect(m_document, &flatlas::domain::SystemDocument::zoneAdded,
+            this, [this, connectZone](const std::shared_ptr<flatlas::domain::ZoneItem> &zone) {
+                connectZone(zone);
+                scheduleDocumentRefresh();
+            });
+    connect(m_document, &flatlas::domain::SystemDocument::zoneRemoved,
+            this, [this](const std::shared_ptr<flatlas::domain::ZoneItem> &) {
+                scheduleDocumentRefresh();
+            });
+}
+
+void SceneView3D::rebuildDocumentScene(bool resetCamera)
+{
     clearScene();
 
-    if (!doc)
+    if (!m_document)
         return;
 
 #ifdef FLATLAS_HAS_QT3D
     addNavigationGrid();
 
-    m_linkedRingZoneNicknames.clear();
-    for (const auto &obj : doc->objects()) {
-        if (!obj)
-            continue;
-        const QString zoneNickname = ringZoneNickname(*obj);
-        if (!zoneNickname.isEmpty())
-            m_linkedRingZoneNicknames.insert(zoneNickname);
-    }
-
-    for (const auto &zone : doc->zones())
+    for (const auto &zone : m_document->zones())
         addZone(zone);
-    for (const auto &obj : doc->objects())
+    for (const auto &obj : m_document->objects())
         addSolarObject(obj);
 
     applyDisplayFilter();
-    updateSceneCamera();
+    if (resetCamera)
+        updateSceneCamera();
     scheduleModelLoading();
     schedulePlanetTextureLoading();
+    updateTransformGizmo();
+    requestViewportUpdate();
+#endif
+}
+
+void SceneView3D::scheduleDocumentRefresh()
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (m_activeGizmoHandle != GizmoNone || !m_gizmoDragNickname.isEmpty())
+        return;
+    if (m_documentRefreshPending)
+        return;
+    m_documentRefreshPending = true;
+    QTimer::singleShot(0, this, [this]() {
+        m_documentRefreshPending = false;
+        const QString selected = m_selectionManager ? m_selectionManager->selectedNickname() : QString();
+        rebuildDocumentScene(false);
+        if (m_selectionManager && !selected.isEmpty())
+            m_selectionManager->select(selected);
+    });
 #endif
 }
 
@@ -1241,8 +1307,6 @@ void SceneView3D::addZone(const std::shared_ptr<flatlas::domain::ZoneItem> &zone
 #ifdef FLATLAS_HAS_QT3D
     if (!zone || !m_zonesRoot)
         return;
-    if (m_linkedRingZoneNicknames.contains(zone->nickname()))
-        return;
 
     const ZoneVisualStyle style = ZoneColorScheme::styleForZone(*zone);
     const ZoneGeometryBuildResult result = ZoneGeometryBuilder::buildZone(*zone, style, m_zonesRoot);
@@ -1487,7 +1551,7 @@ void SceneView3D::updateSceneCamera()
     if (!m_orbitCamera || !m_sceneBounds)
         return;
 
-    const ModelBounds *focusBounds = (m_objectBounds && m_objectBounds->valid) ? m_objectBounds : m_sceneBounds;
+    const ModelBounds *focusBounds = (m_sceneBounds && m_sceneBounds->valid) ? m_sceneBounds : m_objectBounds;
     const QVector3D center = focusBounds->valid ? focusBounds->center() : QVector3D();
     const float radius = qMax(focusBounds->radius(), 5000.0f);
     const float distance = qMax(radius * 2.4f, 25000.0f);
