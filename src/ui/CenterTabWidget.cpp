@@ -1,8 +1,10 @@
 #include "CenterTabWidget.h"
+#include "ToolIcons.h"
 #include <QIcon>
 #include <QSize>
 #include <QTabBar>
 #include <QStackedWidget>
+#include <QToolButton>
 #include <QVariant>
 #include <QWidget>
 
@@ -53,6 +55,7 @@ int CenterTabWidget::addTab(QWidget *widget, const QIcon &icon, const QString &l
     if (!icon.isNull())
         m_tabBar->setTabIcon(idx, icon);
     m_tabBar->setTabData(idx, QVariant::fromValue(static_cast<QObject *>(widget)));
+    m_tabBar->setTabButton(idx, QTabBar::RightSide, createCloseButton(widget));
     m_stack->addWidget(widget);
     return idx;
 }
@@ -123,6 +126,25 @@ bool CenterTabWidget::isPinnedTab(int index) const
 {
     QWidget *widget = widgetForTab(index);
     return widget && m_pinnedWidgets.contains(widget);
+}
+
+QWidget *CenterTabWidget::createCloseButton(QWidget *tabWidget)
+{
+    auto *button = new QToolButton(m_tabBar);
+    button->setObjectName(QStringLiteral("centerTabCloseButton"));
+    button->setAutoRaise(true);
+    button->setCursor(Qt::ArrowCursor);
+    button->setFocusPolicy(Qt::NoFocus);
+    button->setIcon(closeIcon());
+    button->setIconSize(QSize(14, 14));
+    button->setFixedSize(22, 22);
+    button->setToolTip(tr("Tab schließen"));
+    connect(button, &QToolButton::clicked, this, [this, tabWidget]() {
+        const int index = indexOf(tabWidget);
+        if (index >= 0 && !isPinnedTab(index))
+            emit closeRequested(index);
+    });
+    return button;
 }
 
 QWidget *CenterTabWidget::widgetForTab(int index) const

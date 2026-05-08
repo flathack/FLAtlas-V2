@@ -1158,8 +1158,9 @@ void MainWindow::applyThemeStyling()
                                              "QTabBar::tab:selected { background: %4; color: %5; border-bottom: 2px solid %6; }"
                                              "QTabBar::tab:!selected:hover { background: %7; color: %2; }"
                                              "QTabBar::tab:disabled { background: %8; color: %9; border: 1px solid %3; }"
-                       "QTabBar::close-button { subcontrol-origin: padding; subcontrol-position: right; }"
-                                             "QTabBar::close-button:hover { background: %10; border-radius: 3px; }")
+                                             "QToolButton#centerTabCloseButton { background: transparent; border: none; padding: 1px; border-radius: 3px; }"
+                                             "QToolButton#centerTabCloseButton:hover { background: %10; }"
+                                             "QToolButton#centerTabCloseButton:pressed { background: %10; }")
                         .arg(tabBg.name())
                         .arg(tabText.name())
                         .arg(border.name())

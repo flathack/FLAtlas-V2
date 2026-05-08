@@ -157,6 +157,10 @@ QIcon drawIcon(const QColor &accent, const QString &glyph)
         ship.lineTo(18, 46);
         ship.closeSubpath();
         painter.drawPath(ship);
+    } else if (glyph == QStringLiteral("close")) {
+        painter.setPen(QPen(accent.lighter(150), 6.0, Qt::SolidLine, Qt::RoundCap));
+        painter.drawLine(QPointF(22, 22), QPointF(42, 42));
+        painter.drawLine(QPointF(42, 22), QPointF(22, 42));
     } else {
         painter.drawEllipse(QPointF(32, 32), 14, 14);
     }
@@ -233,6 +237,11 @@ QIcon helpIcon()
 QIcon launchIcon()
 {
     return cachedIcon(QStringLiteral("launch"), QColor(89, 214, 145), QStringLiteral("launch"));
+}
+
+QIcon closeIcon()
+{
+    return cachedIcon(QStringLiteral("close"), QColor(255, 118, 118), QStringLiteral("close"));
 }
 
 } // namespace flatlas::ui

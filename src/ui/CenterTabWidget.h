@@ -40,6 +40,7 @@ signals:
 
 private:
     bool isPinnedTab(int index) const;
+    QWidget *createCloseButton(QWidget *tabWidget);
     QWidget *widgetForTab(int index) const;
     QTabBar *m_tabBar;
     QStackedWidget *m_stack;

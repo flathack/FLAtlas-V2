@@ -11,5 +11,6 @@ QIcon saveIcon();
 QIcon settingsIcon();
 QIcon helpIcon();
 QIcon launchIcon();
+QIcon closeIcon();
 
 } // namespace flatlas::ui
