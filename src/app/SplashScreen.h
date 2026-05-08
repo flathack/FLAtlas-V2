@@ -1,8 +1,8 @@
 #pragma once
 
 #include <QSplashScreen>
-#include <QProgressBar>
-#include <QLabel>
+
+class StartupSplashOverlay;
 
 /// Splash-Screen mit Fortschrittsbalken und Statustext.
 class SplashScreen : public QSplashScreen
@@ -16,7 +16,9 @@ public:
     /// Fortschritt setzen (0-100) mit Statustext.
     void setProgress(int percent, const QString &message);
 
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+
 private:
-    QProgressBar *m_progressBar;
-    QLabel *m_statusLabel;
+    StartupSplashOverlay *m_overlay = nullptr;
 };

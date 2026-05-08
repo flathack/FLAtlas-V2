@@ -1,4 +1,5 @@
 #include "Theme.h"
+#include "ThemeColors.h"
 
 #include <QApplication>
 #include <QColor>
@@ -139,6 +140,10 @@ const QHash<QString, Palette> &Theme::palettes()
 
 QString Theme::generateStylesheet(const Palette &p)
 {
+    const QColor uiAccent = ThemeColors::color(QStringLiteral("uiAccent"));
+    const QString uiAccentName = uiAccent.name(QColor::HexRgb);
+    const QString uiAccentText = uiAccent.lightness() >= 170 ? QStringLiteral("#1f2937") : QStringLiteral("#ffffff");
+
     QString ss = QStringLiteral(
         "QWidget { color:%1; font-family:\"Segoe UI\",Tahoma,\"Microsoft Sans Serif\",Arial,sans-serif; }\n"
         "QMainWindow, QDialog, QWidget#centralWidget { background:%2; }\n"
@@ -187,6 +192,9 @@ QString Theme::generateStylesheet(const Palette &p)
         "QMenu::item:selected { background:%8; }\n"
         "QToolTip { background:%13; color:%1; border:1px solid %7; padding:4px; }\n"
         "QDockWidget::title { background:%16; padding:4px; }\n"
+        "QTabBar::tab:selected { background:%21; color:%22; border-bottom-color:%21; }\n"
+        "QProgressBar { background:%19; border:1px solid %3; border-radius:3px; text-align:center; }\n"
+        "QProgressBar::chunk { background:%21; border-radius:2px; }\n"
     ).arg(
         p[QStringLiteral("fg")],          // %1
         p[QStringLiteral("bg")],          // %2
@@ -210,6 +218,9 @@ QString Theme::generateStylesheet(const Palette &p)
         p[QStringLiteral("scrollbar_bg")]  // %19
     ).arg(
         p[QStringLiteral("scrollbar_fg")] // %20
+    ).arg(
+        uiAccentName, // %21
+        uiAccentText  // %22
     );
 
     // XP Luna gradient overrides
@@ -234,11 +245,11 @@ QString Theme::generateStylesheet(const Palette &p)
             " border-top-left-radius:3px; border-top-right-radius:3px;"
             " background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f8fcff,stop:1 #dceafd);"
             " color:#00225f; }\n"
-            "QTabBar::tab:selected { background:#ffffff; color:#003c9d; }\n"
+            "QTabBar::tab:selected { background:%1; color:%2; }\n"
             "QHeaderView::section {"
             " background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f8fcff,stop:1 #d7e8fd);"
             " color:#002a72; border:1px solid #9ab3d4; }\n"
-        );
+        ).arg(uiAccentName, uiAccentText);
     }
 
     return ss;

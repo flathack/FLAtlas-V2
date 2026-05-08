@@ -7,7 +7,7 @@
 #include "core/Config.h"
 #include "core/EditingContext.h"
 #include "core/Theme.h"
-#include "core/Theme.h"
+#include "core/ThemeColors.h"
 #include "core/I18n.h"
 #include "core/UndoManager.h"
 #include "editors/system/SystemEditorPage.h"
@@ -638,7 +638,7 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
     setWindowTitle(tr("FL Atlas V2 v%1").arg(qApp->applicationVersion()));
-    setWindowIcon(QIcon(QStringLiteral(":/icons/FLAtlas-V2-ICON.png")));
+    setWindowIcon(QIcon(QStringLiteral(":/icons/FLAtlas-V2-ICON.ico")));
     setMinimumSize(960, 620);
     resize(1600, 900);
 
@@ -1015,9 +1015,6 @@ void MainWindow::createPanels()
     m_progressBar->setValue(100);
     m_progressBar->setTextVisible(false);
     m_progressBar->setFixedHeight(4);
-    m_progressBar->setStyleSheet(
-        QStringLiteral("QProgressBar { background: #151c28; border: none; }"
-                        "QProgressBar::chunk { background: #e67e22; }"));
     connect(m_progressBar, &QProgressBar::valueChanged, this, [this](int value) {
         if (m_progressPercentLabel)
             m_progressPercentLabel->setText(QStringLiteral("%1%").arg(std::clamp(value, 0, 100)));
@@ -1110,8 +1107,8 @@ void MainWindow::applyThemeStyling()
     const QColor tabBg = pal.color(QPalette::Button);
     const QColor tabHover = pal.color(QPalette::AlternateBase);
     const QColor tabText = pal.color(QPalette::ButtonText);
-    const QColor selectedBg(230, 126, 34);
-    const QColor accent(230, 126, 34);
+    const QColor selectedBg = flatlas::core::ThemeColors::color(QStringLiteral("uiAccent"));
+    const QColor accent = selectedBg;
     const QColor border = pal.color(QPalette::Mid);
     const QColor disabledBg = pal.color(QPalette::Midlight);
     const QColor dimText = pal.color(QPalette::PlaceholderText);
@@ -1145,6 +1142,17 @@ void MainWindow::applyThemeStyling()
                         .arg(disabledBg.name())
                         .arg(dimText.name())
                         .arg(dangerHover.name()));
+
+    if (m_progressBar) {
+        const QColor progressBg = base.lightness() >= 170 ? QColor(224, 231, 242) : QColor(21, 28, 40);
+        m_progressBar->setStyleSheet(
+            QStringLiteral("QProgressBar { background: %1; border: none; }"
+                           "QProgressBar::chunk { background: %2; }")
+                .arg(progressBg.name(), accent.name()));
+    }
+    if (m_progressPercentLabel)
+        m_progressPercentLabel->setStyleSheet(
+            QStringLiteral("color: %1; font-weight: bold; font-size: 11px;").arg(accent.name()));
 
     if (m_editingLabel) {
         m_editingLabel->setStyleSheet(
@@ -1346,6 +1354,7 @@ void MainWindow::openSettingsDialog()
     createMenus();
     if (dlg.requiresPinnedToolRefresh() || dlg.resetRequested())
         applyPinnedToolSettings();
+    applyThemeStyling();
     for (auto *view : findChildren<flatlas::rendering::SceneView3D *>())
         view->refreshThemeColors();
     for (auto *scene : findChildren<flatlas::rendering::MapScene *>())

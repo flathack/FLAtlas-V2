@@ -40,6 +40,7 @@ endif()
 # Windows-spezifisch
 if(WIN32)
     add_definitions(-DUNICODE -D_UNICODE)
+    enable_language(RC)
 endif()
 
 add_subdirectory(src)

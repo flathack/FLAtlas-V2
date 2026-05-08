@@ -2,6 +2,7 @@
 <RCC version="1.0">
     <qresource prefix="/icons">
         <file alias="FLAtlas-V2-ICON.png">images/FLAtlas-V2-ICON.png</file>
+        <file alias="FLAtlas-V2-ICON.ico">images/FLAtlas-V2-ICON.ico</file>
     </qresource>
     <qresource prefix="/images">
         <file alias="Splash-Screen.png">images/Splash-Screen.png</file>

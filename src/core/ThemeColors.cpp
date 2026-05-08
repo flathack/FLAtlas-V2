@@ -26,6 +26,7 @@ QColor defaultColorForKey(const QString &key)
 QVector<ThemeColorChoice> ThemeColors::choices()
 {
     return {
+        {QStringLiteral("uiAccent"), QObject::tr("UI color"), QColor(QStringLiteral("#00449D"))},
         {QStringLiteral("zoneNebula"), QObject::tr("Nebula fields"), QColor(45, 145, 255)},
         {QStringLiteral("zoneAsteroid"), QObject::tr("Asteroid fields"), QColor(140, 92, 48)},
         {QStringLiteral("zoneMinefield"), QObject::tr("Mine fields"), QColor(255, 145, 35)},

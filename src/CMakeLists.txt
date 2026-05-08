@@ -35,6 +35,10 @@ add_executable(FLAtlas
     ${CMAKE_SOURCE_DIR}/resources/resources.qrc
 )
 
+if(WIN32)
+    target_sources(FLAtlas PRIVATE ${CMAKE_SOURCE_DIR}/resources/FLAtlas.rc)
+endif()
+
 if(MINGW)
     target_link_libraries(FLAtlas PRIVATE
         -Wl,--start-group

@@ -181,7 +181,11 @@ void SettingsDialog::setupUi()
     tabs->addTab(generalTab, tr("Allgemein"));
 
     auto *themeColorsTab = new QWidget(tabs);
-    auto *themeColorsLayout = new QFormLayout(themeColorsTab);
+    auto *themeColorsRoot = new QVBoxLayout(themeColorsTab);
+    auto *uiColorGroup = new QGroupBox(tr("UI Color"), themeColorsTab);
+    auto *uiColorLayout = new QFormLayout(uiColorGroup);
+    auto *systemViewGroup = new QGroupBox(tr("2D / 3D System View"), themeColorsTab);
+    auto *systemViewLayout = new QFormLayout(systemViewGroup);
     for (const flatlas::core::ThemeColorChoice &choice : flatlas::core::ThemeColors::choices()) {
         auto *button = new QPushButton(themeColorsTab);
         button->setProperty("themeColorKey", choice.key);
@@ -208,9 +212,13 @@ void SettingsDialog::setupUi()
                 "}"
             ).arg(colorName, selected.lightness() > 145 ? QStringLiteral("#101418") : QStringLiteral("#ffffff")));
         });
-        themeColorsLayout->addRow(choice.label + QLatin1Char(':'), button);
+        QFormLayout *targetLayout = choice.key == QStringLiteral("uiAccent") ? uiColorLayout : systemViewLayout;
+        targetLayout->addRow(choice.label + QLatin1Char(':'), button);
     }
-    tabs->addTab(themeColorsTab, tr("Theme Colors"));
+    themeColorsRoot->addWidget(uiColorGroup);
+    themeColorsRoot->addWidget(systemViewGroup);
+    themeColorsRoot->addStretch();
+    tabs->addTab(themeColorsTab, tr("Theme"));
 
     auto *pinnedTab = new QWidget(tabs);
     auto *pinnedLayout = new QVBoxLayout(pinnedTab);
@@ -387,8 +395,6 @@ void SettingsDialog::saveSettings()
 
     const QString theme = m_themeCombo->currentText();
     const QString lang = m_languageCombo->currentText();
-    flatlas::core::Theme::instance().apply(theme);
-    flatlas::core::I18n::instance().setLanguage(lang);
     config.setString(QStringLiteral("theme"), theme);
     config.setString(QStringLiteral("language"), lang);
     config.setBool(QStringLiteral("updateCheckEnabled"), m_updateCheckBox->isChecked());
@@ -398,6 +404,8 @@ void SettingsDialog::saveSettings()
         if (color.isValid())
             flatlas::core::ThemeColors::setColor(it.key(), color);
     }
+    flatlas::core::Theme::instance().apply(theme);
+    flatlas::core::I18n::instance().setLanguage(lang);
 
     QStringList pinned;
     for (auto it = m_toolChecks.constBegin(); it != m_toolChecks.constEnd(); ++it) {
