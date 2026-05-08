@@ -770,6 +770,62 @@ private slots:
         const QString written = QString::fromUtf8(file.readAll());
         QVERIFY(written.contains(QStringLiteral("rotate = 0, 0, 0")));
     }
+
+    void savePreservesExplicitZeroIds()
+    {
+        auto doc = std::make_unique<SystemDocument>();
+        doc->setName(QStringLiteral("Li01"));
+
+        auto obj = std::make_shared<SolarObject>();
+        obj->setNickname(QStringLiteral("li01_zero_ids"));
+        obj->setArchetype(QStringLiteral("space_station"));
+        obj->setPosition(QVector3D(10, 0, -20));
+        obj->setRawEntries({
+            {QStringLiteral("nickname"), QStringLiteral("li01_zero_ids")},
+            {QStringLiteral("ids_name"), QStringLiteral("0")},
+            {QStringLiteral("ids_info"), QStringLiteral("0")},
+            {QStringLiteral("pos"), QStringLiteral("10, 0, -20")},
+            {QStringLiteral("archetype"), QStringLiteral("space_station")},
+        });
+        doc->addObject(obj);
+
+        QTemporaryDir dir;
+        QString path = dir.path() + QStringLiteral("/zero_ids.ini");
+        QVERIFY(SystemPersistence::save(*doc, path));
+
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString written = QString::fromUtf8(file.readAll());
+        QVERIFY(written.contains(QStringLiteral("ids_name = 0")));
+        QVERIFY(written.contains(QStringLiteral("ids_info = 0")));
+    }
+
+    void savePreservesExplicitZeroZoneRotate()
+    {
+        auto doc = std::make_unique<SystemDocument>();
+        doc->setName(QStringLiteral("Li01"));
+
+        auto zone = std::make_shared<ZoneItem>();
+        zone->setNickname(QStringLiteral("Zone_Li01_zero_rotate"));
+        zone->setShape(ZoneItem::Ellipsoid);
+        zone->setSize(QVector3D(1000, 1000, 1000));
+        zone->setRawEntries({
+            {QStringLiteral("nickname"), QStringLiteral("Zone_Li01_zero_rotate")},
+            {QStringLiteral("rotate"), QStringLiteral("0, 0, 0")},
+            {QStringLiteral("shape"), QStringLiteral("ELLIPSOID")},
+            {QStringLiteral("size"), QStringLiteral("1000, 1000, 1000")},
+        });
+        doc->addZone(zone);
+
+        QTemporaryDir dir;
+        QString path = dir.path() + QStringLiteral("/zero_zone_rotate.ini");
+        QVERIFY(SystemPersistence::save(*doc, path));
+
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString written = QString::fromUtf8(file.readAll());
+        QVERIFY(written.contains(QStringLiteral("rotate = 0, 0, 0")));
+    }
 };
 
 QTEST_GUILESS_MAIN(TestSystemPersistence)

@@ -767,11 +767,17 @@ static IniDocument mergeSectionsWithLayout(const IniDocument &layoutSections,
 
 static void setOptionalIntEntry(QVector<IniEntry> &entries, const QString &key, int value)
 {
+    const int existingIndex = findEntryIndex(entries, key);
     if (value == 0) {
+        if (existingIndex >= 0) {
+            bool ok = false;
+            const int parsed = entries[existingIndex].second.trimmed().toInt(&ok);
+            if (ok && parsed == 0)
+                return;
+        }
         removeEntry(entries, key);
         return;
     }
-    const int existingIndex = findEntryIndex(entries, key);
     if (existingIndex >= 0) {
         bool ok = false;
         const int parsed = entries[existingIndex].second.trimmed().toInt(&ok);
@@ -799,11 +805,13 @@ static void setOptionalFloatEntry(QVector<IniEntry> &entries, const QString &key
 
 static void setOptionalVec3Entry(QVector<IniEntry> &entries, const QString &key, const QVector3D &value)
 {
+    const int existingIndex = findEntryIndex(entries, key);
     if (value.isNull()) {
+        if (existingIndex >= 0 && vec3Equals(parseVec3(entries[existingIndex].second), QVector3D()))
+            return;
         removeEntry(entries, key);
         return;
     }
-    const int existingIndex = findEntryIndex(entries, key);
     if (existingIndex >= 0) {
         const QVector3D parsed = parseVec3(entries[existingIndex].second);
         if (vec3Equals(parsed, value))
@@ -1052,12 +1060,7 @@ IniSection SystemPersistence::serializeObjectSection(const SolarObject &obj)
     setOptionalIntEntry(sec.entries, QStringLiteral("ids_name"), obj.idsName());
     setOptionalIntEntry(sec.entries, QStringLiteral("ids_info"), obj.idsInfo());
     setOptionalVec3Entry(sec.entries, QStringLiteral("pos"), obj.position());
-    const int rotateIndex = findEntryIndex(sec.entries, QStringLiteral("rotate"));
-    const bool preserveExplicitZeroRotate = rotateIndex >= 0
-        && obj.rotation().isNull()
-        && vec3Equals(parseVec3(sec.entries[rotateIndex].second), QVector3D());
-    if (!preserveExplicitZeroRotate)
-        setOptionalVec3Entry(sec.entries, QStringLiteral("rotate"), obj.rotation());
+    setOptionalVec3Entry(sec.entries, QStringLiteral("rotate"), obj.rotation());
     setOptionalEntry(sec.entries, QStringLiteral("archetype"), obj.archetype());
     setOptionalEntry(sec.entries, QStringLiteral("base"), obj.base());
     setOptionalEntry(sec.entries, QStringLiteral("dock_with"), obj.dockWith());
