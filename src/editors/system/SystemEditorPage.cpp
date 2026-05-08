@@ -16,6 +16,7 @@
 #include "SystemCreationDialogs.h"
 #include "CreateFieldZoneDialog.h"
 #include "CreateExclusionZoneDialog.h"
+#include "ZonePopulationDialog.h"
 #include "ExclusionZoneUtils.h"
 #include "JumpConnectionService.h"
 #include "TradeLaneEditService.h"
@@ -868,6 +869,27 @@ QStringList collectEncounterNicknames(flatlas::domain::SystemDocument *document,
         }
     }
 
+    std::sort(values.begin(), values.end(), [](const QString &a, const QString &b) {
+        return a.compare(b, Qt::CaseInsensitive) < 0;
+    });
+    return values;
+}
+
+QStringList collectEncounterParameterNicknames(flatlas::domain::SystemDocument *document)
+{
+    QStringList values;
+    if (!document)
+        return values;
+
+    const IniDocument extras = SystemPersistence::extraSections(document);
+    for (const IniSection &section : extras) {
+        if (section.name.compare(QStringLiteral("EncounterParameters"), Qt::CaseInsensitive) != 0)
+            continue;
+        const QString nickname = section.value(QStringLiteral("nickname")).trimmed();
+        if (!nickname.isEmpty())
+            values.append(nickname);
+    }
+    values.removeDuplicates();
     std::sort(values.begin(), values.end(), [](const QString &a, const QString &b) {
         return a.compare(b, Qt::CaseInsensitive) < 0;
     });
@@ -4143,9 +4165,7 @@ void SystemEditorPage::setupRightSidebar()
     editingLayout->addWidget(m_editTradelaneButton);
 
     m_editZonePopulationButton = makeSidebarButton(tr("Zone Population"), editingGroup);
-    connect(m_editZonePopulationButton, &QPushButton::clicked, this, [this]() {
-        showNotYetPorted(tr("Zone Population"), QStringLiteral("FLAtlas/fl_editor/main_window.py::_edit_zone_population"));
-    });
+    connect(m_editZonePopulationButton, &QPushButton::clicked, this, &SystemEditorPage::onEditZonePopulation);
     editingLayout->addWidget(m_editZonePopulationButton);
 
     m_editRingButton = makeSidebarButton(tr("Ring"), editingGroup);
@@ -5999,7 +6019,42 @@ bool SystemEditorPage::eventFilter(QObject *watched, QEvent *event)
                 return true;
             }
             if (mouseEvent->button() == Qt::LeftButton && m_pendingSimpleZoneHasCenter) {
-                finalizeSimpleZonePlacement(m_mapView->mapToScene(mouseEvent->pos()));
+                const QPointF scenePos = m_mapView->mapToScene(mouseEvent->pos());
+                const bool isBox = m_pendingSimpleZoneRequest->shape.trimmed().compare(QStringLiteral("BOX"), Qt::CaseInsensitive) == 0;
+                if (isBox) {
+                    if (m_pendingSimpleZoneStep == 2) {
+                        m_pendingSimpleZoneHasEnd = true;
+                        m_pendingSimpleZoneEndScenePos = scenePos;
+                        m_pendingSimpleZoneStep = 3;
+                        if (m_simpleZoneLinePreview && m_mapScene) {
+                            m_mapScene->removeItem(m_simpleZoneLinePreview);
+                            delete m_simpleZoneLinePreview;
+                            m_simpleZoneLinePreview = nullptr;
+                        }
+                        updateSimpleZonePlacementPreview(scenePos);
+                        m_mapView->setPlacementMode(true,
+                                                    tr("3. Klick legt die Breite fest. 4. Klick speichert '%1'.")
+                                                        .arg(m_pendingSimpleZoneRequest->nickname));
+                    } else if (m_pendingSimpleZoneStep == 3 && m_pendingSimpleZoneHasEnd) {
+                        m_pendingSimpleZoneHalfWidthScene = std::max<qreal>(1.0,
+                                                                            pointLineDistance(scenePos,
+                                                                                              m_pendingSimpleZoneCenterScenePos,
+                                                                                              m_pendingSimpleZoneEndScenePos));
+                        if (m_simpleZoneBoxPreview) {
+                            m_simpleZoneBoxPreview->setPolygon(orientedRectPolygon(m_pendingSimpleZoneCenterScenePos,
+                                                                                   m_pendingSimpleZoneEndScenePos,
+                                                                                   m_pendingSimpleZoneHalfWidthScene));
+                        }
+                        m_pendingSimpleZoneStep = 4;
+                        m_mapView->setPlacementMode(true,
+                                                    tr("4. Klick speichert '%1'. [Esc] oder Rechtsklick bricht ab.")
+                                                        .arg(m_pendingSimpleZoneRequest->nickname));
+                    } else if (m_pendingSimpleZoneStep == 4 && m_pendingSimpleZoneHasEnd) {
+                        finalizeSimpleZonePlacement(scenePos);
+                    }
+                } else {
+                    finalizeSimpleZonePlacement(scenePos);
+                }
                 return true;
             }
             break;
@@ -6660,6 +6715,88 @@ void SystemEditorPage::onCreatePatrolZone()
         return;
 
     beginPatrolZonePlacement(request);
+}
+
+void SystemEditorPage::onEditZonePopulation()
+{
+    if (!m_document || m_selectedNicknames.size() != 1)
+        return;
+
+    ZoneItem *zone = nullptr;
+    for (const auto &candidate : m_document->zones()) {
+        if (candidate && candidate->nickname().compare(m_selectedNicknames.first(), Qt::CaseInsensitive) == 0) {
+            zone = candidate.get();
+            break;
+        }
+    }
+    if (!zone)
+        return;
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    ZonePopulationDialog dialog(zone->nickname(),
+                                SystemPersistence::serializeZoneSection(*zone).entries,
+                                collectEncounterParameterNicknames(m_document.get()),
+                                collectEncounterNicknames(m_document.get(), gameRoot),
+                                loadFactionDisplays(gameRoot),
+                                this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const QVector<QPair<QString, QString>> entries = dialog.entries();
+    QSet<QString> requiredEncounters = dialog.newEncounterParameters();
+    for (const auto &entry : entries) {
+        if (entry.first.compare(QStringLiteral("encounter"), Qt::CaseInsensitive) != 0)
+            continue;
+        const QString nickname = entry.second.split(QLatin1Char(','), Qt::KeepEmptyParts).value(0).trimmed();
+        if (!nickname.isEmpty())
+            requiredEncounters.insert(nickname);
+    }
+
+    const QStringList existingEncounterParameters = collectEncounterParameterNicknames(m_document.get());
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
+    for (const QString &encounter : requiredEncounters) {
+        if (existingEncounterParameters.contains(encounter, Qt::CaseInsensitive))
+            continue;
+        const QString encounterRelPath = QStringLiteral("MISSIONS/encounters/%1.ini").arg(encounter);
+        const QString absolutePath = flatlas::core::PathUtils::ciResolvePath(dataDir, encounterRelPath);
+        if (absolutePath.isEmpty() || !QFileInfo::exists(absolutePath)) {
+            QMessageBox::warning(this,
+                                 tr("Zone Population"),
+                                 tr("Für den Encounter '%1' wurde keine passende missions/encounters-Datei gefunden.")
+                                     .arg(encounter));
+            return;
+        }
+    }
+
+    for (const QString &encounter : requiredEncounters) {
+        QString encounterError;
+        if (!ensureEncounterParameterExists(m_document.get(), encounter, gameRoot, &encounterError)) {
+            QMessageBox::warning(this, tr("Zone Population"), encounterError);
+            return;
+        }
+    }
+
+    IniDocument beforeDoc;
+    beforeDoc.append(SystemPersistence::serializeZoneSection(*zone));
+    const QString beforeText = IniParser::serialize(beforeDoc).trimmed();
+
+    IniSection section;
+    section.name = QStringLiteral("Zone");
+    section.entries = entries;
+    SystemPersistence::applyZoneSection(*zone, section);
+
+    IniDocument afterDoc;
+    afterDoc.append(SystemPersistence::serializeZoneSection(*zone));
+    const QString afterText = IniParser::serialize(afterDoc).trimmed();
+    if (beforeText != afterText)
+        m_document->setDirty(true);
+
+    refreshObjectList();
+    m_selectedNicknames = {zone->nickname()};
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateIniEditorForSelection();
+    updateSidebarButtons();
 }
 
 void SystemEditorPage::onCreateJumpConnection()
@@ -8036,19 +8173,28 @@ void SystemEditorPage::beginSimpleZonePlacement(const CreateSimpleZoneRequest &r
     m_pendingSimpleZoneRequest = std::make_unique<CreateSimpleZoneRequest>(request);
     m_pendingSimpleZoneHasCenter = false;
     m_pendingSimpleZoneCenterScenePos = QPointF();
+    m_pendingSimpleZoneHasEnd = false;
+    m_pendingSimpleZoneEndScenePos = QPointF();
+    m_pendingSimpleZoneHalfWidthScene = 0.0;
+    m_pendingSimpleZoneStep = request.shape.trimmed().compare(QStringLiteral("BOX"), Qt::CaseInsensitive) == 0 ? 1 : 0;
 
     auto *placementGuard = new QObject(this);
     connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
             placementGuard, [this, placementGuard](const QPointF &scenePos) {
-        if (!m_pendingSimpleZoneRequest || !m_mapView)
-            return;
-        m_pendingSimpleZoneHasCenter = true;
-        m_pendingSimpleZoneCenterScenePos = scenePos;
-        m_mapView->viewport()->installEventFilter(this);
-        m_mapView->viewport()->setMouseTracking(true);
-        updateSimpleZonePlacementPreview(scenePos);
-        placementGuard->deleteLater();
-    });
+                if (!m_pendingSimpleZoneRequest || !m_mapView)
+                    return;
+                m_pendingSimpleZoneHasCenter = true;
+                m_pendingSimpleZoneCenterScenePos = scenePos;
+                if (m_pendingSimpleZoneRequest->shape.trimmed().compare(QStringLiteral("BOX"), Qt::CaseInsensitive) == 0) {
+                    m_pendingSimpleZoneStep = 2;
+                    m_mapView->setPlacementMode(true,
+                                                tr("2. Klick setzt das Ende der Box-Zone. [Esc] oder Rechtsklick bricht ab."));
+                }
+                m_mapView->viewport()->installEventFilter(this);
+                m_mapView->viewport()->setMouseTracking(true);
+                updateSimpleZonePlacementPreview(scenePos);
+                placementGuard->deleteLater();
+            });
     connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
             placementGuard, [this, placementGuard]() {
         cancelSimpleZonePlacement();
@@ -8056,7 +8202,10 @@ void SystemEditorPage::beginSimpleZonePlacement(const CreateSimpleZoneRequest &r
     });
 
     m_mapView->setPlacementMode(true,
-                                tr("Klicke auf die Map, um '%1' zu platzieren.").arg(request.nickname));
+                                request.shape.trimmed().compare(QStringLiteral("BOX"), Qt::CaseInsensitive) == 0
+                                    ? tr("1. Klick setzt den Startpunkt fuer '%1'. 2. Klick Ende. 3. Klick Breite. 4. Klick speichert.")
+                                          .arg(request.nickname)
+                                    : tr("Klicke auf die Map, um '%1' zu platzieren.").arg(request.nickname));
 }
 
 void SystemEditorPage::beginPatrolZonePlacement(const CreatePatrolZoneRequest &request)
@@ -8318,6 +8467,42 @@ void SystemEditorPage::updateSimpleZonePlacementPreview(const QPointF &currentSc
 {
     if (!m_pendingSimpleZoneRequest || !m_pendingSimpleZoneHasCenter || !m_mapScene)
         return;
+
+    const bool isBox = m_pendingSimpleZoneRequest->shape.trimmed().compare(QStringLiteral("BOX"), Qt::CaseInsensitive) == 0;
+    if (isBox) {
+        if (m_pendingSimpleZoneStep == 2) {
+            if (!m_simpleZoneLinePreview) {
+                const QColor stroke(170, 220, 120, 220);
+                m_simpleZoneLinePreview = new QGraphicsLineItem();
+                m_simpleZoneLinePreview->setPen(QPen(stroke, 2.0, Qt::DashLine));
+                m_simpleZoneLinePreview->setZValue(9999.0);
+                m_mapScene->addItem(m_simpleZoneLinePreview);
+            }
+            m_simpleZoneLinePreview->setLine(QLineF(m_pendingSimpleZoneCenterScenePos, currentScenePos));
+            return;
+        }
+
+        if (m_pendingSimpleZoneStep >= 3 && m_pendingSimpleZoneHasEnd) {
+            const qreal halfWidth =
+                m_pendingSimpleZoneStep == 3
+                    ? std::max<qreal>(1.0, pointLineDistance(currentScenePos,
+                                                             m_pendingSimpleZoneCenterScenePos,
+                                                             m_pendingSimpleZoneEndScenePos))
+                    : std::max<qreal>(1.0, m_pendingSimpleZoneHalfWidthScene);
+            if (!m_simpleZoneBoxPreview) {
+                const QColor stroke(170, 220, 120, 220);
+                const QColor fill(170, 220, 120, 30);
+                m_simpleZoneBoxPreview = new QGraphicsPolygonItem();
+                m_simpleZoneBoxPreview->setPen(QPen(stroke, 2.0, Qt::DashLine));
+                m_simpleZoneBoxPreview->setBrush(fill);
+                m_simpleZoneBoxPreview->setZValue(9999.0);
+                m_mapScene->addItem(m_simpleZoneBoxPreview);
+            }
+            m_simpleZoneBoxPreview->setPolygon(
+                orientedRectPolygon(m_pendingSimpleZoneCenterScenePos, m_pendingSimpleZoneEndScenePos, halfWidth));
+        }
+        return;
+    }
 
     if (!m_simpleZonePlacementPreview) {
         const QColor stroke(170, 220, 120, 220);
@@ -8689,17 +8874,25 @@ void SystemEditorPage::finalizeSimpleZonePlacement(const QPointF &edgeScenePos)
     const double deltaZ = std::abs(edgeFl.y() - centerFl.y());
     const double radius = std::max(std::max(deltaX, deltaZ), 500.0);
     const double sizeY = std::min(std::max(std::min(deltaX, deltaZ), 250.0), radius);
+    const QString shape = m_pendingSimpleZoneRequest->shape.toUpper();
+
+    QPointF zoneCenterFl = centerFl;
+    QVector3D rotation(0.0f, 0.0f, 0.0f);
+    if (shape == QStringLiteral("BOX") && m_pendingSimpleZoneHasEnd) {
+        const QPointF endFl = MapScene::qtToFl(m_pendingSimpleZoneEndScenePos.x(), m_pendingSimpleZoneEndScenePos.y());
+        zoneCenterFl = QPointF((centerFl.x() + endFl.x()) * 0.5, (centerFl.y() + endFl.y()) * 0.5);
+        rotation = QVector3D(0.0f, static_cast<float>(patrolYawDegrees(centerFl, endFl)), 0.0f);
+    }
 
     auto zone = std::make_shared<ZoneItem>();
     zone->setNickname(requestedNickname);
-    zone->setPosition(QVector3D(static_cast<float>(centerFl.x()), 0.0f, static_cast<float>(centerFl.y())));
-    zone->setRotation(QVector3D());
+    zone->setPosition(QVector3D(static_cast<float>(zoneCenterFl.x()), 0.0f, static_cast<float>(zoneCenterFl.y())));
+    zone->setRotation(rotation);
     zone->setComment(m_pendingSimpleZoneRequest->comment);
     zone->setDamage(m_pendingSimpleZoneRequest->damage);
     zone->setSortKey(m_pendingSimpleZoneRequest->sort);
 
     QString sizeText;
-    const QString shape = m_pendingSimpleZoneRequest->shape.toUpper();
     if (shape == QStringLiteral("ELLIPSOID")) {
         zone->setShape(ZoneItem::Ellipsoid);
         zone->setSize(QVector3D(static_cast<float>(deltaX), static_cast<float>(sizeY), static_cast<float>(deltaZ)));
@@ -8708,12 +8901,18 @@ void SystemEditorPage::finalizeSimpleZonePlacement(const QPointF &edgeScenePos)
                        .arg(sizeY, 0, 'f', 0)
                        .arg(std::max(deltaZ, 500.0), 0, 'f', 0);
     } else if (shape == QStringLiteral("BOX")) {
+        const QPointF endFl = m_pendingSimpleZoneHasEnd
+            ? MapScene::qtToFl(m_pendingSimpleZoneEndScenePos.x(), m_pendingSimpleZoneEndScenePos.y())
+            : edgeFl;
+        const double length = std::max(std::hypot(endFl.x() - centerFl.x(), endFl.y() - centerFl.y()), 1000.0);
+        const double width = std::max(static_cast<double>(m_pendingSimpleZoneHalfWidthScene) * 200.0, 1000.0);
+        const double height = std::min(std::max(width * 0.5, 500.0), length);
         zone->setShape(ZoneItem::Box);
-        zone->setSize(QVector3D(static_cast<float>(deltaX), static_cast<float>(sizeY), static_cast<float>(deltaZ)));
+        zone->setSize(QVector3D(static_cast<float>(width), static_cast<float>(height), static_cast<float>(length)));
         sizeText = QStringLiteral("%1, %2, %3")
-                       .arg(std::max(deltaX, 500.0), 0, 'f', 0)
-                       .arg(sizeY, 0, 'f', 0)
-                       .arg(std::max(deltaZ, 500.0), 0, 'f', 0);
+                       .arg(width, 0, 'f', 0)
+                       .arg(height, 0, 'f', 0)
+                       .arg(length, 0, 'f', 0);
     } else if (shape == QStringLiteral("CYLINDER")) {
         const double length = std::max(std::max(deltaX, deltaZ) * 2.0, 1000.0);
         zone->setShape(ZoneItem::Cylinder);
@@ -8736,8 +8935,12 @@ void SystemEditorPage::finalizeSimpleZonePlacement(const QPointF &edgeScenePos)
 
     QVector<QPair<QString, QString>> entries{
         {QStringLiteral("nickname"), requestedNickname},
-        {QStringLiteral("pos"), QStringLiteral("%1, 0, %2").arg(centerFl.x(), 0, 'f', 0).arg(centerFl.y(), 0, 'f', 0)},
-        {QStringLiteral("rotate"), QStringLiteral("0, 0, 0")},
+        {QStringLiteral("pos"), QStringLiteral("%1, 0, %2").arg(zoneCenterFl.x(), 0, 'f', 0).arg(zoneCenterFl.y(), 0, 'f', 0)},
+        {QStringLiteral("rotate"),
+         QStringLiteral("%1, %2, %3")
+             .arg(rotation.x(), 0, 'f', 0)
+             .arg(rotation.y(), 0, 'f', 0)
+             .arg(rotation.z(), 0, 'f', 0)},
         {QStringLiteral("shape"), shape},
         {QStringLiteral("size"), sizeText},
         {QStringLiteral("sort"), QString::number(m_pendingSimpleZoneRequest->sort)},
@@ -9169,6 +9372,16 @@ void SystemEditorPage::cancelSimpleZonePlacement()
         delete m_simpleZonePlacementPreview;
         m_simpleZonePlacementPreview = nullptr;
     }
+    if (m_simpleZoneLinePreview && m_mapScene) {
+        m_mapScene->removeItem(m_simpleZoneLinePreview);
+        delete m_simpleZoneLinePreview;
+        m_simpleZoneLinePreview = nullptr;
+    }
+    if (m_simpleZoneBoxPreview && m_mapScene) {
+        m_mapScene->removeItem(m_simpleZoneBoxPreview);
+        delete m_simpleZoneBoxPreview;
+        m_simpleZoneBoxPreview = nullptr;
+    }
     if (m_mapView && m_mapView->viewport()) {
         m_mapView->setPlacementMode(false);
         m_mapView->viewport()->removeEventFilter(this);
@@ -9177,6 +9390,10 @@ void SystemEditorPage::cancelSimpleZonePlacement()
     m_pendingSimpleZoneRequest.reset();
     m_pendingSimpleZoneHasCenter = false;
     m_pendingSimpleZoneCenterScenePos = QPointF();
+    m_pendingSimpleZoneHasEnd = false;
+    m_pendingSimpleZoneEndScenePos = QPointF();
+    m_pendingSimpleZoneHalfWidthScene = 0.0;
+    m_pendingSimpleZoneStep = 0;
 }
 
 void SystemEditorPage::cancelPatrolZonePlacement()

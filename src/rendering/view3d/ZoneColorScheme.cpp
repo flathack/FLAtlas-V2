@@ -119,13 +119,13 @@ ZoneVisualStyle ZoneColorScheme::styleForZone(const flatlas::domain::ZoneItem &z
         || music.contains(QStringLiteral("debris"));
     if (isAsteroid) {
         const QColor base = flatlas::core::ThemeColors::color(QStringLiteral("zoneAsteroid"));
-        if (isPath)
-            return makeWireOnlyStyle(QStringLiteral("asteroid/path"), base);
         if (isPopulation)
             return makeMixedStyle(QStringLiteral("asteroid/population"),
                                   base,
                                   flatlas::core::ThemeColors::color(QStringLiteral("zonePopulation")),
                                   28);
+        if (isPath)
+            return makeWireOnlyStyle(QStringLiteral("asteroid/path"), base);
         return makeStyle(QStringLiteral("asteroid"), base, 28);
     }
 
@@ -134,21 +134,21 @@ ZoneVisualStyle ZoneColorScheme::styleForZone(const flatlas::domain::ZoneItem &z
         || zoneType.contains(QStringLiteral("nebula"));
     if (isNebula) {
         const QColor base = flatlas::core::ThemeColors::color(QStringLiteral("zoneNebula"));
-        if (isPath)
-            return makeWireOnlyStyle(QStringLiteral("nebula/path"), base);
         if (isPopulation)
             return makeMixedStyle(QStringLiteral("nebula/population"),
                                   base,
                                   flatlas::core::ThemeColors::color(QStringLiteral("zonePopulation")),
                                   28);
+        if (isPath)
+            return makeWireOnlyStyle(QStringLiteral("nebula/path"), base);
         return makeStyle(QStringLiteral("nebula"), base, 28);
     }
 
-    if (isPath)
-        return makeWireOnlyStyle(QStringLiteral("path"), flatlas::core::ThemeColors::color(QStringLiteral("zonePopulation")));
-
     if (isPopulation)
         return makeStyle(QStringLiteral("population"), flatlas::core::ThemeColors::color(QStringLiteral("zonePopulation")), 28);
+
+    if (isPath)
+        return makeWireOnlyStyle(QStringLiteral("path"), flatlas::core::ThemeColors::color(QStringLiteral("zonePopulation")));
 
     Q_UNUSED(usage);
     Q_UNUSED(pathLabel);

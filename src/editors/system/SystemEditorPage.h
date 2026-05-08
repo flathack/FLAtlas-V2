@@ -231,6 +231,7 @@ private:
     void onCreateLightSource();
     void onCreateSurprise();
     void onCreatePatrolZone();
+    void onEditZonePopulation();
     void onCreateJumpConnection();
     void onCreatePlanet();
     void onCreateBuoy();
@@ -445,6 +446,12 @@ private:
     bool m_pendingSimpleZoneHasCenter = false;
     QPointF m_pendingSimpleZoneCenterScenePos;
     QGraphicsEllipseItem *m_simpleZonePlacementPreview = nullptr;
+    bool m_pendingSimpleZoneHasEnd = false;
+    QPointF m_pendingSimpleZoneEndScenePos;
+    qreal m_pendingSimpleZoneHalfWidthScene = 0.0;
+    int m_pendingSimpleZoneStep = 0;
+    QGraphicsLineItem *m_simpleZoneLinePreview = nullptr;
+    QGraphicsPolygonItem *m_simpleZoneBoxPreview = nullptr;
     std::unique_ptr<CreatePatrolZoneRequest> m_pendingPatrolZoneRequest;
     bool m_pendingPatrolZoneHasStart = false;
     QPointF m_pendingPatrolZoneStartScenePos;
