@@ -6,6 +6,10 @@ cmake-build-*/
 out/
 docs/
 
+
+# Release
+release/
+
 # IDE
 .vs/
 .vscode/
