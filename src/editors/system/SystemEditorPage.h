@@ -102,6 +102,25 @@ private:
         QString content;
     };
 
+    struct PendingFileDelete {
+        QString absolutePath;
+        QString reason;
+    };
+
+    struct PendingTextFileChange {
+        QString absolutePath;
+        QString content;
+        QString reason;
+    };
+
+    struct PlanetCascadeDeletePlan {
+        QVector<PendingTextFileChange> textChanges;
+        QVector<PendingFileDelete> fileDeletes;
+        QStringList baseNicknames;
+        QStringList warnings;
+        bool requiresConfirmation = false;
+    };
+
     struct ClipboardPayload {
         QVector<std::shared_ptr<flatlas::domain::SolarObject>> objects;
         QVector<std::shared_ptr<flatlas::domain::ZoneItem>> zones;
@@ -254,6 +273,20 @@ private:
     void onAddObject();
     void onDeleteSelected();
     void onDuplicateSelected();
+    bool collectPlanetCascadeDeletePlan(QVector<std::shared_ptr<flatlas::domain::SolarObject>> *objectsToRemove,
+                                        QVector<std::shared_ptr<flatlas::domain::ZoneItem>> *zonesToRemove,
+                                        PlanetCascadeDeletePlan *plan,
+                                        QString *errorMessage) const;
+    bool appendBaseDeletionPlan(const QString &baseNickname,
+                                const QVector<std::shared_ptr<flatlas::domain::SolarObject>> &objectsToRemove,
+                                PlanetCascadeDeletePlan *plan,
+                                QString *errorMessage) const;
+    bool confirmPlanetCascadeDelete(const QVector<std::shared_ptr<flatlas::domain::SolarObject>> &objectsToRemove,
+                                    const QVector<std::shared_ptr<flatlas::domain::ZoneItem>> &zonesToRemove,
+                                    const PlanetCascadeDeletePlan &plan) const;
+    QHash<QString, QString> pendingTextOverrides() const;
+    QString pendingTextForPath(const QString &absolutePath) const;
+    void stagePendingFileDelete(const QString &absolutePath, const QString &reason);
     bool selectSingleContextTarget(const QString &nickname);
     void editContextTarget(const QString &nickname);
     void deleteContextTarget(const QString &nickname);
@@ -330,6 +363,7 @@ private:
     void removeLinkedFieldSectionsForNicknames(const QStringList &zoneNicknames);
     bool writePendingGeneratedZoneFiles(QString *errorMessage);
     bool writePendingTextFiles(QString *errorMessage);
+    bool writePendingFileDeletes(QString *errorMessage);
     void stagePendingTextWrite(const QString &absolutePath, const QString &content);
     void syncLightSourcesInScene();
     int findLightSourceSectionIndexByNickname(const QString &nickname) const;
@@ -437,6 +471,7 @@ private:
     bool m_liveMoveActive = false;
     QHash<QString, PendingGeneratedZoneFile> m_pendingGeneratedZoneFiles;
     QHash<QString, PendingTextFileWrite> m_pendingTextFileWrites;
+    QHash<QString, PendingFileDelete> m_pendingFileDeletes;
     QString m_lastSaveError;
     std::unique_ptr<CreateFieldZoneResult> m_pendingFieldZoneRequest;
     bool m_pendingFieldZoneHasCenter = false;

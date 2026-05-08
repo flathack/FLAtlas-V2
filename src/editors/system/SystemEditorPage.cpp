@@ -9,6 +9,7 @@
 #include "BaseEditService.h"
 #include "DockingRingCreationService.h"
 #include "DockingRingDialog.h"
+#include "editors/base/BaseEquipmentService.h"
 #include "PlanetCreationService.h"
 #include "RingEditService.h"
 #include "SystemUndoCommands.h"
@@ -1164,6 +1165,96 @@ QString textForAbsolutePath(const QString &absolutePath, const QHash<QString, QS
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
         return {};
     return QString::fromUtf8(file.readAll());
+}
+
+IniDocument removeBaseGoodSections(const IniDocument &doc, const QString &baseNickname, bool *removed)
+{
+    if (removed)
+        *removed = false;
+
+    IniDocument filtered;
+    filtered.reserve(doc.size());
+    for (const IniSection &section : doc) {
+        const bool isBaseGood = section.name.compare(QStringLiteral("BaseGood"), Qt::CaseInsensitive) == 0;
+        const bool isTarget = isBaseGood
+            && section.value(QStringLiteral("base")).trimmed().compare(baseNickname, Qt::CaseInsensitive) == 0;
+        if (isTarget) {
+            if (removed)
+                *removed = true;
+            continue;
+        }
+        filtered.append(section);
+    }
+    return filtered;
+}
+
+IniDocument removeUniverseBaseSection(const IniDocument &doc, const QString &baseNickname, bool *removed)
+{
+    if (removed)
+        *removed = false;
+
+    IniDocument filtered;
+    filtered.reserve(doc.size());
+    for (const IniSection &section : doc) {
+        const bool isBase = section.name.compare(QStringLiteral("Base"), Qt::CaseInsensitive) == 0;
+        const bool isTarget = isBase
+            && section.value(QStringLiteral("nickname")).trimmed().compare(baseNickname, Qt::CaseInsensitive) == 0;
+        if (isTarget) {
+            if (removed)
+                *removed = true;
+            continue;
+        }
+        filtered.append(section);
+    }
+    return filtered;
+}
+
+IniDocument removeMbaseBlock(const IniDocument &doc, const QString &baseNickname, bool *removed)
+{
+    if (removed)
+        *removed = false;
+
+    IniDocument filtered;
+    filtered.reserve(doc.size());
+    for (int index = 0; index < doc.size();) {
+        const IniSection &section = doc.at(index);
+        const bool isTargetMbase =
+            section.name.compare(QStringLiteral("MBase"), Qt::CaseInsensitive) == 0
+            && section.value(QStringLiteral("nickname")).trimmed().compare(baseNickname, Qt::CaseInsensitive) == 0;
+        if (!isTargetMbase) {
+            filtered.append(section);
+            ++index;
+            continue;
+        }
+
+        if (removed)
+            *removed = true;
+        ++index;
+        while (index < doc.size()
+               && doc.at(index).name.compare(QStringLiteral("MBase"), Qt::CaseInsensitive) != 0) {
+            ++index;
+        }
+    }
+    return filtered;
+}
+
+QStringList baseRoomFilePaths(const QString &baseIniPath, const QString &baseIniText, const QString &dataDir)
+{
+    QStringList files;
+    const IniDocument doc = IniParser::parseText(baseIniText);
+    for (const IniSection &section : doc) {
+        if (section.name.compare(QStringLiteral("Room"), Qt::CaseInsensitive) != 0)
+            continue;
+        const QString relativeFile = section.value(QStringLiteral("file")).trimmed();
+        if (relativeFile.isEmpty())
+            continue;
+        QString absolutePath = flatlas::core::PathUtils::ciResolvePath(dataDir, relativeFile);
+        if (absolutePath.isEmpty())
+            absolutePath = QDir(QFileInfo(baseIniPath).absolutePath()).absoluteFilePath(relativeFile);
+        if (!absolutePath.trimmed().isEmpty() && !files.contains(absolutePath, Qt::CaseInsensitive))
+            files.append(absolutePath);
+    }
+    return files;
 }
 
 QVector<QPair<QString, QString>> loadGlobalBaseTemplateChoices(const QString &gameRoot,
@@ -3711,6 +3802,7 @@ void SystemEditorPage::loadDocumentIntoUi()
     cancelExclusionZonePlacement();
     m_pendingGeneratedZoneFiles.clear();
     m_pendingTextFileWrites.clear();
+    m_pendingFileDeletes.clear();
     bindDocumentSignals();
     connectDocumentEntitySignals();
     m_selectedNicknames.clear();
@@ -3771,8 +3863,17 @@ bool SystemEditorPage::save()
                               .arg(m_document->filePath());
     }
     if (ok) {
+        QString pendingDeleteError;
+        if (!writePendingFileDeletes(&pendingDeleteError)) {
+            m_lastSaveError = pendingDeleteError;
+            if (!pendingDeleteError.isEmpty())
+                QMessageBox::warning(this, tr("Speichern fehlgeschlagen"), pendingDeleteError);
+            refreshDocumentDirtyState();
+            return false;
+        }
         m_pendingGeneratedZoneFiles.clear();
         m_pendingTextFileWrites.clear();
+        m_pendingFileDeletes.clear();
         captureSavedDocumentSnapshot();
         refreshDocumentDirtyState();
     }
@@ -3900,7 +4001,9 @@ void SystemEditorPage::refreshDocumentDirtyState()
     if (!m_document)
         return;
 
-    const bool hasPendingWrites = !m_pendingGeneratedZoneFiles.isEmpty() || !m_pendingTextFileWrites.isEmpty();
+    const bool hasPendingWrites = !m_pendingGeneratedZoneFiles.isEmpty()
+        || !m_pendingTextFileWrites.isEmpty()
+        || !m_pendingFileDeletes.isEmpty();
     const bool documentChanged = SystemPersistence::serializeToText(*m_document) != m_savedDocumentTextSnapshot;
     m_document->setDirty(hasPendingWrites || documentChanged);
 }
@@ -4731,6 +4834,263 @@ void SystemEditorPage::onAddObject()
             .arg(result.nickname));
 }
 
+QHash<QString, QString> SystemEditorPage::pendingTextOverrides() const
+{
+    QHash<QString, QString> overrides;
+    for (auto it = m_pendingTextFileWrites.constBegin(); it != m_pendingTextFileWrites.constEnd(); ++it)
+        overrides.insert(it.key(), it.value().content);
+    return overrides;
+}
+
+QString SystemEditorPage::pendingTextForPath(const QString &absolutePath) const
+{
+    const QString key = normalizedPathKey(absolutePath);
+    if (!key.isEmpty() && m_pendingTextFileWrites.contains(key))
+        return m_pendingTextFileWrites.value(key).content;
+    return textForAbsolutePath(absolutePath, pendingTextOverrides());
+}
+
+void SystemEditorPage::stagePendingFileDelete(const QString &absolutePath, const QString &reason)
+{
+    const QString key = normalizedPathKey(absolutePath);
+    if (key.isEmpty())
+        return;
+    m_pendingTextFileWrites.remove(key);
+    m_pendingFileDeletes.insert(key, PendingFileDelete{absolutePath, reason});
+    refreshDocumentDirtyState();
+}
+
+bool SystemEditorPage::appendBaseDeletionPlan(const QString &baseNickname,
+                                              const QVector<std::shared_ptr<SolarObject>> &objectsToRemove,
+                                              PlanetCascadeDeletePlan *plan,
+                                              QString *errorMessage) const
+{
+    if (!m_document || !plan)
+        return false;
+    const QString cleanBaseNickname = baseNickname.trimmed();
+    if (cleanBaseNickname.isEmpty() || plan->baseNicknames.contains(cleanBaseNickname, Qt::CaseInsensitive))
+        return true;
+
+    for (const auto &objectPtr : m_document->objects()) {
+        if (!objectPtr || objectsToRemove.contains(objectPtr))
+            continue;
+        const QString objectBase = DockingRingCreationService::resolvedDockWithBase(*objectPtr);
+        if (objectBase.compare(cleanBaseNickname, Qt::CaseInsensitive) == 0) {
+            if (errorMessage) {
+                *errorMessage = tr("Base '%1' wird noch von Objekt '%2' verwendet und kann deshalb nicht automatisch geloescht werden.")
+                                    .arg(cleanBaseNickname, objectPtr->nickname());
+            }
+            return false;
+        }
+    }
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
+    const QHash<QString, QString> overrides = pendingTextOverrides();
+    SolarObject *baseHost = nullptr;
+    for (const auto &objectPtr : objectsToRemove) {
+        if (!objectPtr)
+            continue;
+        if (DockingRingCreationService::resolvedDockWithBase(*objectPtr).compare(cleanBaseNickname, Qt::CaseInsensitive) == 0) {
+            baseHost = objectPtr.get();
+            break;
+        }
+    }
+    if (!baseHost) {
+        if (errorMessage)
+            *errorMessage = tr("Fuer Base '%1' wurde kein zu loeschendes Host-Objekt gefunden.").arg(cleanBaseNickname);
+        return false;
+    }
+
+    BaseEditState baseState;
+    QString loadError;
+    if (!BaseEditService::loadState(*m_document, *baseHost, gameRoot, overrides, &baseState, &loadError)) {
+        if (errorMessage) {
+            *errorMessage = loadError.trimmed().isEmpty()
+                                ? tr("Base '%1' konnte nicht geladen werden.").arg(cleanBaseNickname)
+                                : loadError;
+        }
+        return false;
+    }
+
+    plan->baseNicknames.append(cleanBaseNickname);
+    auto appendTextChange = [&](const QString &path, const QString &content, const QString &reason) {
+        if (path.trimmed().isEmpty())
+            return;
+        const QString key = normalizedPathKey(path);
+        for (PendingTextFileChange &change : plan->textChanges) {
+            if (normalizedPathKey(change.absolutePath) == key) {
+                change.content = content;
+                if (!change.reason.contains(reason))
+                    change.reason += QStringLiteral("; %1").arg(reason);
+                return;
+            }
+        }
+        plan->textChanges.append(PendingTextFileChange{path, content, reason});
+    };
+    auto appendFileDelete = [&](const QString &path, const QString &reason) {
+        if (path.trimmed().isEmpty())
+            return;
+        for (const PendingFileDelete &fileDelete : plan->fileDeletes) {
+            if (normalizedPathKey(fileDelete.absolutePath) == normalizedPathKey(path))
+                return;
+        }
+        plan->fileDeletes.append(PendingFileDelete{path, reason});
+    };
+    auto plannedTextForPath = [&](const QString &path) {
+        const QString key = normalizedPathKey(path);
+        for (const PendingTextFileChange &change : std::as_const(plan->textChanges)) {
+            if (normalizedPathKey(change.absolutePath) == key)
+                return change.content;
+        }
+        return textForAbsolutePath(path, overrides);
+    };
+
+    if (!baseState.universeIniAbsolutePath.trimmed().isEmpty()) {
+        bool removed = false;
+        const IniDocument doc = IniParser::parseText(plannedTextForPath(baseState.universeIniAbsolutePath));
+        const IniDocument filtered = removeUniverseBaseSection(doc, cleanBaseNickname, &removed);
+        if (removed)
+            appendTextChange(baseState.universeIniAbsolutePath, IniParser::serialize(filtered), tr("[Base] '%1' entfernen").arg(cleanBaseNickname));
+    }
+    if (!baseState.mbaseAbsolutePath.trimmed().isEmpty()) {
+        bool removed = false;
+        const IniDocument doc = IniParser::parseText(plannedTextForPath(baseState.mbaseAbsolutePath));
+        const IniDocument filtered = removeMbaseBlock(doc, cleanBaseNickname, &removed);
+        if (removed)
+            appendTextChange(baseState.mbaseAbsolutePath, IniParser::serialize(filtered), tr("[MBase] '%1' entfernen").arg(cleanBaseNickname));
+    }
+
+    const BaseEquipmentState equipmentState = BaseEquipmentService::load(m_document->filePath(), cleanBaseNickname);
+    const QStringList marketPaths = {
+        equipmentState.equipmentMarketFilePath,
+        equipmentState.commodityMarketFilePath,
+        equipmentState.shipMarketFilePath,
+    };
+    for (const QString &marketPath : marketPaths) {
+        if (marketPath.trimmed().isEmpty())
+            continue;
+        bool removed = false;
+        const IniDocument doc = IniParser::parseText(plannedTextForPath(marketPath));
+        const IniDocument filtered = removeBaseGoodSections(doc, cleanBaseNickname, &removed);
+        if (removed)
+            appendTextChange(marketPath, IniParser::serialize(filtered), tr("[BaseGood] '%1' entfernen").arg(cleanBaseNickname));
+    }
+
+    const QString baseIniText = textForAbsolutePath(baseState.baseIniAbsolutePath, overrides);
+    for (const QString &roomPath : baseRoomFilePaths(baseState.baseIniAbsolutePath, baseIniText, dataDir))
+        appendFileDelete(roomPath, tr("Room-Datei von Base '%1'").arg(cleanBaseNickname));
+    appendFileDelete(baseState.baseIniAbsolutePath, tr("Base-INI '%1'").arg(cleanBaseNickname));
+    return true;
+}
+
+bool SystemEditorPage::collectPlanetCascadeDeletePlan(QVector<std::shared_ptr<SolarObject>> *objectsToRemove,
+                                                      QVector<std::shared_ptr<ZoneItem>> *zonesToRemove,
+                                                      PlanetCascadeDeletePlan *plan,
+                                                      QString *errorMessage) const
+{
+    if (!m_document || !objectsToRemove || !zonesToRemove || !plan)
+        return false;
+
+    QStringList baseNicknames;
+    auto appendObject = [&](const std::shared_ptr<SolarObject> &object) {
+        if (object && !objectsToRemove->contains(object))
+            objectsToRemove->append(object);
+    };
+    auto appendZone = [&](const std::shared_ptr<ZoneItem> &zone) {
+        if (zone && !zonesToRemove->contains(zone))
+            zonesToRemove->append(zone);
+    };
+
+    QVector<std::shared_ptr<SolarObject>> planets;
+    for (const auto &objectPtr : std::as_const(*objectsToRemove)) {
+        if (objectPtr && isPlanetLikeObject(*objectPtr))
+            planets.append(objectPtr);
+    }
+    if (planets.isEmpty())
+        return true;
+
+    plan->requiresConfirmation = true;
+    for (const auto &planet : std::as_const(planets)) {
+        const QString deathZoneNickname = QStringLiteral("Zone_%1_death").arg(planet->nickname());
+        for (const auto &zone : m_document->zones()) {
+            if (zone && zone->nickname().compare(deathZoneNickname, Qt::CaseInsensitive) == 0)
+                appendZone(zone);
+        }
+
+        const QString planetBase = DockingRingCreationService::resolvedDockWithBase(*planet);
+        if (!planetBase.isEmpty() && !baseNicknames.contains(planetBase, Qt::CaseInsensitive))
+            baseNicknames.append(planetBase);
+
+        for (const auto &candidate : m_document->objects()) {
+            if (!candidate || !DockingRingCreationService::isDockingRingObject(*candidate))
+                continue;
+            SolarObject *hostPlanet = findDockingRingHostPlanet(m_document.get(), *candidate);
+            if (!hostPlanet || hostPlanet->nickname().compare(planet->nickname(), Qt::CaseInsensitive) != 0)
+                continue;
+            appendObject(candidate);
+            const QString ringBase = DockingRingCreationService::resolvedDockWithBase(*candidate);
+            if (!ringBase.isEmpty() && !baseNicknames.contains(ringBase, Qt::CaseInsensitive))
+                baseNicknames.append(ringBase);
+            int fixtureMatches = 0;
+            const auto fixture = DockingRingCreationService::findAssociatedFixture(m_document.get(), *candidate, &fixtureMatches);
+            if (fixture)
+                appendObject(fixture);
+            else if (fixtureMatches > 1)
+                plan->warnings.append(tr("Mehrere docking_fixture-Objekte fuer Docking Ring '%1' gefunden; Fixtures wurden nicht automatisch hinzugefuegt.")
+                                          .arg(candidate->nickname()));
+        }
+    }
+
+    for (const QString &baseNickname : std::as_const(baseNicknames)) {
+        if (!appendBaseDeletionPlan(baseNickname, *objectsToRemove, plan, errorMessage))
+            return false;
+    }
+    return true;
+}
+
+bool SystemEditorPage::confirmPlanetCascadeDelete(const QVector<std::shared_ptr<SolarObject>> &objectsToRemove,
+                                                  const QVector<std::shared_ptr<ZoneItem>> &zonesToRemove,
+                                                  const PlanetCascadeDeletePlan &plan) const
+{
+    if (!plan.requiresConfirmation)
+        return true;
+
+    QStringList objectLines;
+    for (const auto &object : objectsToRemove) {
+        if (object)
+            objectLines.append(QStringLiteral("  - %1").arg(object->nickname()));
+    }
+    QStringList zoneLines;
+    for (const auto &zone : zonesToRemove) {
+        if (zone)
+            zoneLines.append(QStringLiteral("  - %1").arg(zone->nickname()));
+    }
+    QStringList changedFiles;
+    for (const PendingTextFileChange &change : plan.textChanges)
+        changedFiles.append(QStringLiteral("  - %1 (%2)").arg(QDir::toNativeSeparators(change.absolutePath), change.reason));
+    QStringList deletedFiles;
+    for (const PendingFileDelete &fileDelete : plan.fileDeletes)
+        deletedFiles.append(QStringLiteral("  - %1 (%2)").arg(QDir::toNativeSeparators(fileDelete.absolutePath), fileDelete.reason));
+
+    QString details;
+    details += tr("Objekte:\n%1\n\n").arg(objectLines.isEmpty() ? tr("  - keine") : objectLines.join(QLatin1Char('\n')));
+    details += tr("Zonen:\n%1\n\n").arg(zoneLines.isEmpty() ? tr("  - keine") : zoneLines.join(QLatin1Char('\n')));
+    details += tr("Dateien werden angepasst:\n%1\n\n").arg(changedFiles.isEmpty() ? tr("  - keine") : changedFiles.join(QLatin1Char('\n')));
+    details += tr("Dateien werden geloescht:\n%1").arg(deletedFiles.isEmpty() ? tr("  - keine") : deletedFiles.join(QLatin1Char('\n')));
+    if (!plan.warnings.isEmpty())
+        details += tr("\n\nHinweise:\n  - %1").arg(plan.warnings.join(QStringLiteral("\n  - ")));
+
+    QMessageBox box(QMessageBox::Warning,
+                    tr("Planet mit verknuepften Daten loeschen"),
+                    tr("Zum Planet gehoerende Objekte, Zonen, Base-Eintraege und Dateien werden geloescht. Bitte pruefe die Details und bestaetige den Vorgang."),
+                    QMessageBox::Yes | QMessageBox::Cancel,
+                    const_cast<SystemEditorPage *>(this));
+    box.setDefaultButton(QMessageBox::Cancel);
+    box.setDetailedText(details);
+    return box.exec() == QMessageBox::Yes;
+}
+
 void SystemEditorPage::onDeleteSelected()
 {
     if (!m_document || m_selectedNicknames.isEmpty())
@@ -4829,6 +5189,23 @@ void SystemEditorPage::onDeleteSelected()
 
     if (objectsToRemove.isEmpty() && zonesToRemove.isEmpty() && lightSourcesToRemove.isEmpty())
         return;
+
+    PlanetCascadeDeletePlan planetDeletePlan;
+    QString planetDeleteError;
+    if (!collectPlanetCascadeDeletePlan(&objectsToRemove, &zonesToRemove, &planetDeletePlan, &planetDeleteError)) {
+        QMessageBox::warning(this,
+                             tr("Planet loeschen"),
+                             planetDeleteError.trimmed().isEmpty()
+                                 ? tr("Die verknuepften Planet-Daten konnten nicht vollstaendig ermittelt werden.")
+                                 : planetDeleteError);
+        return;
+    }
+    if (!confirmPlanetCascadeDelete(objectsToRemove, zonesToRemove, planetDeletePlan))
+        return;
+    for (const PendingTextFileChange &change : std::as_const(planetDeletePlan.textChanges))
+        stagePendingTextWrite(change.absolutePath, change.content);
+    for (const PendingFileDelete &fileDelete : std::as_const(planetDeletePlan.fileDeletes))
+        stagePendingFileDelete(fileDelete.absolutePath, fileDelete.reason);
 
     if (!zonesToRemove.isEmpty()) {
         QStringList zoneNicknames;
@@ -9634,6 +10011,28 @@ bool SystemEditorPage::writePendingTextFiles(QString *errorMessage)
     return true;
 }
 
+bool SystemEditorPage::writePendingFileDeletes(QString *errorMessage)
+{
+    for (auto it = m_pendingFileDeletes.constBegin(); it != m_pendingFileDeletes.constEnd(); ++it) {
+        const PendingFileDelete &fileDelete = it.value();
+        if (fileDelete.absolutePath.trimmed().isEmpty()) {
+            if (errorMessage)
+                *errorMessage = tr("Eine verknuepfte Datei hat keinen gueltigen Pfad und konnte deshalb nicht geloescht werden.");
+            return false;
+        }
+        if (!QFileInfo::exists(fileDelete.absolutePath))
+            continue;
+        if (!QFile::remove(fileDelete.absolutePath)) {
+            if (errorMessage) {
+                *errorMessage = tr("Die verknuepfte Datei konnte nicht geloescht werden:\n%1")
+                                    .arg(fileDelete.absolutePath);
+            }
+            return false;
+        }
+    }
+    return true;
+}
+
 QString SystemEditorPage::lastSaveError() const
 {
     return m_lastSaveError;
@@ -9641,7 +10040,8 @@ QString SystemEditorPage::lastSaveError() const
 
 void SystemEditorPage::stagePendingTextWrite(const QString &absolutePath, const QString &content)
 {
-    const QString key = QDir::cleanPath(absolutePath).toLower();
+    const QString key = normalizedPathKey(absolutePath);
+    m_pendingFileDeletes.remove(key);
     m_pendingTextFileWrites.insert(key, PendingTextFileWrite{absolutePath, content});
     refreshDocumentDirtyState();
 }
@@ -9771,12 +10171,38 @@ QStringList SystemEditorPage::expandSelectionNicknamesForScene(const QStringList
 QStringList SystemEditorPage::expandMoveNicknames(const QStringList &nicknames) const
 {
     QStringList expanded;
+    auto appendDockingRingLinksForPlanet = [&](const SolarObject &planetObject) {
+        if (!m_document)
+            return;
+        for (const auto &candidate : m_document->objects()) {
+            if (!candidate || !DockingRingCreationService::isDockingRingObject(*candidate))
+                continue;
+            SolarObject *hostPlanet = findDockingRingHostPlanet(m_document.get(), *candidate);
+            if (!hostPlanet || hostPlanet->nickname().compare(planetObject.nickname(), Qt::CaseInsensitive) != 0)
+                continue;
+            expanded.append(candidate->nickname());
+            int fixtureMatches = 0;
+            const auto fixture = DockingRingCreationService::findAssociatedFixture(m_document.get(), *candidate, &fixtureMatches);
+            if (fixture)
+                expanded.append(fixture->nickname());
+        }
+    };
+    auto appendDockingFixtureForRing = [&](const SolarObject &ringObject) {
+        if (!m_document || !DockingRingCreationService::isDockingRingObject(ringObject))
+            return;
+        int fixtureMatches = 0;
+        const auto fixture = DockingRingCreationService::findAssociatedFixture(m_document.get(), ringObject, &fixtureMatches);
+        if (fixture)
+            expanded.append(fixture->nickname());
+    };
+
     for (const QString &nickname : nicknames) {
         SolarObject *object = findObjectByNickname(nickname);
         if (object) {
             const QString rootNickname = normalizeObjectNicknameToGroupRoot(nickname);
             const QStringList groupNicknames = objectGroupNicknames(rootNickname);
             expanded.append(groupNicknames);
+            appendDockingFixtureForRing(*object);
             for (const QString &groupNickname : groupNicknames) {
                 SolarObject *groupObject = findObjectByNickname(groupNickname);
                 if (!groupObject || !isPlanetLikeObject(*groupObject))
@@ -9789,6 +10215,8 @@ QStringList SystemEditorPage::expandMoveNicknames(const QStringList &nicknames) 
                 const QString ringZoneNickname = RingEditService::linkedZoneNickname(*groupObject);
                 if (!ringZoneNickname.isEmpty() && findZoneByNickname(ringZoneNickname))
                     expanded.append(ringZoneNickname);
+
+                appendDockingRingLinksForPlanet(*groupObject);
             }
             continue;
         }
@@ -9811,6 +10239,8 @@ QStringList SystemEditorPage::expandMoveNicknames(const QStringList &nicknames) 
                     const QString ringZoneNickname = RingEditService::linkedZoneNickname(*groupObject);
                     if (!ringZoneNickname.isEmpty() && findZoneByNickname(ringZoneNickname))
                         expanded.append(ringZoneNickname);
+
+                    appendDockingRingLinksForPlanet(*groupObject);
                 }
             }
         } else if (findLightSourceSectionIndexByNickname(nickname) >= 0) {
