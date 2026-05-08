@@ -133,6 +133,11 @@ QString comboStoredValue(const QComboBox *combo)
     return separator >= 0 ? text.left(separator).trimmed() : text;
 }
 
+QString comboDataValue(const QComboBox *combo)
+{
+    return combo ? combo->currentData().toString().trimmed() : QString();
+}
+
 QString comboDataOrText(const QComboBox *combo)
 {
     if (!combo)
@@ -1194,7 +1199,7 @@ void BaseEditDialog::enforceShipSlotRules()
     for (QComboBox *combo : m_shipSlotCombos) {
         if (!combo)
             continue;
-        const QString value = comboStoredValue(combo);
+        const QString value = comboDataValue(combo);
         if (value.isEmpty())
             continue;
         const QString key = normalizedKey(value);
@@ -1397,7 +1402,7 @@ QStringList BaseEditDialog::selectedShipPackages() const
 {
     QStringList ships;
     for (const QComboBox *combo : m_shipSlotCombos) {
-        const QString nickname = comboStoredValue(combo);
+        const QString nickname = comboDataValue(combo);
         if (!nickname.isEmpty() && !ships.contains(nickname, Qt::CaseInsensitive))
             ships.append(nickname);
         if (ships.size() >= BaseEquipmentService::MaxShipsPerBase)
@@ -1410,7 +1415,7 @@ QStringList BaseEditDialog::selectedShipPackageLevels() const
 {
     QStringList levels;
     for (int slot = 0; slot < BaseEquipmentService::MaxShipsPerBase; ++slot) {
-        const QString nickname = comboStoredValue(m_shipSlotCombos[slot]);
+        const QString nickname = comboDataValue(m_shipSlotCombos[slot]);
         if (nickname.isEmpty())
             continue;
         levels.append(QString::number(m_shipLevelSpins[slot] ? m_shipLevelSpins[slot]->value() : 1));
