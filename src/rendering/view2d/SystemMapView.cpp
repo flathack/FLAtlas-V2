@@ -629,6 +629,7 @@ void SystemMapView::contextMenuEvent(QContextMenuEvent *event)
 {
     emit contextMenuRequested(event->globalPos(),
                               mapToScene(event->pos()),
+                              itemNicknameAtViewportPos(event->pos()),
                               zoneNicknamesAtViewportPos(event->pos()));
     event->accept();
 }

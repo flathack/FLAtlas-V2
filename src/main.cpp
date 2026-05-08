@@ -16,12 +16,6 @@ int main(int argc, char *argv[])
     if (qEnvironmentVariableIsEmpty("QSG_RHI_BACKEND"))
         qputenv("QSG_RHI_BACKEND", QByteArrayLiteral("opengl"));
 
-    // Qt-Attribute vor QApplication setzen
-#ifdef Q_OS_WIN
-    // OpenGL als Fallback für Qt3D auf Windows
-    QApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
-#endif
-
     QSurfaceFormat format;
     format.setRenderableType(QSurfaceFormat::OpenGL);
     format.setVersion(4, 3);
@@ -30,6 +24,11 @@ int main(int argc, char *argv[])
     format.setStencilBufferSize(8);
     format.setSamples(4);
     QSurfaceFormat::setDefaultFormat(format);
+
+#ifdef Q_OS_WIN
+    // OpenGL als Fallback fuer Qt3D auf Windows
+    QApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+#endif
 
     Application app(argc, argv);
 

@@ -35,6 +35,9 @@ void Logger::setFileLogging(bool enabled)
 
 void Logger::messageHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg)
 {
+    if (msg.contains(QStringLiteral("Setting a new default format with a different version or profile after the global shared context is created")))
+        return;
+
     static const char *levels[] = {"DEBUG", "WARNING", "CRITICAL", "FATAL", "INFO"};
     const char *level = (type >= 0 && type <= 4) ? levels[type] : "UNKNOWN";
     const QString cat = context.category ? QString::fromUtf8(context.category) : QStringLiteral("default");

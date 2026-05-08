@@ -422,6 +422,23 @@ QVector<BaseRoomState> buildDefaultRoomsForArchetype(const QString &archetype)
     return rooms;
 }
 
+void appendMissingDefaultRooms(QVector<BaseRoomState> *rooms, const QString &archetype)
+{
+    if (!rooms)
+        return;
+
+    const QVector<BaseRoomState> defaults = buildDefaultRoomsForArchetype(archetype);
+    for (BaseRoomState room : defaults) {
+        const bool exists = std::any_of(rooms->cbegin(), rooms->cend(), [&](const BaseRoomState &existing) {
+            return normalizeKey(existing.roomName) == normalizeKey(room.roomName);
+        });
+        if (exists)
+            continue;
+        room.enabled = false;
+        rooms->append(room);
+    }
+}
+
 bool loadBaseFileState(BaseEditState *state,
                        const QString &gameRoot,
                        const QHash<QString, QString> &textOverrides,
@@ -598,6 +615,8 @@ bool loadBaseFileState(BaseEditState *state,
 
     if (rooms.isEmpty())
         rooms = buildDefaultRoomsForArchetype(state->archetype);
+    else
+        appendMissingDefaultRooms(&rooms, state->archetype);
     state->rooms = rooms;
     if (state->rotate.trimmed().isEmpty())
         state->rotate = QStringLiteral("0, 0, 0");

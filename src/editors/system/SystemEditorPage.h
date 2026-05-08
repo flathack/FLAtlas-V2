@@ -193,6 +193,7 @@ private:
     bool openDockingRingDialogForPlacement();
     bool openDockingRingDialogForEdit(flatlas::domain::SolarObject *ringObject);
     bool hasSingleObjectGroupSelection() const;
+    void openBaseEditorForSelection();
     void openBaseBuilderForSelection();
     void open3DPreviewForSelection();
     void setupUi();
@@ -269,6 +270,7 @@ private:
     void onTreeSelectionChanged();
     void showMapContextMenu(const QPoint &globalPos,
                             const QPointF &scenePos,
+                            const QString &objectNickname,
                             const QStringList &zoneNicknames);
     void onAddObject();
     void onDeleteSelected();

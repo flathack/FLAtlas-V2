@@ -4281,70 +4281,7 @@ void SystemEditorPage::setupRightSidebar()
     editingLayout->addWidget(m_addExclusionZoneButton);
 
     m_editBaseButton = makeSidebarButton(tr("Base"), editingGroup);
-    connect(m_editBaseButton, &QPushButton::clicked, this, [this]() {
-        if (!m_document)
-            return;
-
-        SolarObject *hostObject = findBaseHostForSelection();
-        if (!hostObject) {
-            QMessageBox::information(this,
-                                     tr("Base bearbeiten"),
-                                     tr("Bitte waehle ein Objekt mit verknuepfter Base aus."));
-            return;
-        }
-
-        QHash<QString, QString> overrides;
-        for (auto it = m_pendingTextFileWrites.constBegin(); it != m_pendingTextFileWrites.constEnd(); ++it)
-            overrides.insert(it.key(), it.value().content);
-
-        BaseEditState state;
-        QString errorMessage;
-        if (!BaseEditService::loadState(*m_document,
-                                        *hostObject,
-                                        flatlas::core::EditingContext::instance().primaryGamePath(),
-                                        overrides,
-                                        &state,
-                                        &errorMessage)) {
-            QMessageBox::warning(this,
-                                 tr("Base bearbeiten"),
-                                 errorMessage.trimmed().isEmpty()
-                                     ? tr("Die Base-Daten konnten nicht geladen werden.")
-                                     : errorMessage);
-            return;
-        }
-
-        BaseEditDialog dialog(state, overrides, this);
-        connect(&dialog, &BaseEditDialog::roomActivationRequested, this, [this](const QString &roomName, const QString &modelPath) {
-            emit modelPreviewRequested(modelPath, tr("Room Preview: %1").arg(roomName));
-        });
-        if (dialog.exec() != QDialog::Accepted)
-            return;
-
-        BaseApplyResult applyResult;
-        if (!BaseEditService::applyEdit(*hostObject,
-                                        dialog.state(),
-                                        flatlas::core::EditingContext::instance().primaryGamePath(),
-                                        overrides,
-                                        &applyResult,
-                                        &errorMessage)) {
-            QMessageBox::warning(this,
-                                 tr("Base bearbeiten"),
-                                 errorMessage.trimmed().isEmpty()
-                                     ? tr("Die Base konnte nicht aktualisiert werden.")
-                                     : errorMessage);
-            return;
-        }
-
-        for (const BaseStagedWrite &write : applyResult.stagedWrites)
-            stagePendingTextWrite(write.absolutePath, write.content);
-
-        m_document->setDirty(true);
-        refreshObjectList();
-        syncTreeSelectionFromNicknames({hostObject->nickname()});
-        syncSceneSelectionFromNicknames({hostObject->nickname()});
-        updateSelectionSummary();
-        updateIniEditorForSelection();
-    });
+    connect(m_editBaseButton, &QPushButton::clicked, this, &SystemEditorPage::openBaseEditorForSelection);
     editingLayout->addWidget(m_editBaseButton);
 
     m_baseBuilderButton = makeSidebarButton(tr("Base Builder"), editingGroup);
@@ -4575,10 +4512,9 @@ void SystemEditorPage::onTreeSelectionChanged()
 
 void SystemEditorPage::showMapContextMenu(const QPoint &globalPos,
                                           const QPointF &scenePos,
+                                          const QString &objectNickname,
                                           const QStringList &zoneNicknames)
 {
-    Q_UNUSED(scenePos)
-
     if (!m_mapView)
         return;
 
@@ -4625,6 +4561,14 @@ void SystemEditorPage::showMapContextMenu(const QPoint &globalPos,
     QHash<QAction *, QString> editTargets;
     QHash<QAction *, QString> deleteTargets;
     QHash<QAction *, QString> rotateTargets;
+    const QString cleanObjectNickname = objectNickname.trimmed();
+    if (!cleanObjectNickname.isEmpty() && findObjectByNickname(cleanObjectNickname)) {
+        QAction *objectHeader = menu.addAction(cleanObjectNickname);
+        objectHeader->setEnabled(false);
+        editTargets.insert(menu.addAction(tr("Edit Object")), cleanObjectNickname);
+        deleteTargets.insert(menu.addAction(tr("Delete Object")), cleanObjectNickname);
+        menu.addSeparator();
+    }
     if (!zoneEntries.isEmpty()) {
         if (zoneEntries.size() == 1) {
             QAction *zoneHeader = menu.addAction(zoneEntries.first().label);
@@ -4646,7 +4590,7 @@ void SystemEditorPage::showMapContextMenu(const QPoint &globalPos,
 
     QAction *addObjectAction = menu.addAction(tr("Add Object..."));
     QAction *deleteSelectionAction = menu.addAction(tr("Delete"));
-    QAction *propertiesAction = menu.addAction(tr("Properties..."));
+    QAction *propertiesAction = menu.addAction(tr("Edit Object"));
     deleteSelectionAction->setEnabled(!m_selectedNicknames.isEmpty());
     propertiesAction->setEnabled(m_selectedNicknames.size() == 1);
 
@@ -5359,6 +5303,29 @@ void SystemEditorPage::editContextTarget(const QString &nickname)
 {
     if (!selectSingleContextTarget(nickname))
         return;
+
+    if (SolarObject *object = findObjectByNickname(nickname)) {
+        if (object->type() == SolarObject::TradeLane) {
+            onEditTradeLane();
+            return;
+        }
+        if (DockingRingCreationService::isDockingRingObject(*object)
+            || RingEditService::hasRing(*object)) {
+            onEditRing();
+            return;
+        }
+        if (BaseEditService::objectHasBase(*object) || findBaseHostForSelection()) {
+            openBaseEditorForSelection();
+            return;
+        }
+    } else if (ZoneItem *zone = findZoneByNickname(nickname)) {
+        if (RingEditService::findHostForZone(m_document.get(), zone->nickname())) {
+            onEditRing();
+            return;
+        }
+        onEditZonePopulation();
+        return;
+    }
 
     if (m_iniEditor)
         m_iniEditor->setFocus(Qt::OtherFocusReason);
@@ -10738,6 +10705,72 @@ bool SystemEditorPage::isChildObject(const SolarObject &obj) const
 bool SystemEditorPage::hasSingleObjectGroupSelection() const
 {
     return m_selectedNicknames.size() == 1 && findObjectByNickname(m_selectedNicknames.first()) != nullptr;
+}
+
+void SystemEditorPage::openBaseEditorForSelection()
+{
+    if (!m_document)
+        return;
+
+    SolarObject *hostObject = findBaseHostForSelection();
+    if (!hostObject) {
+        QMessageBox::information(this,
+                                 tr("Base bearbeiten"),
+                                 tr("Bitte wähle ein Objekt mit verknüpfter Base aus."));
+        return;
+    }
+
+    QHash<QString, QString> overrides;
+    for (auto it = m_pendingTextFileWrites.constBegin(); it != m_pendingTextFileWrites.constEnd(); ++it)
+        overrides.insert(it.key(), it.value().content);
+
+    BaseEditState state;
+    QString errorMessage;
+    if (!BaseEditService::loadState(*m_document,
+                                    *hostObject,
+                                    flatlas::core::EditingContext::instance().primaryGamePath(),
+                                    overrides,
+                                    &state,
+                                    &errorMessage)) {
+        QMessageBox::warning(this,
+                             tr("Base bearbeiten"),
+                             errorMessage.trimmed().isEmpty()
+                                 ? tr("Die Base-Daten konnten nicht geladen werden.")
+                                 : errorMessage);
+        return;
+    }
+
+    BaseEditDialog dialog(state, overrides, this);
+    connect(&dialog, &BaseEditDialog::roomActivationRequested, this, [this](const QString &roomName, const QString &modelPath) {
+        emit modelPreviewRequested(modelPath, tr("Room Preview: %1").arg(roomName));
+    });
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    BaseApplyResult applyResult;
+    if (!BaseEditService::applyEdit(*hostObject,
+                                    dialog.state(),
+                                    flatlas::core::EditingContext::instance().primaryGamePath(),
+                                    overrides,
+                                    &applyResult,
+                                    &errorMessage)) {
+        QMessageBox::warning(this,
+                             tr("Base bearbeiten"),
+                             errorMessage.trimmed().isEmpty()
+                                 ? tr("Die Base konnte nicht aktualisiert werden.")
+                                 : errorMessage);
+        return;
+    }
+
+    for (const BaseStagedWrite &write : applyResult.stagedWrites)
+        stagePendingTextWrite(write.absolutePath, write.content);
+
+    m_document->setDirty(true);
+    refreshObjectList();
+    syncTreeSelectionFromNicknames({hostObject->nickname()});
+    syncSceneSelectionFromNicknames({hostObject->nickname()});
+    updateSelectionSummary();
+    updateIniEditorForSelection();
 }
 
 void SystemEditorPage::openBaseBuilderForSelection()

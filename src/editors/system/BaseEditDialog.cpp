@@ -856,11 +856,6 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     setActiveRoom(m_activeRoomKey);
     m_lastSuggestedLoadout = state.loadout.trimmed();
     m_lastSuggestedIdsInfo = state.infocardXml.trimmed();
-    if (state.editMode) {
-        m_templateCombo->setEnabled(false);
-        m_copyNpcsCheck->setEnabled(false);
-        m_randomNpcAppearanceCheck->setEnabled(false);
-    }
     refreshPreview();
     updateRoomSelectionUi();
     refreshRoomPreview();
@@ -1994,7 +1989,7 @@ void BaseEditDialog::refreshRoomPreview()
 
 void BaseEditDialog::applyTemplateSelection()
 {
-    if (m_initialState.editMode || !m_templateCombo)
+    if (!m_templateCombo)
         return;
 
     const QString previousSelected = m_selectedRoomKey;

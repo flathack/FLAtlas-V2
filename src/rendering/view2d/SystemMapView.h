@@ -65,6 +65,7 @@ signals:
     void zoneRotationCanceled();
     void contextMenuRequested(const QPoint &globalPos,
                               const QPointF &scenePos,
+                              const QString &objectNickname,
                               const QStringList &zoneNicknames);
 
 public:
