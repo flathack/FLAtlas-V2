@@ -81,7 +81,6 @@ ZoneVisualStyle ZoneColorScheme::styleForZone(const flatlas::domain::ZoneItem &z
     const QString zoneType = zone.zoneType().trimmed().toLower();
     const QString music = rawEntryValue(zone, QStringLiteral("music")).toLower();
     const QString propertyFlags = rawEntryValue(zone, QStringLiteral("property_flags")).toLower();
-    const int damage = zone.damage();
     const bool isPopulation = name.contains(QStringLiteral("pop"))
         || !popType.isEmpty()
         || usage.contains(QStringLiteral("population"))
@@ -93,7 +92,7 @@ ZoneVisualStyle ZoneColorScheme::styleForZone(const flatlas::domain::ZoneItem &z
         || popType.contains(QStringLiteral("trade_path"))
         || popType.contains(QStringLiteral("patrol"));
 
-    if (name.contains(QStringLiteral("death")) || name.contains(QStringLiteral("destroy_vignette")) || damage > 0)
+    if (name.contains(QStringLiteral("death")) || name.contains(QStringLiteral("destroy_vignette")))
         return makeStyle(QStringLiteral("death"), flatlas::core::ThemeColors::color(QStringLiteral("zoneDeath")), 30);
 
     if (name.contains(QStringLiteral("atmosphere"))

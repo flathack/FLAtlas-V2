@@ -9,6 +9,7 @@ class QComboBox;
 class QCheckBox;
 class QDoubleSpinBox;
 class QLineEdit;
+class QPushButton;
 class QSpinBox;
 
 namespace flatlas::domain { class SystemDocument; }
@@ -33,6 +34,8 @@ struct CreateFieldZoneResult {
     int sort = 99;
     bool hasInterference = false;
     double interference = 0.0;
+    QString propertyFogColor;
+    bool hasSpacedust = true;
     QString spacedust;
     int spacedustMaxParticles = 50;
     QString comment;
@@ -67,6 +70,7 @@ private:
     void populateVisitCombo();
     void populateSpaceDustCombo();
     void updateTypeDependentFields();
+    void pickFogColor();
     void suggestNickname();
     QString suggestedNicknameForType(CreateFieldZoneResult::Type type) const;
     QString normalizedNameToken(const QString &value) const;
@@ -95,6 +99,10 @@ private:
     QSpinBox *m_sortSpin = nullptr;
     QCheckBox *m_interferenceCheck = nullptr;
     QDoubleSpinBox *m_interferenceSpin = nullptr;
+    QWidget *m_fogColorRow = nullptr;
+    QLineEdit *m_fogColorEdit = nullptr;
+    QPushButton *m_fogColorButton = nullptr;
+    QCheckBox *m_spaceDustCheck = nullptr;
     QComboBox *m_spaceDustCombo = nullptr;
     QSpinBox *m_spaceDustParticlesSpin = nullptr;
     QLineEdit *m_commentEdit = nullptr;

@@ -5024,7 +5024,9 @@ QString SystemEditorPage::serializeSelectionToIni() const
                 leadingComment = zone->comment().trimmed();
             }
             QString text = IniParser::serialize(doc).trimmed();
-            if (!leadingComment.isEmpty()) {
+            const bool hasCommentKey = !doc.isEmpty()
+                && doc.first().value(QStringLiteral("comment")).trimmed() == leadingComment;
+            if (!leadingComment.isEmpty() && !hasCommentKey) {
                 const QStringList lines =
                     leadingComment.split(QRegularExpression(QStringLiteral("[\\r\\n]+")), Qt::SkipEmptyParts);
                 QStringList commentLines;
@@ -8480,7 +8482,15 @@ void SystemEditorPage::finalizeFieldZonePlacement(const QPointF &edgeScenePos)
                         QString::number(m_pendingFieldZoneRequest->interference, 'f', 2)});
     if (!m_pendingFieldZoneRequest->music.trimmed().isEmpty())
         entries.append({QStringLiteral("Music"), m_pendingFieldZoneRequest->music.trimmed()});
-    if (!m_pendingFieldZoneRequest->spacedust.trimmed().isEmpty()) {
+    if (!m_pendingFieldZoneRequest->comment.trimmed().isEmpty())
+        entries.append({QStringLiteral("comment"), m_pendingFieldZoneRequest->comment.trimmed()});
+    if (m_pendingFieldZoneRequest->type == CreateFieldZoneResult::Type::Nebula
+        && !m_pendingFieldZoneRequest->propertyFogColor.trimmed().isEmpty()) {
+        entries.append({QStringLiteral("property_fog_color"),
+                        m_pendingFieldZoneRequest->propertyFogColor.trimmed()});
+    }
+    if (m_pendingFieldZoneRequest->hasSpacedust
+        && !m_pendingFieldZoneRequest->spacedust.trimmed().isEmpty()) {
         entries.append({QStringLiteral("spacedust"), m_pendingFieldZoneRequest->spacedust.trimmed()});
         entries.append({QStringLiteral("spacedust_maxparticles"),
                         QString::number(m_pendingFieldZoneRequest->spacedustMaxParticles)});

@@ -1106,8 +1106,8 @@ IniSection SystemPersistence::serializeZoneSection(const ZoneItem &zone)
     setOptionalEntry(sec.entries, QStringLiteral("usage"), zone.usage());
     setOptionalEntry(sec.entries, QStringLiteral("pop_type"), zone.popType());
     setOptionalEntry(sec.entries, QStringLiteral("path_label"), zone.pathLabel());
-    if (!zone.comment().trimmed().isEmpty() && findEntryIndex(sec.entries, QStringLiteral("comment")) < 0)
-        removeEntry(sec.entries, QStringLiteral("comment"));
+    if (findEntryIndex(sec.entries, QStringLiteral("comment")) >= 0)
+        setOptionalEntry(sec.entries, QStringLiteral("comment"), zone.comment());
     setOptionalVec3Entry(sec.entries, QStringLiteral("tightness"), zone.tightnessXyz());
     setOptionalIntEntry(sec.entries, QStringLiteral("damage"), zone.damage());
     setOptionalFloatEntry(sec.entries, QStringLiteral("interference"), zone.interference());

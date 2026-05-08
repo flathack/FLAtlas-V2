@@ -121,8 +121,12 @@ QPen ZoneItem2D::penForZone(const flatlas::domain::ZoneItem &zone)
     const QString popType = zone.popType().toLower();
     const QString pathLabel = zone.pathLabel().toLower();
 
-    QPen pen(style.wireColor);
+    QPen pen(zone.damage() > 0 && category != QStringLiteral("death")
+                 ? QColor(230, 70, 70, 235)
+                 : style.wireColor);
     pen.setWidthF(style.denseWire ? 1.4 : 1.0);
+    if (zone.damage() > 0 && category != QStringLiteral("death"))
+        pen.setWidthF(qMax<qreal>(pen.widthF(), 1.6));
     if (category.contains(QStringLiteral("path"))
         || usage == QStringLiteral("patrol")
         || name.contains(QStringLiteral("_path_"))

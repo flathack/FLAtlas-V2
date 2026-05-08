@@ -454,6 +454,21 @@ private slots:
         QCOMPARE(reloaded->zones()[0]->comment(), QStringLiteral("Devon Field"));
     }
 
+    void serializeZonePreservesExistingCommentKey()
+    {
+        ZoneItem zone;
+        zone.setNickname(QStringLiteral("Zone_Li01_asteroids"));
+        zone.setComment(QStringLiteral("Devon Field"));
+        zone.setRawEntries({
+            {QStringLiteral("nickname"), QStringLiteral("Zone_Li01_asteroids")},
+            {QStringLiteral("comment"), QStringLiteral("Old Field")},
+            {QStringLiteral("shape"), QStringLiteral("ELLIPSOID")},
+        });
+
+        const IniSection section = SystemPersistence::serializeZoneSection(zone);
+        QCOMPARE(section.value(QStringLiteral("comment")), QStringLiteral("Devon Field"));
+    }
+
     void savePreservesExistingSectionOrder()
     {
         const QString ini = QStringLiteral(

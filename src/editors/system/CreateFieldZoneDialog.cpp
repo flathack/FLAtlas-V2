@@ -9,6 +9,7 @@
 
 #include <QComboBox>
 #include <QCheckBox>
+#include <QColorDialog>
 #include <QCompleter>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -256,6 +257,34 @@ QString extractLeadingIntegerToken(const QString &value)
     return match.hasMatch() ? match.captured(1) : QString();
 }
 
+bool normalizeRgbText(const QString &rawValue, QString *normalizedValue)
+{
+    const QString trimmed = rawValue.trimmed();
+    if (trimmed.isEmpty()) {
+        if (normalizedValue)
+            *normalizedValue = QString();
+        return true;
+    }
+
+    const QStringList parts = trimmed.split(QLatin1Char(','), Qt::SkipEmptyParts);
+    if (parts.size() != 3)
+        return false;
+
+    QStringList normalizedParts;
+    normalizedParts.reserve(3);
+    for (const QString &part : parts) {
+        bool ok = false;
+        const int component = part.trimmed().toInt(&ok);
+        if (!ok || component < 0 || component > 255)
+            return false;
+        normalizedParts.append(QString::number(component));
+    }
+
+    if (normalizedValue)
+        *normalizedValue = normalizedParts.join(QStringLiteral(", "));
+    return true;
+}
+
 } // namespace
 
 CreateFieldZoneDialog::CreateFieldZoneDialog(flatlas::domain::SystemDocument *document, QWidget *parent)
@@ -332,10 +361,28 @@ CreateFieldZoneDialog::CreateFieldZoneDialog(flatlas::domain::SystemDocument *do
     interferenceLayout->addWidget(m_interferenceSpin, 1);
     form->addRow(tr("Interference:"), interferenceHost);
 
+    m_fogColorRow = new QWidget(this);
+    auto *fogColorLayout = new QHBoxLayout(m_fogColorRow);
+    fogColorLayout->setContentsMargins(0, 0, 0, 0);
+    fogColorLayout->setSpacing(8);
+    m_fogColorEdit = new QLineEdit(QStringLiteral("40, 28, 120"), m_fogColorRow);
+    m_fogColorButton = new QPushButton(tr("Farbe wählen"), m_fogColorRow);
+    fogColorLayout->addWidget(m_fogColorEdit, 1);
+    fogColorLayout->addWidget(m_fogColorButton);
+    form->addRow(tr("Fog Color:"), m_fogColorRow);
+
     m_spaceDustCombo = new QComboBox(this);
     m_spaceDustCombo->setEditable(true);
     m_spaceDustCombo->setInsertPolicy(QComboBox::NoInsert);
-    form->addRow(tr("Space Dust:"), m_spaceDustCombo);
+    auto *spaceDustHost = new QWidget(this);
+    auto *spaceDustLayout = new QHBoxLayout(spaceDustHost);
+    spaceDustLayout->setContentsMargins(0, 0, 0, 0);
+    spaceDustLayout->setSpacing(8);
+    m_spaceDustCheck = new QCheckBox(tr("setzen"), spaceDustHost);
+    m_spaceDustCheck->setChecked(true);
+    spaceDustLayout->addWidget(m_spaceDustCheck);
+    spaceDustLayout->addWidget(m_spaceDustCombo, 1);
+    form->addRow(tr("Space Dust:"), spaceDustHost);
 
     m_spaceDustParticlesSpin = new QSpinBox(this);
     m_spaceDustParticlesSpin->setRange(0, 500);
@@ -370,6 +417,12 @@ CreateFieldZoneDialog::CreateFieldZoneDialog(flatlas::domain::SystemDocument *do
     });
     connect(m_interferenceCheck, &QCheckBox::toggled,
             m_interferenceSpin, &QWidget::setEnabled);
+    connect(m_fogColorButton, &QPushButton::clicked,
+            this, &CreateFieldZoneDialog::pickFogColor);
+    connect(m_spaceDustCheck, &QCheckBox::toggled, this, [this](bool checked) {
+        m_spaceDustCombo->setEnabled(checked);
+        m_spaceDustParticlesSpin->setEnabled(checked);
+    });
     connect(m_nicknameEdit, &QLineEdit::textEdited, this, [this](const QString &) {
         m_nameEditedByUser = true;
     });
@@ -468,8 +521,8 @@ void CreateFieldZoneDialog::populatePropertyFlagsCombo()
         const int index = m_propertyFlagsCombo->findText(currentText, Qt::MatchFixedString);
         if (index >= 0)
             m_propertyFlagsCombo->setCurrentIndex(index);
-        else
-            m_propertyFlagsCombo->setEditText(currentText);
+        else if (m_propertyFlagsCombo->count() > 0)
+            m_propertyFlagsCombo->setCurrentIndex(0);
     } else if (m_propertyFlagsCombo->count() > 0) {
         m_propertyFlagsCombo->setCurrentIndex(0);
     }
@@ -492,8 +545,8 @@ void CreateFieldZoneDialog::populateVisitCombo()
         const int index = m_visitCombo->findText(currentText, Qt::MatchFixedString);
         if (index >= 0)
             m_visitCombo->setCurrentIndex(index);
-        else
-            m_visitCombo->setEditText(currentText);
+        else if (m_visitCombo->count() > 0)
+            m_visitCombo->setCurrentIndex(0);
     } else if (m_visitCombo->count() > 0) {
         m_visitCombo->setCurrentIndex(0);
     }
@@ -505,7 +558,7 @@ void CreateFieldZoneDialog::populateSpaceDustCombo()
         static_cast<CreateFieldZoneResult::Type>(m_typeCombo->currentData().toInt());
     const QString defaultValue = (type == CreateFieldZoneResult::Type::Asteroid)
         ? QStringLiteral("asteroiddust")
-        : QStringLiteral("attractdust_purple");
+        : QStringLiteral("radioactivedust_blue");
     const QString currentText = canonicalOptionText(m_spaceDustCombo);
 
     QSignalBlocker blocker(m_spaceDustCombo);
@@ -530,11 +583,36 @@ void CreateFieldZoneDialog::populateSpaceDustCombo()
 
 void CreateFieldZoneDialog::updateTypeDependentFields()
 {
+    const CreateFieldZoneResult::Type type =
+        static_cast<CreateFieldZoneResult::Type>(m_typeCombo->currentData().toInt());
+    const bool isNebula = type == CreateFieldZoneResult::Type::Nebula;
+    m_fogColorRow->setEnabled(isNebula);
+    if (auto *form = qobject_cast<QFormLayout *>(m_fogColorRow->parentWidget()->layout())) {
+        if (QWidget *label = form->labelForField(m_fogColorRow))
+            label->setEnabled(isNebula);
+    }
     populateReferenceCombo();
     populateMusicCombo();
     populatePropertyFlagsCombo();
     populateVisitCombo();
     populateSpaceDustCombo();
+}
+
+void CreateFieldZoneDialog::pickFogColor()
+{
+    QString normalized;
+    QColor initialColor(40, 28, 120);
+    if (normalizeRgbText(m_fogColorEdit->text(), &normalized)) {
+        const QStringList parts = normalized.split(QStringLiteral(", "));
+        if (parts.size() == 3)
+            initialColor = QColor(parts[0].toInt(), parts[1].toInt(), parts[2].toInt());
+    }
+
+    const QColor color = QColorDialog::getColor(initialColor, this, tr("Fog Color"));
+    if (!color.isValid())
+        return;
+
+    m_fogColorEdit->setText(QStringLiteral("%1, %2, %3").arg(color.red()).arg(color.green()).arg(color.blue()));
 }
 
 void CreateFieldZoneDialog::suggestNickname()
@@ -707,7 +785,7 @@ void CreateFieldZoneDialog::accept()
     }
 
     const QString spacedust = m_spaceDustCombo->currentText().trimmed();
-    if (!spacedust.isEmpty()) {
+    if (m_spaceDustCheck->isChecked() && !spacedust.isEmpty()) {
         bool knownDust = false;
         for (const QString &option : std::as_const(m_spaceDustOptions)) {
             if (option.compare(spacedust, Qt::CaseInsensitive) == 0) {
@@ -722,6 +800,14 @@ void CreateFieldZoneDialog::accept()
         }
     }
 
+    QString normalizedFogColor;
+    if (type == CreateFieldZoneResult::Type::Nebula
+        && !normalizeRgbText(m_fogColorEdit->text(), &normalizedFogColor)) {
+        QMessageBox::warning(this, tr("Zone erstellen"),
+                             tr("Fog Color muss im Format 'R, G, B' mit Werten von 0 bis 255 angegeben werden."));
+        return;
+    }
+
     m_result.type = type;
     m_result.nickname = nickname;
     m_result.ingameName = m_ingameNameEdit->text().trimmed();
@@ -734,7 +820,9 @@ void CreateFieldZoneDialog::accept()
     m_result.sort = m_sortSpin->value();
     m_result.hasInterference = m_interferenceCheck->isChecked();
     m_result.interference = m_interferenceSpin->value();
-    m_result.spacedust = spacedust;
+    m_result.propertyFogColor = type == CreateFieldZoneResult::Type::Nebula ? normalizedFogColor : QString();
+    m_result.hasSpacedust = m_spaceDustCheck->isChecked();
+    m_result.spacedust = m_result.hasSpacedust ? spacedust : QString();
     m_result.spacedustMaxParticles = m_spaceDustParticlesSpin->value();
     m_result.comment = m_commentEdit->text().trimmed();
 
