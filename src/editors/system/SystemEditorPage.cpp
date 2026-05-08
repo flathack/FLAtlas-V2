@@ -5154,8 +5154,8 @@ bool SystemEditorPage::confirmPlanetCascadeDelete(const QVector<std::shared_ptr<
         details += tr("\n\nNotes:\n  - %1").arg(plan.warnings.join(QStringLiteral("\n  - ")));
 
     QMessageBox box(QMessageBox::Warning,
-                    tr("Delete planet with linked data"),
-                    tr("Linked objects, zones, base entries, and files belonging to the planet will be deleted. Review the details and confirm the operation."),
+                    tr("Delete linked data"),
+                    tr("Linked objects, zones, base entries, and files belonging to the selection will be deleted. Review the details and confirm the operation."),
                     QMessageBox::Yes | QMessageBox::Cancel,
                     const_cast<SystemEditorPage *>(this));
     box.setDefaultButton(QMessageBox::Cancel);
@@ -5268,7 +5268,7 @@ void SystemEditorPage::onDeleteSelected()
         QMessageBox::warning(this,
                              tr("Delete Planet"),
                              planetDeleteError.trimmed().isEmpty()
-                                 ? tr("The linked planet data could not be determined completely.")
+                                 ? tr("The linked data could not be determined completely.")
                                  : planetDeleteError);
         return;
     }

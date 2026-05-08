@@ -317,9 +317,14 @@ QHash<QString, QString> builtInTranslations(const QString &language)
     addPair(t, QStringLiteral("Delete planet with linked data"), QStringLiteral("Planet mit verknüpften Daten löschen"), language);
     addPair(t, QStringLiteral("Linked objects, zones, base entries, and files belonging to the planet will be deleted. Review the details and confirm the operation."),
             QStringLiteral("Zum Planet gehörende Objekte, Zonen, Base-Einträge und Dateien werden gelöscht. Bitte prüfe die Details und bestätige den Vorgang."), language);
+    addPair(t, QStringLiteral("Delete linked data"), QStringLiteral("Verknüpfte Daten löschen"), language);
+    addPair(t, QStringLiteral("Linked objects, zones, base entries, and files belonging to the selection will be deleted. Review the details and confirm the operation."),
+            QStringLiteral("Zur Auswahl gehörende Objekte, Zonen, Base-Einträge und Dateien werden gelöscht. Bitte prüfe die Details und bestätige den Vorgang."), language);
     addPair(t, QStringLiteral("Delete Planet"), QStringLiteral("Planet löschen"), language);
     addPair(t, QStringLiteral("The linked planet data could not be determined completely."),
             QStringLiteral("Die verknüpften Planet-Daten konnten nicht vollständig ermittelt werden."), language);
+    addPair(t, QStringLiteral("The linked data could not be determined completely."),
+            QStringLiteral("Die verknüpften Daten konnten nicht vollständig ermittelt werden."), language);
     addPair(t, QStringLiteral("A linked file has no valid path and therefore could not be deleted."),
             QStringLiteral("Eine verknüpfte Datei hat keinen gültigen Pfad und konnte deshalb nicht gelöscht werden."), language);
     addPair(t, QStringLiteral("The linked file could not be deleted:\n%1"),
