@@ -836,7 +836,7 @@ bool SceneView3D::centerOnSelectedObject()
     const QVector3D center = m_objectCentersByNickname.value(nickname);
     const float radius = qMax(m_objectRadiiByNickname.value(nickname, 0.0f), 500.0f);
     m_orbitCamera->setTarget(center);
-    m_orbitCamera->setDistance(qMax(radius * 4.0f, 6000.0f));
+    m_orbitCamera->setDistance(qMax(radius * 2.0f, 250.0f));
     requestViewportUpdate();
     return true;
 #else
@@ -1558,7 +1558,7 @@ void SceneView3D::updateSceneCamera()
     const QVector3D center = focusBounds->valid ? focusBounds->center() : QVector3D();
     const float radius = qMax(focusBounds->radius(), 5000.0f);
     const float distance = qMax(radius * 2.4f, 25000.0f);
-    m_orbitCamera->setDistanceLimits(qMax(radius * 0.015f, 50.0f), qMax(distance * 80.0f, 1000000.0f));
+    m_orbitCamera->setDistanceLimits(qMax(radius * 0.0002f, 5.0f), qMax(distance * 80.0f, 1000000.0f));
     m_orbitCamera->setResetState(center, distance, 45.0f, 24.0f);
     m_orbitCamera->resetView();
     applyCameraZoom();

@@ -97,6 +97,15 @@ QIcon drawIcon(const QColor &accent, const QString &glyph)
         painter.drawLine(QPointF(24, 25), QPointF(40, 25));
         painter.drawLine(QPointF(24, 33), QPointF(40, 33));
         painter.drawLine(QPointF(24, 41), QPointF(34, 41));
+    } else if (glyph == QStringLiteral("activity")) {
+        painter.setPen(QPen(accent.lighter(150), 3.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter.drawPolyline(QPolygonF({QPointF(15, 39), QPointF(24, 39), QPointF(29, 25), QPointF(36, 47), QPointF(42, 32), QPointF(50, 32)}));
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(accent);
+        painter.drawEllipse(QPointF(24, 39), 3.5, 3.5);
+        painter.drawEllipse(QPointF(29, 25), 3.5, 3.5);
+        painter.drawEllipse(QPointF(36, 47), 3.5, 3.5);
+        painter.drawEllipse(QPointF(42, 32), 3.5, 3.5);
     } else if (glyph == QStringLiteral("model3d")) {
         QPainterPath path;
         path.moveTo(32, 14);
@@ -190,6 +199,8 @@ QIcon toolIcon(const QString &key)
         return cachedIcon(key, QColor(247, 112, 142), QStringLiteral("faction"));
     if (key == QStringLiteral("newsRumorEditor"))
         return cachedIcon(key, QColor(255, 169, 79), QStringLiteral("news"));
+    if (key == QStringLiteral("activity"))
+        return cachedIcon(key, QColor(110, 210, 255), QStringLiteral("activity"));
     if (key == QStringLiteral("modelViewer") || key == QStringLiteral("system3d"))
         return cachedIcon(key, QColor(95, 186, 255), QStringLiteral("model3d"));
     if (key == QStringLiteral("systemEditor"))

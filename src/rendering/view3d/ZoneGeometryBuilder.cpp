@@ -270,7 +270,10 @@ Qt3DExtras::QPhongAlphaMaterial *makeFillMaterial(const QColor &color, float alp
 
 Qt3DExtras::QPhongMaterial *makeWireMaterial(const QColor &color, Qt3DCore::QNode *owner)
 {
-    QColor wireColor = color;
+    const QColor background(6, 10, 18);
+    QColor wireColor((color.red() + background.red()) / 2,
+                     (color.green() + background.green()) / 2,
+                     (color.blue() + background.blue()) / 2);
     wireColor.setAlpha(255);
     auto *material = new Qt3DExtras::QPhongMaterial(owner);
     material->setDiffuse(wireColor);

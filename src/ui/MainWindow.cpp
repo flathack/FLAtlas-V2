@@ -152,6 +152,8 @@ QIcon iconForWidget(QWidget *widget)
         return flatlas::ui::toolIcon(QStringLiteral("iniEditor"));
     if (qobject_cast<flatlas::rendering::SceneView3D *>(widget))
         return flatlas::ui::toolIcon(QStringLiteral("system3d"));
+    if (qobject_cast<flatlas::ui::ActivityLogPage *>(widget))
+        return flatlas::ui::toolIcon(QStringLiteral("activity"));
     if (qobject_cast<flatlas::ui::WelcomePage *>(widget))
         return flatlas::ui::toolIcon(QStringLiteral("welcome"));
     return {};
@@ -1023,6 +1025,7 @@ void MainWindow::createPanels()
     m_progressPercentLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     indicatorRow->addWidget(m_progressPercentLabel);
     auto *activityBtn = new QPushButton(tr("Activity"), this);
+    activityBtn->setIcon(flatlas::ui::toolIcon(QStringLiteral("activity")));
     activityBtn->setStyleSheet(
         QStringLiteral("QPushButton { background: transparent; color: #7788aa; border: none;"
                         " padding: 2px 6px; font-size: 11px; }"
@@ -1767,7 +1770,7 @@ void MainWindow::openActivityLog()
 
     logActivity(QStringLiteral("Opened activity log"));
     auto *page = new flatlas::ui::ActivityLogPage(currentLogPath, this);
-    const int idx = m_centerTabs->addTab(page, tr("Activity"));
+    const int idx = m_centerTabs->addTab(page, iconForWidget(page), tr("Activity"));
     m_centerTabs->setCurrentIndex(idx);
     statusBar()->showMessage(tr("Activity log opened"), 3000);
 }
