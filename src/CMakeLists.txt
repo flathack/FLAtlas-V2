@@ -75,7 +75,7 @@ target_include_directories(FLAtlas PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-if (WIN32 AND NOT MINGW)
+if(WIN32)
     set_target_properties(FLAtlas PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
 
