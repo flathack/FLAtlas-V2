@@ -31,6 +31,8 @@ namespace flatlas::editors {
 namespace {
 
 constexpr qreal kUniverseGridSpacing = 120.0;
+constexpr int kMapColumnMinimumWidth = 360;
+constexpr int kMapMinimumHeight = 360;
 
 QString alphaSuffix(int index)
 {
@@ -120,6 +122,12 @@ void JumpConnectionDialog::setupUi()
     root->addLayout(topRow);
 
     auto *mapsLayout = new QGridLayout();
+    mapsLayout->setColumnStretch(0, 1);
+    mapsLayout->setColumnStretch(1, 1);
+    mapsLayout->setColumnStretch(2, 1);
+    mapsLayout->setRowStretch(1, 1);
+    for (int column = 0; column < 3; ++column)
+        mapsLayout->setColumnMinimumWidth(column, kMapColumnMinimumWidth);
     auto *sourceLabel = new QLabel(tr("Quelle platzieren"));
     sourceLabel->setStyleSheet(QStringLiteral("font-weight:600;"));
     mapsLayout->addWidget(sourceLabel, 0, 0);
@@ -132,16 +140,19 @@ void JumpConnectionDialog::setupUi()
 
     m_sourceScene = new flatlas::rendering::MapScene(this);
     m_sourceView = new flatlas::rendering::SystemMapView(this);
+    m_sourceView->setMinimumSize(kMapColumnMinimumWidth, kMapMinimumHeight);
     m_sourceView->setMapScene(m_sourceScene);
     mapsLayout->addWidget(m_sourceView, 1, 0);
 
     m_destinationScene = new flatlas::rendering::MapScene(this);
     m_destinationView = new flatlas::rendering::SystemMapView(this);
+    m_destinationView->setMinimumSize(kMapColumnMinimumWidth, kMapMinimumHeight);
     m_destinationView->setMapScene(m_destinationScene);
     mapsLayout->addWidget(m_destinationView, 1, 1);
 
     m_universeScene = new QGraphicsScene(this);
     m_universeView = new QGraphicsView(this);
+    m_universeView->setMinimumSize(kMapColumnMinimumWidth, kMapMinimumHeight);
     m_universeView->setScene(m_universeScene);
     m_universeView->setRenderHint(QPainter::Antialiasing);
     mapsLayout->addWidget(m_universeView, 1, 2);
