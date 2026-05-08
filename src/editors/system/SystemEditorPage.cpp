@@ -4877,7 +4877,7 @@ bool SystemEditorPage::appendBaseDeletionPlan(const QString &baseNickname,
         const QString objectBase = DockingRingCreationService::resolvedDockWithBase(*objectPtr);
         if (objectBase.compare(cleanBaseNickname, Qt::CaseInsensitive) == 0) {
             if (errorMessage) {
-                *errorMessage = tr("Base '%1' wird noch von Objekt '%2' verwendet und kann deshalb nicht automatisch geloescht werden.")
+                *errorMessage = tr("Base '%1' is still used by object '%2' and therefore cannot be deleted automatically.")
                                     .arg(cleanBaseNickname, objectPtr->nickname());
             }
             return false;
@@ -4898,7 +4898,7 @@ bool SystemEditorPage::appendBaseDeletionPlan(const QString &baseNickname,
     }
     if (!baseHost) {
         if (errorMessage)
-            *errorMessage = tr("Fuer Base '%1' wurde kein zu loeschendes Host-Objekt gefunden.").arg(cleanBaseNickname);
+            *errorMessage = tr("No host object to delete was found for base '%1'.").arg(cleanBaseNickname);
         return false;
     }
 
@@ -4907,7 +4907,7 @@ bool SystemEditorPage::appendBaseDeletionPlan(const QString &baseNickname,
     if (!BaseEditService::loadState(*m_document, *baseHost, gameRoot, overrides, &baseState, &loadError)) {
         if (errorMessage) {
             *errorMessage = loadError.trimmed().isEmpty()
-                                ? tr("Base '%1' konnte nicht geladen werden.").arg(cleanBaseNickname)
+                                ? tr("Base '%1' could not be loaded.").arg(cleanBaseNickname)
                                 : loadError;
         }
         return false;
@@ -4951,14 +4951,14 @@ bool SystemEditorPage::appendBaseDeletionPlan(const QString &baseNickname,
         const IniDocument doc = IniParser::parseText(plannedTextForPath(baseState.universeIniAbsolutePath));
         const IniDocument filtered = removeUniverseBaseSection(doc, cleanBaseNickname, &removed);
         if (removed)
-            appendTextChange(baseState.universeIniAbsolutePath, IniParser::serialize(filtered), tr("[Base] '%1' entfernen").arg(cleanBaseNickname));
+            appendTextChange(baseState.universeIniAbsolutePath, IniParser::serialize(filtered), tr("Remove [Base] '%1'").arg(cleanBaseNickname));
     }
     if (!baseState.mbaseAbsolutePath.trimmed().isEmpty()) {
         bool removed = false;
         const IniDocument doc = IniParser::parseText(plannedTextForPath(baseState.mbaseAbsolutePath));
         const IniDocument filtered = removeMbaseBlock(doc, cleanBaseNickname, &removed);
         if (removed)
-            appendTextChange(baseState.mbaseAbsolutePath, IniParser::serialize(filtered), tr("[MBase] '%1' entfernen").arg(cleanBaseNickname));
+            appendTextChange(baseState.mbaseAbsolutePath, IniParser::serialize(filtered), tr("Remove [MBase] '%1'").arg(cleanBaseNickname));
     }
 
     const BaseEquipmentState equipmentState = BaseEquipmentService::load(m_document->filePath(), cleanBaseNickname);
@@ -4974,13 +4974,13 @@ bool SystemEditorPage::appendBaseDeletionPlan(const QString &baseNickname,
         const IniDocument doc = IniParser::parseText(plannedTextForPath(marketPath));
         const IniDocument filtered = removeBaseGoodSections(doc, cleanBaseNickname, &removed);
         if (removed)
-            appendTextChange(marketPath, IniParser::serialize(filtered), tr("[BaseGood] '%1' entfernen").arg(cleanBaseNickname));
+            appendTextChange(marketPath, IniParser::serialize(filtered), tr("Remove [BaseGood] '%1'").arg(cleanBaseNickname));
     }
 
     const QString baseIniText = textForAbsolutePath(baseState.baseIniAbsolutePath, overrides);
     for (const QString &roomPath : baseRoomFilePaths(baseState.baseIniAbsolutePath, baseIniText, dataDir))
-        appendFileDelete(roomPath, tr("Room-Datei von Base '%1'").arg(cleanBaseNickname));
-    appendFileDelete(baseState.baseIniAbsolutePath, tr("Base-INI '%1'").arg(cleanBaseNickname));
+        appendFileDelete(roomPath, tr("Room file for base '%1'").arg(cleanBaseNickname));
+    appendFileDelete(baseState.baseIniAbsolutePath, tr("Base INI '%1'").arg(cleanBaseNickname));
     return true;
 }
 
@@ -5001,13 +5001,85 @@ bool SystemEditorPage::collectPlanetCascadeDeletePlan(QVector<std::shared_ptr<So
         if (zone && !zonesToRemove->contains(zone))
             zonesToRemove->append(zone);
     };
+    auto sharedObjectForNickname = [&](const QString &nickname) -> std::shared_ptr<SolarObject> {
+        for (const auto &objectPtr : m_document->objects()) {
+            if (objectPtr && objectPtr->nickname().compare(nickname, Qt::CaseInsensitive) == 0)
+                return objectPtr;
+        }
+        return {};
+    };
 
     QVector<std::shared_ptr<SolarObject>> planets;
+    auto appendPlanet = [&](const std::shared_ptr<SolarObject> &planet) {
+        if (!planet || !isPlanetLikeObject(*planet))
+            return;
+        if (!planets.contains(planet))
+            planets.append(planet);
+        appendObject(planet);
+    };
+    auto appendBaseHostCascade = [&](const std::shared_ptr<SolarObject> &object) {
+        if (!object)
+            return;
+        const QString rootNickname = normalizeObjectNicknameToGroupRoot(object->nickname());
+        const auto rootObject = sharedObjectForNickname(rootNickname);
+        if (!rootObject || !BaseEditService::objectHasBase(*rootObject))
+            return;
+
+        plan->requiresConfirmation = true;
+        const QString baseNickname = DockingRingCreationService::resolvedDockWithBase(*rootObject);
+        if (!baseNickname.isEmpty() && !baseNicknames.contains(baseNickname, Qt::CaseInsensitive))
+            baseNicknames.append(baseNickname);
+        for (const QString &groupNickname : objectGroupNicknames(rootObject->nickname()))
+            appendObject(sharedObjectForNickname(groupNickname));
+    };
+    auto appendHostPlanetForRing = [&](const std::shared_ptr<SolarObject> &ringObject) {
+        if (!ringObject || !DockingRingCreationService::isDockingRingObject(*ringObject))
+            return;
+        SolarObject *hostPlanet = findDockingRingHostPlanet(m_document.get(), *ringObject);
+        if (hostPlanet)
+            appendPlanet(sharedObjectForNickname(hostPlanet->nickname()));
+    };
+    auto appendHostPlanetForFixture = [&](const std::shared_ptr<SolarObject> &fixtureObject) {
+        if (!fixtureObject || !DockingRingCreationService::isDockingFixtureObject(*fixtureObject))
+            return;
+        const QString fixtureBase = DockingRingCreationService::resolvedDockWithBase(*fixtureObject);
+        if (fixtureBase.isEmpty())
+            return;
+        for (const auto &candidate : m_document->objects()) {
+            if (!candidate || !DockingRingCreationService::isDockingRingObject(*candidate))
+                continue;
+            const QString ringBase = DockingRingCreationService::resolvedDockWithBase(*candidate);
+            if (ringBase.compare(fixtureBase, Qt::CaseInsensitive) != 0)
+                continue;
+            appendHostPlanetForRing(candidate);
+        }
+    };
+
     for (const auto &objectPtr : std::as_const(*objectsToRemove)) {
-        if (objectPtr && isPlanetLikeObject(*objectPtr))
-            planets.append(objectPtr);
+        if (!objectPtr)
+            continue;
+        appendBaseHostCascade(objectPtr);
+        if (isPlanetLikeObject(*objectPtr))
+            appendPlanet(objectPtr);
+        else if (DockingRingCreationService::isDockingRingObject(*objectPtr))
+            appendHostPlanetForRing(objectPtr);
+        else if (DockingRingCreationService::isDockingFixtureObject(*objectPtr))
+            appendHostPlanetForFixture(objectPtr);
     }
-    if (planets.isEmpty())
+
+    for (const auto &zonePtr : std::as_const(*zonesToRemove)) {
+        if (!zonePtr)
+            continue;
+        const QString nickname = zonePtr->nickname().trimmed();
+        if (!nickname.startsWith(QStringLiteral("Zone_"), Qt::CaseInsensitive)
+            || !nickname.endsWith(QStringLiteral("_death"), Qt::CaseInsensitive)) {
+            continue;
+        }
+        const QString objectNickname = nickname.mid(5, nickname.size() - 5 - 6);
+        appendPlanet(sharedObjectForNickname(objectNickname));
+    }
+
+    if (planets.isEmpty() && baseNicknames.isEmpty())
         return true;
 
     plan->requiresConfirmation = true;
@@ -5037,7 +5109,7 @@ bool SystemEditorPage::collectPlanetCascadeDeletePlan(QVector<std::shared_ptr<So
             if (fixture)
                 appendObject(fixture);
             else if (fixtureMatches > 1)
-                plan->warnings.append(tr("Mehrere docking_fixture-Objekte fuer Docking Ring '%1' gefunden; Fixtures wurden nicht automatisch hinzugefuegt.")
+                plan->warnings.append(tr("Multiple docking_fixture objects found for docking ring '%1'; fixtures were not added automatically.")
                                           .arg(candidate->nickname()));
         }
     }
@@ -5074,16 +5146,16 @@ bool SystemEditorPage::confirmPlanetCascadeDelete(const QVector<std::shared_ptr<
         deletedFiles.append(QStringLiteral("  - %1 (%2)").arg(QDir::toNativeSeparators(fileDelete.absolutePath), fileDelete.reason));
 
     QString details;
-    details += tr("Objekte:\n%1\n\n").arg(objectLines.isEmpty() ? tr("  - keine") : objectLines.join(QLatin1Char('\n')));
-    details += tr("Zonen:\n%1\n\n").arg(zoneLines.isEmpty() ? tr("  - keine") : zoneLines.join(QLatin1Char('\n')));
-    details += tr("Dateien werden angepasst:\n%1\n\n").arg(changedFiles.isEmpty() ? tr("  - keine") : changedFiles.join(QLatin1Char('\n')));
-    details += tr("Dateien werden geloescht:\n%1").arg(deletedFiles.isEmpty() ? tr("  - keine") : deletedFiles.join(QLatin1Char('\n')));
+    details += tr("Objects:\n%1\n\n").arg(objectLines.isEmpty() ? tr("  - none") : objectLines.join(QLatin1Char('\n')));
+    details += tr("Zones:\n%1\n\n").arg(zoneLines.isEmpty() ? tr("  - none") : zoneLines.join(QLatin1Char('\n')));
+    details += tr("Files will be updated:\n%1\n\n").arg(changedFiles.isEmpty() ? tr("  - none") : changedFiles.join(QLatin1Char('\n')));
+    details += tr("Files will be deleted:\n%1").arg(deletedFiles.isEmpty() ? tr("  - none") : deletedFiles.join(QLatin1Char('\n')));
     if (!plan.warnings.isEmpty())
-        details += tr("\n\nHinweise:\n  - %1").arg(plan.warnings.join(QStringLiteral("\n  - ")));
+        details += tr("\n\nNotes:\n  - %1").arg(plan.warnings.join(QStringLiteral("\n  - ")));
 
     QMessageBox box(QMessageBox::Warning,
-                    tr("Planet mit verknuepften Daten loeschen"),
-                    tr("Zum Planet gehoerende Objekte, Zonen, Base-Eintraege und Dateien werden geloescht. Bitte pruefe die Details und bestaetige den Vorgang."),
+                    tr("Delete planet with linked data"),
+                    tr("Linked objects, zones, base entries, and files belonging to the planet will be deleted. Review the details and confirm the operation."),
                     QMessageBox::Yes | QMessageBox::Cancel,
                     const_cast<SystemEditorPage *>(this));
     box.setDefaultButton(QMessageBox::Cancel);
@@ -5194,9 +5266,9 @@ void SystemEditorPage::onDeleteSelected()
     QString planetDeleteError;
     if (!collectPlanetCascadeDeletePlan(&objectsToRemove, &zonesToRemove, &planetDeletePlan, &planetDeleteError)) {
         QMessageBox::warning(this,
-                             tr("Planet loeschen"),
+                             tr("Delete Planet"),
                              planetDeleteError.trimmed().isEmpty()
-                                 ? tr("Die verknuepften Planet-Daten konnten nicht vollstaendig ermittelt werden.")
+                                 ? tr("The linked planet data could not be determined completely.")
                                  : planetDeleteError);
         return;
     }
@@ -10017,14 +10089,14 @@ bool SystemEditorPage::writePendingFileDeletes(QString *errorMessage)
         const PendingFileDelete &fileDelete = it.value();
         if (fileDelete.absolutePath.trimmed().isEmpty()) {
             if (errorMessage)
-                *errorMessage = tr("Eine verknuepfte Datei hat keinen gueltigen Pfad und konnte deshalb nicht geloescht werden.");
+                *errorMessage = tr("A linked file has no valid path and therefore could not be deleted.");
             return false;
         }
         if (!QFileInfo::exists(fileDelete.absolutePath))
             continue;
         if (!QFile::remove(fileDelete.absolutePath)) {
             if (errorMessage) {
-                *errorMessage = tr("Die verknuepfte Datei konnte nicht geloescht werden:\n%1")
+                *errorMessage = tr("The linked file could not be deleted:\n%1")
                                     .arg(fileDelete.absolutePath);
             }
             return false;

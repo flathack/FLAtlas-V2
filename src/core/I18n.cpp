@@ -295,6 +295,35 @@ QHash<QString, QString> builtInTranslations(const QString &language)
     addPair(t, QStringLiteral("Delete System"), QStringLiteral("System löschen"), language);
     addPair(t, QStringLiteral("Delete System: %1"), QStringLiteral("System löschen: %1"), language);
     addPair(t, QStringLiteral("Precheck"), QStringLiteral("Vorprüfung"), language);
+    addPair(t, QStringLiteral("Base '%1' is still used by object '%2' and therefore cannot be deleted automatically."),
+            QStringLiteral("Base '%1' wird noch von Objekt '%2' verwendet und kann deshalb nicht automatisch gelöscht werden."), language);
+    addPair(t, QStringLiteral("No host object to delete was found for base '%1'."),
+            QStringLiteral("Für Base '%1' wurde kein zu löschendes Host-Objekt gefunden."), language);
+    addPair(t, QStringLiteral("Base '%1' could not be loaded."),
+            QStringLiteral("Base '%1' konnte nicht geladen werden."), language);
+    addPair(t, QStringLiteral("Remove [Base] '%1'"), QStringLiteral("[Base] '%1' entfernen"), language);
+    addPair(t, QStringLiteral("Remove [MBase] '%1'"), QStringLiteral("[MBase] '%1' entfernen"), language);
+    addPair(t, QStringLiteral("Remove [BaseGood] '%1'"), QStringLiteral("[BaseGood] '%1' entfernen"), language);
+    addPair(t, QStringLiteral("Room file for base '%1'"), QStringLiteral("Room-Datei von Base '%1'"), language);
+    addPair(t, QStringLiteral("Base INI '%1'"), QStringLiteral("Base-INI '%1'"), language);
+    addPair(t, QStringLiteral("Multiple docking_fixture objects found for docking ring '%1'; fixtures were not added automatically."),
+            QStringLiteral("Mehrere docking_fixture-Objekte für Docking Ring '%1' gefunden; Fixtures wurden nicht automatisch hinzugefügt."), language);
+    addPair(t, QStringLiteral("Objects:\n%1\n\n"), QStringLiteral("Objekte:\n%1\n\n"), language);
+    addPair(t, QStringLiteral("Zones:\n%1\n\n"), QStringLiteral("Zonen:\n%1\n\n"), language);
+    addPair(t, QStringLiteral("Files will be updated:\n%1\n\n"), QStringLiteral("Dateien werden angepasst:\n%1\n\n"), language);
+    addPair(t, QStringLiteral("Files will be deleted:\n%1"), QStringLiteral("Dateien werden gelöscht:\n%1"), language);
+    addPair(t, QStringLiteral("  - none"), QStringLiteral("  - keine"), language);
+    addPair(t, QStringLiteral("\n\nNotes:\n  - %1"), QStringLiteral("\n\nHinweise:\n  - %1"), language);
+    addPair(t, QStringLiteral("Delete planet with linked data"), QStringLiteral("Planet mit verknüpften Daten löschen"), language);
+    addPair(t, QStringLiteral("Linked objects, zones, base entries, and files belonging to the planet will be deleted. Review the details and confirm the operation."),
+            QStringLiteral("Zum Planet gehörende Objekte, Zonen, Base-Einträge und Dateien werden gelöscht. Bitte prüfe die Details und bestätige den Vorgang."), language);
+    addPair(t, QStringLiteral("Delete Planet"), QStringLiteral("Planet löschen"), language);
+    addPair(t, QStringLiteral("The linked planet data could not be determined completely."),
+            QStringLiteral("Die verknüpften Planet-Daten konnten nicht vollständig ermittelt werden."), language);
+    addPair(t, QStringLiteral("A linked file has no valid path and therefore could not be deleted."),
+            QStringLiteral("Eine verknüpfte Datei hat keinen gültigen Pfad und konnte deshalb nicht gelöscht werden."), language);
+    addPair(t, QStringLiteral("The linked file could not be deleted:\n%1"),
+            QStringLiteral("Die verknüpfte Datei konnte nicht gelöscht werden:\n%1"), language);
     addPair(t, QStringLiteral("Target"), QStringLiteral("Ziel"), language);
     addPair(t, QStringLiteral("Warnings"), QStringLiteral("Warnungen"), language);
     addPair(t, QStringLiteral("Blockers"), QStringLiteral("Blocker"), language);
