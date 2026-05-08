@@ -21,7 +21,6 @@ Application::Application(int &argc, char **argv)
     QDir logDir(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation));
     logDir.mkpath(QStringLiteral("."));
     flatlas::core::Logger::init(logDir.filePath(QStringLiteral("FLAtlas-Change.log")));
-    flatlas::core::Logger::info(QStringLiteral("Activity"), QStringLiteral("FLAtlas started"));
 
     // Fusion-Style als Basis (wie im Python-Projekt)
     setStyle(QStringLiteral("Fusion"));

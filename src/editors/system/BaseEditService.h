@@ -32,6 +32,7 @@ struct BaseRoomState {
     QString scenePath;
     QString templateContent;
     bool enabled = true;
+    bool virtualRoom = false;
     QVector<BaseRoomNpcState> npcs;
 };
 

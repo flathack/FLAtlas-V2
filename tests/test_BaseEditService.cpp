@@ -16,6 +16,7 @@ private slots:
     void loadTemplateStateReadsRoomsAndNpcs();
     void archetypeDefaultsPreferExistingBaseObject();
     void createNormalizesDisplayedReputationNickname();
+    void createWithoutShipDealerDoesNotWriteShipDealerHotspot();
     void createFromTemplateCopiesRoomContentAndNpcData();
 };
 
@@ -160,10 +161,21 @@ void TestBaseEditService::loadTemplateStateReadsRoomsAndNpcs()
     QVERIFY2(BaseEditService::loadTemplateState(QStringLiteral("Li01_01_Base"), gameRoot, {}, &state, &errorMessage), qPrintable(errorMessage));
     QCOMPARE(state.bgcsBaseRunBy, QStringLiteral("li_grp"));
     QCOMPARE(state.startRoom, QStringLiteral("Bar"));
-    QCOMPARE(state.rooms.size(), 2);
-    QCOMPARE(state.rooms.at(0).roomName, QStringLiteral("Bar"));
-    QCOMPARE(state.rooms.at(0).npcs.size(), 1);
-    QCOMPARE(state.rooms.at(0).npcs.at(0).nickname, QStringLiteral("bar_npc"));
+    auto findRoom = [&](const QString &name) -> const BaseRoomState * {
+        for (const BaseRoomState &room : state.rooms) {
+            if (room.roomName.compare(name, Qt::CaseInsensitive) == 0)
+                return &room;
+        }
+        return nullptr;
+    };
+    const BaseRoomState *bar = findRoom(QStringLiteral("Bar"));
+    QVERIFY(bar != nullptr);
+    QVERIFY(bar->enabled);
+    QCOMPARE(bar->npcs.size(), 1);
+    QCOMPARE(bar->npcs.at(0).nickname, QStringLiteral("bar_npc"));
+    const BaseRoomState *shipDealer = findRoom(QStringLiteral("ShipDealer"));
+    QVERIFY(shipDealer != nullptr);
+    QVERIFY(!shipDealer->enabled);
 }
 
 void TestBaseEditService::archetypeDefaultsPreferExistingBaseObject()
@@ -267,6 +279,52 @@ void TestBaseEditService::createNormalizesDisplayedReputationNickname()
         sawNormalizedFaction = true;
     }
     QVERIFY(sawNormalizedFaction);
+}
+
+void TestBaseEditService::createWithoutShipDealerDoesNotWriteShipDealerHotspot()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString gameRoot = dir.path();
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/UNIVERSE"));
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01"));
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/MISSIONS"));
+
+    const QString systemPath = dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/li01.ini";
+    writeTextFile(systemPath, "[SystemInfo]\nnickname = Li01\n");
+    writeTextFile(dir.path() + "/DATA/UNIVERSE/universe.ini", QString());
+    writeTextFile(dir.path() + "/DATA/MISSIONS/mbases.ini", QString());
+
+    SystemDocument document;
+    document.setName("Li01");
+    document.setFilePath(systemPath);
+
+    BaseEditState state = BaseEditService::makeCreateState(document, gameRoot);
+    state.displayName.clear();
+    state.infocardXml.clear();
+    for (BaseRoomState &room : state.rooms) {
+        if (room.roomName.compare(QStringLiteral("ShipDealer"), Qt::CaseInsensitive) == 0)
+            room.enabled = false;
+    }
+
+    BaseApplyResult result;
+    QString errorMessage;
+    QVERIFY2(BaseEditService::applyCreate(state, QPointF(0.0, 0.0), gameRoot, {}, &result, &errorMessage), qPrintable(errorMessage));
+
+    bool sawRoom = false;
+    for (const BaseStagedWrite &write : result.stagedWrites) {
+        QVERIFY(!write.absolutePath.contains(QStringLiteral("shipdealer"), Qt::CaseInsensitive));
+        if (write.absolutePath.contains(QStringLiteral("/ROOMS/"), Qt::CaseInsensitive)
+            || write.absolutePath.contains(QStringLiteral("\\ROOMS\\"), Qt::CaseInsensitive)) {
+            sawRoom = true;
+            QVERIFY(!write.content.contains(QStringLiteral("IDS_HOTSPOT_SHIPDEALER_ROOM")));
+            QVERIFY(!write.content.contains(QStringLiteral("room_switch = ShipDealer")));
+        }
+        if (write.absolutePath.endsWith(QStringLiteral("_base.ini"), Qt::CaseInsensitive))
+            QVERIFY(!write.content.contains(QStringLiteral("nickname = ShipDealer")));
+    }
+    QVERIFY(sawRoom);
 }
 
 void TestBaseEditService::createFromTemplateCopiesRoomContentAndNpcData()
@@ -377,6 +435,21 @@ void TestBaseEditService::createFromTemplateCopiesRoomContentAndNpcData()
     BaseEditState templateState;
     QString errorMessage;
     QVERIFY2(BaseEditService::loadTemplateState(QStringLiteral("Li01_03_Base"), gameRoot, {}, &templateState, &errorMessage), qPrintable(errorMessage));
+    auto templateRoom = [&](const QString &name) -> const BaseRoomState * {
+        for (const BaseRoomState &room : templateState.rooms) {
+            if (room.roomName.compare(name, Qt::CaseInsensitive) == 0)
+                return &room;
+        }
+        return nullptr;
+    };
+    const BaseRoomState *virtualTrader = templateRoom(QStringLiteral("Trader"));
+    QVERIFY(virtualTrader != nullptr);
+    QVERIFY(virtualTrader->enabled);
+    QVERIFY(virtualTrader->virtualRoom);
+    const BaseRoomState *virtualEquipment = templateRoom(QStringLiteral("Equipment"));
+    QVERIFY(virtualEquipment != nullptr);
+    QVERIFY(virtualEquipment->enabled);
+    QVERIFY(virtualEquipment->virtualRoom);
 
     SystemDocument document;
     document.setName("Hi01");

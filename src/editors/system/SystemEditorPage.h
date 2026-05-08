@@ -371,6 +371,7 @@ private:
     int findLightSourceSectionIndexByNickname(const QString &nickname) const;
     QStringList lightSourceNicknames() const;
     bool ensureSavedForCrossSystemOperation(const QString &actionTitle, const QString &actionDescription);
+    void logSystemChange(const QString &message) const;
 
     std::unique_ptr<flatlas::domain::SystemDocument> m_document;
     flatlas::rendering::MapScene *m_mapScene = nullptr;

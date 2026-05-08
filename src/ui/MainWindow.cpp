@@ -1678,7 +1678,6 @@ void MainWindow::openIniFile()
             continue;
         editor->openWorkspace(preferredRoot);
         m_centerTabs->setCurrentIndex(i);
-        logActivity(QStringLiteral("Opened file editor workspace"));
         statusBar()->showMessage(tr("File Editor workspace opened"), 3000);
         return;
     }
@@ -1700,7 +1699,6 @@ void MainWindow::openIniFile()
         openIniFile(requestedPath, requestedSearchText, requestedLineNumber);
     });
 
-    logActivity(QStringLiteral("Opened file editor workspace"));
     statusBar()->showMessage(tr("File Editor workspace opened"), 3000);
 }
 
@@ -1749,7 +1747,6 @@ void MainWindow::openIniFile(const QString &filePath, const QString &searchText,
     if (lineNumber > 0)
         editor->goToLine(lineNumber);
 
-    logActivity(QStringLiteral("Opened file: %1").arg(filePath));
     statusBar()->showMessage(tr("Opened: %1").arg(filePath), 3000);
 }
 
@@ -1760,7 +1757,6 @@ void MainWindow::openActivityLog()
         auto *page = qobject_cast<flatlas::ui::ActivityLogPage *>(m_centerTabs->widget(i));
         if (!page)
             continue;
-        logActivity(QStringLiteral("Opened activity log"));
         page->setLogPath(currentLogPath);
         page->reload();
         m_centerTabs->setCurrentIndex(i);
@@ -1768,7 +1764,6 @@ void MainWindow::openActivityLog()
         return;
     }
 
-    logActivity(QStringLiteral("Opened activity log"));
     auto *page = new flatlas::ui::ActivityLogPage(currentLogPath, this);
     const int idx = m_centerTabs->addTab(page, iconForWidget(page), tr("Activity"));
     m_centerTabs->setCurrentIndex(idx);
@@ -1866,7 +1861,6 @@ void MainWindow::openUniverseFromContext()
             const int systemCount = editor->data() ? editor->data()->systemCount() : 0;
             m_centerTabs->setTabText(i, QStringLiteral("Universe (%1)").arg(systemCount));
             m_centerTabs->setCurrentIndex(i);
-            logActivity(QStringLiteral("Reloaded universe: %1").arg(universeIni));
             statusBar()->showMessage(tr("Universe reloaded from editing context"), 3000);
             return;
         }
@@ -1894,7 +1888,6 @@ void MainWindow::openUniverseFromContext()
     connect(editor, &flatlas::editors::UniverseEditorPage::openSystemRequested,
             this, &MainWindow::openSystemFromUniverse);
 
-    logActivity(QStringLiteral("Opened universe: %1").arg(universeIni));
     statusBar()->showMessage(tr("Universe loaded from editing context"), 3000);
 }
 
@@ -1916,10 +1909,8 @@ void MainWindow::handleEditingContextChanged()
 
     if (profile.isValid()) {
         applyPinnedToolSettings();
-        logActivity(QStringLiteral("Editing context switched to: %1").arg(profile.name));
         statusBar()->showMessage(tr("Editing context switched to %1").arg(profile.name), 5000);
     } else {
-        logActivity(QStringLiteral("Editing context cleared"));
         statusBar()->showMessage(tr("Editing context cleared"), 3000);
     }
 
@@ -1991,8 +1982,6 @@ void MainWindow::openSystemFromUniverse(const QString &nickname,
 
     int idx = m_centerTabs->addTab(editor, iconForWidget(editor), formatSystemTabTitle(editor->document()->name(), ingameName));
     m_centerTabs->setCurrentIndex(idx);
-    logActivity(QStringLiteral("Opened system: %1 (%2)").arg(nickname, resolvedPath));
-
     connect(editor, &flatlas::editors::SystemEditorPage::titleChanged,
             this, [this, editor, ingameName](const QString &title) {
         int i = m_centerTabs->indexOf(editor);
@@ -2053,7 +2042,6 @@ void MainWindow::open3DSystemEditorFor(flatlas::editors::SystemEditorPage *edito
 
     const int idx = m_centerTabs->addTab(view, iconForWidget(view), tr("3D: %1").arg(systemName));
     m_centerTabs->setCurrentIndex(idx);
-    logActivity(QStringLiteral("Opened 3D system view: %1").arg(systemName));
     statusBar()->showMessage(tr("3D system view opened: %1").arg(systemName), 3000);
 }
 
@@ -2083,7 +2071,6 @@ void MainWindow::openTradeRoutes()
             m_centerTabs->setTabText(i, title);
     });
 
-    logActivity(QStringLiteral("Opened trade routes"));
     statusBar()->showMessage(tr("Trade Routes opened"), 3000);
 }
 
@@ -2112,7 +2099,6 @@ void MainWindow::openIdsEditor()
         openIniFile(filePath, searchText, 0);
     });
 
-    logActivity(QStringLiteral("Opened IDS editor"));
     statusBar()->showMessage(tr("IDS Editor opened"), 3000);
 }
 
@@ -2120,7 +2106,6 @@ void MainWindow::openModManager()
 {
     // Mod Manager is always pinned at index 0 — just switch to it
     m_centerTabs->setCurrentIndex(0);
-    logActivity(QStringLiteral("Opened mod manager"));
 }
 
 void MainWindow::openModSettings()
@@ -2137,7 +2122,6 @@ void MainWindow::openModSettings()
             m_centerTabs->setTabText(i, title);
     });
 
-    logActivity(QStringLiteral("Opened mod settings"));
     statusBar()->showMessage(tr("Mod Settings opened"), 3000);
 }
 
@@ -2150,7 +2134,6 @@ void MainWindow::openNpcEditor()
 
     connectNpcEditorPage(editor);
 
-    logActivity(QStringLiteral("Opened NPC editor"));
     statusBar()->showMessage(tr("NPC Editor opened"), 3000);
 }
 
@@ -2163,7 +2146,6 @@ void MainWindow::openFactionEditor()
 
     connectFactionEditorPage(editor);
 
-    logActivity(QStringLiteral("Opened faction editor"));
     statusBar()->showMessage(tr("Faction Editor opened"), 3000);
 }
 
@@ -2176,14 +2158,12 @@ void MainWindow::openNewsRumorEditor()
 
     connectNewsRumorEditor(editor);
 
-    logActivity(QStringLiteral("Opened news editor"));
     statusBar()->showMessage(tr("News Editor opened"), 3000);
 }
 
 void MainWindow::openModelViewer()
 {
     if (ensureModelViewerPage()) {
-        logActivity(QStringLiteral("Opened 3D model viewer"));
         statusBar()->showMessage(tr("3D Model Viewer opened"), 3000);
     }
 }
@@ -2301,7 +2281,6 @@ bool MainWindow::showModelInViewer(const QString &modelPath, const QString &disp
         return false;
     const bool scheduled = page->loadModelPath(modelPath, displayLabel);
     if (scheduled) {
-        logActivity(QStringLiteral("Loaded 3D model: %1").arg(modelPath));
         statusBar()->showMessage(displayLabel.trimmed().isEmpty() ? tr("3D model loaded") : displayLabel.trimmed(), 3000);
     }
     return scheduled;

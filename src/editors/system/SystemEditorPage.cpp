@@ -29,6 +29,7 @@
 
 #include "core/Config.h"
 #include "core/EditingContext.h"
+#include "core/Logger.h"
 #include "core/PathUtils.h"
 #include "domain/SystemDocument.h"
 #include "domain/SolarObject.h"
@@ -3471,6 +3472,7 @@ void SystemEditorPage::connectSignals()
         if (!changedAnything)
             return;
 
+        logSystemChange(QStringLiteral("Moved 2D selection: %1").arg(expandedNicknames.join(QStringLiteral(", "))));
         updateIniEditorForSelection();
         updateSidebarButtons();
     }
@@ -3513,6 +3515,7 @@ void SystemEditorPage::connectSignals()
         if (!changedAnything)
             return;
 
+        logSystemChange(QStringLiteral("Rotated 2D selection: %1").arg(expandedNicknames.join(QStringLiteral(", "))));
         updateIniEditorForSelection();
         updateSidebarButtons();
     }
@@ -5879,6 +5882,8 @@ void SystemEditorPage::applyIniEditorChanges()
 
         if (changedAnything)
             m_document->setDirty(true);
+        if (changedAnything)
+            logSystemChange(QStringLiteral("Edited object: %1").arg(selectedRootObject->nickname()));
         m_selectedNicknames = normalizeSelectionNicknames({selectedRootObject->nickname()});
         refreshObjectList();
         onCanvasSelectionChanged(m_selectedNicknames);
@@ -5907,6 +5912,8 @@ void SystemEditorPage::applyIniEditorChanges()
                 const QString afterText = IniParser::serialize(afterDoc).trimmed();
                 if (beforeText != afterText)
                     m_document->setDirty(true);
+                if (beforeText != afterText)
+                    logSystemChange(QStringLiteral("Edited zone: %1").arg(zone->nickname()));
                 m_selectedNicknames = {zone->nickname()};
                 refreshObjectList();
                 onCanvasSelectionChanged(m_selectedNicknames);
@@ -5936,6 +5943,7 @@ void SystemEditorPage::applyIniEditorChanges()
             extras[index] = section;
             SystemPersistence::setExtraSections(m_document.get(), extras);
             refreshDocumentDirtyState();
+            logSystemChange(QStringLiteral("Edited light source: %1").arg(parsedNickname));
             m_selectedNicknames = {parsedNickname};
             refreshObjectList();
             syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -6164,6 +6172,17 @@ bool SystemEditorPage::ensureSavedForCrossSystemOperation(const QString &actionT
     return save();
 }
 
+void SystemEditorPage::logSystemChange(const QString &message) const
+{
+    const QString systemName = m_document && !m_document->name().trimmed().isEmpty()
+        ? m_document->name().trimmed()
+        : QFileInfo(filePath()).completeBaseName();
+    flatlas::core::Logger::info(QStringLiteral("Activity"),
+                                systemName.trimmed().isEmpty()
+                                    ? message
+                                    : QStringLiteral("System %1: %2").arg(systemName, message));
+}
+
 void SystemEditorPage::onItemsMoved(const QHash<QString, QPointF> &oldPositions,
                                     const QHash<QString, QPointF> &newPositions,
                                     double verticalOffsetMeters)
@@ -6240,6 +6259,8 @@ void SystemEditorPage::onItemsMoved(const QHash<QString, QPointF> &oldPositions,
 
     if (movedAnything)
         m_document->setDirty(true);
+    if (movedAnything)
+        logSystemChange(QStringLiteral("Moved 2D selection: %1").arg(expandedNicknames.join(QStringLiteral(", "))));
     updateIniEditorForSelection();
 }
 
@@ -6683,6 +6704,7 @@ void SystemEditorPage::createQuickObject(SolarObject::Type type,
 
     auto *cmd = new AddObjectCommand(m_document.get(), obj, tr("Create Object"));
     flatlas::core::UndoManager::instance().push(cmd);
+    logSystemChange(QStringLiteral("Created object: %1").arg(obj->nickname()));
     refreshObjectList();
 }
 
@@ -6885,6 +6907,7 @@ void SystemEditorPage::onCreateSun()
         stack->push(new AddObjectCommand(m_document.get(), sun, tr("Create Sun")));
         stack->push(new AddZoneCommand(m_document.get(), deathZone, tr("Create Sun Death Zone")));
         stack->endMacro();
+        logSystemChange(QStringLiteral("Created sun: %1").arg(sun->nickname()));
         refreshObjectList();
         m_selectedNicknames = {sun->nickname()};
         syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -6952,6 +6975,7 @@ void SystemEditorPage::onCreateLightSource()
         extras.append(section);
         SystemPersistence::setExtraSections(m_document.get(), extras);
         refreshDocumentDirtyState();
+        logSystemChange(QStringLiteral("Created light source: %1").arg(request.nickname));
         refreshObjectList();
         m_selectedNicknames = {request.nickname};
         syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -7082,6 +7106,7 @@ void SystemEditorPage::onCreateSurprise()
 
         auto *cmd = new AddObjectCommand(m_document.get(), obj, tr("Create Surprise"));
         flatlas::core::UndoManager::instance().push(cmd);
+        logSystemChange(QStringLiteral("Created surprise: %1").arg(obj->nickname()));
         refreshObjectList();
         m_selectedNicknames = {obj->nickname()};
         syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -7206,6 +7231,8 @@ void SystemEditorPage::onEditZonePopulation()
     const QString afterText = IniParser::serialize(afterDoc).trimmed();
     if (beforeText != afterText)
         m_document->setDirty(true);
+    if (beforeText != afterText)
+        logSystemChange(QStringLiteral("Edited zone population: %1").arg(zone->nickname()));
 
     refreshObjectList();
     m_selectedNicknames = {zone->nickname()};
@@ -7292,6 +7319,8 @@ void SystemEditorPage::onCreateJumpConnection()
         return;
     }
 
+    logSystemChange(QStringLiteral("Created jump connection: %1 -> %2")
+                        .arg(request.sourceObjectNickname, request.destinationObjectNickname));
     loadFile(m_document->filePath());
 }
 
@@ -7401,6 +7430,7 @@ void SystemEditorPage::onCreatePlanet()
         stack->push(new AddObjectCommand(m_document.get(), planet, tr("Create Planet")));
         stack->push(new AddZoneCommand(m_document.get(), deathZone, tr("Create Planet Death Zone")));
         stack->endMacro();
+        logSystemChange(QStringLiteral("Created planet: %1").arg(planet->nickname()));
         refreshObjectList();
         m_selectedNicknames = {planet->nickname()};
         syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -7539,6 +7569,7 @@ void SystemEditorPage::onCreateWeaponPlatform()
 
         auto *cmd = new AddObjectCommand(m_document.get(), obj, tr("Create Weapon Platform"));
         flatlas::core::UndoManager::instance().push(cmd);
+        logSystemChange(QStringLiteral("Created weapon platform: %1").arg(obj->nickname()));
         refreshObjectList();
         m_selectedNicknames = {obj->nickname()};
         syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -7826,6 +7857,7 @@ void SystemEditorPage::onEditTradeLane()
         stack->push(new AddObjectCommand(m_document.get(), ring, tr("Add Trade Lane Ring")));
     stack->endMacro();
 
+    logSystemChange(QStringLiteral("Edited trade lane: %1").arg(TradeLaneEditService::memberNicknames(chain).join(QStringLiteral(", "))));
     refreshObjectList();
     m_selectedNicknames.clear();
     for (const auto &ring : replacementObjects)
@@ -7890,6 +7922,7 @@ void SystemEditorPage::onCreateBase()
 
         auto *cmd = new AddObjectCommand(m_document.get(), applyResult.createdObject, tr("Create Base"));
         flatlas::core::UndoManager::instance().push(cmd);
+        logSystemChange(QStringLiteral("Created base: %1").arg(applyResult.createdObject->nickname()));
         m_selectedNicknames = {applyResult.createdObject->nickname()};
         refreshObjectList();
         syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -8330,6 +8363,7 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
     } else {
         undoStack->push(new AddObjectCommand(m_document.get(), createResult.createdRing, tr("Create Docking Ring")));
     }
+    logSystemChange(QStringLiteral("Created docking ring: %1").arg(createResult.createdRing->nickname()));
     m_selectedNicknames = {createResult.createdRing->nickname()};
     refreshObjectList();
     syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -9109,6 +9143,7 @@ void SystemEditorPage::finalizeFieldZonePlacement(const QPointF &edgeScenePos)
                                        PendingGeneratedZoneFile{absoluteGeneratedPath, generatedContent});
 
     m_document->addZone(zone);
+    logSystemChange(QStringLiteral("Created field zone: %1").arg(zone->nickname()));
     refreshObjectList();
     m_selectedNicknames = {zone->nickname()};
     syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -9256,6 +9291,7 @@ void SystemEditorPage::finalizeExclusionZonePlacement(const QPointF &edgeScenePo
     }
 
     m_document->addZone(zone);
+    logSystemChange(QStringLiteral("Created exclusion zone: %1").arg(zone->nickname()));
     refreshObjectList();
     m_selectedNicknames = {zone->nickname()};
     syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -9369,6 +9405,7 @@ void SystemEditorPage::finalizeSimpleZonePlacement(const QPointF &edgeScenePos)
 
     auto *cmd = new AddZoneCommand(m_document.get(), zone, tr("Create Zone"));
     flatlas::core::UndoManager::instance().push(cmd);
+    logSystemChange(QStringLiteral("Created zone: %1").arg(zone->nickname()));
     refreshObjectList();
     m_selectedNicknames = {zone->nickname()};
     syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -9484,6 +9521,7 @@ void SystemEditorPage::finalizePatrolZonePlacement(const QPointF &endScenePos)
 
     auto *cmd = new AddZoneCommand(m_document.get(), zone, tr("Create Patrol Zone"));
     flatlas::core::UndoManager::instance().push(cmd);
+    logSystemChange(QStringLiteral("Created patrol zone: %1").arg(zone->nickname()));
     refreshObjectList();
     m_selectedNicknames = {zone->nickname()};
     syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -9603,6 +9641,7 @@ void SystemEditorPage::finalizeBuoyPlacement(const QPointF &scenePos)
     }
     stack->endMacro();
 
+    logSystemChange(QStringLiteral("Created buoys: %1").arg(createdNicknames.join(QStringLiteral(", "))));
     refreshObjectList();
     m_selectedNicknames = createdNicknames;
     syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -9759,6 +9798,7 @@ void SystemEditorPage::finalizeTradeLanePlacement(const QPointF &endScenePos)
     }
     stack->endMacro();
 
+    logSystemChange(QStringLiteral("Created trade lane: %1").arg(createdNicknames.join(QStringLiteral(", "))));
     refreshObjectList();
     m_selectedNicknames = createdNicknames;
     syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -10473,6 +10513,8 @@ bool SystemEditorPage::openRingDialogForHost(SolarObject *hostObject, bool force
     }
 
     m_document->setDirty(true);
+    logSystemChange(QStringLiteral("%1 ring: %2").arg(newState.enabled ? QStringLiteral("Edited") : QStringLiteral("Removed"),
+                                                       hostObject->nickname()));
     refreshObjectList();
     m_selectedNicknames = {hostObject->nickname()};
     syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -10688,6 +10730,7 @@ bool SystemEditorPage::openDockingRingDialogForEdit(SolarObject *ringObject)
     }
 
     m_document->setDirty(true);
+    logSystemChange(QStringLiteral("Edited docking ring: %1").arg(ringObject->nickname()));
     m_selectedNicknames = {ringObject->nickname()};
     refreshObjectList();
     syncTreeSelectionFromNicknames(m_selectedNicknames);
@@ -10766,6 +10809,7 @@ void SystemEditorPage::openBaseEditorForSelection()
         stagePendingTextWrite(write.absolutePath, write.content);
 
     m_document->setDirty(true);
+    logSystemChange(QStringLiteral("Edited base: %1").arg(hostObject->nickname()));
     refreshObjectList();
     syncTreeSelectionFromNicknames({hostObject->nickname()});
     syncSceneSelectionFromNicknames({hostObject->nickname()});
@@ -10908,6 +10952,7 @@ void SystemEditorPage::openBaseBuilderForSelection()
         return;
 
     m_document->setDirty(true);
+    logSystemChange(QStringLiteral("Edited base builder group: %1").arg(rootObject->nickname()));
     m_selectedNicknames = normalizeSelectionNicknames({rootObject->nickname()});
     refreshObjectList();
     syncTreeSelectionFromNicknames(m_selectedNicknames);
