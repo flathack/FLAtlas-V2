@@ -53,6 +53,7 @@ private:
     void openFactionEditor();
     void openNewsRumorEditor();
     void openModelViewer();
+    void openActivityLog();
     void connectNpcEditorPage(flatlas::editors::NpcEditorPage *editor);
     void connectFactionEditorPage(flatlas::editors::FactionEditorPage *editor);
     void connectNewsRumorEditor(flatlas::editors::NewsRumorEditor *editor);

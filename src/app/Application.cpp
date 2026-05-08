@@ -1,7 +1,10 @@
 #include "Application.h"
 #include "core/Config.h"
+#include "core/Logger.h"
 #include "core/Theme.h"
 #include "core/I18n.h"
+#include <QDir>
+#include <QStandardPaths>
 #include <QStyle>
 #include <QIcon>
 
@@ -14,6 +17,11 @@ Application::Application(int &argc, char **argv)
     setApplicationVersion(QStringLiteral("0.8.0"));
     setOrganizationName(QStringLiteral("FLAtlas"));
     setOrganizationDomain(QStringLiteral("flatlas.flathack.de"));
+
+    QDir logDir(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation));
+    logDir.mkpath(QStringLiteral("."));
+    flatlas::core::Logger::init(logDir.filePath(QStringLiteral("FLAtlas-Change.log")));
+    flatlas::core::Logger::info(QStringLiteral("Activity"), QStringLiteral("FLAtlas started"));
 
     // Fusion-Style als Basis (wie im Python-Projekt)
     setStyle(QStringLiteral("Fusion"));

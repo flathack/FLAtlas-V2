@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "ActivityLogPage.h"
 #include "WelcomePage.h"
 #include "PropertiesPanel.h"
 #include "CenterTabWidget.h"
@@ -9,6 +10,7 @@
 #include "core/Theme.h"
 #include "core/ThemeColors.h"
 #include "core/I18n.h"
+#include "core/Logger.h"
 #include "core/UndoManager.h"
 #include "editors/system/SystemEditorPage.h"
 #include "editors/system/SystemDisplayFilterDialog.h"
@@ -40,6 +42,7 @@
 #include "core/PathUtils.h"
 
 #include <QCloseEvent>
+#include <QDir>
 #include <QMenuBar>
 #include <QMenu>
 #include <QAction>
@@ -203,6 +206,27 @@ bool zoneVisibleForFilter(const flatlas::rendering::SystemDisplayFilterSettings 
         visible = (rule.action == flatlas::rendering::DisplayFilterAction::Show);
     }
     return visible;
+}
+
+QString activityLogPath()
+{
+    const QString gamePath = flatlas::core::EditingContext::instance().primaryGamePath();
+    if (!gamePath.trimmed().isEmpty())
+        return QDir(gamePath).filePath(QStringLiteral("FLAtlas-Change.log"));
+
+    QDir dir(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation));
+    dir.mkpath(QStringLiteral("."));
+    return dir.filePath(QStringLiteral("FLAtlas-Change.log"));
+}
+
+void logActivity(const QString &message)
+{
+    flatlas::core::Logger::info(QStringLiteral("Activity"), message);
+}
+
+void configureActivityLogger()
+{
+    flatlas::core::Logger::init(activityLogPath());
 }
 
 QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
@@ -1004,6 +1028,7 @@ void MainWindow::createPanels()
                         " padding: 2px 6px; font-size: 11px; }"
                         "QPushButton:hover { color: #aabbdd; }"));
     indicatorRow->addWidget(activityBtn);
+    connect(activityBtn, &QPushButton::clicked, this, &MainWindow::openActivityLog);
     rightLayout->addLayout(indicatorRow);
 
     tabBarLayout->addWidget(rightPanel);
@@ -1610,23 +1635,27 @@ void MainWindow::saveCurrentSystem()
             tr("INI Files (*.ini);;All Files (*)"));
         if (filePath.isEmpty())
             return;
-        if (editor->saveAs(filePath))
+        if (editor->saveAs(filePath)) {
+            logActivity(QStringLiteral("Saved system: %1").arg(filePath));
             statusBar()->showMessage(tr("Saved: %1").arg(filePath), 3000);
-        else
+        } else {
             QMessageBox::warning(this,
                                  tr("Error"),
                                  editor->lastSaveError().trimmed().isEmpty()
                                      ? tr("Could not save file.")
                                      : editor->lastSaveError());
+        }
     } else {
-        if (editor->save())
+        if (editor->save()) {
+            logActivity(QStringLiteral("Saved system: %1").arg(editor->filePath()));
             statusBar()->showMessage(tr("Saved"), 3000);
-        else
+        } else {
             QMessageBox::warning(this,
                                  tr("Error"),
                                  editor->lastSaveError().trimmed().isEmpty()
                                      ? tr("Could not save file.")
                                      : editor->lastSaveError());
+        }
     }
 }
 
@@ -1646,6 +1675,7 @@ void MainWindow::openIniFile()
             continue;
         editor->openWorkspace(preferredRoot);
         m_centerTabs->setCurrentIndex(i);
+        logActivity(QStringLiteral("Opened file editor workspace"));
         statusBar()->showMessage(tr("File Editor workspace opened"), 3000);
         return;
     }
@@ -1667,6 +1697,7 @@ void MainWindow::openIniFile()
         openIniFile(requestedPath, requestedSearchText, requestedLineNumber);
     });
 
+    logActivity(QStringLiteral("Opened file editor workspace"));
     statusBar()->showMessage(tr("File Editor workspace opened"), 3000);
 }
 
@@ -1715,7 +1746,30 @@ void MainWindow::openIniFile(const QString &filePath, const QString &searchText,
     if (lineNumber > 0)
         editor->goToLine(lineNumber);
 
+    logActivity(QStringLiteral("Opened file: %1").arg(filePath));
     statusBar()->showMessage(tr("Opened: %1").arg(filePath), 3000);
+}
+
+void MainWindow::openActivityLog()
+{
+    const QString currentLogPath = activityLogPath();
+    for (int i = 0; i < m_centerTabs->count(); ++i) {
+        auto *page = qobject_cast<flatlas::ui::ActivityLogPage *>(m_centerTabs->widget(i));
+        if (!page)
+            continue;
+        logActivity(QStringLiteral("Opened activity log"));
+        page->setLogPath(currentLogPath);
+        page->reload();
+        m_centerTabs->setCurrentIndex(i);
+        statusBar()->showMessage(tr("Activity log opened"), 3000);
+        return;
+    }
+
+    logActivity(QStringLiteral("Opened activity log"));
+    auto *page = new flatlas::ui::ActivityLogPage(currentLogPath, this);
+    const int idx = m_centerTabs->addTab(page, tr("Activity"));
+    m_centerTabs->setCurrentIndex(idx);
+    statusBar()->showMessage(tr("Activity log opened"), 3000);
 }
 
 void MainWindow::saveCurrentFile()
@@ -1737,15 +1791,19 @@ void MainWindow::saveCurrentFile()
                 tr("INI Files (*.ini);;All Files (*)"));
             if (filePath.isEmpty())
                 return;
-            if (iniEditor->saveAs(filePath))
+            if (iniEditor->saveAs(filePath)) {
+                logActivity(QStringLiteral("Saved file: %1").arg(filePath));
                 statusBar()->showMessage(tr("Saved: %1").arg(filePath), 3000);
-            else
+            } else {
                 QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
+            }
         } else {
-            if (iniEditor->save())
+            if (iniEditor->save()) {
+                logActivity(QStringLiteral("Saved file: %1").arg(iniEditor->filePath()));
                 statusBar()->showMessage(tr("Saved"), 3000);
-            else
+            } else {
                 QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
+            }
         }
     }
 
@@ -1753,20 +1811,24 @@ void MainWindow::saveCurrentFile()
     auto *universeEditor = qobject_cast<flatlas::editors::UniverseEditorPage *>(
         m_centerTabs->currentWidget());
     if (universeEditor) {
-        if (universeEditor->save())
+        if (universeEditor->save()) {
+            logActivity(QStringLiteral("Saved universe"));
             statusBar()->showMessage(tr("Saved"), 3000);
-        else
+        } else {
             QMessageBox::warning(this, tr("Error"), tr("Could not save file."));
+        }
     }
 
     auto *factionEditor = qobject_cast<flatlas::editors::FactionEditorPage *>(
         m_centerTabs->currentWidget());
     if (factionEditor) {
         QString error;
-        if (factionEditor->save(&error))
+        if (factionEditor->save(&error)) {
+            logActivity(QStringLiteral("Saved factions"));
             statusBar()->showMessage(tr("Saved"), 3000);
-        else
+        } else {
             QMessageBox::warning(this, tr("Faction Editor"), tr("Could not save factions:\n%1").arg(error));
+        }
     }
 
 }
@@ -1801,6 +1863,7 @@ void MainWindow::openUniverseFromContext()
             const int systemCount = editor->data() ? editor->data()->systemCount() : 0;
             m_centerTabs->setTabText(i, QStringLiteral("Universe (%1)").arg(systemCount));
             m_centerTabs->setCurrentIndex(i);
+            logActivity(QStringLiteral("Reloaded universe: %1").arg(universeIni));
             statusBar()->showMessage(tr("Universe reloaded from editing context"), 3000);
             return;
         }
@@ -1828,6 +1891,7 @@ void MainWindow::openUniverseFromContext()
     connect(editor, &flatlas::editors::UniverseEditorPage::openSystemRequested,
             this, &MainWindow::openSystemFromUniverse);
 
+    logActivity(QStringLiteral("Opened universe: %1").arg(universeIni));
     statusBar()->showMessage(tr("Universe loaded from editing context"), 3000);
 }
 
@@ -1835,6 +1899,7 @@ void MainWindow::handleEditingContextChanged()
 {
     auto &ctx = flatlas::core::EditingContext::instance();
     const auto profile = ctx.editingProfile();
+    configureActivityLogger();
 
     if (profile.isValid()) {
         m_editingLabel->setText(tr("Currently Editing: %1").arg(profile.name));
@@ -1848,8 +1913,10 @@ void MainWindow::handleEditingContextChanged()
 
     if (profile.isValid()) {
         applyPinnedToolSettings();
+        logActivity(QStringLiteral("Editing context switched to: %1").arg(profile.name));
         statusBar()->showMessage(tr("Editing context switched to %1").arg(profile.name), 5000);
     } else {
+        logActivity(QStringLiteral("Editing context cleared"));
         statusBar()->showMessage(tr("Editing context cleared"), 3000);
     }
 
@@ -1921,6 +1988,7 @@ void MainWindow::openSystemFromUniverse(const QString &nickname,
 
     int idx = m_centerTabs->addTab(editor, iconForWidget(editor), formatSystemTabTitle(editor->document()->name(), ingameName));
     m_centerTabs->setCurrentIndex(idx);
+    logActivity(QStringLiteral("Opened system: %1 (%2)").arg(nickname, resolvedPath));
 
     connect(editor, &flatlas::editors::SystemEditorPage::titleChanged,
             this, [this, editor, ingameName](const QString &title) {
@@ -1982,6 +2050,7 @@ void MainWindow::open3DSystemEditorFor(flatlas::editors::SystemEditorPage *edito
 
     const int idx = m_centerTabs->addTab(view, iconForWidget(view), tr("3D: %1").arg(systemName));
     m_centerTabs->setCurrentIndex(idx);
+    logActivity(QStringLiteral("Opened 3D system view: %1").arg(systemName));
     statusBar()->showMessage(tr("3D system view opened: %1").arg(systemName), 3000);
 }
 
@@ -2011,6 +2080,7 @@ void MainWindow::openTradeRoutes()
             m_centerTabs->setTabText(i, title);
     });
 
+    logActivity(QStringLiteral("Opened trade routes"));
     statusBar()->showMessage(tr("Trade Routes opened"), 3000);
 }
 
@@ -2039,6 +2109,7 @@ void MainWindow::openIdsEditor()
         openIniFile(filePath, searchText, 0);
     });
 
+    logActivity(QStringLiteral("Opened IDS editor"));
     statusBar()->showMessage(tr("IDS Editor opened"), 3000);
 }
 
@@ -2046,6 +2117,7 @@ void MainWindow::openModManager()
 {
     // Mod Manager is always pinned at index 0 — just switch to it
     m_centerTabs->setCurrentIndex(0);
+    logActivity(QStringLiteral("Opened mod manager"));
 }
 
 void MainWindow::openModSettings()
@@ -2062,6 +2134,7 @@ void MainWindow::openModSettings()
             m_centerTabs->setTabText(i, title);
     });
 
+    logActivity(QStringLiteral("Opened mod settings"));
     statusBar()->showMessage(tr("Mod Settings opened"), 3000);
 }
 
@@ -2074,6 +2147,7 @@ void MainWindow::openNpcEditor()
 
     connectNpcEditorPage(editor);
 
+    logActivity(QStringLiteral("Opened NPC editor"));
     statusBar()->showMessage(tr("NPC Editor opened"), 3000);
 }
 
@@ -2086,6 +2160,7 @@ void MainWindow::openFactionEditor()
 
     connectFactionEditorPage(editor);
 
+    logActivity(QStringLiteral("Opened faction editor"));
     statusBar()->showMessage(tr("Faction Editor opened"), 3000);
 }
 
@@ -2098,13 +2173,16 @@ void MainWindow::openNewsRumorEditor()
 
     connectNewsRumorEditor(editor);
 
+    logActivity(QStringLiteral("Opened news editor"));
     statusBar()->showMessage(tr("News Editor opened"), 3000);
 }
 
 void MainWindow::openModelViewer()
 {
-    if (ensureModelViewerPage())
+    if (ensureModelViewerPage()) {
+        logActivity(QStringLiteral("Opened 3D model viewer"));
         statusBar()->showMessage(tr("3D Model Viewer opened"), 3000);
+    }
 }
 
 void MainWindow::connectNpcEditorPage(flatlas::editors::NpcEditorPage *editor)
@@ -2219,7 +2297,9 @@ bool MainWindow::showModelInViewer(const QString &modelPath, const QString &disp
     if (!page)
         return false;
     const bool scheduled = page->loadModelPath(modelPath, displayLabel);
-    if (scheduled)
+    if (scheduled) {
+        logActivity(QStringLiteral("Loaded 3D model: %1").arg(modelPath));
         statusBar()->showMessage(displayLabel.trimmed().isEmpty() ? tr("3D model loaded") : displayLabel.trimmed(), 3000);
+    }
     return scheduled;
 }

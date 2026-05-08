@@ -145,6 +145,18 @@ QHash<QString, QString> builtInTranslations(const QString &language)
     addPair(t, QStringLiteral("Launch FL"), QStringLiteral("FL starten"), language);
     addPair(t, QStringLiteral("FLAtlas Settings"), QStringLiteral("FLAtlas-Einstellungen"), language);
     addPair(t, QStringLiteral("Activity"), QStringLiteral("Aktivität"), language);
+    addPair(t, QStringLiteral("Activity log opened"), QStringLiteral("Aktivitätslog geöffnet"), language);
+    addPair(t, QStringLiteral("Search log..."), QStringLiteral("Log durchsuchen..."), language);
+    addPair(t, QStringLiteral("Refresh"), QStringLiteral("Aktualisieren"), language);
+    addPair(t, QStringLiteral("Days"), QStringLiteral("Tage"), language);
+    addPair(t, QStringLiteral("%1 action"), QStringLiteral("%1 Aktion"), language);
+    addPair(t, QStringLiteral("%1 actions"), QStringLiteral("%1 Aktionen"), language);
+    addPair(t, QStringLiteral("Selected day: %1"), QStringLiteral("Ausgewählter Tag: %1"), language);
+    addPair(t, QStringLiteral("No entries for selected day in current filter."),
+            QStringLiteral("Keine Einträge für den ausgewählten Tag im aktuellen Filter."), language);
+    addPair(t, QStringLiteral("No log entries."), QStringLiteral("Keine Log-Einträge."), language);
+    addPair(t, QStringLiteral("No matching log entries."), QStringLiteral("Keine passenden Log-Einträge."), language);
+    addPair(t, QStringLiteral("Log file not found."), QStringLiteral("Logdatei nicht gefunden."), language);
     addPair(t, QStringLiteral("Language set to '%1'. Restart FLAtlas to fully apply."),
             QStringLiteral("Sprache auf '%1' gesetzt. Starte FLAtlas neu, um alles vollständig anzuwenden."), language);
     addPair(t, QStringLiteral("Language set to '%1'. Open tabs may need to be reopened."),

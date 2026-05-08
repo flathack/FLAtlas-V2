@@ -1,6 +1,7 @@
 # flatlas_ui – Hauptfenster, Panels, Dialoge
 add_library(flatlas_ui STATIC
     MainWindow.h MainWindow.cpp
+    ActivityLogPage.h ActivityLogPage.cpp
     WelcomePage.h WelcomePage.cpp
     BrowserPanel.h BrowserPanel.cpp
     PropertiesPanel.h PropertiesPanel.cpp

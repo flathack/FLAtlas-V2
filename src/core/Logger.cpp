@@ -1,6 +1,8 @@
 #include "Logger.h"
 #include <QDateTime>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QTextStream>
@@ -13,7 +15,13 @@ static bool s_fileLoggingEnabled = true;
 
 void Logger::init(const QString &logFilePath)
 {
+    QMutexLocker locker(&s_logMutex);
+
+    if (s_logFile.isOpen())
+        s_logFile.close();
+
     if (!logFilePath.isEmpty()) {
+        QDir().mkpath(QFileInfo(logFilePath).absolutePath());
         s_logFile.setFileName(logFilePath);
         s_logFile.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
     }
@@ -40,6 +48,7 @@ void Logger::messageHandler(QtMsgType type, const QMessageLogContext &context, c
     if (s_fileLoggingEnabled && s_logFile.isOpen()) {
         QTextStream fileStream(&s_logFile);
         fileStream << formatted << Qt::endl;
+        s_logFile.flush();
     }
 }
 
