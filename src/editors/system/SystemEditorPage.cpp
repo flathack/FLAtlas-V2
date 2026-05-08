@@ -8742,6 +8742,8 @@ void SystemEditorPage::finalizeSimpleZonePlacement(const QPointF &edgeScenePos)
         {QStringLiteral("size"), sizeText},
         {QStringLiteral("sort"), QString::number(m_pendingSimpleZoneRequest->sort)},
     };
+    if (!m_pendingSimpleZoneRequest->comment.trimmed().isEmpty())
+        entries.append({QStringLiteral("comment"), m_pendingSimpleZoneRequest->comment.trimmed()});
     if (m_pendingSimpleZoneRequest->damage > 0)
         entries.append({QStringLiteral("damage"), QString::number(m_pendingSimpleZoneRequest->damage)});
     zone->setRawEntries(entries);
@@ -8846,6 +8848,8 @@ void SystemEditorPage::finalizePatrolZonePlacement(const QPointF &endScenePos)
         {QStringLiteral("usage"), usage},
         {QStringLiteral("mission_eligible"), request.missionEligible ? QStringLiteral("true") : QStringLiteral("false")},
     };
+    if (!request.comment.trimmed().isEmpty())
+        entries.append({QStringLiteral("comment"), request.comment.trimmed()});
     if (request.damage > 0)
         entries.append({QStringLiteral("damage"), QString::number(request.damage)});
     const QStringList restrictions = patrolDensityRestrictionsForUsage(usage);
