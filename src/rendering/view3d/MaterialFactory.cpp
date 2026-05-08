@@ -5,6 +5,7 @@
 #include "MaterialFactory.h"
 #include <Qt3DRender/QColorMask>
 #include <Qt3DRender/QEffect>
+#include <Qt3DRender/QNoDepthMask>
 #include <Qt3DRender/QRenderPass>
 #include <Qt3DRender/QTechnique>
 #include <Qt3DRender/QTextureWrapMode>
@@ -108,6 +109,8 @@ void MaterialFactory::preventFramebufferAlphaWrites(Qt3DRender::QMaterial *mater
     // Qt3D window can expose framebuffer alpha to the desktop compositor. Keep
     // RGB blending and block writes to the native-window alpha channel so stale
     // widget pixels cannot leak through transparent geometry after tab switches.
+    // Also keep translucent volumes out of the depth buffer so large system
+    // zones do not hide other zones as soon as the renderer settles.
     for (Qt3DRender::QTechnique *technique : material->effect()->techniques()) {
         if (!technique)
             continue;
@@ -120,6 +123,9 @@ void MaterialFactory::preventFramebufferAlphaWrites(Qt3DRender::QMaterial *mater
             colorMask->setBlueMasked(true);
             colorMask->setAlphaMasked(false);
             pass->addRenderState(colorMask);
+
+            auto *depthMask = new Qt3DRender::QNoDepthMask(pass);
+            pass->addRenderState(depthMask);
         }
     }
 }

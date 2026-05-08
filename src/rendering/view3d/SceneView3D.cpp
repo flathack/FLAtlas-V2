@@ -1048,6 +1048,9 @@ void SceneView3D::setViewportActive(bool active)
     if (m_3dWindow)
         m_3dWindow->setVisible(active);
     if (active) {
+        if (m_orbitCamera)
+            m_orbitCamera->updateCamera();
+        updateCameraDependentScene();
         if (m_container) {
             m_container->raise();
             m_container->update();

@@ -18,6 +18,7 @@
 #include <Qt3DRender/QColorMask>
 #include <Qt3DRender/QEffect>
 #include <Qt3DRender/QGeometryRenderer>
+#include <Qt3DRender/QNoDepthMask>
 #include <Qt3DRender/QRenderPass>
 #include <Qt3DRender/QTechnique>
 #endif
@@ -280,23 +281,26 @@ void TestSceneView3D::testAlphaMaterialsDisableFramebufferAlphaWrites()
     flatlas::rendering::MaterialFactory::preventFramebufferAlphaWrites(&material);
 
     bool foundColorMask = false;
+    bool foundDepthMask = false;
     for (Qt3DRender::QTechnique *technique : material.effect()->techniques()) {
         QVERIFY(technique);
         for (Qt3DRender::QRenderPass *pass : technique->renderPasses()) {
             QVERIFY(pass);
             for (Qt3DRender::QRenderState *state : pass->renderStates()) {
                 const auto *mask = qobject_cast<const Qt3DRender::QColorMask *>(state);
-                if (!mask)
-                    continue;
-                foundColorMask = true;
-                QVERIFY(mask->isRedMasked());
-                QVERIFY(mask->isGreenMasked());
-                QVERIFY(mask->isBlueMasked());
-                QVERIFY(!mask->isAlphaMasked());
+                if (mask) {
+                    foundColorMask = true;
+                    QVERIFY(mask->isRedMasked());
+                    QVERIFY(mask->isGreenMasked());
+                    QVERIFY(mask->isBlueMasked());
+                    QVERIFY(!mask->isAlphaMasked());
+                }
+                foundDepthMask = foundDepthMask || qobject_cast<const Qt3DRender::QNoDepthMask *>(state);
             }
         }
     }
     QVERIFY(foundColorMask);
+    QVERIFY(foundDepthMask);
 }
 
 void TestSceneView3D::testFreeCameraWheelChangesSpeed()
