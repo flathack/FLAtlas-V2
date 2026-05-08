@@ -1,7 +1,11 @@
 #include <QtTest>
 #include "editors/universe/UniverseEditorPage.h"
 #include "domain/UniverseData.h"
+#include <QFile>
+#include <QTabBar>
 #include <QTemporaryFile>
+#include <QTemporaryDir>
+#include <QTreeWidget>
 
 using namespace flatlas::editors;
 
@@ -71,6 +75,52 @@ private slots:
         QVERIFY(editor2.loadFile(file.fileName()));
         QCOMPARE(editor2.data()->systemCount(), 2);
         QCOMPARE(editor2.data()->systems[0].nickname, QStringLiteral("Alpha"));
+    }
+
+    void multiverseShowsSectorSystemsOnlyInTheirSector()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString universePath = dir.filePath(QStringLiteral("universe.ini"));
+        const QString multiPath = dir.filePath(QStringLiteral("multiuniverse.ini"));
+
+        QFile universeFile(universePath);
+        QVERIFY(universeFile.open(QIODevice::WriteOnly | QIODevice::Text));
+        universeFile.write("[System]\n"
+                           "nickname = Li01\n"
+                           "file = Li01.ini\n"
+                           "pos = 100, 200\n"
+                           "\n"
+                           "[System]\n"
+                           "nickname = Sol\n"
+                           "file = Sol.ini\n"
+                           "pos = 300, 400\n");
+        universeFile.close();
+
+        QFile multiFile(multiPath);
+        QVERIFY(multiFile.open(QIODevice::WriteOnly | QIODevice::Text));
+        multiFile.write("[Sector]\n"
+                        "mapping = sector1\n"
+                        "system = Sol, 10, 20\n");
+        multiFile.close();
+
+        UniverseEditorPage editor;
+        QVERIFY(editor.loadFile(universePath));
+
+        auto *tree = editor.findChild<QTreeWidget *>();
+        QVERIFY(tree);
+        QCOMPARE(tree->topLevelItemCount(), 1);
+        QCOMPARE(tree->topLevelItem(0)->data(0, Qt::UserRole).toString(), QStringLiteral("Li01"));
+
+        auto *tabs = editor.findChild<QTabBar *>();
+        QVERIFY(tabs);
+        QCOMPARE(tabs->count(), 2);
+        QVERIFY(tabs->tabText(0).contains(QStringLiteral("(1)")));
+        QVERIFY(tabs->tabText(1).contains(QStringLiteral("(1)")));
+
+        tabs->setCurrentIndex(1);
+        QCOMPARE(tree->topLevelItemCount(), 1);
+        QCOMPARE(tree->topLevelItem(0)->data(0, Qt::UserRole).toString(), QStringLiteral("Sol"));
     }
 };
 

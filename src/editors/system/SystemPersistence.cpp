@@ -1019,8 +1019,8 @@ static IniSection buildSystemInfo(const SystemDocument &doc, const IniSection &b
     IniSection sec = baseSection;
     sec.name = QStringLiteral("SystemInfo");
     const QString nickname = doc.name().trimmed();
-    if (!nickname.isEmpty()) {
-        const int nicknameIndex = findEntryIndex(sec.entries, QStringLiteral("nickname"));
+    const int nicknameIndex = findEntryIndex(sec.entries, QStringLiteral("nickname"));
+    if (!nickname.isEmpty() && (nicknameIndex >= 0 || baseSection.entries.isEmpty())) {
         if (nicknameIndex < 0 || sec.entries[nicknameIndex].second.trimmed() != nickname)
             upsertEntry(sec.entries, QStringLiteral("nickname"), nickname);
     }
@@ -1033,9 +1033,6 @@ static IniSection buildSystemInfo(const SystemDocument &doc, const IniSection &b
             upsertEntry(sec.entries, QStringLiteral("NavMapScale"),
                         QString::number(doc.navMapScale(), 'f', 6));
         }
-    } else {
-        upsertEntry(sec.entries, QStringLiteral("NavMapScale"),
-                    QString::number(doc.navMapScale(), 'f', 6));
     }
     return sec;
 }

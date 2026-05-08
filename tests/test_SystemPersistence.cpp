@@ -627,6 +627,33 @@ private slots:
         QVERIFY(written.contains(QStringLiteral("nickname = Li01")));
     }
 
+    void saveDoesNotInventSystemInfoNicknameOrNavMapScale()
+    {
+        const QString ini = QStringLiteral(
+            "[SystemInfo]\n"
+            "space_color = 0, 0, 0\n"
+            "local_faction = mod_fc1_grp\n"
+            "\n"
+            "[Music]\n"
+            "space = music_li_space\n");
+
+        const QString path = writeTemp(ini);
+        auto doc = SystemPersistence::load(path);
+        QVERIFY(doc);
+
+        QTemporaryDir dir;
+        const QString savedPath = dir.path() + QStringLiteral("/systeminfo_minimal.ini");
+        QVERIFY(SystemPersistence::save(*doc, savedPath));
+
+        QFile file(savedPath);
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString written = QString::fromUtf8(file.readAll());
+        QVERIFY(written.contains(QStringLiteral("space_color = 0, 0, 0")));
+        QVERIFY(written.contains(QStringLiteral("local_faction = mod_fc1_grp")));
+        QVERIFY(!written.contains(QStringLiteral("nickname =")));
+        QVERIFY(!written.contains(QStringLiteral("NavMapScale =")));
+    }
+
     void normalizeSectionOrderInFile_preservesRawLines()
     {
         const QString ini = QStringLiteral(

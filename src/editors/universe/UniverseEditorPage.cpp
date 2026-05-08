@@ -109,6 +109,15 @@ QString loadInfocardXmlForGlobalId(const QString &freelancerIniPath, int globalI
     return htmlEntries.value(localId).trimmed();
 }
 
+bool hasExternalSectorPosition(const SystemInfo &sys)
+{
+    for (auto it = sys.sectorPositions.constBegin(); it != sys.sectorPositions.constEnd(); ++it) {
+        if (it.key().compare(QStringLiteral("universe"), Qt::CaseInsensitive) != 0)
+            return true;
+    }
+    return false;
+}
+
 } // namespace
 
 // ─── Custom graphics view with zoom ──────────────────────
@@ -1162,8 +1171,11 @@ QPointF UniverseEditorPage::connectionEdgePoint(const QPointF &from, const QPoin
 
 bool UniverseEditorPage::systemVisibleInActiveSector(const SystemInfo &sys) const
 {
-    if (m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0)
-        return true;
+    if (m_activeSector.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0) {
+        if (!m_data || !m_data->multiverseDetected)
+            return true;
+        return !hasExternalSectorPosition(sys);
+    }
     return sys.sectorPositions.contains(m_activeSector);
 }
 
@@ -1210,8 +1222,10 @@ void UniverseEditorPage::rebuildSectorTabs()
     auto systemCountForSector = [this](const QString &sectorKey) {
         int count = 0;
         for (const auto &sys : m_data->systems) {
-            if (sectorKey.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0 ||
-                sys.sectorPositions.contains(sectorKey)) {
+            if (sectorKey.compare(QStringLiteral("universe"), Qt::CaseInsensitive) == 0) {
+                if (!m_data->multiverseDetected || !hasExternalSectorPosition(sys))
+                    ++count;
+            } else if (sys.sectorPositions.contains(sectorKey)) {
                 ++count;
             }
         }
