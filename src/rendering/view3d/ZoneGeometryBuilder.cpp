@@ -268,15 +268,13 @@ Qt3DExtras::QPhongAlphaMaterial *makeFillMaterial(const QColor &color, float alp
     return material;
 }
 
-Qt3DExtras::QPhongAlphaMaterial *makeWireMaterial(const QColor &color, Qt3DCore::QNode *owner)
+Qt3DExtras::QPhongMaterial *makeWireMaterial(const QColor &color, Qt3DCore::QNode *owner)
 {
     QColor wireColor = color;
-    wireColor.setAlphaF(0.5f);
-    auto *material = new Qt3DExtras::QPhongAlphaMaterial(owner);
+    wireColor.setAlpha(255);
+    auto *material = new Qt3DExtras::QPhongMaterial(owner);
     material->setDiffuse(wireColor);
     material->setAmbient(wireColor.darker(170));
-    material->setAlpha(0.5f);
-    MaterialFactory::preventFramebufferAlphaWrites(material);
     return material;
 }
 

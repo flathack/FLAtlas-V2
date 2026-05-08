@@ -1245,12 +1245,15 @@ void SceneView3D::clearScene()
     if (m_sceneRoot) {
         m_flightShipEntity = nullptr;
         m_flightShipTransform = nullptr;
-        delete m_sceneRoot;
+        Qt3DCore::QEntity *oldSceneRoot = m_sceneRoot;
+        oldSceneRoot->setEnabled(false);
+        oldSceneRoot->setParent(static_cast<Qt3DCore::QNode *>(nullptr));
         m_sceneRoot = new Qt3DCore::QEntity(m_rootEntity);
         m_gridEntity = nullptr;
         m_zonesRoot = new Qt3DCore::QEntity(m_sceneRoot);
         m_objectsRoot = new Qt3DCore::QEntity(m_sceneRoot);
         updateTransformGizmo();
+        oldSceneRoot->deleteLater();
     }
 #endif
 }
