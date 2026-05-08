@@ -195,6 +195,57 @@ private slots:
         QCOMPARE(doc->zones()[0]->comment(), QStringLiteral("First line\nSecond line"));
     }
 
+    void loadObjectCommentFromLeadingIniComment()
+    {
+        QString ini = QStringLiteral(
+            "[SystemInfo]\n"
+            "nickname = test\n"
+            "\n"
+            "; Object first line\n"
+            "; Object second line\n"
+            "[Object]\n"
+            "nickname = obj_comment\n"
+            "archetype = space_station\n"
+        );
+        auto doc = SystemPersistence::load(writeTemp(ini));
+        QVERIFY(doc);
+        QCOMPARE(doc->objects().size(), 1);
+        QCOMPARE(doc->objects()[0]->comment(), QStringLiteral("Object first line\nObject second line"));
+    }
+
+    void loadObjectCommentFromNicknameInlineComment()
+    {
+        QString ini = QStringLiteral(
+            "[SystemInfo]\n"
+            "nickname = test\n"
+            "\n"
+            "[Object]\n"
+            "nickname = CA01_sun_001 ; Kommentar\n"
+            "ids_name = 261008\n"
+            "ids_info = 66162\n"
+            "pos = -256.59, 0.00, -256.59\n"
+            "archetype = sun_2000\n"
+            "atmosphere_range = 10000\n"
+            "star = red_giant_sun\n"
+        );
+        const QString path = writeTemp(ini);
+        auto doc = SystemPersistence::load(path);
+        QVERIFY(doc);
+        QCOMPARE(doc->objects().size(), 1);
+        QCOMPARE(doc->objects()[0]->nickname(), QStringLiteral("CA01_sun_001"));
+        QCOMPARE(doc->objects()[0]->comment(), QStringLiteral("Kommentar"));
+
+        QTemporaryDir dir;
+        const QString savedPath = dir.path() + QStringLiteral("/object_inline_comment.ini");
+        QVERIFY(SystemPersistence::save(*doc, savedPath));
+
+        QFile file(savedPath);
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString written = QString::fromUtf8(file.readAll());
+        QVERIFY(written.contains(QStringLiteral("nickname = CA01_sun_001 ; Kommentar")));
+        QVERIFY(!written.contains(QStringLiteral("comment = Kommentar")));
+    }
+
     void typeDetection()
     {
         QString ini = QStringLiteral(
@@ -315,6 +366,58 @@ private slots:
         QString content = QString::fromUtf8(f.readAll());
         QVERIFY(content.contains(QStringLiteral("[LightSource]")));
         QVERIFY(content.contains(QStringLiteral("[Ambient]")));
+    }
+
+    void savePreservesCommentsAroundAndInsideSections()
+    {
+        const QString ini = QStringLiteral(
+            "; file header comment\n"
+            "\n"
+            "[SystemInfo]\n"
+            "nickname = Li01 ; inline system comment\n"
+            "; comment before object section\n"
+            "\n"
+            "[Object]\n"
+            "; object nickname comment\n"
+            "nickname = station1 ; inline object comment\n"
+            "pos = 1000, 2000, -3000 ; inline pos comment\n"
+            "archetype = space_station\n"
+            "\n"
+            "// slash comment before zone\n"
+            "[Zone]\n"
+            "nickname = zone1\n"
+            "; zone size comment\n"
+            "size = 1000, 1000, 1000 ; inline size comment\n"
+            "shape = SPHERE\n"
+            "; trailing file comment\n");
+
+        const QString path = writeTemp(ini);
+        auto doc = SystemPersistence::load(path);
+        QVERIFY(doc);
+        QCOMPARE(doc->objects().size(), 1);
+        QCOMPARE(doc->zones().size(), 1);
+
+        doc->objects()[0]->setPosition(QVector3D(10, 20, 30));
+        doc->zones()[0]->setSize(QVector3D(2000, 3000, 4000));
+
+        QTemporaryDir dir;
+        const QString savedPath = dir.path() + QStringLiteral("/comments.ini");
+        QVERIFY(SystemPersistence::save(*doc, savedPath));
+
+        QFile file(savedPath);
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString written = QString::fromUtf8(file.readAll());
+
+        QVERIFY(written.contains(QStringLiteral("; file header comment")));
+        QVERIFY(written.contains(QStringLiteral("nickname = Li01 ; inline system comment")));
+        QVERIFY(written.contains(QStringLiteral("; comment before object section")));
+        QVERIFY(written.contains(QStringLiteral("; object nickname comment")));
+        QVERIFY(written.contains(QStringLiteral("nickname = station1 ; inline object comment")));
+        QVERIFY(written.contains(QStringLiteral("pos = 10.000000, 20.000000, 30.000000 ; inline pos comment")));
+        QVERIFY(written.contains(QStringLiteral("// slash comment before zone")));
+        QVERIFY(written.contains(QStringLiteral("; zone size comment")));
+        QVERIFY(written.contains(QStringLiteral("size = 2000.000000, 3000.000000, 4000.000000 ; inline size comment")));
+        QVERIFY(written.contains(QStringLiteral("; trailing file comment")));
     }
 
     void saveZoneCommentAsIniComment()

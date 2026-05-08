@@ -58,7 +58,7 @@ static QString decodeIniText(const QByteArray &raw)
     return QString::fromLatin1(raw);
 }
 
-static QVector<QString> extractLeadingZoneComments(const QString &filePath)
+static QHash<QString, QVector<QString>> extractLeadingSectionComments(const QString &filePath)
 {
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly))
@@ -68,7 +68,7 @@ static QVector<QString> extractLeadingZoneComments(const QString &filePath)
     if (text.isEmpty())
         return {};
 
-    QVector<QString> comments;
+    QHash<QString, QVector<QString>> commentsBySection;
     QStringList pendingCommentLines;
     const QStringList lines = text.split(QLatin1Char('\n'));
     for (const QString &rawLine : lines) {
@@ -89,8 +89,11 @@ static QVector<QString> extractLeadingZoneComments(const QString &filePath)
 
         if (trimmed.startsWith(QLatin1Char('[')) && trimmed.endsWith(QLatin1Char(']'))) {
             const QString sectionName = trimmed.mid(1, trimmed.size() - 2).trimmed();
-            if (sectionName.compare(QStringLiteral("Zone"), Qt::CaseInsensitive) == 0)
-                comments.append(pendingCommentLines.join(QLatin1Char('\n')).trimmed());
+            const QString comment = pendingCommentLines.join(QLatin1Char('\n')).trimmed();
+            if (!comment.isEmpty())
+                commentsBySection[sectionName.toLower()].append(comment);
+            else
+                commentsBySection[sectionName.toLower()].append(QString());
             pendingCommentLines.clear();
             continue;
         }
@@ -98,7 +101,54 @@ static QVector<QString> extractLeadingZoneComments(const QString &filePath)
         pendingCommentLines.clear();
     }
 
-    return comments;
+    return commentsBySection;
+}
+
+static QHash<QString, QVector<QString>> extractNicknameInlineComments(const QString &filePath)
+{
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+
+    const QString text = decodeIniText(file.readAll());
+    if (text.isEmpty())
+        return {};
+
+    QHash<QString, QVector<QString>> commentsBySection;
+    QString currentSection;
+    const QStringList lines = text.split(QLatin1Char('\n'));
+    for (const QString &rawLine : lines) {
+        const QString line = rawLine.trimmed();
+        if (line.isEmpty() || line.startsWith(QLatin1Char(';')) || line.startsWith(QLatin1String("//")))
+            continue;
+
+        if (line.startsWith(QLatin1Char('[')) && line.endsWith(QLatin1Char(']'))) {
+            currentSection = line.mid(1, line.size() - 2).trimmed().toLower();
+            commentsBySection[currentSection].append(QString());
+            continue;
+        }
+
+        if (currentSection.isEmpty())
+            continue;
+
+        const int eqPos = line.indexOf(QLatin1Char('='));
+        if (eqPos <= 0)
+            continue;
+
+        const QString key = line.left(eqPos).trimmed();
+        if (key.compare(QStringLiteral("nickname"), Qt::CaseInsensitive) != 0)
+            continue;
+
+        const int semicolonPos = line.indexOf(QLatin1Char(';'), eqPos + 1);
+        if (semicolonPos < 0)
+            continue;
+
+        auto &comments = commentsBySection[currentSection];
+        if (!comments.isEmpty())
+            comments.last() = line.mid(semicolonPos + 1).trimmed();
+    }
+
+    return commentsBySection;
 }
 
 static QVector3D parseZoneSize(const QString &text)
@@ -484,6 +534,185 @@ static QString rebuildRawTextWithStandardOrder(const QVector<RawSectionBlock> &b
     return rebuilt;
 }
 
+static QHash<const SystemDocument *, QVector<RawSectionBlock>> s_rawSectionBlocks;
+
+static QString serializeSection(const IniSection &section, const QString &leadingComment = QString())
+{
+    QString text;
+    appendSerializedSection(text, section, leadingComment);
+    return text.trimmed();
+}
+
+static int findSectionHeaderLine(const QStringList &lines)
+{
+    for (int index = 0; index < lines.size(); ++index) {
+        const QString trimmed = lines.at(index).trimmed();
+        if (trimmed.startsWith(QLatin1Char('[')) && trimmed.endsWith(QLatin1Char(']')))
+            return index;
+    }
+    return -1;
+}
+
+static bool isRawCommentLine(const QString &trimmed)
+{
+    return trimmed.startsWith(QLatin1Char(';')) || trimmed.startsWith(QLatin1String("//"));
+}
+
+static QVector<int> rawEntryLineIndices(const QStringList &lines)
+{
+    QVector<int> indices;
+    const int headerLine = findSectionHeaderLine(lines);
+    const int firstLine = headerLine < 0 ? 0 : headerLine + 1;
+    for (int index = firstLine; index < lines.size(); ++index) {
+        const QString trimmed = lines.at(index).trimmed();
+        if (trimmed.isEmpty() || isRawCommentLine(trimmed))
+            continue;
+        if (trimmed.startsWith(QLatin1Char('[')) && trimmed.endsWith(QLatin1Char(']')))
+            break;
+        if (lines.at(index).indexOf(QLatin1Char('=')) > 0)
+            indices.append(index);
+    }
+    return indices;
+}
+
+static QString rawLineKey(const QString &line)
+{
+    const int eqPos = line.indexOf(QLatin1Char('='));
+    return eqPos > 0 ? line.left(eqPos).trimmed() : QString();
+}
+
+static QString replaceRawLineValue(const QString &line, const QString &value)
+{
+    const int eqPos = line.indexOf(QLatin1Char('='));
+    if (eqPos < 0)
+        return line;
+
+    int valueStart = eqPos + 1;
+    while (valueStart < line.size() && line.at(valueStart).isSpace())
+        ++valueStart;
+
+    int valueEnd = line.indexOf(QLatin1Char(';'), valueStart);
+    if (valueEnd < 0)
+        valueEnd = line.size();
+    while (valueEnd > valueStart && line.at(valueEnd - 1).isSpace())
+        --valueEnd;
+
+    return line.left(valueStart) + value + line.mid(valueEnd);
+}
+
+static bool sectionEntriesEquivalent(const IniSection &lhs, const IniSection &rhs)
+{
+    if (lhs.entries.size() != rhs.entries.size())
+        return false;
+    for (int index = 0; index < lhs.entries.size(); ++index) {
+        if (lhs.entries.at(index).first.compare(rhs.entries.at(index).first, Qt::CaseInsensitive) != 0)
+            return false;
+        if (lhs.entries.at(index).second.trimmed() != rhs.entries.at(index).second.trimmed())
+            return false;
+    }
+    return true;
+}
+
+static QString updateRawSectionBlock(const RawSectionBlock &block, const IniSection &section)
+{
+    QStringList lines = normalizeLineEndings(block.text).split(QLatin1Char('\n'));
+    const int headerLine = findSectionHeaderLine(lines);
+    if (headerLine >= 0)
+        lines[headerLine] = QLatin1Char('[') + section.name + QLatin1Char(']');
+
+    const QVector<int> entryLines = rawEntryLineIndices(lines);
+    QVector<bool> consumed(entryLines.size(), false);
+    QVector<QString> additions;
+    int lastConsumedLine = headerLine;
+
+    for (const auto &entry : section.entries) {
+        int match = -1;
+        for (int index = 0; index < entryLines.size(); ++index) {
+            if (consumed.at(index))
+                continue;
+            if (rawLineKey(lines.at(entryLines.at(index))).compare(entry.first, Qt::CaseInsensitive) == 0) {
+                match = index;
+                break;
+            }
+        }
+
+        if (match >= 0) {
+            const int lineIndex = entryLines.at(match);
+            consumed[match] = true;
+            lines[lineIndex] = replaceRawLineValue(lines.at(lineIndex), entry.second);
+            lastConsumedLine = qMax(lastConsumedLine, lineIndex);
+        } else {
+            additions.append(entry.first + QLatin1String(" = ") + entry.second);
+        }
+    }
+
+    for (int index = entryLines.size() - 1; index >= 0; --index) {
+        if (!consumed.at(index))
+            lines.removeAt(entryLines.at(index));
+    }
+
+    if (!additions.isEmpty()) {
+        int insertIndex = lines.size();
+        if (lastConsumedLine >= 0)
+            insertIndex = qMin(lastConsumedLine + 1, lines.size());
+        for (int index = 0; index < additions.size(); ++index)
+            lines.insert(insertIndex + index, additions.at(index));
+    }
+
+    return lines.join(QLatin1Char('\n')).trimmed();
+}
+
+static QString serializeWithRawBlocks(const IniDocument &orderedSections,
+                                      const QVector<RawSectionBlock> &rawBlocks,
+                                      const SystemDocument &doc)
+{
+    QHash<QString, QVector<int>> rawIndicesByKey;
+    rawIndicesByKey.reserve(rawBlocks.size());
+    for (int index = 0; index < rawBlocks.size(); ++index)
+        rawIndicesByKey[sectionIdentityKey(rawBlocks.at(index).section)].append(index);
+
+    QString text;
+    for (const IniSection &section : orderedSections) {
+        QString sectionText;
+        const QString key = sectionIdentityKey(section);
+        auto it = rawIndicesByKey.find(key);
+        if (it != rawIndicesByKey.end() && !it->isEmpty()) {
+            const RawSectionBlock &block = rawBlocks.at(it->takeFirst());
+            sectionText = sectionEntriesEquivalent(block.section, section)
+                ? normalizeLineEndings(block.text).trimmed()
+                : updateRawSectionBlock(block, section);
+        } else {
+            QString leadingComment;
+            if (normalizedSectionName(section.name) == QStringLiteral("zone")
+                && findEntryIndex(section.entries, QStringLiteral("comment")) < 0) {
+                const QString zoneNickname = section.value(QStringLiteral("nickname")).trimmed();
+                for (const auto &zone : doc.zones()) {
+                    if (zone && zone->nickname().compare(zoneNickname, Qt::CaseInsensitive) == 0) {
+                        leadingComment = zone->comment();
+                        break;
+                    }
+                }
+            }
+            sectionText = serializeSection(section, leadingComment);
+        }
+
+        if (!text.isEmpty())
+            text += QLatin1String("\n\n");
+        text += sectionText;
+    }
+    return text + QLatin1Char('\n');
+}
+
+static QVector<RawSectionBlock> rawBlocksFromText(const QString &text, const IniDocument &sections)
+{
+    if (text.isEmpty() || sections.isEmpty())
+        return {};
+
+    QString trailingText;
+    const IniAnalysisResult analysis = IniAnalysisService::analyzeText(text);
+    return extractRawSectionBlocks(text, sections, analysis, &trailingText);
+}
+
 static IniDocument buildCurrentSections(const SystemDocument &doc,
                                         const IniDocument &extras,
                                         const IniSection &systemInfoSection)
@@ -705,13 +934,20 @@ std::unique_ptr<SystemDocument> SystemPersistence::load(const QString &filePath)
     const IniDocument ini = IniParser::parseFile(filePath);
     if (ini.isEmpty())
         return nullptr;
-    const QVector<QString> zoneComments = extractLeadingZoneComments(filePath);
+    bool wasBini = false;
+    const QString rawText = IniAnalysisService::loadIniLikeText(filePath, &wasBini);
+    const QHash<QString, QVector<QString>> leadingComments = extractLeadingSectionComments(filePath);
+    const QHash<QString, QVector<QString>> nicknameInlineComments = extractNicknameInlineComments(filePath);
+    const QVector<QString> objectComments = leadingComments.value(QStringLiteral("object"));
+    const QVector<QString> objectNicknameComments = nicknameInlineComments.value(QStringLiteral("object"));
+    const QVector<QString> zoneComments = leadingComments.value(QStringLiteral("zone"));
 
     auto doc = std::make_unique<SystemDocument>();
     doc->setFilePath(filePath);
 
     IniDocument extras;
 
+    int objectIndex = 0;
     int zoneIndex = 0;
     for (const IniSection &sec : ini) {
         const QString sectionName = sec.name.toLower();
@@ -731,7 +967,17 @@ std::unique_ptr<SystemDocument> SystemPersistence::load(const QString &filePath)
         if (sectionName == QLatin1String("object")) {
             auto obj = std::make_shared<SolarObject>();
             applyObjectSection(*obj, sec);
+            if (obj->comment().trimmed().isEmpty()) {
+                if (objectIndex < objectNicknameComments.size()
+                    && !objectNicknameComments[objectIndex].trimmed().isEmpty()) {
+                    obj->setComment(objectNicknameComments[objectIndex].trimmed());
+                } else if (objectIndex < objectComments.size()
+                           && !objectComments[objectIndex].trimmed().isEmpty()) {
+                    obj->setComment(objectComments[objectIndex].trimmed());
+                }
+            }
             doc->addObject(std::move(obj));
+            ++objectIndex;
             continue;
         }
 
@@ -752,6 +998,8 @@ std::unique_ptr<SystemDocument> SystemPersistence::load(const QString &filePath)
 
     s_extras[doc.get()] = extras;
     s_layoutSections[doc.get()] = ini;
+    if (!wasBini)
+        s_rawSectionBlocks[doc.get()] = rawBlocksFromText(rawText, ini);
     s_nonStandardOrder[doc.get()] = hasDifferentSectionSequence(ini, standardizeSystemSectionOrder(ini));
     // Ensure the document has a usable name BEFORE looking up NavMapScale in
     // universe.ini — vanilla system .ini files frequently omit `nickname` in
@@ -818,7 +1066,8 @@ IniSection SystemPersistence::serializeObjectSection(const SolarObject &obj)
     setOptionalEntry(sec.entries, QStringLiteral("dock_with"), obj.dockWith());
     setOptionalEntry(sec.entries, QStringLiteral("goto"), obj.gotoTarget());
     setOptionalEntry(sec.entries, QStringLiteral("loadout"), obj.loadout());
-    setOptionalEntry(sec.entries, QStringLiteral("comment"), obj.comment());
+    if (findEntryIndex(sec.entries, QStringLiteral("comment")) >= 0)
+        setOptionalEntry(sec.entries, QStringLiteral("comment"), obj.comment());
 
     return sec;
 }
@@ -978,6 +1227,7 @@ bool SystemPersistence::save(const SystemDocument &doc, const QString &filePath)
         s_systemInfoSections[&doc] = orderedSections.first();
     }
     s_layoutSections[&doc] = orderedSections;
+    s_rawSectionBlocks[&doc] = rawBlocksFromText(text, orderedSections);
     s_nonStandardOrder[&doc] =
         hasDifferentSectionSequence(orderedSections, standardizeSystemSectionOrder(orderedSections));
     return true;
@@ -995,6 +1245,9 @@ QString SystemPersistence::serializeToText(const SystemDocument &doc)
     const IniDocument currentSections = buildCurrentSections(doc, extras, systemInfoSection);
     const IniDocument layoutSections = s_layoutSections.value(&doc);
     const IniDocument orderedSections = mergeSectionsWithLayout(layoutSections, currentSections);
+    const QVector<RawSectionBlock> rawBlocks = s_rawSectionBlocks.value(&doc);
+    if (!rawBlocks.isEmpty())
+        return serializeWithRawBlocks(orderedSections, rawBlocks, doc);
 
     QString text;
     for (const IniSection &section : orderedSections) {
@@ -1046,6 +1299,7 @@ void SystemPersistence::clearExtras(const SystemDocument *doc)
     s_extras.remove(doc);
     s_systemInfoSections.remove(doc);
     s_layoutSections.remove(doc);
+    s_rawSectionBlocks.remove(doc);
     s_nonStandardOrder.remove(doc);
 }
 
