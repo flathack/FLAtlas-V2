@@ -384,6 +384,7 @@ private slots:
             "archetype = space_station\n"
             "\n"
             "// slash comment before zone\n"
+            "\n"
             "[Zone]\n"
             "nickname = zone1\n"
             "; zone size comment\n"
@@ -411,10 +412,14 @@ private slots:
         QVERIFY(written.contains(QStringLiteral("; file header comment")));
         QVERIFY(written.contains(QStringLiteral("nickname = Li01 ; inline system comment")));
         QVERIFY(written.contains(QStringLiteral("; comment before object section")));
+        QVERIFY(written.contains(QStringLiteral("; comment before object section\n[Object]")));
+        QVERIFY(!written.contains(QStringLiteral("; comment before object section\n\n[Object]")));
         QVERIFY(written.contains(QStringLiteral("; object nickname comment")));
         QVERIFY(written.contains(QStringLiteral("nickname = station1 ; inline object comment")));
         QVERIFY(written.contains(QStringLiteral("pos = 10.000000, 20.000000, 30.000000 ; inline pos comment")));
         QVERIFY(written.contains(QStringLiteral("// slash comment before zone")));
+        QVERIFY(written.contains(QStringLiteral("// slash comment before zone\n[Zone]")));
+        QVERIFY(!written.contains(QStringLiteral("// slash comment before zone\n\n[Zone]")));
         QVERIFY(written.contains(QStringLiteral("; zone size comment")));
         QVERIFY(written.contains(QStringLiteral("size = 2000.000000, 3000.000000, 4000.000000 ; inline size comment")));
         QVERIFY(written.contains(QStringLiteral("; trailing file comment")));

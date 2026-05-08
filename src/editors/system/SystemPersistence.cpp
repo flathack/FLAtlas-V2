@@ -558,6 +558,55 @@ static bool isRawCommentLine(const QString &trimmed)
     return trimmed.startsWith(QLatin1Char(';')) || trimmed.startsWith(QLatin1String("//"));
 }
 
+static QString dockLeadingCommentsToSection(const QString &text)
+{
+    QStringList lines = normalizeLineEndings(text).split(QLatin1Char('\n'));
+    int headerLine = findSectionHeaderLine(lines);
+    if (headerLine <= 0)
+        return lines.join(QLatin1Char('\n')).trimmed();
+
+    for (int index = headerLine - 1; index >= 0; --index) {
+        const QString trimmed = lines.at(index).trimmed();
+        if (trimmed.isEmpty()) {
+            lines.removeAt(index);
+            --headerLine;
+            continue;
+        }
+        if (isRawCommentLine(trimmed))
+            continue;
+        break;
+    }
+
+    return lines.join(QLatin1Char('\n')).trimmed();
+}
+
+static QString dockCommentsToFollowingSections(const QString &text)
+{
+    QStringList lines = normalizeLineEndings(text).split(QLatin1Char('\n'));
+    for (int index = 0; index < lines.size(); ++index) {
+        if (!lines.at(index).trimmed().isEmpty())
+            continue;
+
+        int previous = index - 1;
+        while (previous >= 0 && lines.at(previous).trimmed().isEmpty())
+            --previous;
+
+        int next = index + 1;
+        while (next < lines.size() && lines.at(next).trimmed().isEmpty())
+            ++next;
+
+        if (previous >= 0
+            && next < lines.size()
+            && isRawCommentLine(lines.at(previous).trimmed())
+            && lines.at(next).trimmed().startsWith(QLatin1Char('['))
+            && lines.at(next).trimmed().endsWith(QLatin1Char(']'))) {
+            lines.removeAt(index);
+            --index;
+        }
+    }
+    return lines.join(QLatin1Char('\n'));
+}
+
 static QVector<int> rawEntryLineIndices(const QStringList &lines)
 {
     QVector<int> indices;
@@ -659,7 +708,7 @@ static QString updateRawSectionBlock(const RawSectionBlock &block, const IniSect
             lines.insert(insertIndex + index, additions.at(index));
     }
 
-    return lines.join(QLatin1Char('\n')).trimmed();
+    return dockLeadingCommentsToSection(lines.join(QLatin1Char('\n')));
 }
 
 static QString serializeWithRawBlocks(const IniDocument &orderedSections,
@@ -679,7 +728,7 @@ static QString serializeWithRawBlocks(const IniDocument &orderedSections,
         if (it != rawIndicesByKey.end() && !it->isEmpty()) {
             const RawSectionBlock &block = rawBlocks.at(it->takeFirst());
             sectionText = sectionEntriesEquivalent(block.section, section)
-                ? normalizeLineEndings(block.text).trimmed()
+                ? dockLeadingCommentsToSection(block.text)
                 : updateRawSectionBlock(block, section);
         } else {
             QString leadingComment;
@@ -700,7 +749,7 @@ static QString serializeWithRawBlocks(const IniDocument &orderedSections,
             text += QLatin1String("\n\n");
         text += sectionText;
     }
-    return text + QLatin1Char('\n');
+    return dockCommentsToFollowingSections(text) + QLatin1Char('\n');
 }
 
 static QVector<RawSectionBlock> rawBlocksFromText(const QString &text, const IniDocument &sections)
@@ -1265,7 +1314,7 @@ QString SystemPersistence::serializeToText(const SystemDocument &doc)
         }
         appendSerializedSection(text, section, leadingComment);
     }
-    return text;
+    return dockCommentsToFollowingSections(text);
 }
 
 // ─── extras management ────────────────────────────────────────────────────────
