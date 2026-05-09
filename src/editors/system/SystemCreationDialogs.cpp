@@ -405,7 +405,7 @@ CreateSimpleZoneDialog::CreateSimpleZoneDialog(const QString &suggestedNickname,
 
     m_commentEdit = new QLineEdit(this);
     m_commentEdit->setPlaceholderText(tr("optional"));
-    layout->addRow(tr("Kommentar:"), m_commentEdit);
+    layout->addRow(tr("Comment:"), m_commentEdit);
 
     m_shapeCombo = new QComboBox(this);
     m_shapeCombo->addItems({QStringLiteral("SPHERE"),
@@ -886,7 +886,7 @@ CreatePatrolZoneDialog::CreatePatrolZoneDialog(const QString &suggestedNickname,
 
     m_commentEdit = new QLineEdit(this);
     m_commentEdit->setPlaceholderText(tr("optional"));
-    layout->addRow(tr("Kommentar:"), m_commentEdit);
+    layout->addRow(tr("Comment:"), m_commentEdit);
 
     m_sortSpin = new QSpinBox(this);
     m_sortSpin->setRange(0, 999);
@@ -1745,7 +1745,7 @@ CreateSurpriseDialog::CreateSurpriseDialog(const QString &suggestedNickname,
 
     m_commentEdit = new QLineEdit(formHost);
     m_commentEdit->setPlaceholderText(tr("optional"));
-    formLayout->addRow(tr("Kommentar:"), m_commentEdit);
+    formLayout->addRow(tr("Comment:"), m_commentEdit);
 
     auto *buttons = createDialogButtons(this);
 

@@ -2846,7 +2846,7 @@ void SystemEditorPage::setupUi()
     objectListLayout->setSpacing(6);
 
     m_objectSearchEdit = new QLineEdit(objectListHost);
-    m_objectSearchEdit->setPlaceholderText(tr("Objekte durchsuchen..."));
+    m_objectSearchEdit->setPlaceholderText(tr("Search objects..."));
     m_objectSearchEdit->setClearButtonEnabled(true);
     objectListLayout->addWidget(m_objectSearchEdit);
 
@@ -2870,7 +2870,7 @@ void SystemEditorPage::setupUi()
     editorLayout->setContentsMargins(8, 8, 8, 8);
     editorLayout->setSpacing(6);
 
-    auto *iniEditorTitle = new QLabel(tr("Objekt-Editor"), editorHost);
+    auto *iniEditorTitle = new QLabel(tr("Object Editor"), editorHost);
     iniEditorTitle->setStyleSheet(QStringLiteral("font-size:18px; font-weight:600;"));
     editorLayout->addWidget(iniEditorTitle);
 
@@ -2880,7 +2880,7 @@ void SystemEditorPage::setupUi()
     auto *emptyLayout = new QVBoxLayout(m_emptyEditorPage);
     emptyLayout->setContentsMargins(0, 0, 0, 0);
     emptyLayout->setSpacing(6);
-    m_emptyEditorLabel = new QLabel(tr("Wähle links ein Objekt oder eine Zone aus."), m_emptyEditorPage);
+    m_emptyEditorLabel = new QLabel(tr("Select an object or zone on the left."), m_emptyEditorPage);
     m_emptyEditorLabel->setWordWrap(true);
     m_emptyEditorLabel->setStyleSheet(QStringLiteral("color:#9ca3af; padding:6px 2px;"));
     emptyLayout->addWidget(m_emptyEditorLabel);
@@ -2895,22 +2895,22 @@ void SystemEditorPage::setupUi()
     auto *iniEditorLayout = singleEditorLayout;
     m_iniEditor = new IniCodeEditor(editorHost);
     m_iniEditorHighlighter = new IniSyntaxHighlighter(m_iniEditor->document());
-    m_iniEditor->setPlaceholderText(tr("Wähle links ein Objekt oder eine Zone aus."));
+    m_iniEditor->setPlaceholderText(tr("Select an object or zone on the left."));
     m_iniEditor->setLineWrapMode(QPlainTextEdit::NoWrap);
     m_iniEditor->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     iniEditorLayout->addWidget(m_iniEditor, 1);
 
     auto *rotationRow = new QHBoxLayout();
-    m_rotateLeftButton = new QPushButton(tr("Yaw -15°"), iniEditorHost);
-    m_rotateRightButton = new QPushButton(tr("Yaw +15°"), iniEditorHost);
+    m_rotateLeftButton = new QPushButton(tr("Yaw -15 deg"), iniEditorHost);
+    m_rotateRightButton = new QPushButton(tr("Yaw +15 deg"), iniEditorHost);
     rotationRow->addWidget(m_rotateLeftButton);
     rotationRow->addWidget(m_rotateRightButton);
     iniEditorLayout->addLayout(rotationRow);
 
-    m_applyIniButton = new QPushButton(tr("Übernehmen"), iniEditorHost);
+    m_applyIniButton = new QPushButton(tr("Apply"), iniEditorHost);
     iniEditorLayout->addWidget(m_applyIniButton);
 
-    m_openSystemIniButton = new QPushButton(tr("System ini öffnen"), iniEditorHost);
+    m_openSystemIniButton = new QPushButton(tr("Open System INI"), iniEditorHost);
     iniEditorLayout->addWidget(m_openSystemIniButton);
 
     m_preview3DButton = new QPushButton(tr("3D Preview"), iniEditorHost);
@@ -2922,7 +2922,7 @@ void SystemEditorPage::setupUi()
     auto *multiLayout = new QVBoxLayout(m_multiSelectionPage);
     multiLayout->setContentsMargins(0, 0, 0, 0);
     multiLayout->setSpacing(6);
-    m_multiSelectionLabel = new QLabel(tr("Mehrfachauswahl"), m_multiSelectionPage);
+    m_multiSelectionLabel = new QLabel(tr("Multi-selection"), m_multiSelectionPage);
     m_multiSelectionLabel->setStyleSheet(QStringLiteral("font-size:15px; font-weight:600;"));
     multiLayout->addWidget(m_multiSelectionLabel);
     m_multiSelectionScrollArea = new QScrollArea(m_multiSelectionPage);
@@ -3886,14 +3886,14 @@ bool SystemEditorPage::save()
     if (!writePendingGeneratedZoneFiles(&generatedFileError)) {
         m_lastSaveError = generatedFileError;
         if (!generatedFileError.isEmpty())
-            QMessageBox::warning(this, tr("Speichern fehlgeschlagen"), generatedFileError);
+            QMessageBox::warning(this, tr("Save Failed"), generatedFileError);
         return false;
     }
     QString pendingTextError;
     if (!writePendingTextFiles(&pendingTextError)) {
         m_lastSaveError = pendingTextError;
         if (!pendingTextError.isEmpty())
-            QMessageBox::warning(this, tr("Speichern fehlgeschlagen"), pendingTextError);
+            QMessageBox::warning(this, tr("Save Failed"), pendingTextError);
         return false;
     }
     bool ok = SystemPersistence::save(*m_document);
@@ -3906,7 +3906,7 @@ bool SystemEditorPage::save()
         if (!writePendingFileDeletes(&pendingDeleteError)) {
             m_lastSaveError = pendingDeleteError;
             if (!pendingDeleteError.isEmpty())
-                QMessageBox::warning(this, tr("Speichern fehlgeschlagen"), pendingDeleteError);
+                QMessageBox::warning(this, tr("Save Failed"), pendingDeleteError);
             refreshDocumentDirtyState();
             return false;
         }
@@ -4199,7 +4199,7 @@ void SystemEditorPage::setupRightSidebar()
     m_selectionTitleLabel->setStyleSheet(QStringLiteral("font-size:24px; font-weight:700;"));
     layout->addWidget(m_selectionTitleLabel);
 
-    m_selectionSubtitleLabel = new QLabel(tr("Wähle ein Objekt oder eine Zone in der Karte oder Liste aus."), m_rightSidebar);
+    m_selectionSubtitleLabel = new QLabel(tr("Select an object or zone on the map or in the list."), m_rightSidebar);
     m_selectionSubtitleLabel->setWordWrap(true);
     m_selectionSubtitleLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
     layout->addWidget(m_selectionSubtitleLabel);
@@ -4210,16 +4210,16 @@ void SystemEditorPage::setupRightSidebar()
     groupsLayout->setHorizontalSpacing(8);
     groupsLayout->setVerticalSpacing(0);
 
-    auto *creationGroup = new QGroupBox(tr("Erstellung"), groupsHost);
+    auto *creationGroup = new QGroupBox(tr("Creation"), groupsHost);
     auto *creationLayout = new QVBoxLayout(creationGroup);
     creationLayout->setContentsMargins(6, 6, 6, 6);
     creationLayout->setSpacing(4);
 
-    m_createObjectButton = makeSidebarButton(tr("Objekt"), creationGroup);
+    m_createObjectButton = makeSidebarButton(tr("Object"), creationGroup);
     connect(m_createObjectButton, &QPushButton::clicked, this, &SystemEditorPage::onAddObject);
     creationLayout->addWidget(m_createObjectButton);
 
-    m_createAsteroidNebulaButton = makeSidebarButton(tr("Asteroid / Nebel"), creationGroup);
+    m_createAsteroidNebulaButton = makeSidebarButton(tr("Asteroid / Nebula"), creationGroup);
     connect(m_createAsteroidNebulaButton, &QPushButton::clicked,
             this, &SystemEditorPage::onCreateAsteroidNebulaZone);
     creationLayout->addWidget(m_createAsteroidNebulaButton);
@@ -4252,7 +4252,7 @@ void SystemEditorPage::setupRightSidebar()
     connect(m_createJumpButton, &QPushButton::clicked, this, &SystemEditorPage::onCreateJumpConnection);
     creationLayout->addWidget(m_createJumpButton);
 
-    m_createSunButton = makeSidebarButton(tr("Sonne"), creationGroup);
+    m_createSunButton = makeSidebarButton(tr("Sun"), creationGroup);
     connect(m_createSunButton, &QPushButton::clicked, this, &SystemEditorPage::onCreateSun);
     creationLayout->addWidget(m_createSunButton);
 
@@ -4260,19 +4260,19 @@ void SystemEditorPage::setupRightSidebar()
     connect(m_createPlanetButton, &QPushButton::clicked, this, &SystemEditorPage::onCreatePlanet);
     creationLayout->addWidget(m_createPlanetButton);
 
-    m_createLightButton = makeSidebarButton(tr("Lichtquelle"), creationGroup);
+    m_createLightButton = makeSidebarButton(tr("Light Source"), creationGroup);
     connect(m_createLightButton, &QPushButton::clicked, this, &SystemEditorPage::onCreateLightSource);
     creationLayout->addWidget(m_createLightButton);
 
-    m_createWreckButton = makeSidebarButton(tr("Wrack/Surprise"), creationGroup);
+    m_createWreckButton = makeSidebarButton(tr("Wreck/Surprise"), creationGroup);
     connect(m_createWreckButton, &QPushButton::clicked, this, &SystemEditorPage::onCreateSurprise);
     creationLayout->addWidget(m_createWreckButton);
 
-    m_createBuoyButton = makeSidebarButton(tr("Boje"), creationGroup);
+    m_createBuoyButton = makeSidebarButton(tr("Buoy"), creationGroup);
     connect(m_createBuoyButton, &QPushButton::clicked, this, &SystemEditorPage::onCreateBuoy);
     creationLayout->addWidget(m_createBuoyButton);
 
-    m_createWeaponPlatformButton = makeSidebarButton(tr("Waffenplattform"), creationGroup);
+    m_createWeaponPlatformButton = makeSidebarButton(tr("Weapons Platform"), creationGroup);
     connect(m_createWeaponPlatformButton, &QPushButton::clicked, this, &SystemEditorPage::onCreateWeaponPlatform);
     creationLayout->addWidget(m_createWeaponPlatformButton);
 
@@ -4280,7 +4280,7 @@ void SystemEditorPage::setupRightSidebar()
     connect(m_createDepotButton, &QPushButton::clicked, this, &SystemEditorPage::onCreateDepot);
     creationLayout->addWidget(m_createDepotButton);
 
-    m_createTradelaneButton = makeSidebarButton(tr("Tradelane"), creationGroup);
+    m_createTradelaneButton = makeSidebarButton(tr("Trade Lane"), creationGroup);
     connect(m_createTradelaneButton, &QPushButton::clicked, this, &SystemEditorPage::onCreateTradeLane);
     creationLayout->addWidget(m_createTradelaneButton);
 
@@ -4297,12 +4297,12 @@ void SystemEditorPage::setupRightSidebar()
     creationLayout->addWidget(m_createRingButton);
     creationLayout->addStretch(1);
 
-    auto *editingGroup = new QGroupBox(tr("Bearbeitung"), groupsHost);
+    auto *editingGroup = new QGroupBox(tr("Editing"), groupsHost);
     auto *editingLayout = new QVBoxLayout(editingGroup);
     editingLayout->setContentsMargins(6, 6, 6, 6);
     editingLayout->setSpacing(4);
 
-    m_editTradelaneButton = makeSidebarButton(tr("Tradelane"), editingGroup);
+    m_editTradelaneButton = makeSidebarButton(tr("Trade Lane"), editingGroup);
     connect(m_editTradelaneButton, &QPushButton::clicked, this, &SystemEditorPage::onEditTradeLane);
     editingLayout->addWidget(m_editTradelaneButton);
 
@@ -4314,7 +4314,7 @@ void SystemEditorPage::setupRightSidebar()
     connect(m_editRingButton, &QPushButton::clicked, this, &SystemEditorPage::onEditRing);
     editingLayout->addWidget(m_editRingButton);
 
-    m_addExclusionZoneButton = makeSidebarButton(tr("Exclusion Zone hinzufügen..."), editingGroup);
+    m_addExclusionZoneButton = makeSidebarButton(tr("Add Exclusion Zone..."), editingGroup);
     connect(m_addExclusionZoneButton, &QPushButton::clicked,
             this, &SystemEditorPage::onCreateExclusionZone);
     editingLayout->addWidget(m_addExclusionZoneButton);
@@ -4347,7 +4347,7 @@ void SystemEditorPage::setupRightSidebar()
     m_objectJumpCombo = new QComboBox(m_rightSidebar);
     m_objectJumpCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     jumpRow->addWidget(m_objectJumpCombo, 1);
-    m_objectJumpButton = new QPushButton(tr("Springen"), m_rightSidebar);
+    m_objectJumpButton = new QPushButton(tr("Jump"), m_rightSidebar);
     connect(m_objectJumpButton, &QPushButton::clicked, this, &SystemEditorPage::jumpToSelectedFromSidebar);
     jumpRow->addWidget(m_objectJumpButton);
     layout->addLayout(jumpRow);
@@ -4369,7 +4369,7 @@ void SystemEditorPage::setupRightSidebar()
     m_saveFileButton->setMinimumHeight(34);
     connect(m_saveFileButton, &QPushButton::clicked, this, [this]() {
         if (!save())
-            QMessageBox::warning(this, tr("Speichern fehlgeschlagen"), tr("The system file could not be saved."));
+            QMessageBox::warning(this, tr("Save Failed"), tr("The system file could not be saved."));
     });
     layout->addWidget(m_saveFileButton);
     layout->addStretch(1);
@@ -4450,7 +4450,7 @@ void SystemEditorPage::refreshObjectList()
 
     refreshObjectJumpList();
     m_systemFileInfoLabel->setText(QStringLiteral("%1").arg(QFileInfo(m_document->filePath()).fileName()));
-    m_systemStatsLabel->setText(tr("Objekte: %1\nZonen: %2")
+    m_systemStatsLabel->setText(tr("Objects: %1\nZones: %2")
                                     .arg(m_document->objects().size())
                                     .arg(m_document->zones().size()));
     applyObjectListSearchFilter();
@@ -4612,14 +4612,14 @@ void SystemEditorPage::showMapContextMenu(const QPoint &globalPos,
         if (zoneEntries.size() == 1) {
             QAction *zoneHeader = menu.addAction(zoneEntries.first().label);
             zoneHeader->setEnabled(false);
-            rotateTargets.insert(menu.addAction(tr("Zone rotieren")), zoneEntries.first().nickname);
+            rotateTargets.insert(menu.addAction(tr("Rotate Zone")), zoneEntries.first().nickname);
             editTargets.insert(menu.addAction(tr("Edit Object")), zoneEntries.first().nickname);
             deleteTargets.insert(menu.addAction(tr("Delete Object")), zoneEntries.first().nickname);
         } else {
             QMenu *zonesMenu = menu.addMenu(tr("Zones under cursor"));
             for (const ZoneMenuEntry &entry : std::as_const(zoneEntries)) {
                 QMenu *zoneMenu = zonesMenu->addMenu(entry.label);
-                rotateTargets.insert(zoneMenu->addAction(tr("Zone rotieren")), entry.nickname);
+                rotateTargets.insert(zoneMenu->addAction(tr("Rotate Zone")), entry.nickname);
                 editTargets.insert(zoneMenu->addAction(tr("Edit Object")), entry.nickname);
                 deleteTargets.insert(zoneMenu->addAction(tr("Delete Object")), entry.nickname);
             }
@@ -5543,7 +5543,7 @@ void SystemEditorPage::updateIniEditorForSelection()
     m_applyIniButton->setEnabled(hasSelection);
     if (!hasSelection) {
         if (m_selectedNicknames.isEmpty())
-            m_iniEditor->setPlaceholderText(tr("Wähle links ein Objekt oder eine Zone aus."));
+            m_iniEditor->setPlaceholderText(tr("Select an object or zone on the left."));
         else
             m_iniEditor->setPlaceholderText(tr("Multi-selection is active. The object editor supports exactly one entry only."));
     }
@@ -5560,7 +5560,7 @@ void SystemEditorPage::updateEditorModeUi()
 
     if (m_selectedNicknames.isEmpty()) {
         if (m_emptyEditorLabel)
-            m_emptyEditorLabel->setText(tr("Wähle links ein Objekt oder eine Zone aus."));
+            m_emptyEditorLabel->setText(tr("Select an object or zone on the left."));
         m_editorStack->setCurrentWidget(m_emptyEditorPage);
         return;
     }
@@ -5594,7 +5594,7 @@ void SystemEditorPage::rebuildMultiSelectionEditorList()
     }
 
     for (const QString &nickname : m_selectedNicknames) {
-        QString kindText = tr("Objekt");
+        QString kindText = tr("Object");
         if (m_document) {
             for (const auto &zone : m_document->zones()) {
                 if (zone->nickname() == nickname) {
@@ -5635,7 +5635,7 @@ QWidget *SystemEditorPage::buildMultiSelectionRow(const QString &nickname, const
     textLayout->addWidget(subtitle);
     layout->addWidget(textHost, 1);
 
-    auto *removeButton = new QPushButton(tr("Aus Auswahl"), row);
+    auto *removeButton = new QPushButton(tr("From Selection"), row);
     removeButton->setMinimumHeight(26);
     connect(removeButton, &QPushButton::clicked, this, [this, nickname]() {
         removeNicknameFromSelection(nickname);
@@ -5859,7 +5859,7 @@ void SystemEditorPage::applyIniEditorChanges()
     const IniSection &section = parsed.first();
     const QString sectionName = section.name.trimmed().toLower();
     if (m_selectedNicknames.size() != 1) {
-        QMessageBox::information(this, tr("Mehrfachauswahl"),
+        QMessageBox::information(this, tr("Multi-selection"),
                                  tr("The object editor can edit exactly one entry at a time only."));
         return;
     }
@@ -6009,22 +6009,22 @@ void SystemEditorPage::updateSelectionSummary()
         if (m_selectionTitleLabel)
             m_selectionTitleLabel->setText(tr("No object selected"));
         if (m_selectionSubtitleLabel)
-            m_selectionSubtitleLabel->setText(tr("Wähle ein Objekt oder eine Zone in der Karte oder Liste aus."));
-        emit selectionStatusChanged(tr("0 Objekte markiert"));
+            m_selectionSubtitleLabel->setText(tr("Select an object or zone on the map or in the list."));
+        emit selectionStatusChanged(tr("0 objects selected"));
         return;
     }
 
     if (m_selectedNicknames.isEmpty()) {
         m_selectionTitleLabel->setText(tr("No object selected"));
-        m_selectionSubtitleLabel->setText(tr("Wähle ein Objekt oder eine Zone in der Karte oder Liste aus."));
-        emit selectionStatusChanged(tr("0 Objekte markiert"));
+        m_selectionSubtitleLabel->setText(tr("Select an object or zone on the map or in the list."));
+        emit selectionStatusChanged(tr("0 objects selected"));
         return;
     }
 
     if (m_selectedNicknames.size() > 1) {
-        m_selectionTitleLabel->setText(tr("%1 Objekte markiert").arg(m_selectedNicknames.size()));
-        m_selectionSubtitleLabel->setText(tr("Mehrfachauswahl aktiv. Bearbeiten und Löschen wirken auf die aktuelle Auswahl."));
-        emit selectionStatusChanged(tr("%1 Objekte markiert").arg(m_selectedNicknames.size()));
+        m_selectionTitleLabel->setText(tr("%1 objects selected").arg(m_selectedNicknames.size()));
+        m_selectionSubtitleLabel->setText(tr("Multi-selection active. Editing and deleting affect the current selection."));
+        emit selectionStatusChanged(tr("%1 objects selected").arg(m_selectedNicknames.size()));
         return;
     }
 
@@ -6033,9 +6033,9 @@ void SystemEditorPage::updateSelectionSummary()
     if (SolarObject *obj = findObjectByNickname(nickname)) {
         m_selectionTitleLabel->setText(objectHeaderDisplayTitle(*obj, gameRoot));
         const int groupCount = objectGroupNicknames(obj->nickname()).size();
-        QString subtitle = tr("Objekt · %1").arg(solarObjectTypeLabel(obj->type()));
+        QString subtitle = tr("Object - %1").arg(solarObjectTypeLabel(obj->type()));
         if (groupCount > 1)
-            subtitle += tr(" · %1 parts").arg(groupCount);
+            subtitle += tr(" - %1 parts").arg(groupCount);
         m_selectionSubtitleLabel->setText(subtitle);
         emit selectionStatusChanged(groupCount > 1 ? tr("1 object group selected") : tr("1 object selected"));
         return;
@@ -6045,7 +6045,7 @@ void SystemEditorPage::updateSelectionSummary()
         if (zone->nickname() == nickname) {
             m_selectionTitleLabel->setText(zoneHeaderDisplayTitle(*zone, gameRoot));
             const QString zoneType = zone->zoneType().trimmed().isEmpty() ? tr("Zone") : zone->zoneType().trimmed();
-            m_selectionSubtitleLabel->setText(tr("Zone · %1").arg(zoneType));
+            m_selectionSubtitleLabel->setText(tr("Zone - %1").arg(zoneType));
             emit selectionStatusChanged(tr("1 object selected"));
             return;
         }
@@ -6059,8 +6059,8 @@ void SystemEditorPage::updateSelectionSummary()
     }
 
     m_selectionTitleLabel->setText(tr("No object selected"));
-    m_selectionSubtitleLabel->setText(tr("Wähle ein Objekt oder eine Zone in der Karte oder Liste aus."));
-    emit selectionStatusChanged(tr("0 Objekte markiert"));
+    m_selectionSubtitleLabel->setText(tr("Select an object or zone on the map or in the list."));
+    emit selectionStatusChanged(tr("0 objects selected"));
 }
 
 void SystemEditorPage::updateSidebarButtons()
@@ -9254,7 +9254,7 @@ void SystemEditorPage::finalizeExclusionZonePlacement(const QPointF &edgeScenePo
     }
     if (findZoneByNickname(requestedNickname) || findObjectByNickname(requestedNickname)) {
         QMessageBox::warning(this, tr("Exclusion Zone"),
-                             tr("Im aktuellen System existiert bereits ein Objekt oder eine Zone mit diesem Nickname."));
+                             tr("An object or zone with this nickname already exists in the current system."));
         cancelExclusionZonePlacement();
         return;
     }
@@ -9351,7 +9351,7 @@ void SystemEditorPage::finalizeSimpleZonePlacement(const QPointF &edgeScenePos)
     }
     if (findZoneByNickname(requestedNickname) || findObjectByNickname(requestedNickname)) {
         QMessageBox::warning(this, tr("Create Zone"),
-                             tr("Im aktuellen System existiert bereits ein Objekt oder eine Zone mit diesem Nickname."));
+                             tr("An object or zone with this nickname already exists in the current system."));
         cancelSimpleZonePlacement();
         return;
     }
@@ -9465,7 +9465,7 @@ void SystemEditorPage::finalizePatrolZonePlacement(const QPointF &endScenePos)
     }
     if (findZoneByNickname(request.nickname) || findObjectByNickname(request.nickname)) {
         QMessageBox::warning(this, tr("Create Patrol Zone"),
-                             tr("Im aktuellen System existiert bereits ein Objekt oder eine Zone mit diesem Nickname."));
+                             tr("An object or zone with this nickname already exists in the current system."));
         cancelPatrolZonePlacement();
         return;
     }

@@ -306,10 +306,10 @@ CreateFieldZoneDialog::CreateFieldZoneDialog(flatlas::domain::SystemDocument *do
     m_typeCombo = new QComboBox(this);
     m_typeCombo->addItem(tr("Asteroid"), static_cast<int>(CreateFieldZoneResult::Type::Asteroid));
     m_typeCombo->addItem(tr("Nebula"), static_cast<int>(CreateFieldZoneResult::Type::Nebula));
-    form->addRow(tr("Typ:"), m_typeCombo);
+    form->addRow(tr("Type:"), m_typeCombo);
 
     m_nicknameEdit = new QLineEdit(this);
-    form->addRow(tr("Zonenname:"), m_nicknameEdit);
+    form->addRow(tr("Zone Name:"), m_nicknameEdit);
 
     m_ingameNameEdit = new QLineEdit(this);
     m_ingameNameEdit->setPlaceholderText(tr("Ingame Name (optional)"));
@@ -318,7 +318,7 @@ CreateFieldZoneDialog::CreateFieldZoneDialog(flatlas::domain::SystemDocument *do
     m_referenceCombo = new QComboBox(this);
     m_referenceCombo->setEditable(true);
     m_referenceCombo->setInsertPolicy(QComboBox::NoInsert);
-    form->addRow(tr("Referenzdatei:"), m_referenceCombo);
+    form->addRow(tr("Reference File:"), m_referenceCombo);
 
     m_musicCombo = new QComboBox(this);
     m_musicCombo->setEditable(true);
@@ -356,7 +356,7 @@ CreateFieldZoneDialog::CreateFieldZoneDialog(flatlas::domain::SystemDocument *do
     interferenceLayout->setContentsMargins(0, 0, 0, 0);
     interferenceLayout->setSpacing(8);
 
-    m_interferenceCheck = new QCheckBox(tr("setzen"), interferenceHost);
+    m_interferenceCheck = new QCheckBox(tr("Set"), interferenceHost);
     interferenceLayout->addWidget(m_interferenceCheck);
     interferenceLayout->addWidget(m_interferenceSpin, 1);
     form->addRow(tr("Interference:"), interferenceHost);
@@ -366,7 +366,7 @@ CreateFieldZoneDialog::CreateFieldZoneDialog(flatlas::domain::SystemDocument *do
     fogColorLayout->setContentsMargins(0, 0, 0, 0);
     fogColorLayout->setSpacing(8);
     m_fogColorEdit = new QLineEdit(QStringLiteral("40, 28, 120"), m_fogColorRow);
-    m_fogColorButton = new QPushButton(tr("Farbe wählen"), m_fogColorRow);
+    m_fogColorButton = new QPushButton(tr("Choose Color"), m_fogColorRow);
     fogColorLayout->addWidget(m_fogColorEdit, 1);
     fogColorLayout->addWidget(m_fogColorButton);
     form->addRow(tr("Fog Color:"), m_fogColorRow);
@@ -378,7 +378,7 @@ CreateFieldZoneDialog::CreateFieldZoneDialog(flatlas::domain::SystemDocument *do
     auto *spaceDustLayout = new QHBoxLayout(spaceDustHost);
     spaceDustLayout->setContentsMargins(0, 0, 0, 0);
     spaceDustLayout->setSpacing(8);
-    m_spaceDustCheck = new QCheckBox(tr("setzen"), spaceDustHost);
+    m_spaceDustCheck = new QCheckBox(tr("Set"), spaceDustHost);
     m_spaceDustCheck->setChecked(true);
     spaceDustLayout->addWidget(m_spaceDustCheck);
     spaceDustLayout->addWidget(m_spaceDustCombo, 1);
@@ -390,13 +390,13 @@ CreateFieldZoneDialog::CreateFieldZoneDialog(flatlas::domain::SystemDocument *do
     form->addRow(tr("Dust Max Particles:"), m_spaceDustParticlesSpin);
 
     m_commentEdit = new QLineEdit(this);
-    m_commentEdit->setPlaceholderText(tr("z. B. Devon Field"));
+    m_commentEdit->setPlaceholderText(tr("e.g. Devon Field"));
     form->addRow(tr("Comment:"), m_commentEdit);
 
     rootLayout->addLayout(form);
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
-    buttons->button(QDialogButtonBox::Ok)->setText(tr("Erstellen"));
+    buttons->button(QDialogButtonBox::Ok)->setText(tr("Create"));
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     rootLayout->addWidget(buttons);
@@ -721,14 +721,14 @@ void CreateFieldZoneDialog::accept()
         for (const auto &zone : m_document->zones()) {
             if (zone && zone->nickname().compare(nickname, Qt::CaseInsensitive) == 0) {
                 QMessageBox::warning(this, tr("Create Zone"),
-                                     tr("Eine Zone mit diesem Nickname existiert bereits."));
+                                     tr("A zone with this nickname already exists."));
                 return;
             }
         }
         for (const auto &obj : m_document->objects()) {
             if (obj && obj->nickname().compare(nickname, Qt::CaseInsensitive) == 0) {
                 QMessageBox::warning(this, tr("Create Zone"),
-                                     tr("Ein Objekt mit diesem Nickname existiert bereits."));
+                                     tr("An object with this nickname already exists."));
                 return;
             }
         }

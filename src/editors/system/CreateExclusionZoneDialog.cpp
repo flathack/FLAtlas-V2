@@ -25,7 +25,7 @@ CreateExclusionZoneDialog::CreateExclusionZoneDialog(const QString &nicknameSugg
     , m_fieldZoneNickname(fieldZoneNickname)
     , m_supportsShell(supportsShell)
 {
-    setWindowTitle(tr("Exclusion Zone hinzufuegen"));
+    setWindowTitle(tr("Add Exclusion Zone"));
     setMinimumWidth(560);
 
     auto *rootLayout = new QVBoxLayout(this);
@@ -37,11 +37,11 @@ CreateExclusionZoneDialog::CreateExclusionZoneDialog(const QString &nicknameSugg
 
     m_fieldZoneEdit = new QLineEdit(fieldZoneNickname, this);
     m_fieldZoneEdit->setReadOnly(true);
-    form->addRow(tr("Feld-Zone:"), m_fieldZoneEdit);
+    form->addRow(tr("Field Zone:"), m_fieldZoneEdit);
 
     m_fieldFileEdit = new QLineEdit(fieldFileRelativePath, this);
     m_fieldFileEdit->setReadOnly(true);
-    form->addRow(tr("Referenzdatei:"), m_fieldFileEdit);
+    form->addRow(tr("Reference File:"), m_fieldFileEdit);
 
     m_shapeCombo = new QComboBox(this);
     m_shapeCombo->addItems({QStringLiteral("SPHERE"),
@@ -105,7 +105,7 @@ CreateExclusionZoneDialog::CreateExclusionZoneDialog(const QString &nicknameSugg
     rootLayout->addLayout(form);
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
-    buttons->button(QDialogButtonBox::Ok)->setText(tr("Erstellen"));
+    buttons->button(QDialogButtonBox::Ok)->setText(tr("Create"));
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     rootLayout->addWidget(buttons);

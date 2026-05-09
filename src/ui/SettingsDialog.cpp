@@ -225,14 +225,14 @@ void SettingsDialog::setupUi()
 
     m_themeCombo = new QComboBox(generalTab);
     m_themeCombo->addItems(flatlas::core::Theme::instance().availableThemes());
-    generalLayout->addRow(tr("Design:"), m_themeCombo);
+    generalLayout->addRow(tr("Theme:"), m_themeCombo);
 
-    m_updateCheckBox = new QCheckBox(tr("Update-Check beim Start aktivieren"), generalTab);
+    m_updateCheckBox = new QCheckBox(tr("Enable update check on startup"), generalTab);
     generalLayout->addRow(QString(), m_updateCheckBox);
 
     m_restoreTabsCheckBox = new QCheckBox(tr("Restore open tabs on startup"), generalTab);
     generalLayout->addRow(QString(), m_restoreTabsCheckBox);
-    tabs->addTab(generalTab, tr("Allgemein"));
+    tabs->addTab(generalTab, tr("General"));
 
     auto *themeColorsTab = new QWidget(tabs);
     auto *themeColorsRoot = new QVBoxLayout(themeColorsTab);
