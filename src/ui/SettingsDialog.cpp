@@ -276,7 +276,7 @@ void SettingsDialog::setupUi()
 
     auto *pinnedTab = new QWidget(tabs);
     auto *pinnedLayout = new QVBoxLayout(pinnedTab);
-    auto *pinnedHint = new QLabel(tr("Ausgewaehlte Tools werden dauerhaft als Tabs angezeigt. Der Mod Manager ist immer aktiv."), pinnedTab);
+    auto *pinnedHint = new QLabel(tr("Selected tools are permanently shown as tabs. Mod Manager is always active."), pinnedTab);
     pinnedHint->setWordWrap(true);
     pinnedLayout->addWidget(pinnedHint);
     for (const ToolChoice &tool : toolChoices()) {
@@ -300,7 +300,7 @@ void SettingsDialog::setupUi()
         rowLayout->setContentsMargins(0, 0, 0, 0);
         auto *name = new QLabel(app.name, row);
         rowLayout->addWidget(name, 1);
-        auto *button = new QPushButton(app.websiteUrl.isEmpty() ? tr("Download") : tr("Oeffnen"), row);
+        auto *button = new QPushButton(app.websiteUrl.isEmpty() ? tr("Download") : tr("Open"), row);
         rowLayout->addWidget(button);
         suiteLayout->addWidget(row);
         if (app.websiteUrl.isEmpty()) {
@@ -331,7 +331,7 @@ void SettingsDialog::setupUi()
     m_configPathEdit = new QLineEdit(pathRow);
     m_configPathEdit->setReadOnly(true);
     pathLayout->addWidget(m_configPathEdit, 1);
-    auto *choosePathButton = new QPushButton(tr("Speicherort waehlen"), pathRow);
+    auto *choosePathButton = new QPushButton(tr("Choose Location"), pathRow);
     pathLayout->addWidget(choosePathButton);
     configLayout->addWidget(pathRow);
 
@@ -340,8 +340,8 @@ void SettingsDialog::setupUi()
     actionsLayout->setContentsMargins(0, 0, 0, 0);
     auto *importButton = new QPushButton(tr("Import"), actionsRow);
     auto *exportButton = new QPushButton(tr("Export"), actionsRow);
-    auto *backupButton = new QPushButton(tr("Backup anlegen"), actionsRow);
-    auto *applyJsonButton = new QPushButton(tr("JSON uebernehmen"), actionsRow);
+    auto *backupButton = new QPushButton(tr("Create Backup"), actionsRow);
+    auto *applyJsonButton = new QPushButton(tr("Apply JSON"), actionsRow);
     actionsLayout->addWidget(importButton);
     actionsLayout->addWidget(exportButton);
     actionsLayout->addWidget(backupButton);
@@ -366,7 +366,7 @@ void SettingsDialog::setupUi()
 
     auto *idsTab = new QWidget(tabs);
     auto *idsLayout = new QVBoxLayout(idsTab);
-    auto *idsHint = new QLabel(tr("Neue IDS-Strings und Infocards werden standardmaessig in der FLAtlas-DLL angelegt. Hier kann eine Mod-eigene Resource-DLL als Ziel gesetzt werden."), idsTab);
+    auto *idsHint = new QLabel(tr("New IDS strings and infocards are created in the FLAtlas DLL by default. You can set a mod-owned resource DLL as the target here."), idsTab);
     idsHint->setWordWrap(true);
     idsLayout->addWidget(idsHint);
 
@@ -376,16 +376,16 @@ void SettingsDialog::setupUi()
     m_idsTargetDllEdit = new QLineEdit(idsPathRow);
     m_idsTargetDllEdit->setPlaceholderText(ResourceDllWriter::preferredFlatlasDllName());
     idsPathLayout->addWidget(m_idsTargetDllEdit, 1);
-    auto *chooseIdsDllButton = new QPushButton(tr("DLL waehlen"), idsPathRow);
+    auto *chooseIdsDllButton = new QPushButton(tr("Choose DLL"), idsPathRow);
     idsPathLayout->addWidget(chooseIdsDllButton);
     idsLayout->addWidget(idsPathRow);
 
     auto *idsActionsRow = new QWidget(idsTab);
     auto *idsActionsLayout = new QHBoxLayout(idsActionsRow);
     idsActionsLayout->setContentsMargins(0, 0, 0, 0);
-    auto *saveIdsTargetButton = new QPushButton(tr("Ziel speichern"), idsActionsRow);
-    auto *resetIdsTargetButton = new QPushButton(tr("FLAtlas-DLL verwenden"), idsActionsRow);
-    auto *migrateIdsButton = new QPushButton(tr("FLAtlas-Eintraege uebernehmen"), idsActionsRow);
+    auto *saveIdsTargetButton = new QPushButton(tr("Save Target"), idsActionsRow);
+    auto *resetIdsTargetButton = new QPushButton(tr("Use FLAtlas DLL"), idsActionsRow);
+    auto *migrateIdsButton = new QPushButton(tr("Import FLAtlas Entries"), idsActionsRow);
     idsActionsLayout->addWidget(saveIdsTargetButton);
     idsActionsLayout->addWidget(resetIdsTargetButton);
     idsActionsLayout->addStretch();
@@ -404,10 +404,10 @@ void SettingsDialog::setupUi()
 
     auto *resetTab = new QWidget(tabs);
     auto *resetLayout = new QVBoxLayout(resetTab);
-    auto *resetHint = new QLabel(tr("Setzt FLAtlas auf Werkseinstellungen zurueck. Mod-Installationen und Spieldaten werden nicht geloescht."), resetTab);
+    auto *resetHint = new QLabel(tr("Resets FLAtlas to factory settings. Mod installations and game data are not deleted."), resetTab);
     resetHint->setWordWrap(true);
     resetLayout->addWidget(resetHint);
-    auto *resetButton = new QPushButton(tr("Programm auf Werkseinstellung zuruecksetzen"), resetTab);
+    auto *resetButton = new QPushButton(tr("Reset Application to Defaults"), resetTab);
     resetLayout->addWidget(resetButton, 0, Qt::AlignLeft);
     resetLayout->addStretch();
     tabs->addTab(resetTab, tr("Reset"));
@@ -477,8 +477,8 @@ void SettingsDialog::saveSettings()
 void SettingsDialog::resetToDefaults()
 {
     const auto answer = QMessageBox::question(this,
-                                              tr("Werkseinstellungen"),
-                                              tr("FLAtlas wirklich auf Werkseinstellungen zuruecksetzen?"));
+                                              tr("Factory Defaults"),
+                                              tr("Really reset FLAtlas to factory defaults?"));
     if (answer != QMessageBox::Yes)
         return;
     auto &config = flatlas::core::Config::instance();
@@ -496,7 +496,7 @@ void SettingsDialog::resetToDefaults()
     m_resetRequested = true;
     m_pinnedToolsChanged = true;
     loadSettings();
-    QMessageBox::information(this, tr("Werkseinstellungen"), tr("Die Einstellungen wurden zurueckgesetzt."));
+    QMessageBox::information(this, tr("Factory Defaults"), tr("Settings have been reset."));
 }
 
 void SettingsDialog::refreshConfigManager()
@@ -514,17 +514,17 @@ void SettingsDialog::chooseConfigPath()
     auto &config = flatlas::core::Config::instance();
     const QString current = config.filePath().isEmpty() ? flatlas::core::Config::defaultConfigPath() : config.filePath();
     const QString path = QFileDialog::getSaveFileName(this,
-                                                      tr("Config-Speicherort waehlen"),
+                                                      tr("Choose Config Location"),
                                                       current,
-                                                      tr("JSON-Dateien (*.json);;Alle Dateien (*)"));
+                                                      tr("JSON Files (*.json);;All Files (*)"));
     if (path.isEmpty())
         return;
 
     if (!config.setConfigPath(path)) {
-        QMessageBox::warning(this, tr("Config"), tr("Der neue Speicherort konnte nicht geschrieben werden."));
+        QMessageBox::warning(this, tr("Config"), tr("The new location could not be written."));
         return;
     }
-    m_configStatusLabel->setText(tr("Config-Speicherort aktualisiert."));
+    m_configStatusLabel->setText(tr("Config location updated."));
     refreshConfigManager();
 }
 
@@ -533,11 +533,11 @@ void SettingsDialog::importConfig()
     const QString path = QFileDialog::getOpenFileName(this,
                                                       tr("Config importieren"),
                                                       {},
-                                                      tr("JSON-Dateien (*.json);;Alle Dateien (*)"));
+                                                      tr("JSON Files (*.json);;All Files (*)"));
     if (path.isEmpty())
         return;
     if (!flatlas::core::Config::instance().importFrom(path)) {
-        QMessageBox::warning(this, tr("Config"), tr("Die Config konnte nicht importiert werden."));
+        QMessageBox::warning(this, tr("Config"), tr("The config could not be imported."));
         return;
     }
     loadSettings();
@@ -549,11 +549,11 @@ void SettingsDialog::exportConfig()
     const QString path = QFileDialog::getSaveFileName(this,
                                                       tr("Config exportieren"),
                                                       flatlas::core::Config::instance().filePath(),
-                                                      tr("JSON-Dateien (*.json);;Alle Dateien (*)"));
+                                                      tr("JSON Files (*.json);;All Files (*)"));
     if (path.isEmpty())
         return;
     if (!flatlas::core::Config::instance().exportTo(path)) {
-        QMessageBox::warning(this, tr("Config"), tr("Die Config konnte nicht exportiert werden."));
+        QMessageBox::warning(this, tr("Config"), tr("The config could not be exported."));
         return;
     }
     m_configStatusLabel->setText(tr("Config exportiert."));
@@ -563,7 +563,7 @@ void SettingsDialog::createConfigBackup()
 {
     QString backupPath;
     if (!flatlas::core::Config::instance().createBackup(&backupPath)) {
-        QMessageBox::warning(this, tr("Config"), tr("Es konnte kein Backup angelegt werden."));
+        QMessageBox::warning(this, tr("Config"), tr("Could not create a backup."));
         return;
     }
     m_configStatusLabel->setText(tr("Backup angelegt: %1").arg(backupPath));
@@ -574,13 +574,13 @@ void SettingsDialog::applyConfigJson()
     QJsonParseError err;
     const QJsonDocument doc = QJsonDocument::fromJson(m_configJsonEdit->toPlainText().toUtf8(), &err);
     if (err.error != QJsonParseError::NoError || !doc.isObject()) {
-        QMessageBox::warning(this, tr("Config"), tr("Das JSON ist ungueltig oder kein Objekt."));
+        QMessageBox::warning(this, tr("Config"), tr("The JSON is invalid or not an object."));
         return;
     }
     auto &config = flatlas::core::Config::instance();
     config.setData(doc.object());
     if (!config.save()) {
-        QMessageBox::warning(this, tr("Config"), tr("Die Config konnte nicht gespeichert werden."));
+        QMessageBox::warning(this, tr("Config"), tr("The config could not be saved."));
         return;
     }
     loadSettings();
@@ -607,7 +607,7 @@ void SettingsDialog::refreshIdsTargetDllSettings()
             displayed = effective;
         status = tr("Aktiver Kontext: %1\nWirksame Ziel-DLL: %2").arg(gamePath, effective);
     } else if (!configured.isEmpty()) {
-        status = tr("Wirksame Ziel-DLL: %1. Kein aktiver Freelancer-Kontext geladen.").arg(configured);
+        status = tr("Effective target DLL: %1. No active Freelancer context loaded.").arg(configured);
     }
 
     m_idsTargetDllEdit->setText(displayed);
@@ -621,7 +621,7 @@ void SettingsDialog::chooseIdsTargetDll()
     const QString path = QFileDialog::getOpenFileName(this,
                                                       tr("Ziel-DLL fuer IDS/Infocards waehlen"),
                                                       startDir,
-                                                      tr("DLL-Dateien (*.dll);;Alle Dateien (*.*)"));
+                                                      tr("DLL Files (*.dll);;All Files (*.*)"));
     if (path.isEmpty())
         return;
     m_idsTargetDllEdit->setText(QFileInfo(path).fileName());
@@ -640,7 +640,7 @@ bool SettingsDialog::saveIdsTargetDllSettings(bool offerMigration)
         return true;
     }
     if (!dllName.endsWith(QStringLiteral(".dll"), Qt::CaseInsensitive)) {
-        QMessageBox::warning(this, tr("IDS/Infocards"), tr("Bitte eine DLL-Datei als Ziel angeben."));
+        QMessageBox::warning(this, tr("IDS/Infocards"), tr("Please enter a DLL file as target."));
         return false;
     }
 
@@ -662,14 +662,14 @@ void SettingsDialog::resetIdsTargetDll()
     config.setString(QStringLiteral("idsCreationTargetDll"), QString());
     config.save();
     refreshIdsTargetDllSettings();
-    m_idsTargetStatusLabel->setText(tr("Neue Eintraege verwenden wieder die FLAtlas-DLL."));
+    m_idsTargetStatusLabel->setText(tr("New entries will use the FLAtlas DLL again."));
 }
 
 void SettingsDialog::migrateFlatlasIdsEntries()
 {
     const QString gamePath = activeGamePath();
     if (gamePath.isEmpty()) {
-        QMessageBox::information(this, tr("IDS/Infocards"), tr("Es ist kein Freelancer-Kontext geladen."));
+        QMessageBox::information(this, tr("IDS/Infocards"), tr("No Freelancer context is loaded."));
         return;
     }
 
@@ -679,7 +679,7 @@ void SettingsDialog::migrateFlatlasIdsEntries()
     if (targetDll.isEmpty())
         return;
     if (ResourceDllWriter::isFlatlasResourceDll(targetDll)) {
-        QMessageBox::information(this, tr("IDS/Infocards"), tr("Als Ziel ist bereits die FLAtlas-DLL ausgewaehlt."));
+        QMessageBox::information(this, tr("IDS/Infocards"), tr("The FLAtlas DLL is already selected as target."));
         return;
     }
 
@@ -691,9 +691,9 @@ void SettingsDialog::migrateFlatlasIdsEntriesToTarget(const QString &targetDll, 
     const QString gamePath = activeGamePath();
     if (gamePath.isEmpty()) {
         if (showNoEntriesMessage)
-            QMessageBox::information(this, tr("IDS/Infocards"), tr("Es ist kein Freelancer-Kontext geladen."));
+            QMessageBox::information(this, tr("IDS/Infocards"), tr("No Freelancer context is loaded."));
         else
-            m_idsTargetStatusLabel->setText(tr("Ziel-DLL geaendert. Kein aktiver Freelancer-Kontext fuer die Uebernahme geladen."));
+            m_idsTargetStatusLabel->setText(tr("Target DLL changed. No active Freelancer context loaded for migration."));
         return;
     }
 
@@ -706,17 +706,17 @@ void SettingsDialog::migrateFlatlasIdsEntriesToTarget(const QString &targetDll, 
 
     if (flatlasEntries.isEmpty()) {
         if (showNoEntriesMessage)
-            QMessageBox::information(this, tr("IDS/Infocards"), tr("In der FLAtlas-DLL wurden keine Eintraege gefunden."));
+            QMessageBox::information(this, tr("IDS/Infocards"), tr("No entries were found in the FLAtlas DLL."));
         else
-            m_idsTargetStatusLabel->setText(tr("Ziel-DLL geaendert. In der FLAtlas-DLL wurden keine Eintraege gefunden."));
+            m_idsTargetStatusLabel->setText(tr("Target DLL changed. No entries were found in the FLAtlas DLL."));
         return;
     }
 
     QDialog dialog(this);
-    dialog.setWindowTitle(tr("FLAtlas-Eintraege uebernehmen"));
+    dialog.setWindowTitle(tr("Import FLAtlas Entries"));
     dialog.resize(760, 480);
     auto *layout = new QVBoxLayout(&dialog);
-    auto *hint = new QLabel(tr("Waehle die Eintraege aus, die neu in %1 angelegt werden sollen. Bestehende FLAtlas-Eintraege und freelancer.ini-Zeilen bleiben erhalten.").arg(targetDll), &dialog);
+    auto *hint = new QLabel(tr("Select the entries that should be created in %1. Existing FLAtlas entries and freelancer.ini lines remain unchanged.").arg(targetDll), &dialog);
     hint->setWordWrap(true);
     layout->addWidget(hint);
 
@@ -730,14 +730,14 @@ void SettingsDialog::migrateFlatlasIdsEntriesToTarget(const QString &targetDll, 
     layout->addWidget(list, 1);
 
     auto *buttons = new QDialogButtonBox(&dialog);
-    auto *copyButton = buttons->addButton(tr("Auswahl uebernehmen"), QDialogButtonBox::AcceptRole);
-    buttons->addButton(tr("Skippen"), QDialogButtonBox::RejectRole);
+    auto *copyButton = buttons->addButton(tr("Import Selection"), QDialogButtonBox::AcceptRole);
+    buttons->addButton(tr("Skip"), QDialogButtonBox::RejectRole);
     layout->addWidget(buttons);
     connect(copyButton, &QPushButton::clicked, &dialog, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
     if (dialog.exec() != QDialog::Accepted) {
-        m_idsTargetStatusLabel->setText(tr("Ziel-DLL geaendert, Uebernahme geskippt."));
+        m_idsTargetStatusLabel->setText(tr("Target DLL changed, migration skipped."));
         return;
     }
 
@@ -769,7 +769,7 @@ void SettingsDialog::migrateFlatlasIdsEntriesToTarget(const QString &targetDll, 
         }
     }
 
-    m_idsTargetStatusLabel->setText(tr("%1 Eintraege wurden in %2 angelegt.").arg(copied).arg(targetDll));
+    m_idsTargetStatusLabel->setText(tr("%1 entries were created in %2.").arg(copied).arg(targetDll));
 }
 
 void SettingsDialog::refreshLanguageCombo()
@@ -917,7 +917,7 @@ QString SettingsDialog::toolsDirectory() const
 
 void SettingsDialog::startSuiteDownload(const QString &key, const QString &name, const QString &repoApiUrl)
 {
-    m_suiteStatusLabel->setText(tr("Suche letztes Release fuer %1...").arg(name));
+    m_suiteStatusLabel->setText(tr("Searching latest release for %1...").arg(name));
     QNetworkRequest request{QUrl(repoApiUrl)};
     request.setRawHeader("User-Agent", "FLAtlas-V2");
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
@@ -927,7 +927,7 @@ void SettingsDialog::startSuiteDownload(const QString &key, const QString &name,
         const QString error = reply->error() == QNetworkReply::NoError ? QString() : reply->errorString();
         reply->deleteLater();
         if (!error.isEmpty()) {
-            m_suiteStatusLabel->setText(tr("Release konnte nicht geladen werden: %1").arg(error));
+            m_suiteStatusLabel->setText(tr("Release could not be loaded: %1").arg(error));
             return;
         }
         const QJsonDocument doc = QJsonDocument::fromJson(bytes);
@@ -946,7 +946,7 @@ void SettingsDialog::startSuiteDownload(const QString &key, const QString &name,
             const QString htmlUrl = doc.object().value(QStringLiteral("html_url")).toString();
             if (!htmlUrl.isEmpty())
                 QDesktopServices::openUrl(QUrl(htmlUrl));
-            m_suiteStatusLabel->setText(tr("Kein Release-Asset gefunden. Release-Seite wurde geoeffnet."));
+            m_suiteStatusLabel->setText(tr("No release asset found. Release page was opened."));
             return;
         }
         downloadReleaseAsset(key, assetUrl);
@@ -964,12 +964,12 @@ void SettingsDialog::downloadReleaseAsset(const QString &name, const QUrl &url)
             break;
         }
     }
-    m_suiteStatusLabel->setText(tr("Lade %1 herunter...").arg(displayName));
+    m_suiteStatusLabel->setText(tr("Downloading %1...").arg(displayName));
     QNetworkRequest request(url);
     request.setRawHeader("User-Agent", "FLAtlas-V2");
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     auto *reply = m_network->get(request);
-    auto *progress = new QProgressDialog(tr("%1 wird heruntergeladen...").arg(displayName), tr("Abbrechen"), 0, 100, this);
+    auto *progress = new QProgressDialog(tr("Downloading %1...").arg(displayName), tr("Cancel"), 0, 100, this);
     progress->setWindowModality(Qt::WindowModal);
     progress->setMinimumDuration(0);
     connect(progress, &QProgressDialog::canceled, reply, &QNetworkReply::abort);
@@ -985,12 +985,12 @@ void SettingsDialog::downloadReleaseAsset(const QString &name, const QUrl &url)
         const QString error = reply->error() == QNetworkReply::NoError ? QString() : reply->errorString();
         reply->deleteLater();
         if (!error.isEmpty()) {
-            m_suiteStatusLabel->setText(tr("Download fehlgeschlagen: %1").arg(error));
+            m_suiteStatusLabel->setText(tr("Download failed: %1").arg(error));
             return;
         }
         QFile file(targetPath);
         if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            m_suiteStatusLabel->setText(tr("Datei konnte nicht geschrieben werden: %1").arg(targetPath));
+            m_suiteStatusLabel->setText(tr("File could not be written: %1").arg(targetPath));
             return;
         }
         file.write(bytes);
@@ -1038,7 +1038,7 @@ void SettingsDialog::updateSuiteButtons()
         QPushButton *button = m_suiteButtons.value(app.key);
         if (!button)
             continue;
-        button->setText(installedToolExe(app.key).isEmpty() ? tr("Download") : tr("Oeffnen"));
+        button->setText(installedToolExe(app.key).isEmpty() ? tr("Download") : tr("Open"));
     }
 }
 
@@ -1046,7 +1046,7 @@ void SettingsDialog::openInstalledTool(const QString &key)
 {
     const QString exePath = installedToolExe(key);
     if (exePath.isEmpty() || !QFileInfo::exists(exePath)) {
-        m_suiteStatusLabel->setText(tr("Tool wurde nicht gefunden. Bitte erneut herunterladen."));
+        m_suiteStatusLabel->setText(tr("Tool was not found. Please download it again."));
         return;
     }
     QProcess::startDetached(exePath, {}, QFileInfo(exePath).absolutePath());

@@ -347,8 +347,8 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
         auto *gizmoLayout = new QVBoxLayout(gizmoPanel);
         gizmoLayout->setContentsMargins(0, 0, 0, 0);
         gizmoLayout->setSpacing(6);
-        finishMoveButton = new QPushButton(QObject::tr("Speichern && Beenden"), gizmoPanel);
-        finishMoveButton->setToolTip(QObject::tr("MOVE bearbeiten beenden und die aktuelle Objektposition behalten"));
+        finishMoveButton = new QPushButton(QObject::tr("Save && Finish"), gizmoPanel);
+        finishMoveButton->setToolTip(QObject::tr("Finish MOVE editing and keep the current object position."));
         gizmoLayout->addWidget(finishMoveButton);
         gizmoLayout->addWidget(createdGizmo, 0, Qt::AlignHCenter);
         gizmoPanel->setVisible(false);
@@ -968,7 +968,7 @@ void MainWindow::createMenus()
     });
     addMenuAction(toolsMenu, flatlas::ui::launchIcon(), tr("&Launch Freelancer..."), this, &MainWindow::launchFreelancerFromContext);
 
-    auto *externalToolsMenu = menuBar()->addMenu(tr("Externe Tools"));
+    auto *externalToolsMenu = menuBar()->addMenu(tr("External Tools"));
     const QJsonObject externalTools = installedExternalTools();
     bool hasExternalTools = false;
     for (auto it = externalTools.constBegin(); it != externalTools.constEnd(); ++it) {
@@ -980,14 +980,14 @@ void MainWindow::createMenus()
         hasExternalTools = true;
         addMenuAction(externalToolsMenu, flatlas::ui::launchIcon(), name, this, [this, exePath, name]() {
             if (!QFileInfo::exists(exePath)) {
-                QMessageBox::warning(this, tr("Externe Tools"), tr("%1 wurde nicht gefunden:\n%2").arg(name, exePath));
+                QMessageBox::warning(this, tr("External Tools"), tr("%1 was not found:\n%2").arg(name, exePath));
                 return;
             }
             QProcess::startDetached(exePath, {}, QFileInfo(exePath).absolutePath());
         });
     }
     if (!hasExternalTools) {
-        auto *empty = externalToolsMenu->addAction(tr("Keine Tools installiert"));
+        auto *empty = externalToolsMenu->addAction(tr("No tools installed"));
         empty->setEnabled(false);
     }
 
@@ -1037,20 +1037,20 @@ void MainWindow::createMenus()
         });
     }
     helpMenu->addSeparator();
-    helpMenu->addAction(tr("&Über FL Atlas..."), this, [this]() {
-        QMessageBox::about(this, tr("Über FL Atlas"),
+    helpMenu->addAction(tr("&About FL Atlas..."), this, [this]() {
+        QMessageBox::about(this, tr("About FL Atlas"),
             tr("<h2>FL Atlas V2</h2>"
                "<p><b>Version:</b> v%1</p>"
-               "<p><b>Autor:</b> Steven</p>"
-               "<p><b>Lizenz:</b> MIT License</p>"
+               "<p><b>Author:</b> Steven</p>"
+               "<p><b>License:</b> MIT License</p>"
                "<hr>"
-               "<p>Ein visueller Editor für Freelancer-Systemdateien (INI). FL Atlas ist zusätzlich kompatibel mit FLMM-Mods, damit diese auch hier genutzt werden können.</p>"
-               "<p>Zeigt Systeme als interaktive 2-D/3-D-Karte an. Objekte, Zonen, Bases, Docking Rings, Tradelanes und Verbindungen können erstellt, bearbeitet und verschoben werden.</p>"
-               "<p>Vielen Dank an IGx89 für Freelancer Mod Manager (FLMM) und seine Arbeit für die Modding-Community.</p>"
+               "<p>A visual editor for Freelancer system files (INI). FL Atlas is also compatible with FLMM mods so they can be used here.</p>"
+               "<p>Systems are shown as interactive 2-D/3-D maps. Objects, zones, bases, docking rings, tradelanes, and connections can be created, edited, and moved.</p>"
+               "<p>Thanks to IGx89 for Freelancer Mod Manager (FLMM) and his work for the modding community.</p>"
                "<hr>"
-               "<p><b>Technologie:</b> C++ · Qt 6 · Qt3D</p>"
-               "<p><b>Spiel:</b> Freelancer (2003, Digital Anvil / Microsoft)</p>"
-               "<p>&copy; 2024–2025 flathack</p>")
+               "<p><b>Technology:</b> C++ ? Qt 6 ? Qt3D</p>"
+               "<p><b>Game:</b> Freelancer (2003, Digital Anvil / Microsoft)</p>"
+               "<p>&copy; 2024?2025 flathack</p>")
                 .arg(qApp->applicationVersion()));
     });
 
@@ -1387,12 +1387,12 @@ bool MainWindow::confirmCloseDirtyWidget(QWidget *widget, const QString &titleFo
 
     QMessageBox box(this);
     box.setIcon(QMessageBox::Warning);
-    box.setWindowTitle(tr("Ungespeicherte Änderungen"));
-    box.setText(tr("Im Tab \"%1\" gibt es ungespeicherte Änderungen.").arg(cleanTitle.isEmpty() ? tr("Unbenannt") : cleanTitle));
-    box.setInformativeText(tr("Möchtest du die Änderungen speichern, bevor geschlossen wird?"));
-    auto *saveButton = box.addButton(tr("Speichern"), QMessageBox::AcceptRole);
-    auto *discardButton = box.addButton(tr("Verwerfen"), QMessageBox::DestructiveRole);
-    auto *cancelButton = box.addButton(tr("Abbrechen"), QMessageBox::RejectRole);
+    box.setWindowTitle(tr("Unsaved Changes"));
+    box.setText(tr("Tab \"%1\" has unsaved changes.").arg(cleanTitle.isEmpty() ? tr("Untitled") : cleanTitle));
+    box.setInformativeText(tr("Do you want to save the changes before closing?"));
+    auto *saveButton = box.addButton(tr("Save"), QMessageBox::AcceptRole);
+    auto *discardButton = box.addButton(tr("Discard"), QMessageBox::DestructiveRole);
+    auto *cancelButton = box.addButton(tr("Cancel"), QMessageBox::RejectRole);
     box.setDefaultButton(qobject_cast<QPushButton *>(saveButton));
     box.exec();
 

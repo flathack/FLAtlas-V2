@@ -138,7 +138,7 @@ QWidget *CenterTabWidget::createCloseButton(QWidget *tabWidget)
     button->setIcon(closeIcon());
     button->setIconSize(QSize(14, 14));
     button->setFixedSize(22, 22);
-    button->setToolTip(tr("Tab schließen"));
+    button->setToolTip(tr("Close Tab"));
     connect(button, &QToolButton::clicked, this, [this, tabWidget]() {
         const int index = indexOf(tabWidget);
         if (index >= 0 && !isPinnedTab(index))
