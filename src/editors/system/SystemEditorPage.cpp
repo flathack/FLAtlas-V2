@@ -621,7 +621,7 @@ bool resolveIdsStringInput(const QString &gameRoot,
             dataset, targetDll, rewriteId, trimmed, &newGlobalId, &idsError)) {
         if (errorMessage) {
             *errorMessage = idsError.trimmed().isEmpty()
-                ? QObject::tr("Der IDS-Text konnte nicht geschrieben werden.")
+                ? QObject::tr("The IDS text could not be written.")
                 : idsError;
         }
         return false;
@@ -957,7 +957,7 @@ bool ensureEncounterParameterExists(flatlas::domain::SystemDocument *document,
     const QString nickname = encounterNickname.trimmed();
     if (nickname.isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Es wurde kein Encounter ausgewaehlt.");
+            *errorMessage = QObject::tr("No encounter was selected.");
         return false;
     }
 
@@ -974,7 +974,7 @@ bool ensureEncounterParameterExists(flatlas::domain::SystemDocument *document,
     const QString absolutePath = flatlas::core::PathUtils::ciResolvePath(dataDir, encounterRelPath);
     if (absolutePath.isEmpty() || !QFileInfo::exists(absolutePath)) {
         if (errorMessage) {
-            *errorMessage = QObject::tr("Fuer den Encounter '%1' wurde keine passende missions/encounters-Datei gefunden.")
+            *errorMessage = QObject::tr("No matching missions/encounters file was found for encounter '%1'.")
                                 .arg(nickname);
         }
         return false;
@@ -1594,7 +1594,7 @@ bool verifySavedTextFile(const QString &absolutePath,
     QFile verifyFile(absolutePath);
     if (!verifyFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
         if (errorMessage) {
-            *errorMessage = QObject::tr("Die geschriebene Datei konnte nicht erneut gelesen werden:\n%1")
+            *errorMessage = QObject::tr("The written file could not be read again:\n%1")
                                 .arg(absolutePath);
         }
         return false;
@@ -1602,7 +1602,7 @@ bool verifySavedTextFile(const QString &absolutePath,
 
     if (verifyFile.readAll() != expectedContent.toUtf8()) {
         if (errorMessage) {
-            *errorMessage = QObject::tr("Die geschriebene Datei stimmt nach dem Speichern nicht mit den erwarteten Daten ueberein:\n%1")
+            *errorMessage = QObject::tr("The written file does not match the expected data after saving:\n%1")
                                 .arg(absolutePath);
         }
         return false;
@@ -1911,7 +1911,7 @@ protected:
 
         const auto result = QMessageBox::question(this,
                                                   tr("Base Builder schließen"),
-                                                  tr("Die Änderungen im Base Builder sind noch nicht übernommen. Verwerfen?"));
+                                                  tr("The changes in the Base Builder have not been applied yet. Discard them?"));
         if (result == QMessageBox::Yes)
             QDialog::reject();
     }
@@ -2850,7 +2850,7 @@ void SystemEditorPage::setupUi()
     m_objectSearchEdit->setClearButtonEnabled(true);
     objectListLayout->addWidget(m_objectSearchEdit);
 
-    m_objectSearchHintLabel = new QLabel(tr("Keine Objekte gefunden"), objectListHost);
+    m_objectSearchHintLabel = new QLabel(tr("No objects found"), objectListHost);
     m_objectSearchHintLabel->setVisible(false);
     m_objectSearchHintLabel->setStyleSheet(QStringLiteral("color:#9ca3af; padding:0 2px 4px 2px;"));
     objectListLayout->addWidget(m_objectSearchHintLabel);
@@ -3593,7 +3593,7 @@ void SystemEditorPage::connectSignals()
         m_zoneRotateState.lastSceneY = scenePos.y();
         m_zoneRotateState.wheelOffset = 0.0f;
 
-        const QString helpText = tr("Maus bewegen oder Mausrad nutzen, um die Zone zu drehen. Linksklick speichert die Rotation.");
+        const QString helpText = tr("Move the mouse or use the mouse wheel to rotate the zone. Left-click saves the rotation.");
         m_mapView->setZoneRotationMode(true, helpText);
         emit selectionStatusChanged(helpText);
     }
@@ -3879,7 +3879,7 @@ bool SystemEditorPage::save()
 {
     m_lastSaveError.clear();
     if (!m_document || m_document->filePath().isEmpty()) {
-        m_lastSaveError = tr("Die Systemdatei besitzt keinen gueltigen Dateipfad.");
+        m_lastSaveError = tr("The system file has no valid file path.");
         return false;
     }
     QString generatedFileError;
@@ -3898,7 +3898,7 @@ bool SystemEditorPage::save()
     }
     bool ok = SystemPersistence::save(*m_document);
     if (!ok && m_lastSaveError.isEmpty()) {
-        m_lastSaveError = tr("Die System-INI konnte nicht auf den Datentraeger geschrieben werden:\n%1")
+        m_lastSaveError = tr("The system INI could not be written to disk:\n%1")
                               .arg(m_document->filePath());
     }
     if (ok) {
@@ -4062,8 +4062,8 @@ void SystemEditorPage::updateSaveButtonAppearance()
 
     m_saveFileButton->setEnabled(dirty);
     m_saveFileButton->setToolTip(dirty
-                                     ? tr("Ungespeicherte Änderungen vorhanden.")
-                                     : tr("Keine ausstehenden Änderungen zum Speichern."));
+                                     ? tr("Unsaved changes are present.")
+                                     : tr("There are no pending changes to save."));
     if (dirty) {
         m_saveFileButton->setStyleSheet(
             QStringLiteral("QPushButton { background:%1; color:%2; border:1px solid %3; border-radius:4px; font-weight:700; padding:6px 10px; }"
@@ -4195,7 +4195,7 @@ void SystemEditorPage::setupRightSidebar()
     layout->setContentsMargins(10, 10, 10, 10);
     layout->setSpacing(8);
 
-    m_selectionTitleLabel = new QLabel(tr("Kein Objekt ausgewählt"), m_rightSidebar);
+    m_selectionTitleLabel = new QLabel(tr("No object selected"), m_rightSidebar);
     m_selectionTitleLabel->setStyleSheet(QStringLiteral("font-size:24px; font-weight:700;"));
     layout->addWidget(m_selectionTitleLabel);
 
@@ -4365,11 +4365,11 @@ void SystemEditorPage::setupRightSidebar()
     m_systemStatsLabel->setWordWrap(true);
     layout->addWidget(m_systemStatsLabel);
 
-    m_saveFileButton = new QPushButton(tr("Änderungen in Datei schreiben"), m_rightSidebar);
+    m_saveFileButton = new QPushButton(tr("Write Changes to File"), m_rightSidebar);
     m_saveFileButton->setMinimumHeight(34);
     connect(m_saveFileButton, &QPushButton::clicked, this, [this]() {
         if (!save())
-            QMessageBox::warning(this, tr("Speichern fehlgeschlagen"), tr("Die Systemdatei konnte nicht gespeichert werden."));
+            QMessageBox::warning(this, tr("Speichern fehlgeschlagen"), tr("The system file could not be saved."));
     });
     layout->addWidget(m_saveFileButton);
     layout->addStretch(1);
@@ -4757,8 +4757,8 @@ void SystemEditorPage::onAddObject()
                         dataset, targetDll, 0, ingameName, &newGlobalId, &idsError)) {
                     assignedIdsName = newGlobalId;
                 } else if (!idsError.isEmpty()) {
-                    QMessageBox::warning(this, tr("IDS-Eintrag"),
-                        tr("Ingame-Name konnte nicht als IDS-Eintrag geschrieben werden:\n%1")
+                    QMessageBox::warning(this, tr("IDS Entry"),
+                        tr("Ingame name could not be written as IDS entry:\n%1")
                             .arg(idsError));
                 }
             }
@@ -4813,7 +4813,7 @@ void SystemEditorPage::onAddObject()
     });
 
     m_mapView->setPlacementMode(true,
-        tr("Klicke auf die Map, um '%1' zu platzieren. [Esc] oder Rechtsklick bricht ab.")
+        tr("Click the map to place '%1'. [Esc] or right-click cancels.")
             .arg(result.nickname));
 }
 
@@ -5157,8 +5157,8 @@ void SystemEditorPage::onDeleteSelected()
                                       || jumpObject->type() == SolarObject::JumpHole
                                       || !jumpObject->gotoTarget().trimmed().isEmpty();
             if (isJumpObject) {
-                if (!ensureSavedForCrossSystemOperation(tr("Jump-Verbindung loeschen"),
-                                                        tr("Jump-Verbindungen werden in beiden Systemdateien direkt entfernt."))) {
+                if (!ensureSavedForCrossSystemOperation(tr("Delete Jump Connection"),
+                                                        tr("Jump connections are removed directly in both system files."))) {
                     return;
                 }
 
@@ -5177,19 +5177,19 @@ void SystemEditorPage::onDeleteSelected()
                     }
                 }
 
-                QString prompt = tr("Die Jump-Verbindung '%1' wird aus dem aktuellen System entfernt.")
+                QString prompt = tr("The jump connection '%1' will be removed from the current system.")
                                      .arg(jumpObject->nickname());
                 bool removeRemoteSide = false;
                 if (!targetSystem.isEmpty() && !targetObject.isEmpty()) {
                     removeRemoteSide = true;
-                    prompt += tr("\n\nDie Gegenstelle '%1' in System '%2' wird ebenfalls entfernt, damit kein kaputter goto-Link zurueckbleibt.")
+                    prompt += tr("\n\nThe counterpart '%1' in system '%2' will also be removed so no broken goto link remains.")
                                   .arg(targetObject, targetSystem);
                 } else {
-                    prompt += tr("\n\nEs wurde keine vollstaendige Gegenstelle gefunden. Es wird nur die lokale Seite entfernt.");
+                    prompt += tr("\n\nNo complete counterpart was found. Only the local side will be removed.");
                 }
 
                 if (QMessageBox::question(this,
-                                          tr("Jump-Verbindung loeschen"),
+                                          tr("Delete Jump Connection"),
                                           prompt,
                                           QMessageBox::Yes | QMessageBox::Cancel,
                                           QMessageBox::Cancel) != QMessageBox::Yes) {
@@ -5205,8 +5205,8 @@ void SystemEditorPage::onDeleteSelected()
 
                 QString errorMessage;
                 if (!JumpConnectionService::deleteConnection(deleteRequest, &errorMessage)) {
-                    QMessageBox::warning(this, tr("Jump-Verbindung loeschen"),
-                                         errorMessage.isEmpty() ? tr("Die Jump-Verbindung konnte nicht geloescht werden.")
+                    QMessageBox::warning(this, tr("Delete Jump Connection"),
+                                         errorMessage.isEmpty() ? tr("The jump connection could not be deleted.")
                                                                 : errorMessage);
                     return;
                 }
@@ -5545,7 +5545,7 @@ void SystemEditorPage::updateIniEditorForSelection()
         if (m_selectedNicknames.isEmpty())
             m_iniEditor->setPlaceholderText(tr("Wähle links ein Objekt oder eine Zone aus."));
         else
-            m_iniEditor->setPlaceholderText(tr("Mehrfachauswahl aktiv. Der Objekt-Editor unterstützt nur genau einen Eintrag."));
+            m_iniEditor->setPlaceholderText(tr("Multi-selection is active. The object editor supports exactly one entry only."));
     }
     m_openSystemIniButton->setEnabled(m_document && !m_document->filePath().trimmed().isEmpty());
     updateEditorModeUi();
@@ -5571,7 +5571,7 @@ void SystemEditorPage::updateEditorModeUi()
     }
 
     if (m_multiSelectionLabel) {
-        m_multiSelectionLabel->setText(tr("%1 markierte Einträge").arg(m_selectedNicknames.size()));
+        m_multiSelectionLabel->setText(tr("%1 selected entries").arg(m_selectedNicknames.size()));
     }
     rebuildMultiSelectionEditorList();
     m_editorStack->setCurrentWidget(m_multiSelectionPage);
@@ -5845,14 +5845,14 @@ void SystemEditorPage::applyIniEditorChanges()
     const QString text = m_iniEditor->toPlainText().trimmed();
     if (text.isEmpty()) {
         QMessageBox::warning(this, tr("Leerer Inhalt"),
-                             tr("Der Objekt-Editor enthält keine INI-Section."));
+                             tr("The object editor does not contain an INI section."));
         return;
     }
 
     const IniDocument parsed = IniParser::parseText(text);
     if (parsed.isEmpty()) {
         QMessageBox::warning(this, tr("Ungültige Section"),
-                             tr("Bitte mindestens eine gültige INI-Section einfügen."));
+                             tr("Please insert at least one valid INI section."));
         return;
     }
 
@@ -5860,7 +5860,7 @@ void SystemEditorPage::applyIniEditorChanges()
     const QString sectionName = section.name.trimmed().toLower();
     if (m_selectedNicknames.size() != 1) {
         QMessageBox::information(this, tr("Mehrfachauswahl"),
-                                 tr("Der Objekt-Editor kann nur genau einen Eintrag gleichzeitig bearbeiten."));
+                                 tr("The object editor can edit exactly one entry at a time only."));
         return;
     }
 
@@ -5869,8 +5869,8 @@ void SystemEditorPage::applyIniEditorChanges()
 
     if (sectionName == QStringLiteral("object")) {
         if (!selectedRootObject) {
-            QMessageBox::warning(this, tr("Section passt nicht"),
-                                 tr("Die Section passt nicht zum aktuell ausgewählten Eintrag."));
+            QMessageBox::warning(this, tr("Section Mismatch"),
+                                 tr("The section does not match the currently selected entry."));
             return;
         }
 
@@ -5881,7 +5881,7 @@ void SystemEditorPage::applyIniEditorChanges()
         for (const IniSection &parsedSection : parsed) {
             if (parsedSection.name.trimmed().compare(QStringLiteral("object"), Qt::CaseInsensitive) != 0) {
                 QMessageBox::warning(this, tr("Ungültige Section"),
-                                     tr("Bei Parent-/Child-Gruppen dürfen nur [Object]-Sections bearbeitet werden."));
+                                     tr("Only [Object] sections may be edited in parent/child groups."));
                 return;
             }
 
@@ -5895,8 +5895,8 @@ void SystemEditorPage::applyIniEditorChanges()
         }
 
         if (parsedNicknames != expectedNicknames) {
-            QMessageBox::warning(this, tr("Section passt nicht"),
-                                 tr("Die bearbeitete Auswahl muss Parent und alle zugehörigen Child-Objekte vollständig enthalten."));
+            QMessageBox::warning(this, tr("Section Mismatch"),
+                                 tr("The edited selection must completely contain the parent and all linked child objects."));
             return;
         }
 
@@ -5965,7 +5965,7 @@ void SystemEditorPage::applyIniEditorChanges()
             const QString parsedNickname = section.value(QStringLiteral("nickname")).trimmed();
             if (parsedNickname.isEmpty()) {
                 QMessageBox::warning(this, tr("Ungueltige Section"),
-                                     tr("Die LightSource-Section benoetigt einen Nickname."));
+                                     tr("The LightSource section requires a nickname."));
                 return;
             }
             if (parsedNickname.compare(previousNickname, Qt::CaseInsensitive) != 0
@@ -5973,7 +5973,7 @@ void SystemEditorPage::applyIniEditorChanges()
                     || findZoneByNickname(parsedNickname)
                     || findLightSourceSectionIndexByNickname(parsedNickname) >= 0)) {
                 QMessageBox::warning(this, tr("Ungueltige Section"),
-                                     tr("Der Nickname kollidiert mit einem vorhandenen Eintrag."));
+                                     tr("The nickname conflicts with an existing entry."));
                 return;
             }
             extras[index] = section;
@@ -5989,8 +5989,8 @@ void SystemEditorPage::applyIniEditorChanges()
         }
     }
 
-    QMessageBox::warning(this, tr("Section passt nicht"),
-                         tr("Die Section passt nicht zum aktuell ausgewählten Eintrag."));
+    QMessageBox::warning(this, tr("Section Mismatch"),
+                         tr("The section does not match the currently selected entry."));
 }
 
 void SystemEditorPage::openSystemIniExternally() const
@@ -6007,7 +6007,7 @@ void SystemEditorPage::updateSelectionSummary()
         return;
     if (!m_selectionTitleLabel || !m_selectionSubtitleLabel || !m_document) {
         if (m_selectionTitleLabel)
-            m_selectionTitleLabel->setText(tr("Kein Objekt ausgewählt"));
+            m_selectionTitleLabel->setText(tr("No object selected"));
         if (m_selectionSubtitleLabel)
             m_selectionSubtitleLabel->setText(tr("Wähle ein Objekt oder eine Zone in der Karte oder Liste aus."));
         emit selectionStatusChanged(tr("0 Objekte markiert"));
@@ -6015,7 +6015,7 @@ void SystemEditorPage::updateSelectionSummary()
     }
 
     if (m_selectedNicknames.isEmpty()) {
-        m_selectionTitleLabel->setText(tr("Kein Objekt ausgewählt"));
+        m_selectionTitleLabel->setText(tr("No object selected"));
         m_selectionSubtitleLabel->setText(tr("Wähle ein Objekt oder eine Zone in der Karte oder Liste aus."));
         emit selectionStatusChanged(tr("0 Objekte markiert"));
         return;
@@ -6058,7 +6058,7 @@ void SystemEditorPage::updateSelectionSummary()
         return;
     }
 
-    m_selectionTitleLabel->setText(tr("Kein Objekt ausgewählt"));
+    m_selectionTitleLabel->setText(tr("No object selected"));
     m_selectionSubtitleLabel->setText(tr("Wähle ein Objekt oder eine Zone in der Karte oder Liste aus."));
     emit selectionStatusChanged(tr("0 Objekte markiert"));
 }
@@ -6130,9 +6130,9 @@ void SystemEditorPage::updateSidebarButtons()
 
     const bool hasPendingEditorChanges = hasPendingIniEditorChangesForSelection();
     const bool canRotateObject = hasSingleSelection && isObject && !hasPendingEditorChanges;
-    const QString defaultLeftTooltip = tr("Dreht das ausgewählte Objekt um 15 Grad nach links um die Yaw-Achse.");
-    const QString defaultRightTooltip = tr("Dreht das ausgewählte Objekt um 15 Grad nach rechts um die Yaw-Achse.");
-    const QString blockedTooltip = tr("Bitte zuerst die offenen Änderungen im Objekt-Editor übernehmen, bevor per Button rotiert wird.");
+    const QString defaultLeftTooltip = tr("Rotates the selected object 15 degrees left around the yaw axis.");
+    const QString defaultRightTooltip = tr("Rotates the selected object 15 degrees right around the yaw axis.");
+    const QString blockedTooltip = tr("Please apply the pending changes in the object editor before rotating with the button.");
     if (m_rotateLeftButton) {
         m_rotateLeftButton->setEnabled(canRotateObject);
         m_rotateLeftButton->setToolTip(hasPendingEditorChanges ? blockedTooltip : defaultLeftTooltip);
@@ -6197,7 +6197,7 @@ bool SystemEditorPage::ensureSavedForCrossSystemOperation(const QString &actionT
     const int answer = QMessageBox::question(
         this,
         actionTitle,
-        tr("%1\n\nDas aktuelle System hat ungespeicherte Aenderungen. Diese muessen zuerst gespeichert werden, bevor die verknuepfte Cross-System-Operation sicher ausgefuehrt werden kann.")
+        tr("%1\n\nThe current system has unsaved changes. Save them first before the linked cross-system operation can run safely.")
             .arg(actionDescription),
         QMessageBox::Save | QMessageBox::Cancel,
         QMessageBox::Save);
@@ -6746,10 +6746,10 @@ void SystemEditorPage::createQuickObject(SolarObject::Type type,
 
 void SystemEditorPage::showNotYetPorted(const QString &featureName, const QString &v1Hint) const
 {
-    QString text = tr("%1 ist in V2 noch nicht portiert.").arg(featureName);
+    QString text = tr("%1 has not been ported to V2 yet.").arg(featureName);
     if (!v1Hint.trimmed().isEmpty())
         text += tr("\n\nV1-Referenz: %1").arg(v1Hint);
-    QMessageBox::information(const_cast<SystemEditorPage *>(this), tr("Noch nicht portiert"), text);
+    QMessageBox::information(const_cast<SystemEditorPage *>(this), tr("Not Ported Yet"), text);
 }
 
 void SystemEditorPage::openSystemSettingsDialog()
@@ -6784,7 +6784,7 @@ void SystemEditorPage::openSystemSettingsDialog()
 
     if (dialog.shouldNormalizeSectionOrder() && (hadDirtyStateBefore || settingsChanged)) {
         QMessageBox::warning(this, tr("System-Einstellungen"),
-                             tr("Die Section-Reihenfolge kann nur ohne ungespeicherte Aenderungen standardisiert werden.\n"
+                             tr("The section order can only be standardized without unsaved changes.\n"
                                 "Bitte speichere oder verwerfe zuerst bestehende Aenderungen und starte die Standardisierung danach separat."));
         return;
     }
@@ -6793,7 +6793,7 @@ void SystemEditorPage::openSystemSettingsDialog()
     if (settingsChanged && !SystemSettingsService::apply(m_document.get(), editedSettings, &errorMessage)) {
         QMessageBox::warning(this, tr("System-Einstellungen"),
                              errorMessage.trimmed().isEmpty()
-                                 ? tr("Die System-Einstellungen konnten nicht uebernommen werden.")
+                                 ? tr("The system settings could not be applied.")
                                  : errorMessage);
         return;
     }
@@ -6801,7 +6801,7 @@ void SystemEditorPage::openSystemSettingsDialog()
     if (dialog.shouldNormalizeSectionOrder()) {
         if (m_document->isDirty()) {
             QMessageBox::warning(this, tr("System-Einstellungen"),
-                                 tr("Die Section-Reihenfolge kann nur fuer den aktuellen Dateistand auf der Festplatte standardisiert werden.\n"
+                                 tr("The section order can only be standardized for the current file state on disk.\n"
                                     "Bitte speichere oder verwerfe zuerst ungespeicherte Aenderungen."));
             return;
         }
@@ -6811,7 +6811,7 @@ void SystemEditorPage::openSystemSettingsDialog()
         if (!SystemPersistence::normalizeSectionOrderInFile(m_document->filePath(), &changed, &errorMessage)) {
             QMessageBox::warning(this, tr("System-Einstellungen"),
                                  errorMessage.trimmed().isEmpty()
-                                     ? tr("Die Section-Reihenfolge konnte nicht standardisiert werden.")
+                                     ? tr("The section order could not be standardized.")
                                      : errorMessage);
             return;
         }
@@ -6854,7 +6854,7 @@ void SystemEditorPage::onCreateSun()
 
         if (findObjectByNickname(request.nickname) || findZoneByNickname(QStringLiteral("Zone_%1_death").arg(request.nickname))) {
             QMessageBox::warning(this, tr("Sonne erstellen"),
-                                 tr("Im aktuellen System existiert bereits ein Eintrag mit diesem Nickname."));
+                                 tr("An entry with this nickname already exists in the current system."));
             return;
         }
 
@@ -6873,7 +6873,7 @@ void SystemEditorPage::onCreateSun()
                 assignedIdsName = newGlobalId;
             } else {
                 QMessageBox::warning(this, tr("Sonne erstellen"),
-                                     tr("Der Ingame Name konnte nicht in die IDS-Daten geschrieben werden.\n%1")
+                                     tr("The ingame name could not be written to the IDS data.\n%1")
                                          .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
                 return;
             }
@@ -6889,7 +6889,7 @@ void SystemEditorPage::onCreateSun()
                 assignedIdsInfo = newGlobalId;
             } else {
                 QMessageBox::warning(this, tr("Sonne erstellen"),
-                                     tr("Der ids_info-Text konnte nicht in die IDS-Daten geschrieben werden.\n%1")
+                                     tr("The ids_info text could not be written to the IDS data.\n%1")
                                          .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
                 return;
             }
@@ -6960,7 +6960,7 @@ void SystemEditorPage::onCreateSun()
     connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
             placementGuard, [placementGuard]() { placementGuard->deleteLater(); });
     m_mapView->setPlacementMode(true,
-                                tr("Klicke auf die Map, um '%1' zu platzieren. [Esc] oder Rechtsklick bricht ab.")
+                                tr("Click the map to place '%1'. [Esc] or right-click cancels.")
                                     .arg(request.nickname));
 }
 
@@ -6993,7 +6993,7 @@ void SystemEditorPage::onCreateLightSource()
             || findObjectByNickname(request.nickname)
             || findZoneByNickname(request.nickname)) {
             QMessageBox::warning(this, tr("Lichtquelle erstellen"),
-                                 tr("Im aktuellen System existiert bereits ein Eintrag mit diesem Nickname."));
+                                 tr("An entry with this nickname already exists in the current system."));
             return;
         }
         const QPointF worldXZ = MapScene::qtToFl(scenePos.x(), scenePos.y());
@@ -7028,7 +7028,7 @@ void SystemEditorPage::onCreateLightSource()
     connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
             placementGuard, [placementGuard]() { placementGuard->deleteLater(); });
     m_mapView->setPlacementMode(true,
-                                tr("Klicke auf die Map, um '%1' zu platzieren. [Esc] oder Rechtsklick bricht ab.")
+                                tr("Click the map to place '%1'. [Esc] or right-click cancels.")
                                     .arg(request.nickname));
 }
 
@@ -7065,7 +7065,7 @@ void SystemEditorPage::onCreateSurprise()
             return;
         if (findObjectByNickname(request.nickname) || findZoneByNickname(request.nickname)) {
             QMessageBox::warning(this, tr("Surprise erstellen"),
-                                 tr("Im aktuellen System existiert bereits ein Eintrag mit diesem Nickname."));
+                                 tr("An entry with this nickname already exists in the current system."));
             return;
         }
 
@@ -7084,7 +7084,7 @@ void SystemEditorPage::onCreateSurprise()
                 assignedIdsName = newGlobalId;
             } else {
                 QMessageBox::warning(this, tr("Surprise erstellen"),
-                                     tr("Der Ingame Name konnte nicht in die IDS-Daten geschrieben werden.\n%1")
+                                     tr("The ingame name could not be written to the IDS data.\n%1")
                                          .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
                 return;
             }
@@ -7103,7 +7103,7 @@ void SystemEditorPage::onCreateSurprise()
                 assignedIdsInfo = newGlobalId;
             } else {
                 QMessageBox::warning(this, tr("Surprise erstellen"),
-                                     tr("Der ids_info-Text konnte nicht in die IDS-Daten geschrieben werden.\n%1")
+                                     tr("The ids_info text could not be written to the IDS data.\n%1")
                                          .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
                 return;
             }
@@ -7159,7 +7159,7 @@ void SystemEditorPage::onCreateSurprise()
     connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
             placementGuard, [placementGuard]() { placementGuard->deleteLater(); });
     m_mapView->setPlacementMode(true,
-                                tr("Klicke auf die Map, um '%1' zu platzieren. [Esc] oder Rechtsklick bricht ab.")
+                                tr("Click the map to place '%1'. [Esc] or right-click cancels.")
                                     .arg(request.nickname));
 }
 
@@ -7239,7 +7239,7 @@ void SystemEditorPage::onEditZonePopulation()
         if (absolutePath.isEmpty() || !QFileInfo::exists(absolutePath)) {
             QMessageBox::warning(this,
                                  tr("Zone Population"),
-                                 tr("Für den Encounter '%1' wurde keine passende missions/encounters-Datei gefunden.")
+                                 tr("No matching missions/encounters file was found for encounter '%1'.")
                                      .arg(encounter));
             return;
         }
@@ -7292,7 +7292,7 @@ void SystemEditorPage::onCreateJumpConnection()
     const auto universe = loadUniverseForEditor(gameRoot);
     if (!universe || universe->systems.isEmpty()) {
         QMessageBox::warning(this, tr("Jump-Verbindung erstellen"),
-                             tr("Es konnten keine gueltigen Systeme aus universe.ini geladen werden."));
+                             tr("No valid systems could be loaded from universe.ini."));
         return;
     }
     const auto systems = universe->systems;
@@ -7343,14 +7343,14 @@ void SystemEditorPage::onCreateJumpConnection()
 
     if (request.destinationSystemFilePath.trimmed().isEmpty()) {
         QMessageBox::warning(this, tr("Jump-Verbindung erstellen"),
-                             tr("Das Zielsystem konnte nicht aufgeloest werden."));
+                             tr("The target system could not be resolved."));
         return;
     }
 
     QString errorMessage;
     if (!JumpConnectionService::createConnection(request, &errorMessage)) {
         QMessageBox::warning(this, tr("Jump-Verbindung erstellen"),
-                             errorMessage.isEmpty() ? tr("Die Jump-Verbindung konnte nicht erstellt werden.")
+                             errorMessage.isEmpty() ? tr("The jump connection could not be created.")
                                                     : errorMessage);
         return;
     }
@@ -7393,7 +7393,7 @@ void SystemEditorPage::onCreatePlanet()
         const QString deathZoneNickname = QStringLiteral("Zone_%1_death").arg(request.nickname);
         if (findObjectByNickname(request.nickname) || findZoneByNickname(deathZoneNickname)) {
             QMessageBox::warning(this, tr("Planet erstellen"),
-                                 tr("Im aktuellen System existiert bereits ein Eintrag mit diesem Nickname."));
+                                 tr("An entry with this nickname already exists in the current system."));
             return;
         }
 
@@ -7406,7 +7406,7 @@ void SystemEditorPage::onCreatePlanet()
         if (!flatlas::infrastructure::IdsDataService::writeStringEntry(
                 dataset, targetDll, 0, request.ingameName, &assignedIdsName, &idsError)) {
             QMessageBox::warning(this, tr("Planet erstellen"),
-                                 tr("Der Planetenname konnte nicht in die IDS-Daten geschrieben werden.\n%1")
+                                 tr("The planet name could not be written to the IDS data.\n%1")
                                      .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
             return;
         }
@@ -7416,7 +7416,7 @@ void SystemEditorPage::onCreatePlanet()
         if (!flatlas::infrastructure::IdsDataService::writeInfocardEntry(
                 dataset, targetDll, 0, infocardXml, &assignedIdsInfo, &idsError)) {
             QMessageBox::warning(this, tr("Planet erstellen"),
-                                 tr("Der Infocard-Text konnte nicht als neuer ids_info-Eintrag gespeichert werden.\n%1")
+                                 tr("The infocard text could not be saved as a new ids_info entry.\n%1")
                                      .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
             return;
         }
@@ -7483,7 +7483,7 @@ void SystemEditorPage::onCreatePlanet()
     connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
             placementGuard, [placementGuard]() { placementGuard->deleteLater(); });
     m_mapView->setPlacementMode(true,
-                                tr("Klicke auf die Map, um '%1' zu platzieren. [Esc] oder Rechtsklick bricht ab.")
+                                tr("Click the map to place '%1'. [Esc] or right-click cancels.")
                                     .arg(request.nickname));
 }
 
@@ -7501,15 +7501,15 @@ void SystemEditorPage::onCreateBuoy()
     if (request.count < minimumCount) {
         QMessageBox::warning(this, tr("Bojen erstellen"),
                              request.mode == CreateBuoyRequest::Mode::Line
-                                 ? tr("Es muessen mindestens zwei Bojen erstellt werden.")
-                                 : tr("Es muessen mindestens drei Bojen fuer einen Kreis erstellt werden."));
+                                 ? tr("At least two buoys must be created.")
+                                 : tr("At least three buoys must be created for a circle."));
         return;
     }
     if (request.mode == CreateBuoyRequest::Mode::Line
         && request.lineConstraint == CreateBuoyRequest::LineConstraint::FixedSpacing
         && request.spacingMeters < 100) {
         QMessageBox::warning(this, tr("Bojen erstellen"),
-                             tr("Der Abstand zwischen Bojen ist ungueltig."));
+                             tr("The distance between buoys is invalid."));
         return;
     }
 
@@ -7552,7 +7552,7 @@ void SystemEditorPage::onCreateWeaponPlatform()
             return;
         if (findObjectByNickname(request.nickname) || findZoneByNickname(request.nickname)) {
             QMessageBox::warning(this, tr("Waffenplattform erstellen"),
-                                 tr("Im aktuellen System existiert bereits ein Eintrag mit diesem Nickname."));
+                                 tr("An entry with this nickname already exists in the current system."));
             return;
         }
 
@@ -7570,7 +7570,7 @@ void SystemEditorPage::onCreateWeaponPlatform()
                 assignedIdsName = newGlobalId;
             } else {
                 QMessageBox::warning(this, tr("Waffenplattform erstellen"),
-                                     tr("Der Ingame Name konnte nicht in die IDS-Daten geschrieben werden.\n%1")
+                                     tr("The ingame name could not be written to the IDS data.\n%1")
                                          .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
                 return;
             }
@@ -7622,7 +7622,7 @@ void SystemEditorPage::onCreateWeaponPlatform()
     connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
             placementGuard, [placementGuard]() { placementGuard->deleteLater(); });
     m_mapView->setPlacementMode(true,
-                                tr("Klicke auf die Map, um '%1' zu platzieren. [Esc] oder Rechtsklick bricht ab.")
+                                tr("Click the map to place '%1'. [Esc] or right-click cancels.")
                                     .arg(request.nickname));
 }
 
@@ -7657,7 +7657,7 @@ void SystemEditorPage::onCreateRing()
         if (!hostObject) {
             QMessageBox::information(this,
                                      tr("Ring erstellen"),
-                                     tr("Bitte klicke auf einen Planeten oder eine Sonne, um einen Ring anzuhaengen."));
+                                     tr("Please click a planet or sun to attach a ring."));
             onCreateRing();
             return;
         }
@@ -7666,7 +7666,7 @@ void SystemEditorPage::onCreateRing()
     connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
             placementGuard, [placementGuard]() { placementGuard->deleteLater(); });
     m_mapView->setPlacementMode(true,
-                                tr("Klicke auf einen Planeten oder eine Sonne, um den Ring-Host auszuwaehlen."));
+                                tr("Click a planet or sun to select the ring host."));
 }
 
 void SystemEditorPage::onEditRing()
@@ -7683,7 +7683,7 @@ void SystemEditorPage::onEditRing()
     if (!hostObject || !RingEditService::hasRing(*hostObject)) {
         QMessageBox::information(this,
                                  tr("Ring bearbeiten"),
-                                 tr("Bitte waehle ein Objekt mit vorhandenem Ring oder direkt die Ring-Zone aus."));
+                                 tr("Please select an object with an existing ring or the ring zone directly."));
         return;
     }
 
@@ -7700,7 +7700,7 @@ void SystemEditorPage::onEditTradeLane()
         QMessageBox::warning(this,
                              tr("Trade Lane bearbeiten"),
                              detection.errorMessage.trimmed().isEmpty()
-                                 ? tr("Die ausgewaehlte Trade Lane konnte nicht erkannt werden.")
+                                 ? tr("The selected trade lane could not be recognized.")
                                  : detection.errorMessage);
         return;
     }
@@ -7713,7 +7713,7 @@ void SystemEditorPage::onEditTradeLane()
         const int answer = QMessageBox::question(
             this,
             tr("Trade Lane reparieren"),
-            tr("Die Trade Lane referenziert einen fehlenden Ring '%1'.\n\n"
+            tr("The trade lane references a missing ring '%1'.\n\n"
                "Soll der defekte %2-Verweis automatisch entfernt werden, damit die vorhandene Kette bearbeitet werden kann?")
                 .arg(detection.referencedNickname, brokenKey),
             QMessageBox::Yes | QMessageBox::No,
@@ -7725,7 +7725,7 @@ void SystemEditorPage::onEditTradeLane()
         if (!repairedRing) {
             QMessageBox::warning(this,
                                  tr("Trade Lane reparieren"),
-                                 tr("Der defekte Ring konnte nicht fuer die Reparatur vorbereitet werden."));
+                                 tr("The broken ring could not be prepared for repair."));
             return;
         }
         repairedRing->setRawEntries(removeRawEntriesByKey(repairedRing->rawEntries(), brokenKey));
@@ -7791,8 +7791,8 @@ void SystemEditorPage::onEditTradeLane()
     if (dialog.deleteRequested()) {
         const auto answer = QMessageBox::question(
             this,
-            tr("Trade Lane loeschen"),
-            tr("Soll die komplette Trade Lane mit %1 Ringen wirklich geloescht werden?")
+            tr("Delete Trade Lane"),
+            tr("Really delete the complete trade lane with %1 rings?")
                 .arg(chain.rings.size()),
             QMessageBox::Yes | QMessageBox::No,
             QMessageBox::No);
@@ -7800,7 +7800,7 @@ void SystemEditorPage::onEditTradeLane()
             return;
 
         auto *stack = flatlas::core::UndoManager::instance().stack();
-        stack->beginMacro(tr("Trade Lane loeschen"));
+        stack->beginMacro(tr("Delete Trade Lane"));
         for (const auto &ring : chain.rings)
             stack->push(new RemoveObjectCommand(m_document.get(), ring, tr("Remove Trade Lane Ring")));
         stack->endMacro();
@@ -7853,7 +7853,7 @@ void SystemEditorPage::onEditTradeLane()
         QMessageBox::warning(this,
                              tr("Trade Lane bearbeiten"),
                              idsError.trimmed().isEmpty()
-                                 ? tr("Die IDS-Texte der Trade Lane konnten nicht aktualisiert werden.")
+                                 ? tr("The trade lane IDS texts could not be updated.")
                                  : idsError);
         return;
     }
@@ -7880,7 +7880,7 @@ void SystemEditorPage::onEditTradeLane()
         QMessageBox::warning(this,
                              tr("Trade Lane bearbeiten"),
                              rebuildError.trimmed().isEmpty()
-                                 ? tr("Die Trade Lane konnte nicht neu aufgebaut werden.")
+                                 ? tr("The trade lane could not be rebuilt.")
                                  : rebuildError);
         return;
     }
@@ -7948,7 +7948,7 @@ void SystemEditorPage::onCreateBase()
             QMessageBox::warning(this,
                                  tr("Base erstellen"),
                                  errorMessage.trimmed().isEmpty()
-                                     ? tr("Die Base konnte nicht erstellt werden.")
+                                     ? tr("The base could not be created.")
                                      : errorMessage);
             return;
         }
@@ -7969,7 +7969,7 @@ void SystemEditorPage::onCreateBase()
     connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
             placementGuard, [placementGuard]() { placementGuard->deleteLater(); });
     m_mapView->setPlacementMode(true,
-                                tr("Klicke auf die Map, um die neue Base zu platzieren."));
+                                tr("Click the map to place the new base."));
 }
 
 void SystemEditorPage::onCreateDockingRing()
@@ -7991,7 +7991,7 @@ void SystemEditorPage::beginDockingRingPlacement()
     m_mapView->viewport()->installEventFilter(this);
     m_mapView->setPlacementMode(true,
                                 tr("1. Klick waehlt den Planeten. 2. Klick waehlt die Ringposition. 3. Klick bestaetigt und oeffnet den Dialog."));
-    emit selectionStatusChanged(tr("Docking-Ring: Waehle einen Planeten als Host."));
+    emit selectionStatusChanged(tr("Docking Ring: Select a planet as host."));
 }
 
 QPointF SystemEditorPage::projectDockingRingScenePos(const QPointF &scenePos) const
@@ -8063,7 +8063,7 @@ void SystemEditorPage::handleDockingRingPlacementClick(const QPointF &scenePos)
     if (m_dockingRingPlacement.step == DockingRingPlacementStep::SelectPlanet) {
         SolarObject *planet = findDockingRingPlanetAtScenePos(scenePos);
         if (!planet) {
-            emit selectionStatusChanged(tr("Docking-Ring: Nur Planeten koennen als Host verwendet werden."));
+            emit selectionStatusChanged(tr("Docking Ring: Only planets can be used as host."));
             return;
         }
 
@@ -8289,27 +8289,27 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
     request.factionDisplay = factionNicknameFromDisplay(request.factionDisplay);
 
     if (request.nickname.trimmed().isEmpty()) {
-        QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Bitte gib einen Nickname fuer den Docking Ring ein."));
+        QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Please enter a nickname for the docking ring."));
         return false;
     }
     for (const auto &objectPtr : m_document->objects()) {
         if (objectPtr && objectPtr->nickname().compare(request.nickname.trimmed(), Qt::CaseInsensitive) == 0) {
-            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Der Nickname '%1' existiert bereits.").arg(request.nickname.trimmed()));
+            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("The nickname '%1' already exists.").arg(request.nickname.trimmed()));
             return false;
         }
     }
     if (request.needsBase) {
         if (request.baseNickname.trimmed().isEmpty()) {
-            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Bitte gib einen Base-Nickname fuer den Planeten an."));
+            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Please enter a base nickname for the planet."));
             return false;
         }
         if (request.roomNames.isEmpty()) {
-            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Fuer eine neue planetare Base muss mindestens ein Room aktiviert sein."));
+            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("At least one room must be enabled for a new planetary base."));
             return false;
         }
         request.startRoom = DockingRingCreationService::chooseStartRoom(request.roomNames, request.startRoom);
         if (!request.roomNames.contains(request.startRoom, Qt::CaseInsensitive)) {
-            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Der Start-Room muss einer der aktivierten Rooms sein."));
+            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("The start room must be one of the enabled rooms."));
             return false;
         }
     }
@@ -8325,7 +8325,7 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
         QMessageBox::warning(this,
                              tr("Docking Ring erstellen"),
                              idsError.trimmed().isEmpty()
-                                 ? tr("Der IDS-Name fuer den Docking Ring konnte nicht aufgeloest werden.")
+                                 ? tr("The IDS name for the docking ring could not be resolved.")
                                  : idsError);
         return false;
     }
@@ -8339,7 +8339,7 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
     if (request.distanceToPlanetCore <= 0.0) {
         QMessageBox::warning(this,
                              tr("Docking Ring erstellen"),
-                             tr("Der Abstand zum Planetenkern muss groesser als 0 sein."));
+                             tr("The distance to the planet core must be greater than 0."));
         return false;
     }
 
@@ -8382,7 +8382,7 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
         QMessageBox::warning(this,
                              tr("Docking Ring erstellen"),
                              errorMessage.trimmed().isEmpty()
-                                 ? tr("Der Docking Ring konnte nicht erstellt werden.")
+                                 ? tr("The docking ring could not be created.")
                                  : errorMessage);
         return false;
     }
@@ -8406,7 +8406,7 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
     syncSceneSelectionFromNicknames(m_selectedNicknames);
     updateSelectionSummary();
     updateIniEditorForSelection();
-    emit selectionStatusChanged(tr("Docking-Ring '%1' wurde fuer '%2' vorbereitet.").arg(createResult.createdRing->nickname(), planet->nickname()));
+    emit selectionStatusChanged(tr("Docking ring '%1' was prepared for '%2'.").arg(createResult.createdRing->nickname(), planet->nickname()));
     return true;
 }
 
@@ -8584,7 +8584,7 @@ void SystemEditorPage::onCreateExclusionZone()
     ZoneItem *fieldZone = findZoneByNickname(selectedNickname);
     if (!fieldZone || !isFieldZone(*fieldZone)) {
         QMessageBox::warning(this, tr("Exclusion Zone"),
-                             tr("Bitte wähle zuerst eine Nebel- oder Asteroiden-Feldzone aus."));
+                             tr("Please select a nebula or asteroid field zone first."));
         return;
     }
 
@@ -8596,7 +8596,7 @@ void SystemEditorPage::onCreateExclusionZone()
                                           &linkedZoneNickname,
                                           &relativeFilePath)) {
         QMessageBox::warning(this, tr("Exclusion Zone"),
-                             tr("Für die ausgewählte Feld-Zone konnte keine verknüpfte Referenzdatei ermittelt werden."));
+                             tr("No linked reference file could be determined for the selected field zone."));
         return;
     }
 
@@ -8639,7 +8639,7 @@ void SystemEditorPage::beginFieldZonePlacement(const CreateFieldZoneResult &requ
         m_pendingFieldZoneCenterScenePos = scenePos;
         m_mapView->viewport()->installEventFilter(this);
         m_mapView->viewport()->setMouseTracking(true);
-        m_mapView->viewport()->setToolTip(tr("Maus bewegen und erneut klicken, um die Zonengröße festzulegen. Esc oder Rechtsklick bricht ab."));
+        m_mapView->viewport()->setToolTip(tr("Move the mouse and click again to set the zone size. Esc or right-click cancels."));
         updateFieldZonePlacementPreview(scenePos);
         placementGuard->deleteLater();
     });
@@ -8650,7 +8650,7 @@ void SystemEditorPage::beginFieldZonePlacement(const CreateFieldZoneResult &requ
     });
 
     m_mapView->setPlacementMode(true,
-        tr("Klicke auf die Map, um '%1' zu platzieren.").arg(request.nickname));
+        tr("Click the map to place '%1'.").arg(request.nickname));
 }
 
 void SystemEditorPage::beginSimpleZonePlacement(const CreateSimpleZoneRequest &request)
@@ -8691,7 +8691,7 @@ void SystemEditorPage::beginSimpleZonePlacement(const CreateSimpleZoneRequest &r
                                 request.shape.trimmed().compare(QStringLiteral("BOX"), Qt::CaseInsensitive) == 0
                                     ? tr("1. Klick setzt den Startpunkt fuer '%1'. 2. Klick Ende. 3. Klick Breite. 4. Klick speichert.")
                                           .arg(request.nickname)
-                                    : tr("Klicke auf die Map, um '%1' zu platzieren.").arg(request.nickname));
+                                    : tr("Click the map to place '%1'.").arg(request.nickname));
 }
 
 void SystemEditorPage::beginPatrolZonePlacement(const CreatePatrolZoneRequest &request)
@@ -8899,7 +8899,7 @@ void SystemEditorPage::beginTradeLanePlacement()
         updateTradeLanePlacementPreview(scenePos);
         m_mapView->setPlacementMode(
             true,
-            tr("2. Klick setzt das Ende der Trade Lane. Die Ring-Kette wird danach konfiguriert. [Esc] oder Rechtsklick bricht ab."));
+            tr("Second click sets the end of the trade lane. The ring chain is configured afterwards. [Esc] or right-click cancels."));
         placementGuard->deleteLater();
     });
     connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
@@ -9078,7 +9078,7 @@ void SystemEditorPage::finalizeFieldZonePlacement(const QPointF &edgeScenePos)
     QFile sourceFile(m_pendingFieldZoneRequest->referenceAbsolutePath);
     if (!sourceFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QMessageBox::warning(this, tr("Zone erstellen"),
-                             tr("Die Referenzdatei konnte nicht gelesen werden:\n%1")
+                             tr("The reference file could not be read:\n%1")
                                  .arg(m_pendingFieldZoneRequest->referenceAbsolutePath));
         cancelFieldZonePlacement();
         return;
@@ -9108,8 +9108,8 @@ void SystemEditorPage::finalizeFieldZonePlacement(const QPointF &edgeScenePos)
                 dataset, targetDll, 0, m_pendingFieldZoneRequest->ingameName.trimmed(), &newGlobalId, &idsError)) {
             QMessageBox::warning(this, tr("Zone erstellen"),
                                  idsError.trimmed().isEmpty()
-                                     ? tr("Der Ingame-Name konnte nicht als IDS-Eintrag geschrieben werden.")
-                                     : tr("Der Ingame-Name konnte nicht als IDS-Eintrag geschrieben werden:\n%1")
+                                     ? tr("The ingame name could not be written as IDS entry.")
+                                     : tr("The ingame name could not be written as IDS entry:\n%1")
                                            .arg(idsError));
             cancelFieldZonePlacement();
             return;
@@ -9214,7 +9214,7 @@ void SystemEditorPage::beginExclusionZonePlacement(const CreateExclusionZoneResu
     });
 
     m_mapView->setPlacementMode(true,
-        tr("Klicke auf die Map, um '%1' zu platzieren.").arg(request.nickname));
+        tr("Click the map to place '%1'.").arg(request.nickname));
 }
 
 void SystemEditorPage::updateExclusionZonePlacementPreview(const QPointF &currentScenePos)
@@ -9248,7 +9248,7 @@ void SystemEditorPage::finalizeExclusionZonePlacement(const QPointF &edgeScenePo
     static const QRegularExpression validNickname(QStringLiteral("^[A-Za-z0-9_]+$"));
     if (requestedNickname.isEmpty() || !validNickname.match(requestedNickname).hasMatch()) {
         QMessageBox::warning(this, tr("Exclusion Zone"),
-                             tr("Der Nickname ist ungueltig. Bitte oeffne den Dialog erneut und pruefe den Namen."));
+                             tr("The nickname is invalid. Please reopen the dialog and check the name."));
         cancelExclusionZonePlacement();
         return;
     }
@@ -9276,7 +9276,7 @@ void SystemEditorPage::finalizeExclusionZonePlacement(const QPointF &edgeScenePo
                                           &relativeFilePath,
                                           &absoluteFilePath)) {
         QMessageBox::warning(this, tr("Exclusion Zone"),
-                             tr("Die verknüpfte Felddatei konnte nicht mehr aufgelöst werden."));
+                             tr("The linked field file could no longer be resolved."));
         cancelExclusionZonePlacement();
         return;
     }
@@ -9313,7 +9313,7 @@ void SystemEditorPage::finalizeExclusionZonePlacement(const QPointF &edgeScenePo
         const QString currentText = pendingFieldIniText(relativeFilePath, absoluteFilePath);
         if (currentText.isEmpty()) {
             QMessageBox::warning(this, tr("Exclusion Zone"),
-                                 tr("Die verknüpfte Felddatei konnte nicht gelesen werden."));
+                                 tr("The linked field file could not be read."));
             cancelExclusionZonePlacement();
             return;
         }
@@ -9345,7 +9345,7 @@ void SystemEditorPage::finalizeSimpleZonePlacement(const QPointF &edgeScenePos)
     static const QRegularExpression validNickname(QStringLiteral("^[A-Za-z0-9_]+$"));
     if (requestedNickname.isEmpty() || !validNickname.match(requestedNickname).hasMatch()) {
         QMessageBox::warning(this, tr("Zone erstellen"),
-                             tr("Der Nickname ist ungueltig. Bitte pruefe den Namen im Dialog."));
+                             tr("The nickname is invalid. Please check the name in the dialog."));
         cancelSimpleZonePlacement();
         return;
     }
@@ -9459,7 +9459,7 @@ void SystemEditorPage::finalizePatrolZonePlacement(const QPointF &endScenePos)
     static const QRegularExpression validNickname(QStringLiteral("^[A-Za-z0-9_]+$"));
     if (request.nickname.trimmed().isEmpty() || !validNickname.match(request.nickname.trimmed()).hasMatch()) {
         QMessageBox::warning(this, tr("Patrol-Zone erstellen"),
-                             tr("Der Nickname ist ungueltig. Bitte pruefe den Namen im Dialog."));
+                             tr("The nickname is invalid. Please check the name in the dialog."));
         cancelPatrolZonePlacement();
         return;
     }
@@ -9574,7 +9574,7 @@ void SystemEditorPage::finalizeBuoyPlacement(const QPointF &scenePos)
     const QString archetype = m_pendingBuoyRequest->archetype.trimmed().toLower();
     if (archetype.isEmpty()) {
         QMessageBox::warning(this, tr("Bojen erstellen"),
-                             tr("Es wurde kein gueltiger Bojentyp ausgewaehlt."));
+                             tr("No valid buoy type was selected."));
         cancelBuoyPlacement();
         return;
     }
@@ -9587,7 +9587,7 @@ void SystemEditorPage::finalizeBuoyPlacement(const QPointF &scenePos)
         const qreal directionLength = directionLine.length();
         if (directionLength <= 0.001) {
             QMessageBox::warning(this, tr("Bojen erstellen"),
-                                 tr("Die Richtung fuer die Bojenlinie ist ungueltig."));
+                                 tr("The direction for the buoy line is invalid."));
             m_mapView->setPlacementMode(true,
                                         tr("2. Klick bestimmt die Richtung fuer das Bojenmuster. [Esc] oder Rechtsklick bricht ab."));
             return;
@@ -9612,7 +9612,7 @@ void SystemEditorPage::finalizeBuoyPlacement(const QPointF &scenePos)
         const qreal radius = QLineF(m_pendingBuoyAnchorScenePos, scenePos).length();
         if (radius <= 0.001) {
             QMessageBox::warning(this, tr("Bojen erstellen"),
-                                 tr("Der Radius fuer den Bojenkreis ist ungueltig."));
+                                 tr("The radius for the buoy circle is invalid."));
             m_mapView->setPlacementMode(true,
                                         tr("2. Klick bestimmt den Radius fuer das Bojenmuster. [Esc] oder Rechtsklick bricht ab."));
             return;
@@ -9696,7 +9696,7 @@ void SystemEditorPage::finalizeTradeLanePlacement(const QPointF &endScenePos)
     const qreal laneLengthScene = laneLine.length();
     if (laneLengthScene <= 0.001) {
         QMessageBox::warning(this, tr("Trade Lane erstellen"),
-                             tr("Start- und Endpunkt der Trade Lane sind ungueltig."));
+                             tr("Start and end point of the trade lane are invalid."));
         m_mapView->setPlacementMode(true,
                                     tr("2. Klick setzt das Ende der Trade Lane. [Esc] oder Rechtsklick bricht ab."));
         return;
@@ -9723,13 +9723,13 @@ void SystemEditorPage::finalizeTradeLanePlacement(const QPointF &endScenePos)
     const CreateTradeLaneRequest request = dialog.result();
     if (request.ringCount < 2) {
         QMessageBox::warning(this, tr("Trade Lane erstellen"),
-                             tr("Es muessen mindestens zwei Trade-Lane-Ringe erstellt werden."));
+                             tr("At least two trade lane rings must be created."));
         cancelTradeLanePlacement();
         return;
     }
     if (request.loadout.trimmed().isEmpty()) {
         QMessageBox::warning(this, tr("Trade Lane erstellen"),
-                             tr("Bitte waehle ein gueltiges Loadout fuer die Trade Lane."));
+                             tr("Please select a valid loadout for the trade lane."));
         cancelTradeLanePlacement();
         return;
     }
@@ -9748,7 +9748,7 @@ void SystemEditorPage::finalizeTradeLanePlacement(const QPointF &endScenePos)
         const QString key = nickname.trimmed().toLower();
         if (usedNicknames.contains(key)) {
             QMessageBox::warning(this, tr("Trade Lane erstellen"),
-                                 tr("Der Ring-Nickname '%1' existiert bereits. Bitte waehle eine andere Startnummer.")
+                                 tr("The ring nickname '%1' already exists. Please choose another start number.")
                                      .arg(nickname));
             cancelTradeLanePlacement();
             return;
@@ -9766,8 +9766,8 @@ void SystemEditorPage::finalizeTradeLanePlacement(const QPointF &endScenePos)
         || !resolveIdsStringInput(gameRoot, request.endSpaceName, 0, QString(), &endSpaceNameId, &idsError)) {
         QMessageBox::warning(this, tr("Trade Lane erstellen"),
                              idsError.trimmed().isEmpty()
-                                 ? tr("Die IDS-Texte fuer die Trade Lane konnten nicht geschrieben werden.")
-                                 : tr("Die IDS-Texte fuer die Trade Lane konnten nicht geschrieben werden:\n%1")
+                                 ? tr("The IDS texts for the trade lane could not be written.")
+                                 : tr("The IDS texts for the trade lane could not be written:\n%1")
                                        .arg(idsError));
         cancelTradeLanePlacement();
         return;
@@ -10045,7 +10045,7 @@ bool SystemEditorPage::writePendingGeneratedZoneFiles(QString *errorMessage)
         const PendingGeneratedZoneFile &fileData = it.value();
         if (fileData.absolutePath.trimmed().isEmpty()) {
             if (errorMessage) {
-                *errorMessage = tr("Eine generierte Referenzdatei hat keinen gueltigen Zielpfad und konnte deshalb nicht gespeichert werden.");
+                *errorMessage = tr("A generated reference file has no valid target path and therefore could not be saved.");
             }
             qWarning() << "SystemEditorPage::writePendingGeneratedZoneFiles missing path";
             return false;
@@ -10055,7 +10055,7 @@ bool SystemEditorPage::writePendingGeneratedZoneFiles(QString *errorMessage)
         QSaveFile file(fileData.absolutePath);
         if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
             if (errorMessage) {
-                *errorMessage = tr("Die generierte Referenzdatei konnte nicht geschrieben werden:\n%1")
+                *errorMessage = tr("The generated reference file could not be written:\n%1")
                                     .arg(fileData.absolutePath);
             }
             return false;
@@ -10063,7 +10063,7 @@ bool SystemEditorPage::writePendingGeneratedZoneFiles(QString *errorMessage)
         const QByteArray bytes = fileData.content.toUtf8();
         if (file.write(bytes) != bytes.size()) {
             if (errorMessage) {
-                *errorMessage = tr("Die generierte Referenzdatei konnte nicht vollstaendig geschrieben werden:\n%1")
+                *errorMessage = tr("The generated reference file could not be written completely:\n%1")
                                     .arg(fileData.absolutePath);
             }
             qWarning() << "SystemEditorPage::writePendingGeneratedZoneFiles short write" << fileData.absolutePath;
@@ -10072,7 +10072,7 @@ bool SystemEditorPage::writePendingGeneratedZoneFiles(QString *errorMessage)
         }
         if (!file.commit()) {
             if (errorMessage) {
-                *errorMessage = tr("Die generierte Referenzdatei konnte nicht geschrieben werden:\n%1")
+                *errorMessage = tr("The generated reference file could not be written:\n%1")
                                     .arg(fileData.absolutePath);
             }
             return false;
@@ -10091,7 +10091,7 @@ bool SystemEditorPage::writePendingTextFiles(QString *errorMessage)
         const PendingTextFileWrite &fileData = it.value();
         if (fileData.absolutePath.trimmed().isEmpty()) {
             if (errorMessage)
-                *errorMessage = tr("Eine verknuepfte Datei hat keinen gueltigen Zielpfad und konnte deshalb nicht gespeichert werden.");
+                *errorMessage = tr("A linked file has no valid target path and therefore could not be saved.");
             qWarning() << "SystemEditorPage::writePendingTextFiles missing path";
             return false;
         }
@@ -10099,14 +10099,14 @@ bool SystemEditorPage::writePendingTextFiles(QString *errorMessage)
         QSaveFile file(fileData.absolutePath);
         if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
             if (errorMessage)
-                *errorMessage = tr("Die verknuepfte Datei konnte nicht geschrieben werden:\n%1")
+                *errorMessage = tr("The linked file could not be written:\n%1")
                                     .arg(fileData.absolutePath);
             return false;
         }
         const QByteArray bytes = fileData.content.toUtf8();
         if (file.write(bytes) != bytes.size()) {
             if (errorMessage)
-                *errorMessage = tr("Die verknuepfte Datei konnte nicht vollstaendig geschrieben werden:\n%1")
+                *errorMessage = tr("The linked file could not be written completely:\n%1")
                                     .arg(fileData.absolutePath);
             qWarning() << "SystemEditorPage::writePendingTextFiles short write" << fileData.absolutePath;
             file.cancelWriting();
@@ -10114,7 +10114,7 @@ bool SystemEditorPage::writePendingTextFiles(QString *errorMessage)
         }
         if (!file.commit()) {
             if (errorMessage)
-                *errorMessage = tr("Die verknuepfte Datei konnte nicht geschrieben werden:\n%1")
+                *errorMessage = tr("The linked file could not be written:\n%1")
                                     .arg(fileData.absolutePath);
             return false;
         }
@@ -10544,7 +10544,7 @@ bool SystemEditorPage::openRingDialogForHost(SolarObject *hostObject, bool force
     if (!RingEditService::apply(m_document.get(), hostObject, newState, &errorMessage)) {
         QMessageBox::warning(this,
                              newState.enabled ? tr("Ring erstellen") : tr("Ring entfernen"),
-                             errorMessage.trimmed().isEmpty() ? tr("Der Ring konnte nicht gespeichert werden.") : errorMessage);
+                             errorMessage.trimmed().isEmpty() ? tr("The ring could not be saved.") : errorMessage);
         return false;
     }
 
@@ -10629,7 +10629,7 @@ bool SystemEditorPage::openDockingRingDialogForEdit(SolarObject *ringObject)
     DockingRingCreateRequest request = dialog.result();
     request.factionDisplay = factionNicknameFromDisplay(request.factionDisplay);
     if (request.nickname.trimmed().isEmpty()) {
-        QMessageBox::warning(this, tr("Docking Ring bearbeiten"), tr("Bitte gib einen Nickname fuer den Docking Ring ein."));
+        QMessageBox::warning(this, tr("Docking Ring bearbeiten"), tr("Please enter a nickname for the docking ring."));
         return false;
     }
     for (const auto &objectPtr : m_document->objects()) {
@@ -10638,7 +10638,7 @@ bool SystemEditorPage::openDockingRingDialogForEdit(SolarObject *ringObject)
         if (objectPtr->nickname().compare(request.nickname.trimmed(), Qt::CaseInsensitive) == 0) {
             QMessageBox::warning(this,
                                  tr("Docking Ring bearbeiten"),
-                                 tr("Der Nickname '%1' existiert bereits.").arg(request.nickname.trimmed()));
+                                 tr("The nickname '%1' already exists.").arg(request.nickname.trimmed()));
             return false;
         }
     }
@@ -10654,7 +10654,7 @@ bool SystemEditorPage::openDockingRingDialogForEdit(SolarObject *ringObject)
         QMessageBox::warning(this,
                              tr("Docking Ring bearbeiten"),
                              idsError.trimmed().isEmpty()
-                                 ? tr("Der IDS-Name fuer den Docking Ring konnte nicht aufgeloest werden.")
+                                 ? tr("The IDS name for the docking ring could not be resolved.")
                                  : idsError);
         return false;
     }
@@ -10665,26 +10665,26 @@ bool SystemEditorPage::openDockingRingDialogForEdit(SolarObject *ringObject)
     if (request.distanceToPlanetCore <= 0.0) {
         QMessageBox::warning(this,
                              tr("Docking Ring bearbeiten"),
-                             tr("Der Abstand zum Planetenkern muss groesser als 0 sein."));
+                             tr("The distance to the planet core must be greater than 0."));
         return false;
     }
     if (!planetObject) {
         QMessageBox::warning(this,
                              tr("Docking Ring bearbeiten"),
-                             tr("Der Host-Planet fuer diesen Docking Ring konnte nicht eindeutig ermittelt werden."));
+                             tr("The host planet for this docking ring could not be determined unambiguously."));
         return false;
     }
 
     if (request.createFixture && fixtureMatchCount > 1) {
         QMessageBox::warning(this,
                              tr("Docking Ring bearbeiten"),
-                             tr("Fuer diesen Docking Ring wurden mehrere docking_fixture-Objekte mit identischem dock_with gefunden. Bitte bereinige die Daten zuerst, damit keine falschen Fixtures dupliziert oder entfernt werden."));
+                             tr("Multiple docking_fixture objects with identical dock_with were found for this docking ring. Please clean up the data first so no wrong fixtures are duplicated or removed."));
         return false;
     }
     if (!request.createFixture && fixtureMatchCount > 1) {
         QMessageBox::warning(this,
                              tr("Docking Ring bearbeiten"),
-                             tr("Mehrere docking_fixture-Objekte teilen sich dieses dock_with. Automatisches Entfernen waere unsicher und wurde deshalb abgebrochen."));
+                             tr("Multiple docking_fixture objects share this dock_with. Automatic removal would be unsafe and was aborted."));
         return false;
     }
 
@@ -10755,7 +10755,7 @@ bool SystemEditorPage::openDockingRingDialogForEdit(SolarObject *ringObject)
                 QMessageBox::warning(this,
                                      tr("Docking Ring bearbeiten"),
                                      fixtureError.trimmed().isEmpty()
-                                         ? tr("Das docking_fixture konnte nicht erzeugt werden.")
+                                         ? tr("The docking_fixture could not be created.")
                                          : fixtureError);
                 return false;
             }
@@ -10795,7 +10795,7 @@ void SystemEditorPage::openBaseEditorForSelection()
     if (!hostObject) {
         QMessageBox::information(this,
                                  tr("Base bearbeiten"),
-                                 tr("Bitte wähle ein Objekt mit verknüpfter Base aus."));
+                                 tr("Please select an object with a linked base."));
         return;
     }
 
@@ -10814,7 +10814,7 @@ void SystemEditorPage::openBaseEditorForSelection()
         QMessageBox::warning(this,
                              tr("Base bearbeiten"),
                              errorMessage.trimmed().isEmpty()
-                                 ? tr("Die Base-Daten konnten nicht geladen werden.")
+                                 ? tr("The base data could not be loaded.")
                                  : errorMessage);
         return;
     }
@@ -10836,7 +10836,7 @@ void SystemEditorPage::openBaseEditorForSelection()
         QMessageBox::warning(this,
                              tr("Base bearbeiten"),
                              errorMessage.trimmed().isEmpty()
-                                 ? tr("Die Base konnte nicht aktualisiert werden.")
+                                 ? tr("The base could not be updated.")
                                  : errorMessage);
         return;
     }
@@ -11013,7 +11013,7 @@ void SystemEditorPage::open3DPreviewForSelection()
         const QString modelPath = modelPaths.value(normalizedPathKey(rootObject->archetype()));
         if (modelPath.isEmpty()) {
             QMessageBox::warning(this, tr("3D Preview"),
-                                 tr("Für das ausgewählte Objekt konnte kein Modell aufgelöst werden."));
+                                 tr("No model could be resolved for the selected object."));
             return;
         }
 
@@ -11056,7 +11056,7 @@ void SystemEditorPage::open3DPreviewForSelection()
 
     if (addedModels <= 0) {
         QMessageBox::warning(this, tr("3D Preview"),
-                             tr("Für die ausgewählte Objektgruppe konnte kein darstellbares Modell geladen werden."));
+                             tr("No renderable model could be loaded for the selected object group."));
         return;
     }
 

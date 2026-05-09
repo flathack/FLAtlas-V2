@@ -259,7 +259,7 @@ QWidget *createPreviewFrame(flatlas::rendering::ModelViewport3D **outPreview,
     auto *preview = new flatlas::rendering::ModelViewport3D(previewHost);
     stack->addWidget(preview);
 
-    auto *fallback = new QLabel(QObject::tr("Waehle einen Archetype um die Vorschau zu laden."), previewHost);
+    auto *fallback = new QLabel(QObject::tr("Select an archetype to load the preview."), previewHost);
     fallback->setAlignment(Qt::AlignCenter);
     fallback->setWordWrap(true);
     fallback->setStyleSheet(QStringLiteral("color:#9ca3af;"));
@@ -294,19 +294,19 @@ void refreshArchetypePreview(QComboBox *archetypeCombo,
     };
 
     if (archetype.isEmpty()) {
-        showFallback(QObject::tr("Waehle einen Archetype um die Vorschau zu laden."));
+        showFallback(QObject::tr("Select an archetype to load the preview."));
         return;
     }
 
     const QString modelPath = archetypeModelPaths.value(normalizedKey(archetype));
     if (modelPath.isEmpty() || !QFileInfo::exists(modelPath)) {
-        showFallback(QObject::tr("Kein 3D-Modell fuer %1 vorhanden.").arg(archetype));
+        showFallback(QObject::tr("No 3D model available for %1.").arg(archetype));
         return;
     }
 
     QString errorMessage;
     if (!preview->loadModelFile(modelPath, &errorMessage)) {
-        showFallback(QObject::tr("Modell konnte nicht geladen werden: %1")
+        showFallback(QObject::tr("Model could not be loaded: %1")
                          .arg(errorMessage.isEmpty() ? QObject::tr("unbekannter Fehler") : errorMessage));
         return;
     }
@@ -325,18 +325,18 @@ void updateLoadoutContentsUi(QComboBox *loadoutCombo,
     listWidget->clear();
     const QString loadout = loadoutCombo->currentText().trimmed();
     if (loadout.isEmpty()) {
-        statusLabel->setText(QObject::tr("Kein Loadout ausgewaehlt."));
+        statusLabel->setText(QObject::tr("No loadout selected."));
         return;
     }
 
     const QStringList entries = loadoutContents.value(normalizedKey(loadout));
     if (entries.isEmpty()) {
-        statusLabel->setText(QObject::tr("Keine aufloesbaren Loadout-Inhalte gefunden."));
+        statusLabel->setText(QObject::tr("No resolvable loadout contents found."));
         return;
     }
 
     listWidget->addItems(entries);
-    statusLabel->setText(QObject::tr("%1 Eintraege im Loadout.").arg(entries.size()));
+    statusLabel->setText(QObject::tr("%1 entries in loadout.").arg(entries.size()));
 }
 
 QStringList fixedVisitOptions()
@@ -535,8 +535,8 @@ void CreateBuoyDialog::updateLineConstraintUi()
     m_spacingSpin->setEnabled(!fixedCount);
     m_spacingDerivedLabel->setVisible(fixedCount);
 
-    m_countDerivedLabel->setText(tr("Die Anzahl wird waehrend der Platzierung aus Linienlaenge und Abstand berechnet."));
-    m_spacingDerivedLabel->setText(tr("Der Abstand wird waehrend der Platzierung aus Linienlaenge und Anzahl berechnet."));
+    m_countDerivedLabel->setText(tr("The count is calculated from line length and spacing during placement."));
+    m_spacingDerivedLabel->setText(tr("The spacing is calculated from line length and count during placement."));
     m_modeHintLabel->setText(fixedCount
                                  ? tr("Linienmodus: feste Anzahl. 1. Klick setzt den Startpunkt. 2. Klick bestimmt die Richtung. "
                                       "Der Abstand zwischen den Bojen wird aus der gezeichneten Linienlaenge berechnet.")
@@ -778,7 +778,7 @@ EditTradeLaneDialog::EditTradeLaneDialog(const QString &laneSummary,
     layout->addLayout(form);
 
     auto *hintLabel = new QLabel(
-        tr("Lane-weite Felder werden auf die komplette Ring-Kette angewendet. "
+        tr("Lane-wide fields are applied to the complete ring chain. "
            "tradelane_space_name bleibt auf Start- und Endring beschraenkt."),
         this);
     hintLabel->setWordWrap(true);
@@ -786,7 +786,7 @@ EditTradeLaneDialog::EditTradeLaneDialog(const QString &laneSummary,
     layout->addWidget(hintLabel);
 
     auto *buttons = createDialogButtons(this, tr("Anwenden"));
-    auto *deleteButton = buttons->addButton(tr("Trade Lane loeschen"), QDialogButtonBox::DestructiveRole);
+    auto *deleteButton = buttons->addButton(tr("Delete Trade Lane"), QDialogButtonBox::DestructiveRole);
     QObject::connect(deleteButton, &QPushButton::clicked, this, [this]() {
         m_deleteRequested = true;
         accept();
@@ -1275,7 +1275,7 @@ CreatePlanetDialog::CreatePlanetDialog(const QString &suggestedNickname,
     layout->addLayout(form);
 
     auto *infoLabel = new QLabel(
-        tr("Der Infocard-Text wird archetypebasiert vorgeschlagen und beim Erstellen als neuer ids_info-Eintrag gespeichert. Bestehende Shared-Texte werden nicht ueberschrieben."),
+        tr("The infocard text is suggested from the archetype and saved as a new ids_info entry during creation. Existing shared texts are not overwritten."),
         this);
     infoLabel->setWordWrap(true);
     infoLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
@@ -1311,34 +1311,34 @@ void CreatePlanetDialog::accept()
 {
     const CreatePlanetRequest request = result();
     if (request.nickname.isEmpty()) {
-        QMessageBox::warning(this, tr("Planet erstellen"), tr("Bitte einen Objekt-Nickname angeben."));
+        QMessageBox::warning(this, tr("Planet erstellen"), tr("Please enter an object nickname."));
         return;
     }
     if (!PlanetCreationService::isValidNickname(request.nickname)) {
         QMessageBox::warning(this, tr("Planet erstellen"),
-                             tr("Der Nickname darf nur Buchstaben, Zahlen und Unterstriche enthalten."));
+                             tr("The nickname may only contain letters, numbers, and underscores."));
         return;
     }
     if (request.ingameName.isEmpty()) {
-        QMessageBox::warning(this, tr("Planet erstellen"), tr("Bitte einen Planetennamen angeben."));
+        QMessageBox::warning(this, tr("Planet erstellen"), tr("Please enter a planet name."));
         return;
     }
     if (request.archetype.isEmpty()) {
-        QMessageBox::warning(this, tr("Planet erstellen"), tr("Bitte einen Planet-Archetype auswaehlen."));
+        QMessageBox::warning(this, tr("Planet erstellen"), tr("Please select a planet archetype."));
         return;
     }
     if (request.infoCardText.isEmpty()) {
-        QMessageBox::warning(this, tr("Planet erstellen"), tr("Bitte einen Infocard-Text angeben."));
+        QMessageBox::warning(this, tr("Planet erstellen"), tr("Please enter an infocard text."));
         return;
     }
     if (request.planetRadius > 0 && request.deathZoneRadius < request.planetRadius) {
         QMessageBox::warning(this, tr("Planet erstellen"),
-                             tr("Der Death-Zone-Radius darf nicht kleiner als der Planet-Radius sein."));
+                             tr("The death zone radius must not be smaller than the planet radius."));
         return;
     }
     if (request.planetRadius > 0 && request.atmosphereRange < request.planetRadius) {
         QMessageBox::warning(this, tr("Planet erstellen"),
-                             tr("Die Atmosphaeren-Reichweite darf nicht kleiner als der Planet-Radius sein."));
+                             tr("The atmosphere range must not be smaller than the planet radius."));
         return;
     }
 
@@ -1358,7 +1358,7 @@ void CreatePlanetDialog::onInfocardEdited()
     m_infocardManuallyEdited = m_infoCardEdit->toPlainText().trimmed() != m_lastSuggestedInfocard.trimmed();
     m_infocardStateLabel->setText(m_infocardManuallyEdited
                                       ? tr("Manuell angepasst. Archetype-Wechsel behalten den aktuellen Text, bis du den Vorschlag explizit neu laedst.")
-                                      : tr("Der aktuelle Text folgt dem geladenen Archetype-Vorschlag."));
+                                      : tr("The current text follows the loaded archetype suggestion."));
 }
 
 void CreatePlanetDialog::resetInfocardSuggestion()
@@ -1374,7 +1374,7 @@ void CreatePlanetDialog::applyArchetypeDefaults(const QString &archetype, bool f
     if (m_planetRadiusLabel) {
         m_planetRadiusLabel->setText(planetRadius > 0
                                          ? tr("%1 m aus solar_radius des Archetypes.").arg(planetRadius)
-                                         : tr("Kein solar_radius gefunden. Die Defaultwerte bleiben editierbar."));
+                                         : tr("No solar_radius found. The default values remain editable."));
     }
     if (m_deathZoneRadiusSpin)
         m_deathZoneRadiusSpin->setValue(PlanetCreationService::defaultDeathZoneRadius(planetRadius));
@@ -1382,7 +1382,7 @@ void CreatePlanetDialog::applyArchetypeDefaults(const QString &archetype, bool f
         m_atmosphereRangeSpin->setValue(PlanetCreationService::defaultAtmosphereRange(planetRadius));
 
     m_infocardSourceLabel->setText(option.sourceObjectNickname.trimmed().isEmpty()
-                                       ? tr("Kein archetypegleicher Planet mit Infocard gefunden. Bitte Text manuell eintragen.")
+                                       ? tr("No planet with the same archetype and infocard was found. Please enter the text manually.")
                                        : tr("Vorschlag aus %1 (ids_info %2).").arg(
                                              option.sourceObjectNickname,
                                              option.sourceIdsInfo > 0 ? QString::number(option.sourceIdsInfo)
@@ -1401,8 +1401,8 @@ void CreatePlanetDialog::applyArchetypeDefaults(const QString &archetype, bool f
     if (!m_infocardManuallyEdited || forceInfocardRefresh) {
         m_infocardManuallyEdited = false;
         m_infocardStateLabel->setText(suggestedText.isEmpty()
-                                          ? tr("Kein Standardtext gefunden. Der finale Text wird trotzdem als neuer ids_info-Eintrag gespeichert.")
-                                          : tr("Der aktuelle Text folgt dem geladenen Archetype-Vorschlag."));
+                                          ? tr("No default text found. The final text is still saved as a new ids_info entry.")
+                                          : tr("The current text follows the loaded archetype suggestion."));
     }
 }
 
@@ -1512,7 +1512,7 @@ ObjectRingDialog::ObjectRingDialog(const QString &objectLabel,
     form->addRow(tr("Rotate Z:"), m_rotateZSpin);
 
     auto *helpLabel = new QLabel(
-        tr("Freelancer speichert Objekt-Ringe ueber den 'ring'-Eintrag am Host sowie eine verknuepfte Zone mit 'shape = RING'. Dieser Dialog aktualisiert beide Seiten gemeinsam."),
+        tr("Freelancer stores object rings through the 'ring' entry on the host and a linked zone with 'shape = RING'. This dialog updates both sides together."),
         this);
     helpLabel->setWordWrap(true);
     helpLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
@@ -1559,19 +1559,19 @@ void ObjectRingDialog::accept()
     const RingEditRequest request = result();
     if (request.enabled) {
         if (request.ringIni.isEmpty()) {
-            QMessageBox::warning(this, tr("Ring konfigurieren"), tr("Bitte ein Ring-Preset angeben."));
+            QMessageBox::warning(this, tr("Ring konfigurieren"), tr("Please enter a ring preset."));
             return;
         }
         if (!RingEditService::isValidZoneNickname(request.zoneNickname)) {
-            QMessageBox::warning(this, tr("Ring konfigurieren"), tr("Bitte einen gueltigen Zone-Nickname angeben."));
+            QMessageBox::warning(this, tr("Ring konfigurieren"), tr("Please enter a valid zone nickname."));
             return;
         }
         if (request.innerRadius >= request.outerRadius) {
-            QMessageBox::warning(this, tr("Ring konfigurieren"), tr("Inner radius muss kleiner als Outer radius sein."));
+            QMessageBox::warning(this, tr("Ring konfigurieren"), tr("Inner radius must be smaller than outer radius."));
             return;
         }
         if (request.thickness <= 0.0) {
-            QMessageBox::warning(this, tr("Ring konfigurieren"), tr("Thickness muss groesser als 0 sein."));
+            QMessageBox::warning(this, tr("Ring konfigurieren"), tr("Thickness must be greater than 0."));
             return;
         }
     }
@@ -1631,7 +1631,7 @@ void ObjectRingDialog::refreshPreview()
     if (!scene.hasRenderableScene) {
         m_preview->clearModel();
         m_previewFallback->setText(scene.statusMessage.trimmed().isEmpty()
-                                       ? tr("Keine Ring-Vorschau verfuegbar.")
+                                       ? tr("No ring preview available.")
                                        : scene.statusMessage);
         m_previewStack->setCurrentWidget(m_previewFallback);
         m_previewStatusLabel->setText(m_previewFallback->text());
@@ -1640,7 +1640,7 @@ void ObjectRingDialog::refreshPreview()
 
     QString errorMessage;
     if (!m_preview->loadModelNode(scene.sceneRoot, &errorMessage)) {
-        m_previewFallback->setText(tr("Die 3D-Vorschau konnte nicht aufgebaut werden: %1")
+        m_previewFallback->setText(tr("The 3D preview could not be built: %1")
                                        .arg(errorMessage.trimmed().isEmpty() ? tr("unbekannter Fehler") : errorMessage));
         m_previewStack->setCurrentWidget(m_previewFallback);
         m_previewStatusLabel->setText(m_previewFallback->text());
@@ -1656,9 +1656,9 @@ void ObjectRingDialog::refreshPreview()
     if (!scene.statusMessage.trimmed().isEmpty())
         statusParts.append(scene.statusMessage.trimmed());
     else
-        statusParts.append(tr("Aenderungen an Rotation, Inner/Outer Radius und Thickness werden live angezeigt."));
+        statusParts.append(tr("Changes to rotation, inner/outer radius, and thickness are shown live."));
     if (!scene.hasHostModel)
-        statusParts.append(tr("Das Host-Objekt konnte nicht geladen werden; die Vorschau zeigt nur den Ring."));
+        statusParts.append(tr("The host object could not be loaded; the preview shows only the ring."));
     if (!scene.geometryInputsValid)
         statusParts.append(tr("Bis zu gueltigen Ringabmessungen bleibt die Vorschau im sicheren Fallback-Zustand."));
     m_previewStatusLabel->setText(statusParts.join(QLatin1Char('\n')));
@@ -1723,7 +1723,7 @@ CreateSurpriseDialog::CreateSurpriseDialog(const QString &suggestedNickname,
     m_loadoutCombo->setCurrentIndex(0);
     formLayout->addRow(tr("Loadout:"), m_loadoutCombo);
 
-    m_loadoutContentsStatus = new QLabel(tr("Kein Loadout ausgewaehlt."), formHost);
+    m_loadoutContentsStatus = new QLabel(tr("No loadout selected."), formHost);
     m_loadoutContentsStatus->setStyleSheet(QStringLiteral("color:#9ca3af;"));
     m_loadoutContentsStatus->setWordWrap(true);
     formLayout->addRow(QString(), m_loadoutContentsStatus);
@@ -1738,7 +1738,7 @@ CreateSurpriseDialog::CreateSurpriseDialog(const QString &suggestedNickname,
     populateFixedVisitCombo(m_visitCombo);
     formLayout->addRow(tr("Visit:"), m_visitCombo);
 
-    m_visitHintLabel = new QLabel(tr("Dieser Create-Flow schreibt immer visit = 0."), formHost);
+    m_visitHintLabel = new QLabel(tr("This creation flow always writes visit = 0."), formHost);
     m_visitHintLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
     m_visitHintLabel->setWordWrap(true);
     formLayout->addRow(QString(), m_visitHintLabel);
@@ -1841,7 +1841,7 @@ CreateWeaponPlatformDialog::CreateWeaponPlatformDialog(const QString &suggestedN
     m_loadoutCombo = createEditableCombo(loadoutValues, formHost);
     formLayout->addRow(tr("Loadout:"), m_loadoutCombo);
 
-    m_loadoutContentsStatus = new QLabel(tr("Kein Loadout ausgewaehlt."), formHost);
+    m_loadoutContentsStatus = new QLabel(tr("No loadout selected."), formHost);
     m_loadoutContentsStatus->setStyleSheet(QStringLiteral("color:#9ca3af;"));
     m_loadoutContentsStatus->setWordWrap(true);
     formLayout->addRow(QString(), m_loadoutContentsStatus);
@@ -1874,7 +1874,7 @@ CreateWeaponPlatformDialog::CreateWeaponPlatformDialog(const QString &suggestedN
     populateFixedVisitCombo(m_visitCombo);
     formLayout->addRow(tr("Visit:"), m_visitCombo);
 
-    m_visitHintLabel = new QLabel(tr("Die Anzeige erklaert Visit-Flags, gespeichert wird hier immer visit = 0."), formHost);
+    m_visitHintLabel = new QLabel(tr("The display explains visit flags; this dialog always saves visit = 0."), formHost);
     m_visitHintLabel->setStyleSheet(QStringLiteral("color:#9ca3af;"));
     m_visitHintLabel->setWordWrap(true);
     formLayout->addRow(QString(), m_visitHintLabel);

@@ -398,7 +398,7 @@ void NpcEditorPage::setupUi()
     auto *left = new QWidget(splitter);
     auto *leftLayout = new QVBoxLayout(left);
     leftLayout->setContentsMargins(8, 8, 8, 8);
-    leftLayout->addWidget(new QLabel(tr("Raeume"), left));
+    leftLayout->addWidget(new QLabel(tr("Rooms"), left));
     m_roomList = new QListWidget(left);
     leftLayout->addWidget(m_roomList, 1);
     connect(m_roomList, &QListWidget::currentRowChanged, this, &NpcEditorPage::onRoomChanged);
@@ -480,7 +480,7 @@ void NpcEditorPage::setupUi()
     m_bribeTextPreview = new QPlainTextEdit(bribeTab);
     m_bribeTextPreview->setReadOnly(true);
     m_bribeTextPreview->setMinimumHeight(120);
-    m_bribeTextPreview->setPlaceholderText(tr("Waehle ein Bribe aus, um den Ingame-Text zu sehen."));
+    m_bribeTextPreview->setPlaceholderText(tr("Select a bribe to see the ingame text."));
     bribeLayout->addWidget(m_bribeTextPreview, 0);
     auto *bribeButtons = new QWidget(bribeTab);
     auto *bribeButtonLayout = new QHBoxLayout(bribeButtons);
@@ -522,7 +522,7 @@ void NpcEditorPage::setupUi()
     m_rumorTextPreview = new QPlainTextEdit(rumorTab);
     m_rumorTextPreview->setReadOnly(true);
     m_rumorTextPreview->setMinimumHeight(120);
-    m_rumorTextPreview->setPlaceholderText(tr("Waehle einen Rumor aus, um den Text zu sehen."));
+    m_rumorTextPreview->setPlaceholderText(tr("Select a rumor to see the text."));
     rumorLayout->addWidget(m_rumorTextPreview, 0);
     connect(addRumor, &QPushButton::clicked, this, &NpcEditorPage::onAddRumor);
     connect(newRumor, &QPushButton::clicked, this, &NpcEditorPage::onNewRumor);
@@ -554,7 +554,7 @@ void NpcEditorPage::setupUi()
     connect(m_bottomSaveButton, &QPushButton::clicked, this, [this]() {
         QString error;
         if (!saveCurrentFile(&error)) {
-            QMessageBox::warning(this, tr("NPC Editor"), error.isEmpty() ? tr("Die NPC-Daten konnten nicht gespeichert werden.") : error);
+            QMessageBox::warning(this, tr("NPC Editor"), error.isEmpty() ? tr("The NPC data could not be saved.") : error);
             return;
         }
         m_statusLabel->setText(tr("Gespeichert: %1").arg(m_mbasesPath));
@@ -578,7 +578,7 @@ void NpcEditorPage::setupToolBar()
     m_reloadAction = m_toolBar->addAction(tr("Neu laden"), this, &NpcEditorPage::scheduleReloadCurrentContext);
     m_toolBar->addSeparator();
     m_newNpcAction = m_toolBar->addAction(tr("Neuer NPC"), this, &NpcEditorPage::onNewNpc);
-    m_deleteNpcAction = m_toolBar->addAction(tr("NPC loeschen"), this, &NpcEditorPage::onDeleteNpc);
+    m_deleteNpcAction = m_toolBar->addAction(tr("Delete NPC"), this, &NpcEditorPage::onDeleteNpc);
     m_toolBar->addSeparator();
     m_toolBar->addWidget(new QLabel(tr(" System: "), m_toolBar));
     m_systemCombo = new QComboBox(m_toolBar);
@@ -598,7 +598,7 @@ void NpcEditorPage::scheduleReloadCurrentContext()
         return;
     m_reloadQueued = true;
     if (m_statusLabel)
-        m_statusLabel->setText(tr("NPC-Daten werden geladen..."));
+        m_statusLabel->setText(tr("Loading NPC data..."));
     QTimer::singleShot(0, this, [this]() {
         m_reloadQueued = false;
         reloadCurrentContext();
@@ -624,9 +624,9 @@ void NpcEditorPage::reloadCurrentContext()
 
     const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
     QString error;
-    reportLoadingProgress(0, tr("NPC Editor: Daten werden vorbereitet..."));
+    reportLoadingProgress(0, tr("NPC Editor: Preparing data..."));
     if (!loadGameRoot(gameRoot, &error)) {
-        m_statusLabel->setText(error.isEmpty() ? tr("Kein aktiver Mod-Kontext.") : error);
+        m_statusLabel->setText(error.isEmpty() ? tr("No active mod context.") : error);
         emit titleChanged(tr("NPC Editor"));
         reportLoadingProgress(100, error.isEmpty() ? tr("NPC Editor: kein aktiver Mod-Kontext") : error);
         m_loading = false;
@@ -641,7 +641,7 @@ void NpcEditorPage::reloadCurrentContext()
         return;
     }
     emit titleChanged(tr("NPC Editor"));
-    reportLoadingProgress(100, tr("NPC Editor: %1 NPCs geladen").arg(npcCount()));
+    reportLoadingProgress(100, tr("NPC Editor: %1 NPCs loaded").arg(npcCount()));
     m_loading = false;
     if (m_reloadAction)
         m_reloadAction->setEnabled(true);
@@ -677,23 +677,23 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
 
     if (m_gameRoot.isEmpty()) {
         if (errorMessage)
-            *errorMessage = tr("Bitte zuerst im Mod Manager eine Installation zum Bearbeiten auswaehlen.");
+            *errorMessage = tr("Please first select an installation for editing in Mod Manager.");
         populateSelectors();
         return false;
     }
 
-    reportLoadingProgress(8, tr("NPC Editor: Freelancer-Pfade werden gesucht..."));
+    reportLoadingProgress(8, tr("NPC Editor: Searching Freelancer paths..."));
     const QString dataDir = dataDirForGameRoot(m_gameRoot);
     const QString universePath = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("UNIVERSE/universe.ini"));
     m_mbasesPath = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("MISSIONS/mbases.ini"));
     if (universePath.isEmpty() || m_mbasesPath.isEmpty()) {
         if (errorMessage)
-            *errorMessage = tr("universe.ini oder mbases.ini wurde im aktiven Mod nicht gefunden.");
+            *errorMessage = tr("universe.ini or mbases.ini was not found in the active mod.");
         populateSelectors();
         return false;
     }
 
-    reportLoadingProgress(18, tr("NPC Editor: IDS-Texte werden geladen..."));
+    reportLoadingProgress(18, tr("NPC Editor: Loading IDS texts..."));
     const IdsDataset idsDataset = IdsDataService::loadFromGameRoot(m_gameRoot);
     for (const auto &entry : idsDataset.entries) {
         QString value = entry.hasStringValue ? entry.stringValue : entry.plainText;
@@ -725,7 +725,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
         }
     }
 
-    reportLoadingProgress(38, tr("NPC Editor: Fraktionen werden geladen..."));
+    reportLoadingProgress(38, tr("NPC Editor: Loading factions..."));
     const QString initialWorldPath = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("initialworld.ini"));
     const IniDocument initialWorldDoc = IniParser::parseFile(initialWorldPath);
     for (const IniSection &section : initialWorldDoc) {
@@ -738,7 +738,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
             m_factionDisplayByNickname.insert(keyOf(nickname), display);
     }
 
-    reportLoadingProgress(48, tr("NPC Editor: Universe und Bases werden geladen..."));
+    reportLoadingProgress(48, tr("NPC Editor: Loading universe and bases..."));
     const IniDocument universeDoc = IniParser::parseFile(universePath);
     QSet<QString> seenSystems;
     QHash<QString, int> baseIndexByNickname;
@@ -795,7 +795,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
     for (int i = 0; i < m_bases.size(); ++i)
         baseIndexByNickname.insert(keyOf(m_bases.at(i).nickname), i);
 
-    reportLoadingProgress(62, tr("NPC Editor: Base-Raeume werden gelesen..."));
+    reportLoadingProgress(62, tr("NPC Editor: Reading base rooms..."));
     for (NpcBaseRecord &base : m_bases) {
         const QString absoluteBaseFile = flatlas::core::PathUtils::ciResolvePath(dataDir, base.fileRelativePath);
         const IniDocument baseDoc = absoluteBaseFile.isEmpty() ? IniDocument{} : IniParser::parseFile(absoluteBaseFile);
@@ -919,7 +919,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
         m_modBribePrice = bestPrice;
     }
 
-    reportLoadingProgress(90, tr("NPC Editor: Outfit- und Voice-Listen werden geladen..."));
+    reportLoadingProgress(90, tr("NPC Editor: Loading outfit and voice lists..."));
     const QString bodyparts = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("CHARACTERS/bodyparts.ini"));
     for (const IniSection &section : IniParser::parseFile(bodyparts)) {
         if (section.name.compare(QStringLiteral("Body"), Qt::CaseInsensitive) == 0)
@@ -948,7 +948,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
     m_handChoices.sort(Qt::CaseInsensitive);
     m_voiceChoices.sort(Qt::CaseInsensitive);
     m_factionChoices.sort(Qt::CaseInsensitive);
-    reportLoadingProgress(96, tr("NPC Editor: Oberflaeche wird gefuellt..."));
+    reportLoadingProgress(96, tr("NPC Editor: Filling interface..."));
     populateChoiceLists();
     populateRumorChoices();
     populateSelectors();
@@ -980,7 +980,7 @@ bool NpcEditorPage::saveCurrentFile(QString *errorMessage)
     }
     if (m_mbasesPath.isEmpty()) {
         if (errorMessage)
-            *errorMessage = tr("Keine mbases.ini geladen.");
+            *errorMessage = tr("No mbases.ini loaded.");
         return false;
     }
 
@@ -1107,14 +1107,14 @@ bool NpcEditorPage::saveCurrentFile(QString *errorMessage)
                                         QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-hhmmss")));
     if (QFileInfo::exists(m_mbasesPath) && !QFile::copy(m_mbasesPath, backupPath)) {
         if (errorMessage)
-            *errorMessage = tr("Backup von mbases.ini konnte nicht erstellt werden: %1").arg(backupPath);
+            *errorMessage = tr("Could not create backup of mbases.ini: %1").arg(backupPath);
         return false;
     }
 
     QFile file(m_mbasesPath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         if (errorMessage)
-            *errorMessage = tr("mbases.ini konnte nicht geschrieben werden: %1").arg(m_mbasesPath);
+            *errorMessage = tr("mbases.ini could not be written: %1").arg(m_mbasesPath);
         return false;
     }
     QTextStream out(&file);
@@ -1294,7 +1294,7 @@ bool NpcEditorPage::applyIdsNameEdits(QString *errorMessage)
         targetDll = IdsDataService::defaultCreationDllName(dataset);
         if (targetDll.trimmed().isEmpty()) {
             if (errorMessage)
-                *errorMessage = tr("Es konnte keine Ziel-DLL fuer den NPC-Namen ermittelt werden.");
+                *errorMessage = tr("No target DLL could be determined for the NPC name.");
             return false;
         }
     }
@@ -1320,7 +1320,7 @@ bool NpcEditorPage::applyIdsNameEdits(QString *errorMessage)
                                                   &newGlobalId,
                                                   &idsError)) {
                 if (errorMessage)
-                    *errorMessage = tr("NPC-Name fuer %1 konnte nicht gespeichert werden: %2")
+                    *errorMessage = tr("NPC name for %1 could not be saved: %2")
                                         .arg(npc.nickname, idsError);
                 return false;
             }
@@ -1437,7 +1437,7 @@ bool NpcEditorPage::validateEditor(QString *errorMessage) const
     const QString nickname = m_nicknameEdit->text().trimmed();
     if (nickname.isEmpty()) {
         if (errorMessage)
-            *errorMessage = tr("Der NPC-Nickname darf nicht leer sein.");
+            *errorMessage = tr("The NPC nickname must not be empty.");
         return false;
     }
     int duplicates = 0;
@@ -1447,7 +1447,7 @@ bool NpcEditorPage::validateEditor(QString *errorMessage) const
     }
     if (duplicates > 1) {
         if (errorMessage)
-            *errorMessage = tr("Der NPC-Nickname muss innerhalb der Base eindeutig sein.");
+            *errorMessage = tr("The NPC nickname must be unique within the base.");
         return false;
     }
     return true;
@@ -1511,7 +1511,7 @@ QString NpcEditorPage::resolvedIdsText(int ids) const
 {
     if (ids <= 0)
         return {};
-    return m_idsTextByNumber.value(QString::number(ids), tr("<IDS %1 nicht gefunden>").arg(ids)).trimmed();
+    return m_idsTextByNumber.value(QString::number(ids), tr("<IDS %1 not found>").arg(ids)).trimmed();
 }
 
 QString NpcEditorPage::displayLabel(const QString &nickname, const QString &resolved) const
@@ -1700,8 +1700,8 @@ void NpcEditorPage::onDeleteNpc()
         return;
     const QString nickname = base->npcs.at(npcIndex).nickname;
     if (QMessageBox::question(this,
-                              tr("NPC loeschen"),
-                              tr("NPC %1 wirklich aus dieser Base entfernen?").arg(nickname))
+                              tr("Delete NPC"),
+                              tr("Really remove NPC %1 from this base?").arg(nickname))
         != QMessageBox::Yes) {
         return;
     }
@@ -1712,7 +1712,7 @@ void NpcEditorPage::onDeleteNpc()
 void NpcEditorPage::onAddBribe()
 {
     QDialog dialog(this);
-    dialog.setWindowTitle(tr("Bribe-Faction auswaehlen"));
+    dialog.setWindowTitle(tr("Select Bribe Faction"));
     dialog.resize(720, 520);
     auto *layout = new QVBoxLayout(&dialog);
     auto *searchEdit = new QLineEdit(&dialog);
@@ -1806,7 +1806,7 @@ void NpcEditorPage::onAddRumor()
         return;
 
     QDialog dialog(this);
-    dialog.setWindowTitle(tr("Rumor auswaehlen"));
+    dialog.setWindowTitle(tr("Select Rumor"));
     dialog.resize(980, 620);
     auto *layout = new QVBoxLayout(&dialog);
     auto *searchEdit = new QLineEdit(&dialog);
@@ -1957,14 +1957,14 @@ void NpcEditorPage::onNewRumor()
         return;
     }
     if (rumorText.isEmpty()) {
-        QMessageBox::warning(this, tr("Rumor erstellen"), tr("Bitte einen Rumor-Text eingeben."));
+        QMessageBox::warning(this, tr("Rumor erstellen"), tr("Please enter a rumor text."));
         return;
     }
 
     const IdsDataset dataset = IdsDataService::loadFromGameRoot(m_gameRoot);
     const QString targetDll = IdsDataService::defaultCreationDllName(dataset);
     if (targetDll.trimmed().isEmpty()) {
-        QMessageBox::warning(this, tr("Rumor erstellen"), tr("Es konnte keine Ziel-DLL fuer den Rumor-Text ermittelt werden."));
+        QMessageBox::warning(this, tr("Rumor erstellen"), tr("No target DLL could be determined for the rumor text."));
         return;
     }
     QString idsError;
@@ -1977,7 +1977,7 @@ void NpcEditorPage::onNewRumor()
                                           &idsError)) {
         QMessageBox::warning(this,
                              tr("Rumor erstellen"),
-                             tr("Rumor-Text konnte nicht gespeichert werden: %1").arg(idsError));
+                             tr("Rumor text could not be saved: %1").arg(idsError));
         return;
     }
     ids = newGlobalId;

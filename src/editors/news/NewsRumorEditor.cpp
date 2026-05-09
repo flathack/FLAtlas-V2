@@ -329,17 +329,17 @@ void NewsRumorEditor::setupUi()
 void NewsRumorEditor::scheduleLoadFromContext()
 {
     if (m_statusLabel)
-        m_statusLabel->setText(tr("News-Daten werden geladen..."));
+        m_statusLabel->setText(tr("Loading news data..."));
     QTimer::singleShot(0, this, &NewsRumorEditor::loadFromContext);
 }
 
 void NewsRumorEditor::loadFromContext()
 {
     QString error;
-    reportLoadingProgress(0, tr("News Editor: Daten werden vorbereitet..."));
+    reportLoadingProgress(0, tr("News Editor: Preparing data..."));
     if (!loadWorkspace(flatlas::core::EditingContext::instance().primaryGamePath(), &error)) {
         clearData();
-        m_statusLabel->setText(error.isEmpty() ? tr("Keine aktive Mod-Installation.") : error);
+        m_statusLabel->setText(error.isEmpty() ? tr("No active mod installation.") : error);
         reportLoadingProgress(100, error.isEmpty() ? tr("News Editor: keine aktive Mod-Installation") : error);
     }
 }
@@ -362,32 +362,32 @@ bool NewsRumorEditor::loadWorkspace(const QString &gameRoot, QString *errorMessa
         return false;
     }
 
-    reportLoadingProgress(15, tr("News Editor: Pfade werden gesucht..."));
+    reportLoadingProgress(15, tr("News Editor: Searching paths..."));
     const QString dataDir = flatlas::core::PathUtils::ciResolvePath(resolvedGameRoot, QStringLiteral("DATA"));
     const QString newsPath = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("MISSIONS/news.ini"));
     if (dataDir.isEmpty() || newsPath.isEmpty()) {
         if (errorMessage)
-            *errorMessage = tr("DATA/MISSIONS/news.ini wurde im aktiven Mod nicht gefunden.");
+            *errorMessage = tr("DATA/MISSIONS/news.ini was not found in the active mod.");
         return false;
     }
 
     clearData();
     m_gameRoot = resolvedGameRoot;
     m_newsPath = newsPath;
-    reportLoadingProgress(30, tr("News Editor: IDS-Texte werden geladen..."));
+    reportLoadingProgress(30, tr("News Editor: Loading IDS texts..."));
     loadIds(resolvedGameRoot);
-    reportLoadingProgress(50, tr("News Editor: Bases werden geladen..."));
+    reportLoadingProgress(50, tr("News Editor: Loading bases..."));
     loadBases(dataDir);
     reportLoadingProgress(70, tr("News Editor: news.ini wird gelesen..."));
     loadNewsFile(newsPath);
-    reportLoadingProgress(88, tr("News Editor: Tabellen werden gefuellt..."));
+    reportLoadingProgress(88, tr("News Editor: Filling tables..."));
     rebuildBaseCounts();
     populateBaseTable();
     populateNewsTable();
     setDirty(false);
     emit titleChanged(tr("News Editor"));
     refreshStatus();
-    reportLoadingProgress(100, tr("News Editor: %1 Eintraege geladen").arg(m_entries.size()));
+    reportLoadingProgress(100, tr("News Editor: %1 entries loaded").arg(m_entries.size()));
     return true;
 }
 
@@ -616,7 +616,7 @@ void NewsRumorEditor::refreshFilters()
         if (visible)
             ++visibleCount;
     }
-    m_statusLabel->setText(tr("Angezeigt: %1 von %2 News | Bases: %3 | Datei: %4")
+    m_statusLabel->setText(tr("Shown: %1 of %2 news | Bases: %3 | File: %4")
                                .arg(visibleCount)
                                .arg(m_entries.size())
                                .arg(qMax(0, static_cast<int>(m_bases.size()) - 1))
@@ -680,7 +680,7 @@ void NewsRumorEditor::showEntryInDetail(int entryIndex)
                                    .arg(entry.bases.size()));
     const QStringList invalid = invalidBases(entry.bases);
     if (!invalid.isEmpty()) {
-        m_detailHintLabel->setText(m_detailHintLabel->text() + tr(" | Nicht gefunden: %1").arg(invalid.join(QStringLiteral(", "))));
+        m_detailHintLabel->setText(m_detailHintLabel->text() + tr(" | Missing: %1").arg(invalid.join(QStringLiteral(", "))));
     }
     m_populating = false;
 }
@@ -742,7 +742,7 @@ bool NewsRumorEditor::save()
     applyDetailToCurrentEntry();
     m_saving = false;
     if (m_newsPath.isEmpty()) {
-        QMessageBox::warning(this, tr("News speichern"), tr("Keine news.ini geladen."));
+        QMessageBox::warning(this, tr("News speichern"), tr("No news.ini loaded."));
         return false;
     }
 
@@ -763,7 +763,7 @@ bool NewsRumorEditor::save()
     IdsDataset idsDataset;
     QString targetDll;
     if (needsIdsDataset) {
-        m_statusLabel->setText(tr("IDS-Daten werden vorbereitet..."));
+        m_statusLabel->setText(tr("Preparing IDS data..."));
         QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         idsDataset = IdsDataService::loadFromGameRoot(m_gameRoot);
         targetDll = IdsDataService::defaultCreationDllName(idsDataset);
@@ -790,19 +790,19 @@ bool NewsRumorEditor::save()
         const bool needsBodyWrite = entry.sectionIndex < 0 || entry.textIds <= 0 ||
             (entry.bodyTextDirty && entry.bodyText != entry.originalBodyText);
         if (needsHeadlineWrite) {
-            m_statusLabel->setText(tr("Headline IDS %1 wird gespeichert...").arg(entry.headlineIds));
+            m_statusLabel->setText(tr("Saving headline IDS %1...").arg(entry.headlineIds));
             QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         }
         if (needsHeadlineWrite && !saveIdsText(idsDataset, targetDll, entry.headlineIds, entry.headlineText, &entry.headlineIds, &error)) {
-            QMessageBox::warning(this, tr("News speichern"), tr("Headline konnte nicht gespeichert werden: %1").arg(error));
+            QMessageBox::warning(this, tr("News speichern"), tr("Headline could not be saved: %1").arg(error));
             return false;
         }
         if (needsBodyWrite) {
-            m_statusLabel->setText(tr("Text IDS %1 wird gespeichert...").arg(entry.textIds));
+            m_statusLabel->setText(tr("Saving text IDS %1...").arg(entry.textIds));
             QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         }
         if (needsBodyWrite && !saveIdsText(idsDataset, targetDll, entry.textIds, entry.bodyText, &entry.textIds, &error)) {
-            QMessageBox::warning(this, tr("News speichern"), tr("Text konnte nicht gespeichert werden: %1").arg(error));
+            QMessageBox::warning(this, tr("News speichern"), tr("Text could not be saved: %1").arg(error));
             return false;
         }
         if (entry.categoryIds <= 0)
@@ -810,7 +810,7 @@ bool NewsRumorEditor::save()
     }
 
     QString error;
-    m_statusLabel->setText(tr("news.ini wird gespeichert..."));
+    m_statusLabel->setText(tr("Saving news.ini..."));
     QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
     if (!writeNewsFile(&error)) {
         QMessageBox::warning(this, tr("News speichern"), error);
@@ -943,7 +943,7 @@ bool NewsRumorEditor::writeNewsFile(QString *errorMessage)
     QFile file(m_newsPath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         if (errorMessage)
-            *errorMessage = tr("news.ini konnte nicht geschrieben werden: %1").arg(m_newsPath);
+            *errorMessage = tr("news.ini could not be written: %1").arg(m_newsPath);
         return false;
     }
     file.write(IniParser::serialize(outDoc).toUtf8());
