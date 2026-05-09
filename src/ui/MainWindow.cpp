@@ -70,6 +70,7 @@
 #include <QDesktopServices>
 #include <QEventLoop>
 #include <QProcess>
+#include <QPointer>
 #include <QUrl>
 #include <QSignalBlocker>
 #include <QSlider>
@@ -750,7 +751,8 @@ void MainWindow::handleUpdateInfo(const flatlas::tools::UpdateInfo &info, bool u
         return;
     }
 
-    if (!info.downloadUrl.isValid() || info.packageType.isEmpty()) {
+    if (info.packageType != QStringLiteral("dummy")
+        && (!info.downloadUrl.isValid() || info.packageType.isEmpty())) {
         flatlas::core::Logger::warning(QStringLiteral("Updater"),
                                        QStringLiteral("No matching update asset found for architecture %1.")
                                            .arg(info.architecture));
@@ -777,6 +779,11 @@ void MainWindow::handleUpdateInfo(const flatlas::tools::UpdateInfo &info, bool u
 
 void MainWindow::downloadAndInstallUpdate(const flatlas::tools::UpdateInfo &info)
 {
+    if (info.packageType == QStringLiteral("dummy")) {
+        showDummyUpdateProcess();
+        return;
+    }
+
     if (!info.downloadUrl.isValid() || info.packageType.isEmpty()) {
         QMessageBox::warning(this, tr("Update Failed"), tr("No matching Windows update package was found."));
         return;
@@ -854,6 +861,46 @@ void MainWindow::downloadAndInstallUpdate(const flatlas::tools::UpdateInfo &info
     });
 
     downloader->download(info.downloadUrl, targetPath);
+}
+
+void MainWindow::showDummyUpdateProcess()
+{
+    flatlas::core::Logger::info(QStringLiteral("Updater"),
+                                QStringLiteral("Starting dummy update UI process."));
+    auto *progress = new QProgressDialog(tr("Downloading update..."), tr("Cancel"), 0, 100, this);
+    progress->setWindowModality(Qt::WindowModal);
+    progress->setMinimumDuration(0);
+    progress->setValue(0);
+
+    auto *timer = new QTimer(progress);
+    auto *value = new int(0);
+    QPointer<QProgressDialog> guard(progress);
+
+    connect(progress, &QProgressDialog::canceled, this, [timer, value]() {
+        timer->stop();
+        delete value;
+    });
+    connect(timer, &QTimer::timeout, this, [this, timer, progress, guard, value]() {
+        *value += 7;
+        if (guard)
+            progress->setValue(qMin(*value, 100));
+        if (*value < 100)
+            return;
+
+        timer->stop();
+        delete value;
+        if (guard) {
+            progress->close();
+            progress->deleteLater();
+        }
+        QMessageBox::information(
+            this,
+            tr("Update Ready"),
+            tr("Dummy update completed. No files were changed."));
+        flatlas::core::Logger::info(QStringLiteral("Updater"),
+                                    QStringLiteral("Dummy update UI process completed."));
+    });
+    timer->start(120);
 }
 
 void MainWindow::createMenus()
@@ -976,6 +1023,19 @@ void MainWindow::createMenus()
     });
     helpMenu->addSeparator();
     helpMenu->addAction(tr("Check for &Updates..."), this, [this]() { checkForUpdates(true); });
+    if (qEnvironmentVariableIsSet("FLATLAS_ENABLE_DUMMY_UPDATE")) {
+        helpMenu->addAction(tr("Test Update UI..."), this, [this]() {
+            flatlas::tools::UpdateInfo info;
+            info.available = true;
+            info.currentVersion = flatlas::tools::UpdateChecker::currentVersion();
+            info.latestVersion = QStringLiteral("v9.9.9-test");
+            info.architecture = flatlas::tools::UpdateChecker::currentArchitecture();
+            info.assetName = QStringLiteral("FLAtlas-V2-dummy-%1.zip").arg(info.architecture);
+            info.packageType = QStringLiteral("dummy");
+            info.releaseNotes = tr("This is a dummy update for testing the updater UI.");
+            handleUpdateInfo(info, true);
+        });
+    }
     helpMenu->addSeparator();
     helpMenu->addAction(tr("&Über FL Atlas..."), this, [this]() {
         QMessageBox::about(this, tr("Über FL Atlas"),

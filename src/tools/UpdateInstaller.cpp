@@ -63,16 +63,38 @@ InstallResult UpdateInstaller::prepare(const QString &zipPath, const QString &ap
     }
 
     const QString appExe = QCoreApplication::applicationFilePath();
+    const QString appExeName = QFileInfo(appExe).fileName();
+    const QString logPath = m_stagingDir + QStringLiteral("/update-install.log");
 
     QTextStream out(&script);
     out << "@echo off\r\n";
-    out << "echo Waiting for FLAtlas to close...\r\n";
-    out << "timeout /t 2 /nobreak >nul\r\n";
-    out << "echo Installing update...\r\n";
-    out << "xcopy /E /Y /Q \"" << QDir::toNativeSeparators(payloadDir) << "\\*\" \""
-        << QDir::toNativeSeparators(appDir) << "\\\"\r\n";
-    out << "echo Starting FLAtlas...\r\n";
-    out << "start \"\" \"" << QDir::toNativeSeparators(appExe) << "\"\r\n";
+    out << "setlocal\r\n";
+    out << "set \"APP_EXE=" << QDir::toNativeSeparators(appExe) << "\"\r\n";
+    out << "set \"APP_EXE_NAME=" << appExeName << "\"\r\n";
+    out << "set \"PAYLOAD_DIR=" << QDir::toNativeSeparators(payloadDir) << "\"\r\n";
+    out << "set \"APP_DIR=" << QDir::toNativeSeparators(appDir) << "\"\r\n";
+    out << "set \"LOG_FILE=" << QDir::toNativeSeparators(logPath) << "\"\r\n";
+    out << "echo [%date% %time%] Waiting for FLAtlas to close...>>\"%LOG_FILE%\"\r\n";
+    out << "for /L %%i in (1,1,60) do (\r\n";
+    out << "  tasklist /FI \"IMAGENAME eq %APP_EXE_NAME%\" 2>nul | find /I \"%APP_EXE_NAME%\" >nul\r\n";
+    out << "  if errorlevel 1 goto :install\r\n";
+    out << "  timeout /t 1 /nobreak >nul\r\n";
+    out << ")\r\n";
+    out << "echo [%date% %time%] FLAtlas is still running. Update aborted.>>\"%LOG_FILE%\"\r\n";
+    out << "echo FLAtlas is still running. Update aborted.\r\n";
+    out << "pause\r\n";
+    out << "exit /b 1\r\n";
+    out << ":install\r\n";
+    out << "echo [%date% %time%] Installing update...>>\"%LOG_FILE%\"\r\n";
+    out << "xcopy /E /Y /Q \"%PAYLOAD_DIR%\\*\" \"%APP_DIR%\\\"\r\n";
+    out << "if errorlevel 1 (\r\n";
+    out << "  echo [%date% %time%] Copy failed with error %errorlevel%.>>\"%LOG_FILE%\"\r\n";
+    out << "  echo Update copy failed. See \"%LOG_FILE%\".\r\n";
+    out << "  pause\r\n";
+    out << "  exit /b 1\r\n";
+    out << ")\r\n";
+    out << "echo [%date% %time%] Starting FLAtlas...>>\"%LOG_FILE%\"\r\n";
+    out << "start \"\" \"%APP_EXE%\"\r\n";
     out << "del \"%~f0\"\r\n"; // Batch löscht sich selbst
     script.close();
 

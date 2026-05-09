@@ -147,6 +147,11 @@ QHash<QString, QString> builtInTranslations(const QString &language)
             QStringLiteral("Die GitHub-Updateprüfung ist mit HTTP-Status %1 fehlgeschlagen."), language);
     addPair(t, QStringLiteral("Could not check for updates: %1"),
             QStringLiteral("Updateprüfung nicht möglich: %1"), language);
+    addPair(t, QStringLiteral("Test Update UI..."), QStringLiteral("Update-Oberfläche testen..."), language);
+    addPair(t, QStringLiteral("This is a dummy update for testing the updater UI."),
+            QStringLiteral("Dies ist ein Dummy-Update zum Testen der Update-Oberfläche."), language);
+    addPair(t, QStringLiteral("Dummy update completed. No files were changed."),
+            QStringLiteral("Dummy-Update abgeschlossen. Es wurden keine Dateien geändert."), language);
     addPair(t, QStringLiteral("Version %1 is available (current: %2).\n\n%3\n\nDownload and install?"),
             QStringLiteral("Version %1 ist verfügbar (aktuell: %2).\n\n%3\n\nHerunterladen und installieren?"), language);
     addPair(t, QStringLiteral("Version %1 is available (current: %2).\n\n%3"),

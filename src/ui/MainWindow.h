@@ -83,6 +83,7 @@ private:
     void checkForUpdates(bool userInitiated);
     void handleUpdateInfo(const flatlas::tools::UpdateInfo &info, bool userInitiated);
     void downloadAndInstallUpdate(const flatlas::tools::UpdateInfo &info);
+    void showDummyUpdateProcess();
     void launchFreelancerFromContext();
     flatlas::editors::SystemEditorPage *currentSystemEditor() const;
     static QString formatSystemTabTitle(const QString &editorTitle, const QString &ingameName);
