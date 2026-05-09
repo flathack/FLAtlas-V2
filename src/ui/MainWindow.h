@@ -21,6 +21,7 @@ namespace flatlas::editors { class FactionEditorPage; }
 namespace flatlas::editors { class NewsRumorEditor; }
 namespace flatlas::tools { class HelpBrowser; }
 namespace flatlas::tools { class KeyboardShortcutOverviewDialog; }
+namespace flatlas::tools { struct UpdateInfo; }
 namespace flatlas::rendering { class ModelViewerPage; }
 
 /// FLAtlas-Hauptfenster – schlanke Orchestrierung, delegiert an Panels und Editoren.
@@ -79,6 +80,9 @@ private:
     QString tabTitleForWidget(QWidget *widget) const;
     void showContextHelp();
     void showShortcutOverview();
+    void checkForUpdates(bool userInitiated);
+    void handleUpdateInfo(const flatlas::tools::UpdateInfo &info, bool userInitiated);
+    void downloadAndInstallUpdate(const flatlas::tools::UpdateInfo &info);
     void launchFreelancerFromContext();
     flatlas::editors::SystemEditorPage *currentSystemEditor() const;
     static QString formatSystemTabTitle(const QString &editorTitle, const QString &ingameName);

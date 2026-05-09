@@ -31,6 +31,9 @@ public:
     /// Ruft das vorbereitete Batch-Skript auf und beendet die App.
     bool executeAndRestart();
 
+    /// Externen Installer starten und App beenden.
+    static bool executeExternalInstallerAndQuit(const QString &installerPath);
+
     /// Pfad zum vorbereiteten Update-Verzeichnis.
     QString stagingDir() const;
 

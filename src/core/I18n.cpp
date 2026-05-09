@@ -130,6 +130,23 @@ QHash<QString, QString> builtInTranslations(const QString &language)
     addPair(t, QStringLiteral("Checking for updates..."), QStringLiteral("Suche nach Updates..."), language);
     addPair(t, QStringLiteral("Downloading update..."), QStringLiteral("Update wird heruntergeladen..."), language);
     addPair(t, QStringLiteral("Cancel"), QStringLiteral("Abbrechen"), language);
+    addPair(t, QStringLiteral("Package: %1"), QStringLiteral("Paket: %1"), language);
+    addPair(t, QStringLiteral("No matching Windows update package was found."),
+            QStringLiteral("Es wurde kein passendes Windows-Updatepaket gefunden."), language);
+    addPair(t, QStringLiteral("Version %1 is available (current: %2).\nArchitecture: %3\n%4\n\n%5\n\nDownload and install?"),
+            QStringLiteral("Version %1 ist verfügbar (aktuell: %2).\nArchitektur: %3\n%4\n\n%5\n\nHerunterladen und installieren?"), language);
+    addPair(t, QStringLiteral("Installer downloaded. Close FLAtlas and start the installer now?"),
+            QStringLiteral("Installer heruntergeladen. FLAtlas schließen und den Installer jetzt starten?"), language);
+    addPair(t, QStringLiteral("Could not start update installer."),
+            QStringLiteral("Der Update-Installer konnte nicht gestartet werden."), language);
+    addPair(t, QStringLiteral("No FLAtlas release is available on GitHub yet."),
+            QStringLiteral("Auf GitHub ist noch kein FLAtlas-Release verfügbar."), language);
+    addPair(t, QStringLiteral("GitHub rejected the update check. Please try again later."),
+            QStringLiteral("GitHub hat die Updateprüfung abgelehnt. Bitte später erneut versuchen."), language);
+    addPair(t, QStringLiteral("GitHub update check failed with HTTP status %1."),
+            QStringLiteral("Die GitHub-Updateprüfung ist mit HTTP-Status %1 fehlgeschlagen."), language);
+    addPair(t, QStringLiteral("Could not check for updates: %1"),
+            QStringLiteral("Updateprüfung nicht möglich: %1"), language);
     addPair(t, QStringLiteral("Version %1 is available (current: %2).\n\n%3\n\nDownload and install?"),
             QStringLiteral("Version %1 ist verfügbar (aktuell: %2).\n\n%3\n\nHerunterladen und installieren?"), language);
     addPair(t, QStringLiteral("Version %1 is available (current: %2).\n\n%3"),

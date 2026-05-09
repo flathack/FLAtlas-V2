@@ -3,11 +3,31 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QProcess>
 #include <QStandardPaths>
 #include <QTextStream>
 
 namespace flatlas::tools {
+
+namespace {
+QString powershellQuote(const QString &path)
+{
+    QString escaped = path;
+    escaped.replace(QLatin1Char('\''), QStringLiteral("''"));
+    return QStringLiteral("'%1'").arg(escaped);
+}
+
+QString payloadRootForStaging(const QString &stagingDir)
+{
+    const QDir staging(stagingDir);
+    const QFileInfoList files = staging.entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
+    const QFileInfoList dirs = staging.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
+    if (files.isEmpty() && dirs.size() == 1)
+        return dirs.first().absoluteFilePath();
+    return stagingDir;
+}
+} // namespace
 
 UpdateInstaller::UpdateInstaller(QObject *parent)
     : QObject(parent)
@@ -33,6 +53,8 @@ InstallResult UpdateInstaller::prepare(const QString &zipPath, const QString &ap
     if (!result.success)
         return result;
 
+    const QString payloadDir = payloadRootForStaging(m_stagingDir);
+
     // Batch-Skript erzeugen, das Dateien kopiert und App neu startet
     m_scriptPath = m_stagingDir + QStringLiteral("/update.cmd");
     QFile script(m_scriptPath);
@@ -47,7 +69,7 @@ InstallResult UpdateInstaller::prepare(const QString &zipPath, const QString &ap
     out << "echo Waiting for FLAtlas to close...\r\n";
     out << "timeout /t 2 /nobreak >nul\r\n";
     out << "echo Installing update...\r\n";
-    out << "xcopy /E /Y /Q \"" << QDir::toNativeSeparators(m_stagingDir) << "\\*\" \""
+    out << "xcopy /E /Y /Q \"" << QDir::toNativeSeparators(payloadDir) << "\\*\" \""
         << QDir::toNativeSeparators(appDir) << "\\\"\r\n";
     out << "echo Starting FLAtlas...\r\n";
     out << "start \"\" \"" << QDir::toNativeSeparators(appExe) << "\"\r\n";
@@ -70,6 +92,17 @@ bool UpdateInstaller::executeAndRestart()
     if (ok)
         QCoreApplication::quit();
 
+    return ok;
+}
+
+bool UpdateInstaller::executeExternalInstallerAndQuit(const QString &installerPath)
+{
+    if (!QFile::exists(installerPath))
+        return false;
+
+    const bool ok = QProcess::startDetached(QDir::toNativeSeparators(installerPath), {});
+    if (ok)
+        QCoreApplication::quit();
     return ok;
 }
 
@@ -96,8 +129,8 @@ InstallResult UpdateInstaller::extractZip(const QString &zipPath, const QString 
     proc.setArguments({
         QStringLiteral("-NoProfile"),
         QStringLiteral("-Command"),
-        QStringLiteral("Expand-Archive -Path '%1' -DestinationPath '%2' -Force")
-            .arg(zipPath, destDir)
+        QStringLiteral("Expand-Archive -LiteralPath %1 -DestinationPath %2 -Force")
+            .arg(powershellQuote(zipPath), powershellQuote(destDir))
     });
     proc.start();
     proc.waitForFinished(60000);
