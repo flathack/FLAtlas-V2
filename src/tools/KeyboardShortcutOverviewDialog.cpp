@@ -64,7 +64,7 @@ void KeyboardShortcutOverviewDialog::buildUi()
 void KeyboardShortcutOverviewDialog::populateRows()
 {
     const QList<ShortcutRow> rows = {
-        {tr("Allgemein"), tr("Ctrl+S"), tr("Aktiver Editor"), tr("Speichert die aktuelle Datei bzw. den aktuellen Editorzustand.")},
+        {tr("Allgemein"), tr("Ctrl+S"), tr("Aktiver Editor"), tr("Saves the current file or editor state.")},
         {tr("Allgemein"), tr("Ctrl+Z"), tr("Aktiver Editor"), tr("Macht die letzte Undo-fähige Aktion rückgängig.")},
         {tr("Allgemein"), tr("Ctrl+Y"), tr("Aktiver Editor"), tr("Stellt die letzte rückgängig gemachte Aktion wieder her.")},
         {tr("Allgemein"), tr("Ctrl+Shift+Z"), tr("Aktiver Editor"), tr("Alternative Redo-Tastenkombination.")},

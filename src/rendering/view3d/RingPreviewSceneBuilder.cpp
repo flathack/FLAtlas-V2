@@ -245,10 +245,10 @@ RingPreviewSceneResult RingPreviewSceneBuilder::build(const RingPreviewSceneRequ
             result.sceneRoot.children.append(hostNode);
             result.hasHostModel = true;
         } else {
-            result.statusMessage = QObject::tr("Host-Modell konnte nicht geladen werden. Die Ring-Vorschau wird ohne Objekt angezeigt.");
+            result.statusMessage = QObject::tr("Host model could not be loaded. The ring preview is shown without the object.");
         }
     } else if (!request.hostModelPath.trimmed().isEmpty()) {
-        result.statusMessage = QObject::tr("Host-Modell konnte nicht aufgeloest werden. Die Ring-Vorschau wird ohne Objekt angezeigt.");
+        result.statusMessage = QObject::tr("Host model could not be resolved. The ring preview is shown without the object.");
     }
 
     if (request.showHostRadiusSphere && request.hostRadius > 0.0) {

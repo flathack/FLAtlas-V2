@@ -111,7 +111,7 @@ void ModExportDialog::setupUi(const QString &profileName,
     m_fileTable->verticalHeader()->setVisible(false);
     m_fileTable->horizontalHeader()->setStretchLastSection(false);
     m_fileTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
-    tabs->addTab(m_fileTable, tr("Dateien"));
+    tabs->addTab(m_fileTable, tr("Files"));
 
     m_scriptEdit = new QPlainTextEdit(tabs);
     m_scriptEdit->setPlainText(ModExportService::defaultScriptXml(safeName, {}, {}, true));
@@ -167,8 +167,8 @@ void ModExportDialog::chooseTargetPath()
 {
     const QString format = m_formatCombo->currentData().toString();
     const QString filter = format == QStringLiteral("zip")
-        ? tr("ZIP (*.zip);;Alle Dateien (*)")
-        : tr("FLMOD (*.flmod);;Alle Dateien (*)");
+        ? tr("ZIP (*.zip);;All Files (*)")
+        : tr("FLMOD (*.flmod);;All Files (*)");
     QString path = QFileDialog::getSaveFileName(this, tr("Export speichern"), m_targetEdit->text(), filter);
     if (!path.isEmpty()) {
         m_targetEdit->setText(path);
@@ -178,7 +178,7 @@ void ModExportDialog::chooseTargetPath()
 
 void ModExportDialog::scan()
 {
-    QProgressDialog progress(tr("Mod-Dateien werden verglichen..."), tr("Abbrechen"), 0, 100, this);
+    QProgressDialog progress(tr("Comparing mod files..."), tr("Abbrechen"), 0, 100, this);
     progress.setWindowModality(Qt::WindowModal);
     progress.setMinimumDuration(0);
 
@@ -210,7 +210,7 @@ void ModExportDialog::scan()
 void ModExportDialog::exportArchive()
 {
     if (!m_hasPlan) {
-        QMessageBox::information(this, tr("Mod exportieren"), tr("Bitte zuerst scannen, um die exportierbaren Dateien zu ermitteln."));
+        QMessageBox::information(this, tr("Mod exportieren"), tr("Please scan first to determine exportable files."));
         return;
     }
 
@@ -260,7 +260,7 @@ void ModExportDialog::exportArchive()
 
     if (!ok) {
         QMessageBox::warning(this, tr("Mod exportieren"),
-                             error.trimmed().isEmpty() ? tr("Export konnte nicht geschrieben werden.") : error);
+                             error.trimmed().isEmpty() ? tr("Export could not be written.") : error);
         return;
     }
 
@@ -280,7 +280,7 @@ void ModExportDialog::showExclusions()
     lines << QString();
     lines << tr("Manuell ausgeschlossen:");
     if (m_manualExclusions.isEmpty()) {
-        lines << tr("  Keine");
+        lines << tr("  None");
     } else {
         QStringList manual = m_manualExclusions.values();
         std::sort(manual.begin(), manual.end(), [](const QString &a, const QString &b) {

@@ -215,7 +215,7 @@ DeleteSystemPrecheckReport buildPrecheckReport(const QString &universeFilePath,
 
     const IniDocument universeDoc = IniParser::parseFile(universeFilePath);
     if (universeDoc.isEmpty()) {
-        appendUniqueBlocker(report.blockers, QObject::tr("universe.ini konnte nicht gelesen werden."));
+        appendUniqueBlocker(report.blockers, QObject::tr("universe.ini could not be read."));
         return report;
     }
 
@@ -461,7 +461,7 @@ bool DeleteSystemService::execute(const DeleteSystemPrecheckReport &report,
     const IniDocument universeDoc = IniParser::parseFile(report.universeFilePath);
     if (universeDoc.isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("universe.ini konnte nicht erneut gelesen werden.");
+            *errorMessage = QObject::tr("universe.ini could not be read again.");
         return false;
     }
 

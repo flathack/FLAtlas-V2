@@ -617,7 +617,7 @@ void IniEditorPage::setupWorkspace()
             return;
 
         QMenu menu(this);
-        auto *jumpAction = menu.addAction(tr("Zur Sektion springen"));
+        auto *jumpAction = menu.addAction(tr("Jump to Section"));
         auto *copyAction = menu.addAction(tr("Sektion kopieren"));
         auto *collapseAction = menu.addAction(tr("Sektion einklappen"));
         const QAction *selected = menu.exec(m_sectionList->viewport()->mapToGlobal(pos));

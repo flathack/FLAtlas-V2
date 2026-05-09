@@ -142,7 +142,7 @@ bool writeStoredZip(const QString &targetPath, const QVector<ZipEntry> &entries,
 
     if (!file.commit()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("ZIP-Datei konnte nicht geschrieben werden: %1").arg(targetPath);
+            *errorMessage = QObject::tr("ZIP file could not be written: %1").arg(targetPath);
         return false;
     }
     return true;
@@ -177,7 +177,7 @@ QByteArray fileBytes(const QString &path, QString *errorMessage)
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Datei konnte nicht gelesen werden: %1").arg(path);
+            *errorMessage = QObject::tr("File could not be read: %1").arg(path);
         return {};
     }
     return file.readAll();
@@ -285,11 +285,11 @@ ModExportPlan ModExportService::collectChangedFiles(const QString &modRoot,
     QDir modDir(plan.modRoot);
     QDir referenceDir(plan.referenceRoot);
     if (!modDir.exists()) {
-        plan.errors.append(QObject::tr("Mod-Quelle nicht gefunden: %1").arg(plan.modRoot));
+        plan.errors.append(QObject::tr("Mod source not found: %1").arg(plan.modRoot));
         return plan;
     }
     if (!referenceDir.exists()) {
-        plan.errors.append(QObject::tr("Referenzinstallation nicht gefunden: %1").arg(plan.referenceRoot));
+        plan.errors.append(QObject::tr("Reference installation not found: %1").arg(plan.referenceRoot));
         return plan;
     }
 
@@ -321,7 +321,7 @@ ModExportPlan ModExportService::collectChangedFiles(const QString &modRoot,
         const QString key = relativePath.toLower();
         const QString sourceHash = QString::fromLatin1(hashFile(sourcePath));
         if (sourceHash.isEmpty()) {
-            plan.errors.append(QObject::tr("Datei konnte nicht gelesen werden: %1").arg(sourcePath));
+            plan.errors.append(QObject::tr("File could not be read: %1").arg(sourcePath));
             continue;
         }
 

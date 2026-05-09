@@ -327,30 +327,30 @@ void FactionEditorPage::buildUi()
 void FactionEditorPage::scheduleLoadFromContext()
 {
     if (m_pathLabel)
-        m_pathLabel->setText(tr("Faction-Daten werden geladen..."));
+        m_pathLabel->setText(tr("Loading faction data..."));
     QTimer::singleShot(0, this, &FactionEditorPage::loadFromContext);
 }
 
 void FactionEditorPage::loadFromContext()
 {
-    reportLoadingProgress(0, tr("Faction Editor: Daten werden vorbereitet..."));
+    reportLoadingProgress(0, tr("Faction Editor: Preparing data..."));
     const QString root = flatlas::core::EditingContext::instance().primaryGamePath();
     m_pathLabel->setText(root.isEmpty() ? tr("No active editing context") : root);
-    reportLoadingProgress(20, tr("Faction Editor: IDS-Texte werden geladen..."));
+    reportLoadingProgress(20, tr("Faction Editor: Loading IDS texts..."));
     refreshIdsTextCache();
     QString warnings;
-    reportLoadingProgress(50, tr("Faction Editor: Faction-Dateien werden geladen..."));
+    reportLoadingProgress(50, tr("Faction Editor: Loading faction files..."));
     m_service->load(root, &warnings);
     if (!warnings.trimmed().isEmpty())
         m_pathLabel->setText(QStringLiteral("%1  -  %2").arg(m_pathLabel->text(), warnings.split(QLatin1Char('\n')).join(QStringLiteral("; "))));
     const QStringList nicknames = m_service->world().sortedNicknames();
-    reportLoadingProgress(80, tr("Faction Editor: Tabellen werden gefuellt..."));
+    reportLoadingProgress(80, tr("Faction Editor: Filling tables..."));
     if (!nicknames.isEmpty())
         selectFaction(nicknames.first());
     refreshFactionList();
     refreshValidation();
     emit titleChanged(title());
-    reportLoadingProgress(100, tr("Faction Editor: %1 Factions geladen").arg(nicknames.size()));
+    reportLoadingProgress(100, tr("Faction Editor: %1 factions loaded").arg(nicknames.size()));
 }
 
 void FactionEditorPage::reportLoadingProgress(int percent, const QString &message)

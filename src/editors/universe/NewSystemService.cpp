@@ -297,12 +297,12 @@ bool NewSystemService::createSystem(const QString &universeFilePath,
 {
     if (request.systemName.trimmed().isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Bitte einen Systemnamen eingeben.");
+            *errorMessage = QObject::tr("Please enter a system name.");
         return false;
     }
     if (request.systemPrefix.trimmed().isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Bitte einen System Prefix eingeben.");
+            *errorMessage = QObject::tr("Please enter a system prefix.");
         return false;
     }
 

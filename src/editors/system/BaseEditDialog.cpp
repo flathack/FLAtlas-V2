@@ -579,7 +579,7 @@ QWidget *createPreviewFrame(flatlas::rendering::ModelViewport3D **outPreview,
     auto *preview = new flatlas::rendering::ModelViewport3D(host);
     stack->addWidget(preview);
 
-    auto *fallback = new QLabel(QObject::tr("Waehle einen Archetype um die Vorschau zu laden."), host);
+    auto *fallback = new QLabel(QObject::tr("Select an archetype to load the preview."), host);
     fallback->setAlignment(Qt::AlignCenter);
     fallback->setWordWrap(true);
     fallback->setStyleSheet(QStringLiteral("color:#9ca3af;"));
@@ -814,7 +814,7 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     roomPreviewTitle->setStyleSheet(QStringLiteral("font-weight:600;"));
     auto *roomPreviewHelp = new QLabel(tr("Die Vorschau zeigt den aktuell ausgewaehlten Raum. Falls kein Modell aufloesbar ist, bleibt die Room-Bearbeitung unveraendert moeglich."), roomsPreviewSidebar);
     roomPreviewHelp->setWordWrap(true);
-    m_selectedRoomLabel = new QLabel(tr("Kein Raum ausgewaehlt"), roomsPreviewSidebar);
+    m_selectedRoomLabel = new QLabel(tr("No room selected"), roomsPreviewSidebar);
     m_selectedRoomLabel->setWordWrap(true);
     m_activeRoomLabel = new QLabel(tr("Aktiver Raum im Viewer: -"), roomsPreviewSidebar);
     m_activeRoomLabel->setWordWrap(true);
@@ -1631,7 +1631,7 @@ void BaseEditDialog::activateRoomFromTable()
     if (modelPath.isEmpty() || !QFileInfo::exists(modelPath)) {
         QMessageBox::warning(this,
                              tr("Room aktivieren"),
-                             tr("Fuer %1 konnte kein darstellbares Interior-Modell gefunden werden.")
+                             tr("No renderable interior model was found for %1.")
                                  .arg(room.roomName.trimmed().isEmpty() ? tr("den ausgewaehlten Raum") : room.roomName.trimmed()));
         return;
     }
@@ -1791,7 +1791,7 @@ void BaseEditDialog::populateSceneCombo(int row, const QString &roomName, const 
             }
         }
         if (!found)
-            sceneCombo->addItem(roomSceneDisplayLabel(tr("Aktueller Eintrag"), currentScene.trimmed()), currentScene.trimmed());
+            sceneCombo->addItem(roomSceneDisplayLabel(tr("Current Entry"), currentScene.trimmed()), currentScene.trimmed());
     }
     if (!currentScene.trimmed().isEmpty()) {
         for (int index = 0; index < sceneCombo->count(); ++index) {
@@ -1827,19 +1827,19 @@ void BaseEditDialog::refreshPreview()
     };
 
     if (archetype.isEmpty()) {
-        showFallback(tr("Waehle einen Archetype um die Vorschau zu laden."));
+        showFallback(tr("Select an archetype to load the preview."));
         return;
     }
 
     const QString modelPath = catalog.archetypeModelPaths.value(normalizedKey(archetype));
     if (modelPath.isEmpty() || !QFileInfo::exists(modelPath)) {
-        showFallback(tr("Kein 3D-Modell fuer %1 vorhanden.").arg(archetype));
+        showFallback(tr("No 3D model available for %1.").arg(archetype));
         return;
     }
 
     QString errorMessage;
     if (!m_preview->loadModelFile(modelPath, &errorMessage)) {
-        showFallback(tr("Modell konnte nicht geladen werden: %1")
+        showFallback(tr("Model could not be loaded: %1")
                          .arg(errorMessage.isEmpty() ? tr("unbekannter Fehler") : errorMessage));
         return;
     }
@@ -1919,7 +1919,7 @@ void BaseEditDialog::updateRoomSelectionUi()
     const QString roomName = selectedRoomName();
     if (m_selectedRoomLabel) {
         m_selectedRoomLabel->setText(roomName.isEmpty()
-                                         ? tr("Kein Raum ausgewaehlt")
+                                         ? tr("No room selected")
                                          : tr("Ausgewaehlter Raum: %1").arg(roomName));
     }
     if (m_activeRoomLabel)
@@ -1972,14 +1972,14 @@ void BaseEditDialog::refreshRoomPreview()
                                                               room.scenePath,
                                                               flatlas::core::EditingContext::instance().primaryGamePath());
     if (modelPath.isEmpty() || !QFileInfo::exists(modelPath)) {
-        showFallback(tr("Fuer %1 konnte kein Interior-Modell aufgeloest werden.")
+        showFallback(tr("No interior model could be resolved for %1.")
                          .arg(room.roomName.trimmed().isEmpty() ? tr("diesen Raum") : room.roomName.trimmed()));
         return;
     }
 
     QString errorMessage;
     if (!m_roomPreview->loadModelFile(modelPath, &errorMessage)) {
-        showFallback(tr("Room-Modell konnte nicht geladen werden: %1")
+        showFallback(tr("Room model could not be loaded: %1")
                          .arg(errorMessage.isEmpty() ? tr("unbekannter Fehler") : errorMessage));
         return;
     }
@@ -2008,7 +2008,7 @@ void BaseEditDialog::applyTemplateSelection()
                                                &templateState,
                                                &errorMessage)) {
             m_templateInfoLabel->setText(errorMessage.trimmed().isEmpty()
-                                             ? tr("Template konnte nicht geladen werden.")
+                                             ? tr("Template could not be loaded.")
                                              : errorMessage.trimmed());
             return;
         }

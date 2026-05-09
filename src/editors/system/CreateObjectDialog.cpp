@@ -157,7 +157,7 @@ CreateObjectDialog::CreateObjectDialog(flatlas::domain::SystemDocument *document
     m_preview = new flatlas::rendering::ModelViewport3D(previewStack);
     stack->addWidget(m_preview);
 
-    m_previewFallback = new QLabel(tr("Waehle einen Archetype um die Vorschau zu laden."), previewStack);
+    m_previewFallback = new QLabel(tr("Select an archetype to load the preview."), previewStack);
     m_previewFallback->setAlignment(Qt::AlignCenter);
     m_previewFallback->setWordWrap(true);
     m_previewFallback->setStyleSheet(QStringLiteral("color:#9ca3af;"));
@@ -307,10 +307,10 @@ void CreateObjectDialog::populateArchetypeCombo()
     }
     configureSearchCompleter(m_archetypeCombo);
     if (m_archetypes.isEmpty()) {
-        m_archetypeStatus->setText(tr("Keine Archetypes in solararch.ini gefunden."));
+        m_archetypeStatus->setText(tr("No archetypes found in solararch.ini."));
     } else {
         m_archetypeCombo->setCurrentIndex(0);
-        m_archetypeStatus->setText(tr("%1 Archetypes verfuegbar.").arg(m_archetypes.size()));
+        m_archetypeStatus->setText(tr("%1 archetypes available.").arg(m_archetypes.size()));
     }
 }
 
@@ -408,23 +408,23 @@ void CreateObjectDialog::refreshPreview()
 
     const QString currentText = m_archetypeCombo->currentText().trimmed();
     if (currentText.isEmpty()) {
-        showFallback(tr("Waehle einen Archetype um die Vorschau zu laden."));
+        showFallback(tr("Select an archetype to load the preview."));
         return;
     }
 
     const ArchetypeEntry *match = resolveCurrentArchetype();
     if (!match) {
-        showFallback(tr("Archetype \"%1\" nicht in solararch.ini gefunden.").arg(currentText));
+        showFallback(tr("Archetype \"%1\" not found in solararch.ini.").arg(currentText));
         return;
     }
     if (match->modelPath.isEmpty() || !QFileInfo::exists(match->modelPath)) {
-        showFallback(tr("Kein 3D-Modell fuer %1 vorhanden.").arg(match->nickname));
+        showFallback(tr("No 3D model available for %1.").arg(match->nickname));
         return;
     }
 
     QString errorMessage;
     if (!m_preview->loadModelFile(match->modelPath, &errorMessage)) {
-        showFallback(tr("Modell konnte nicht geladen werden: %1")
+        showFallback(tr("Model could not be loaded: %1")
                      .arg(errorMessage.isEmpty() ? tr("unbekannter Fehler") : errorMessage));
         return;
     }
@@ -461,7 +461,7 @@ void CreateObjectDialog::applyDefaultLoadoutForCurrentArchetype()
     const QString defaultLoadout = match ? match->defaultLoadout : QString();
 
     if (defaultLoadout.isEmpty()) {
-        m_loadoutHintLabel->setText(tr("Kein Default-Loadout in solararch.ini hinterlegt."));
+        m_loadoutHintLabel->setText(tr("No default loadout defined in solararch.ini."));
     } else {
         m_loadoutHintLabel->setText(tr("Default-Loadout (solararch.ini): %1").arg(defaultLoadout));
     }
@@ -491,7 +491,7 @@ void CreateObjectDialog::accept()
     const QString nickname = m_nicknameEdit->text().trimmed();
     if (nickname.isEmpty() || !kNicknamePattern.match(nickname).hasMatch()) {
         QMessageBox::warning(this, tr("Ungueltiger Nickname"),
-                             tr("Bitte einen gueltigen Nickname eingeben (Buchstaben, Ziffern, _ und -)."));
+                             tr("Please enter a valid nickname (letters, digits, _ and -)."));
         m_nicknameEdit->setFocus();
         return;
     }
@@ -515,8 +515,8 @@ void CreateObjectDialog::accept()
         archetype = dashIndex >= 0 ? typed.left(dashIndex).trimmed() : typed;
     }
     if (archetype.isEmpty()) {
-        QMessageBox::warning(this, tr("Kein Archetype gewaehlt"),
-                             tr("Bitte einen Archetype auswaehlen."));
+        QMessageBox::warning(this, tr("No archetype selected"),
+                             tr("Please select an archetype."));
         m_archetypeCombo->setFocus();
         return;
     }

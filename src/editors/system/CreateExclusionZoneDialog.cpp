@@ -120,14 +120,14 @@ void CreateExclusionZoneDialog::accept()
     const QString nickname = m_nicknameEdit->text().trimmed();
     if (nickname.isEmpty()) {
         QMessageBox::warning(this, tr("Exclusion Zone"),
-                             tr("Der Nickname darf nicht leer sein."));
+                             tr("The nickname must not be empty."));
         return;
     }
 
     static const QRegularExpression validNickname(QStringLiteral("^[A-Za-z0-9_]+$"));
     if (!validNickname.match(nickname).hasMatch()) {
         QMessageBox::warning(this, tr("Exclusion Zone"),
-                             tr("Der Nickname darf nur Buchstaben, Zahlen und Unterstriche enthalten."));
+                             tr("The nickname may only contain letters, numbers, and underscores."));
         return;
     }
 
@@ -139,7 +139,7 @@ void CreateExclusionZoneDialog::accept()
 
     if (m_supportsShell && m_shellEnabledCheck->isChecked() && m_shellPathCombo->currentText().trimmed().isEmpty()) {
         QMessageBox::warning(this, tr("Exclusion Zone"),
-                             tr("Bitte waehle ein Shell-Mesh aus oder deaktiviere Optical Shell."));
+                             tr("Please select a shell mesh or disable Optical Shell."));
         return;
     }
 

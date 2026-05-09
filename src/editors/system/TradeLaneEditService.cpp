@@ -228,7 +228,7 @@ TradeLaneChainDetection TradeLaneEditService::inspectChain(const flatlas::domain
 
     if (chain.rings.size() < 2) {
         detection.issue = TradeLaneChainIssue::TooFewRings;
-        detection.errorMessage = QObject::tr("Eine Trade Lane muss aus mindestens zwei Ringen bestehen.");
+        detection.errorMessage = QObject::tr("A trade lane must consist of at least two rings.");
         return detection;
     }
 
@@ -333,22 +333,22 @@ bool TradeLaneEditService::buildReplacementObjects(const TradeLaneChain &existin
     }
     if (request.ringCount < 2) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Eine Trade Lane muss aus mindestens zwei Ringen bestehen.");
+            *errorMessage = QObject::tr("A trade lane must consist of at least two rings.");
         return false;
     }
     if (distanceMeters(request.startPosition, request.endPosition) <= 0.001) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Start- und Endpunkt der Trade Lane sind ungueltig.");
+            *errorMessage = QObject::tr("Start and end point of the trade lane are invalid.");
         return false;
     }
     if (request.archetype.trimmed().isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Bitte waehle einen gueltigen Trade-Lane-Archetype.");
+            *errorMessage = QObject::tr("Please select a valid trade lane archetype.");
         return false;
     }
     if (request.loadout.trimmed().isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Bitte waehle ein gueltiges Loadout fuer die Trade Lane.");
+            *errorMessage = QObject::tr("Please select a valid loadout for the trade lane.");
         return false;
     }
 

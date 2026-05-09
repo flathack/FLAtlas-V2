@@ -790,12 +790,12 @@ void UniverseEditorPage::onAddSystem()
     const NewSystemRequest request = dialog.request();
     if (request.systemName.trimmed().isEmpty()) {
         QMessageBox::warning(this, tr("Neues System"),
-                             tr("Bitte einen Systemnamen angeben."));
+                             tr("Please enter a system name."));
         return;
     }
     if (request.systemPrefix.trimmed().isEmpty()) {
         QMessageBox::warning(this, tr("Neues System"),
-                             tr("Bitte einen System Prefix angeben."));
+                             tr("Please enter a system prefix."));
         return;
     }
 
@@ -803,7 +803,7 @@ void UniverseEditorPage::onAddSystem()
         return;
 
     QMessageBox::information(this, tr("System platzieren"),
-                             tr("Klicke jetzt auf die Universe Map, um das neue System zu platzieren."));
+                             tr("Now click the universe map to place the new system."));
 }
 
 void UniverseEditorPage::onAddSector()
@@ -855,7 +855,7 @@ void UniverseEditorPage::onAddSector()
 
     if (!UniverseSerializer::save(*m_data, m_filePath)) {
         QMessageBox::warning(this, tr("Neuer Sektor"),
-                             tr("multiuniverse.ini konnte nicht aktualisiert werden."));
+                             tr("multiuniverse.ini could not be updated."));
         return;
     }
 
@@ -962,7 +962,7 @@ void UniverseEditorPage::onEditSystem(const QString &nickname)
     const EditSystemRequest request = dialog.request();
     if (request.name.trimmed().isEmpty()) {
         QMessageBox::warning(this, tr("System bearbeiten"),
-                             tr("Bitte einen Systemnamen angeben."));
+                             tr("Please enter a system name."));
         return;
     }
 

@@ -331,12 +331,12 @@ bool RingEditService::apply(SystemDocument *document,
 {
     if (!document || !object) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Kein System oder Host-Objekt fuer den Ring-Workflow verfuegbar.");
+            *errorMessage = QObject::tr("No system or host object available for the ring workflow.");
         return false;
     }
     if (!canHostRing(*object)) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Ringe koennen nur an Planeten oder Sonnen angehaengt werden.");
+            *errorMessage = QObject::tr("Rings can only be attached to planets or suns.");
         return false;
     }
 
@@ -349,22 +349,22 @@ bool RingEditService::apply(SystemDocument *document,
     if (sanitized.enabled) {
         if (sanitized.ringIni.isEmpty()) {
             if (errorMessage)
-                *errorMessage = QObject::tr("Bitte eine Ring-INI angeben.");
+                *errorMessage = QObject::tr("Please enter a ring INI.");
             return false;
         }
         if (sanitized.zoneNickname.isEmpty() || !isValidZoneNickname(sanitized.zoneNickname)) {
             if (errorMessage)
-                *errorMessage = QObject::tr("Bitte einen gueltigen Zone-Nickname angeben.");
+                *errorMessage = QObject::tr("Please enter a valid zone nickname.");
             return false;
         }
         if (sanitized.innerRadius <= 0.0 || sanitized.outerRadius <= sanitized.innerRadius) {
             if (errorMessage)
-                *errorMessage = QObject::tr("Inner Radius muss groesser als 0 und kleiner als Outer Radius sein.");
+                *errorMessage = QObject::tr("Inner radius must be greater than 0 and smaller than outer radius.");
             return false;
         }
         if (sanitized.thickness <= 0.0) {
             if (errorMessage)
-                *errorMessage = QObject::tr("Die Ring-Dicke muss groesser als 0 sein.");
+                *errorMessage = QObject::tr("Ring thickness must be greater than 0.");
             return false;
         }
         const auto conflictingZone = findZoneShared(document, sanitized.zoneNickname);

@@ -358,7 +358,7 @@ QString ZonePopulationDialog::profileSummaryText(const QString &profile) const
         return tr("Field Zone erkannt. Empfohlen: field, lootable_field oder mining_field.");
     if (profile == QLatin1String("lane"))
         return tr("Traffic/Trade Zone erkannt. Empfohlen: trade_lane oder trade_path.");
-    return tr("Keine klare Zonenart erkannt. Custom-Setups bleiben erlaubt.");
+    return tr("No clear zone type detected. Custom setups remain allowed.");
 }
 
 QVector<ZonePopulationDialog::EncounterRow> ZonePopulationDialog::encounterRows() const

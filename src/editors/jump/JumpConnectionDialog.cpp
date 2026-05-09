@@ -85,7 +85,7 @@ void JumpConnectionDialog::setupUi()
 
     m_destinationSystemCombo = new QComboBox(topGroup);
     m_destinationSystemCombo->setEditable(false);
-    topLayout->addRow(tr("Zielsystem:"), m_destinationSystemCombo);
+    topLayout->addRow(tr("Target System:"), m_destinationSystemCombo);
 
     m_archetypeCombo = new QComboBox(topGroup);
     topLayout->addRow(tr("Archetype:"), m_archetypeCombo);
@@ -94,7 +94,7 @@ void JumpConnectionDialog::setupUi()
     topLayout->addRow(tr("Quellobjekt:"), m_sourceObjectEdit);
 
     m_destinationObjectEdit = new QLineEdit(topGroup);
-    topLayout->addRow(tr("Zielobjekt:"), m_destinationObjectEdit);
+    topLayout->addRow(tr("Target Object:"), m_destinationObjectEdit);
 
     auto *gateGroup = new QGroupBox(tr("Gate-Parameter"));
     auto *gateLayout = new QFormLayout(gateGroup);
@@ -131,7 +131,7 @@ void JumpConnectionDialog::setupUi()
     auto *sourceLabel = new QLabel(tr("Quelle platzieren"));
     sourceLabel->setStyleSheet(QStringLiteral("font-weight:600;"));
     mapsLayout->addWidget(sourceLabel, 0, 0);
-    auto *destLabel = new QLabel(tr("Ziel platzieren"));
+    auto *destLabel = new QLabel(tr("Place Target"));
     destLabel->setStyleSheet(QStringLiteral("font-weight:600;"));
     mapsLayout->addWidget(destLabel, 0, 1);
     auto *universeLabel = new QLabel(tr("Universe"));
@@ -195,27 +195,27 @@ void JumpConnectionDialog::setupUi()
         const QPointF world = flatlas::rendering::MapScene::qtToFl(scenePos.x(), scenePos.y());
         m_sourcePosition = QVector3D(static_cast<float>(world.x()), 0.0f, static_cast<float>(world.y()));
         placeMarker(m_sourceScene, m_sourceMarker, m_sourcePosition);
-        m_sourceView->setPlacementMode(true, tr("Klicke auf die Quellkarte, um die Jump-Verbindung zu platzieren."));
+        m_sourceView->setPlacementMode(true, tr("Click the source map to place the jump connection."));
         updateStatus();
     });
     connect(m_destinationView, &flatlas::rendering::SystemMapView::placementClicked, this, [this](const QPointF &scenePos) {
         const QPointF world = flatlas::rendering::MapScene::qtToFl(scenePos.x(), scenePos.y());
         m_destinationPosition = QVector3D(static_cast<float>(world.x()), 0.0f, static_cast<float>(world.y()));
         placeMarker(m_destinationScene, m_destinationMarker, m_destinationPosition);
-        m_destinationView->setPlacementMode(true, tr("Klicke auf die Zielkarte, um das Gegenobjekt zu platzieren."));
+        m_destinationView->setPlacementMode(true, tr("Click the target map to place the counterpart object."));
         updateStatus();
     });
     connect(m_sourceView, &flatlas::rendering::SystemMapView::placementCanceled, this, [this]() {
         if (m_sourceView)
-            m_sourceView->setPlacementMode(true, tr("Klicke auf die Quellkarte, um die Jump-Verbindung zu platzieren."));
+            m_sourceView->setPlacementMode(true, tr("Click the source map to place the jump connection."));
     });
     connect(m_destinationView, &flatlas::rendering::SystemMapView::placementCanceled, this, [this]() {
         if (m_destinationView)
-            m_destinationView->setPlacementMode(true, tr("Klicke auf die Zielkarte, um das Gegenobjekt zu platzieren."));
+            m_destinationView->setPlacementMode(true, tr("Click the target map to place the counterpart object."));
     });
 
-    m_sourceView->setPlacementMode(true, tr("Klicke auf die Quellkarte, um die Jump-Verbindung zu platzieren."));
-    m_destinationView->setPlacementMode(true, tr("Klicke auf die Zielkarte, um das Gegenobjekt zu platzieren."));
+    m_sourceView->setPlacementMode(true, tr("Click the source map to place the jump connection."));
+    m_destinationView->setPlacementMode(true, tr("Click the target map to place the counterpart object."));
     refreshTypeUi();
     updateStatus();
 }
@@ -388,7 +388,7 @@ void JumpConnectionDialog::refreshDestinationSystem()
         }
     }
 
-    m_destinationView->setPlacementMode(true, tr("Klicke auf die Zielkarte, um das Gegenobjekt zu platzieren."));
+    m_destinationView->setPlacementMode(true, tr("Click the target map to place the counterpart object."));
     refreshUniversePreview();
     updateStatus();
 }
@@ -605,27 +605,27 @@ void JumpConnectionDialog::updateStatus()
     if (m_sourceSystem.nickname.trimmed().isEmpty())
         issues.append(tr("Quellsystem fehlt."));
     if (destSystem.nickname.trimmed().isEmpty() || destSystem.filePath.trimmed().isEmpty())
-        issues.append(tr("Zielsystem ist ungueltig oder konnte nicht aufgeloest werden."));
+        issues.append(tr("Target system is invalid or could not be resolved."));
     if (conn.fromObject.trimmed().isEmpty() || conn.toObject.trimmed().isEmpty())
         issues.append(tr("Beide Objekt-Nicknames muessen gesetzt sein."));
     if (conn.fromObject.compare(conn.toObject, Qt::CaseInsensitive) == 0
         && conn.fromSystem.compare(conn.toSystem, Qt::CaseInsensitive) == 0) {
-        issues.append(tr("Quell- und Zielobjekt duerfen nicht identisch sein."));
+        issues.append(tr("Source and target objects must not be identical."));
     }
     if (m_sourcePosition.isNull())
         issues.append(tr("Quellposition fehlt - bitte auf der linken Karte klicken."));
     if (m_destinationPosition.isNull())
-        issues.append(tr("Zielposition fehlt - bitte auf der rechten Karte klicken."));
+        issues.append(tr("Target position is missing - please click the right map."));
     if (isJumpGate()) {
         if (m_loadoutCombo->currentText().trimmed().isEmpty())
             issues.append(tr("Jumpgates brauchen ein gueltiges Loadout."));
         if (m_factionCombo->currentText().trimmed().isEmpty())
             issues.append(tr("Jumpgates brauchen eine Reputation."));
         if (m_pilotCombo->currentText().trimmed().isEmpty())
-            issues.append(tr("Jumpgates brauchen einen Pilot-Eintrag."));
+            issues.append(tr("Jump gates need a pilot entry."));
     }
     if (!isJumpGate() && m_archetypeCombo->currentText().trimmed().isEmpty())
-        issues.append(tr("Bitte einen Jump-Hole-Archetype waehlen."));
+        issues.append(tr("Please select a jump hole archetype."));
 
     m_statusLabel->setText(issues.join(QLatin1Char('\n')));
     if (m_okButton)

@@ -137,7 +137,7 @@ bool ensureWritableDllExists(const QString &freelancerIniPath,
     const QString templatePath = templateResourceDllPath(freelancerIniPath);
     if (templatePath.isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Es wurde keine Vorlagen-DLL zum Anlegen von %1 gefunden.").arg(dllName);
+            *errorMessage = QObject::tr("No template DLL was found for creating %1.").arg(dllName);
         return false;
     }
 
@@ -424,7 +424,7 @@ bool ResourceDllWriter::ensureStringResource(const QString &freelancerIniPath,
     if (!ok) {
         EndUpdateResourceW(handle, TRUE);
         if (errorMessage)
-            *errorMessage = QObject::tr("Der String-Eintrag konnte nicht in %1 geschrieben werden.").arg(dllPath);
+            *errorMessage = QObject::tr("The string entry could not be written to %1.").arg(dllPath);
         return false;
     }
 
@@ -499,7 +499,7 @@ bool ResourceDllWriter::ensureHtmlResource(const QString &freelancerIniPath,
     const QString trimmedXml = xmlText.trimmed();
     if (trimmedXml.isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Es wurde keine Infocard angegeben.");
+            *errorMessage = QObject::tr("No infocard was specified.");
         return false;
     }
 
@@ -556,7 +556,7 @@ bool ResourceDllWriter::ensureHtmlResource(const QString &freelancerIniPath,
     if (!ok) {
         EndUpdateResourceW(handle, TRUE);
         if (errorMessage)
-            *errorMessage = QObject::tr("Der Infocard-Eintrag konnte nicht in %1 geschrieben werden.").arg(dllPath);
+            *errorMessage = QObject::tr("The infocard entry could not be written to %1.").arg(dllPath);
         return false;
     }
 

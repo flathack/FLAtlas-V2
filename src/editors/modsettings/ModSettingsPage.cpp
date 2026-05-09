@@ -71,7 +71,7 @@ void ModSettingsPage::setupUi()
     m_bribePriceSpin->setRange(0, 999999999);
     m_bribePriceSpin->setSingleStep(1000);
     form->addRow(tr("Globaler Bribe-Preis:"), m_bribePriceSpin);
-    auto *hint = new QLabel(tr("Dieser Wert wird fuer alle bribe-Zeilen in mbases.ini verwendet."), bribeGroup);
+    auto *hint = new QLabel(tr("This value is used for all bribe lines in mbases.ini."), bribeGroup);
     hint->setWordWrap(true);
     form->addRow(QString(), hint);
     root->addWidget(bribeGroup);
@@ -143,7 +143,7 @@ void ModSettingsPage::reload()
     m_bribePriceSpin->setEnabled(hasPath);
     m_saveButton->setEnabled(hasPath);
     if (!hasPath) {
-        m_statusLabel->setText(tr("Keine aktive Mod-Installation mit mbases.ini."));
+        m_statusLabel->setText(tr("No active mod installation with mbases.ini."));
         emit titleChanged(tr("Mod Settings"));
         return;
     }
@@ -157,7 +157,7 @@ bool ModSettingsPage::writeBribePrice(int price, QString *errorMessage)
     const QString path = mbasesPath();
     if (path.isEmpty()) {
         if (errorMessage)
-            *errorMessage = tr("mbases.ini wurde nicht gefunden.");
+            *errorMessage = tr("mbases.ini was not found.");
         return false;
     }
 
@@ -174,7 +174,7 @@ bool ModSettingsPage::writeBribePrice(int price, QString *errorMessage)
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         if (errorMessage)
-            *errorMessage = tr("mbases.ini konnte nicht geschrieben werden: %1").arg(path);
+            *errorMessage = tr("mbases.ini could not be written: %1").arg(path);
         return false;
     }
     QTextStream out(&file);
@@ -190,7 +190,7 @@ void ModSettingsPage::save()
         QMessageBox::warning(this, tr("Mod Settings"), error);
         return;
     }
-    m_statusLabel->setText(tr("Bribe-Preis gespeichert: %1").arg(m_bribePriceSpin->value()));
+    m_statusLabel->setText(tr("Bribe price saved: %1").arg(m_bribePriceSpin->value()));
 }
 
 } // namespace flatlas::editors

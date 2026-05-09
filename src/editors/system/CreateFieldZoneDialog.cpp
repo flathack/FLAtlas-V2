@@ -706,14 +706,14 @@ void CreateFieldZoneDialog::accept()
 
     const QString nickname = m_nicknameEdit->text().trimmed();
     if (nickname.isEmpty()) {
-        QMessageBox::warning(this, tr("Zone erstellen"), tr("Bitte gib einen Zonennamen an."));
+        QMessageBox::warning(this, tr("Zone erstellen"), tr("Please enter a zone name."));
         return;
     }
 
     static const QRegularExpression validNickname(QStringLiteral("^[A-Za-z0-9_]+$"));
     if (!validNickname.match(nickname).hasMatch()) {
         QMessageBox::warning(this, tr("Zone erstellen"),
-                             tr("Der Zonenname darf nur Buchstaben, Zahlen und Unterstriche enthalten."));
+                             tr("The zone name may only contain letters, numbers, and underscores."));
         return;
     }
 
@@ -804,7 +804,7 @@ void CreateFieldZoneDialog::accept()
     if (type == CreateFieldZoneResult::Type::Nebula
         && !normalizeRgbText(m_fogColorEdit->text(), &normalizedFogColor)) {
         QMessageBox::warning(this, tr("Zone erstellen"),
-                             tr("Fog Color muss im Format 'R, G, B' mit Werten von 0 bis 255 angegeben werden."));
+                             tr("Fog Color must be specified as 'R, G, B' with values from 0 to 255."));
         return;
     }
 

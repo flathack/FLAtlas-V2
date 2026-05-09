@@ -461,7 +461,7 @@ bool loadBaseFileState(BaseEditState *state,
         return false;
     if (state->baseNickname.trimmed().isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Der Template-Base-Nickname darf nicht leer sein.");
+            *errorMessage = QObject::tr("The template base nickname must not be empty.");
         return false;
     }
 
@@ -487,7 +487,7 @@ bool loadBaseFileState(BaseEditState *state,
 
     if (state->baseIniAbsolutePath.isEmpty()) {
         if (errorMessage) {
-            *errorMessage = QObject::tr("Die Template-Base %1 wurde in universe.ini nicht gefunden.")
+            *errorMessage = QObject::tr("Template base %1 was not found in universe.ini.")
                                 .arg(state->baseNickname);
         }
         return false;
@@ -1651,7 +1651,7 @@ bool prepareIds(const QString &gameRoot,
         QString idsError;
         if (!IdsDataService::writeStringEntry(dataset, dllName, currentIdsName, displayName.trimmed(), &newIdsName, &idsError)) {
             if (errorMessage)
-                *errorMessage = idsError.trimmed().isEmpty() ? QObject::tr("Der IDS-Name konnte nicht geschrieben werden.") : idsError;
+                *errorMessage = idsError.trimmed().isEmpty() ? QObject::tr("The IDS name could not be written.") : idsError;
             return false;
         }
     }
@@ -1660,7 +1660,7 @@ bool prepareIds(const QString &gameRoot,
         QString infoError;
         if (!IdsDataService::writeInfocardEntry(dataset, dllName, currentIdsInfo, infocardXml.trimmed(), &newIdsInfo, &infoError)) {
             if (errorMessage)
-                *errorMessage = infoError.trimmed().isEmpty() ? QObject::tr("Die Infocard konnte nicht geschrieben werden.") : infoError;
+                *errorMessage = infoError.trimmed().isEmpty() ? QObject::tr("The infocard could not be written.") : infoError;
             return false;
         }
     }
@@ -1708,17 +1708,17 @@ bool validateState(const BaseEditState &state, QString *errorMessage)
 {
     if (state.objectNickname.trimmed().isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Der Objekt-Nickname darf nicht leer sein.");
+            *errorMessage = QObject::tr("The object nickname must not be empty.");
         return false;
     }
     if (state.baseNickname.trimmed().isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Der Base-Nickname darf nicht leer sein.");
+            *errorMessage = QObject::tr("The base nickname must not be empty.");
         return false;
     }
     if (state.archetype.trimmed().isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Das Archetype-Feld darf nicht leer sein.");
+            *errorMessage = QObject::tr("The archetype field must not be empty.");
         return false;
     }
     const QStringList rooms = enabledRoomNames(state);

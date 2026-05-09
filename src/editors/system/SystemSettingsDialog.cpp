@@ -104,13 +104,13 @@ SystemSettingsDialog::SystemSettingsDialog(const SystemSettingsState &current,
 
     auto *infoLabel = new QLabel(
         hasNonStandardSectionOrder
-            ? tr("Die geladene System-INI weicht in der Section-Reihenfolge vom ueblichen Freelancer-Aufbau ab.")
-            : tr("Die geladene System-INI entspricht bereits einer standardnahen Section-Reihenfolge."),
+            ? tr("The loaded system INI section order differs from the usual Freelancer layout.")
+            : tr("The loaded system INI already uses a near-standard section order."),
         this);
     infoLabel->setWordWrap(true);
     rootLayout->addWidget(infoLabel);
 
-    m_normalizeSectionsCheck = new QCheckBox(tr("Section-Reihenfolge in Datei standardisieren"), this);
+    m_normalizeSectionsCheck = new QCheckBox(tr("Standardize Section Order in File"), this);
     m_normalizeSectionsCheck->setChecked(false);
     rootLayout->addWidget(m_normalizeSectionsCheck);
 
@@ -155,7 +155,7 @@ void SystemSettingsDialog::accept()
         QMessageBox::warning(this,
                              tr("System-Einstellungen"),
                              errorMessage.trimmed().isEmpty()
-                                 ? tr("Mindestens ein Farbwert ist ungueltig.")
+                                 ? tr("At least one color value is invalid.")
                                  : errorMessage);
         return;
     }
@@ -175,7 +175,7 @@ void SystemSettingsDialog::pickColor(QLineEdit *edit)
             initialColor = QColor(parts[0].toInt(), parts[1].toInt(), parts[2].toInt());
     }
 
-    const QColor color = QColorDialog::getColor(initialColor, this, tr("Farbe auswaehlen"));
+    const QColor color = QColorDialog::getColor(initialColor, this, tr("Select Color"));
     if (!color.isValid())
         return;
     edit->setText(QStringLiteral("%1, %2, %3").arg(color.red()).arg(color.green()).arg(color.blue()));

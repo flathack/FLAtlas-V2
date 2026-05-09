@@ -65,7 +65,7 @@ bool saveWithRollback(const SystemDocument &primaryDoc,
 {
     if (!SystemPersistence::save(primaryDoc, primaryPath)) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Das Quellsystem konnte nicht gespeichert werden.");
+            *errorMessage = QObject::tr("The source system could not be saved.");
         return false;
     }
 
@@ -75,7 +75,7 @@ bool saveWithRollback(const SystemDocument &primaryDoc,
         if (secondaryBackup && !secondaryPath.isEmpty())
             SystemPersistence::save(*secondaryBackup, secondaryPath);
         if (errorMessage)
-            *errorMessage = QObject::tr("Das Zielsystem konnte nicht gespeichert werden. Die Quellseite wurde zurueckgesetzt.");
+            *errorMessage = QObject::tr("The target system could not be saved. The source side was reverted.");
         return false;
     }
 
@@ -143,7 +143,7 @@ bool JumpConnectionService::createConnection(const JumpConnectionCreateRequest &
 {
     if (request.sourceSystemFilePath.trimmed().isEmpty() || request.destinationSystemFilePath.trimmed().isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Quell- oder Zielsystemdatei fehlt.");
+            *errorMessage = QObject::tr("Source or target system file is missing.");
         return false;
     }
     if (request.sourceObjectNickname.trimmed().isEmpty() || request.destinationObjectNickname.trimmed().isEmpty()) {
@@ -155,7 +155,7 @@ bool JumpConnectionService::createConnection(const JumpConnectionCreateRequest &
     auto sourceDoc = SystemPersistence::load(request.sourceSystemFilePath);
     if (!sourceDoc) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Das Quellsystem konnte nicht geladen werden.");
+            *errorMessage = QObject::tr("The source system could not be loaded.");
         return false;
     }
     std::unique_ptr<SystemDocument> destDoc;
@@ -166,7 +166,7 @@ bool JumpConnectionService::createConnection(const JumpConnectionCreateRequest &
         destDoc = SystemPersistence::load(request.destinationSystemFilePath);
         if (!destDoc) {
             if (errorMessage)
-                *errorMessage = QObject::tr("Das Zielsystem konnte nicht geladen werden.");
+                *errorMessage = QObject::tr("The target system could not be loaded.");
             return false;
         }
     }
@@ -179,7 +179,7 @@ bool JumpConnectionService::createConnection(const JumpConnectionCreateRequest &
     SystemDocument *destTargetDoc = sameSystem ? sourceDoc.get() : destDoc.get();
     if (findObjectByNickname(destTargetDoc, request.destinationObjectNickname)) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Im Zielsystem existiert bereits ein Objekt mit diesem Nickname.");
+            *errorMessage = QObject::tr("An object with this nickname already exists in the target system.");
         return false;
     }
 
@@ -234,14 +234,14 @@ bool JumpConnectionService::deleteConnection(const JumpConnectionDeleteRequest &
 {
     if (request.currentSystemFilePath.trimmed().isEmpty() || request.currentObjectNickname.trimmed().isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Zu loeschende Jump-Verbindung ist unvollstaendig.");
+            *errorMessage = QObject::tr("Jump connection to delete is incomplete.");
         return false;
     }
 
     auto currentDoc = SystemPersistence::load(request.currentSystemFilePath);
     if (!currentDoc) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Das aktuelle System konnte nicht geladen werden.");
+            *errorMessage = QObject::tr("The current system could not be loaded.");
         return false;
     }
 
@@ -259,7 +259,7 @@ bool JumpConnectionService::deleteConnection(const JumpConnectionDeleteRequest &
             remoteDoc = SystemPersistence::load(request.destinationSystemFilePath);
             if (!remoteDoc) {
                 if (errorMessage)
-                    *errorMessage = QObject::tr("Das Zielsystem fuer die Gegenverbindung konnte nicht geladen werden.");
+                    *errorMessage = QObject::tr("The target system for the counterpart connection could not be loaded.");
                 return false;
             }
             remoteBackup = SystemPersistence::load(request.destinationSystemFilePath);
@@ -270,7 +270,7 @@ bool JumpConnectionService::deleteConnection(const JumpConnectionDeleteRequest &
     SolarObject *localObject = findObjectByNickname(currentDoc.get(), request.currentObjectNickname);
     if (!localObject) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Das lokale Jump-Objekt wurde nicht gefunden.");
+            *errorMessage = QObject::tr("The local jump object was not found.");
         return false;
     }
     std::shared_ptr<SolarObject> localShared;
