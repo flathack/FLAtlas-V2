@@ -40,7 +40,7 @@ void KeyboardShortcutOverviewDialog::buildUi()
     auto *layout = new QVBoxLayout(this);
 
     m_introLabel = new QLabel(
-        tr("Diese Übersicht bleibt als eigenes Fenster geöffnet und kann auf einen zweiten Monitor verschoben werden. "
+        tr("This overview remains open as a separate window and can be moved to a second monitor. "
            "Die 2D-Systemeditor-Shortcuts gelten nur, wenn der System Editor aktiv ist. Canvas-Aktionen wie Toolwechsel, "
            "Bewegen, Rotieren, Fokus oder Abbrechen benötigen zusätzlich den Fokus im 2D-Canvas und feuern nicht während der Texteingabe."),
         this);
@@ -87,8 +87,8 @@ void KeyboardShortcutOverviewDialog::populateRows()
         {tr("2D-Systemeditor"), tr("Z"), tr("2D-Canvas fokussiert"), tr("Rotiert die aktuelle Auswahl um 15 Grad nach links.")},
         {tr("2D-Systemeditor"), tr("X"), tr("2D-Canvas fokussiert"), tr("Rotiert die aktuelle Auswahl um 15 Grad nach rechts.")},
 
-        {tr("Hinweise"), tr("Texteingabe schützt Shortcuts"), tr("System Editor"), tr("Während der Eingabe in Suchfeldern, Texteditoren, Zahlenfeldern oder editierbaren Comboboxen werden diese Editor-Shortcuts nicht ausgelöst.")},
-        {tr("Hinweise"), tr("Rotate/Scale-Tool"), tr("2D-Systemeditor"), tr("Die Tastenkürzel für E und R schalten bereits den echten Editor-Tool-State um. Direkte Maus-Manipulatoren für Rotate/Scale sind noch nicht portiert.")},
+        {tr("While typing in search fields, text editors, number fields, or editable combo boxes, these editor shortcuts are not triggered."), tr("Text Input Protects Shortcuts"), tr("System Editor"), tr("While typing in search fields, text editors, number fields, or editable combo boxes, these editor shortcuts are not triggered.")},
+        {tr("The shortcuts for E and R already switch the real editor tool state. Direct mouse manipulators for rotate/scale are not ported yet."), tr("Rotate/Scale-Tool"), tr("2D-Systemeditor"), tr("The shortcuts for E and R already switch the real editor tool state. Direct mouse manipulators for rotate/scale are not ported yet.")},
     };
 
     int rowCount = 0;

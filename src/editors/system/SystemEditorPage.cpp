@@ -4338,7 +4338,7 @@ void SystemEditorPage::setupRightSidebar()
     groupsLayout->addWidget(editingGroup, 0, 1);
     layout->addWidget(groupsHost);
 
-    m_systemSettingsButton = new QPushButton(tr("System-Einstellungen"), m_rightSidebar);
+    m_systemSettingsButton = new QPushButton(tr("System Settings"), m_rightSidebar);
     m_systemSettingsButton->setMinimumHeight(30);
     connect(m_systemSettingsButton, &QPushButton::clicked, this, &SystemEditorPage::openSystemSettingsDialog);
     layout->addWidget(m_systemSettingsButton);
@@ -5964,7 +5964,7 @@ void SystemEditorPage::applyIniEditorChanges()
             IniDocument extras = SystemPersistence::extraSections(m_document.get());
             const QString parsedNickname = section.value(QStringLiteral("nickname")).trimmed();
             if (parsedNickname.isEmpty()) {
-                QMessageBox::warning(this, tr("Ungueltige Section"),
+                QMessageBox::warning(this, tr("Invalid Section"),
                                      tr("The LightSource section requires a nickname."));
                 return;
             }
@@ -5972,7 +5972,7 @@ void SystemEditorPage::applyIniEditorChanges()
                 && (findObjectByNickname(parsedNickname)
                     || findZoneByNickname(parsedNickname)
                     || findLightSourceSectionIndexByNickname(parsedNickname) >= 0)) {
-                QMessageBox::warning(this, tr("Ungueltige Section"),
+                QMessageBox::warning(this, tr("Invalid Section"),
                                      tr("The nickname conflicts with an existing entry."));
                 return;
             }
@@ -6037,7 +6037,7 @@ void SystemEditorPage::updateSelectionSummary()
         if (groupCount > 1)
             subtitle += tr(" · %1 parts").arg(groupCount);
         m_selectionSubtitleLabel->setText(subtitle);
-        emit selectionStatusChanged(groupCount > 1 ? tr("1 Objektgruppe markiert") : tr("1 Objekt markiert"));
+        emit selectionStatusChanged(groupCount > 1 ? tr("1 object group selected") : tr("1 object selected"));
         return;
     }
 
@@ -6046,7 +6046,7 @@ void SystemEditorPage::updateSelectionSummary()
             m_selectionTitleLabel->setText(zoneHeaderDisplayTitle(*zone, gameRoot));
             const QString zoneType = zone->zoneType().trimmed().isEmpty() ? tr("Zone") : zone->zoneType().trimmed();
             m_selectionSubtitleLabel->setText(tr("Zone · %1").arg(zoneType));
-            emit selectionStatusChanged(tr("1 Objekt markiert"));
+            emit selectionStatusChanged(tr("1 object selected"));
             return;
         }
     }
@@ -6054,7 +6054,7 @@ void SystemEditorPage::updateSelectionSummary()
     if (findLightSourceSectionIndexByNickname(nickname) >= 0) {
         m_selectionTitleLabel->setText(nickname);
         m_selectionSubtitleLabel->setText(tr("LightSource"));
-        emit selectionStatusChanged(tr("1 Objekt markiert"));
+        emit selectionStatusChanged(tr("1 object selected"));
         return;
     }
 
@@ -6506,7 +6506,7 @@ bool SystemEditorPage::eventFilter(QObject *watched, QEvent *event)
                         }
                         updateSimpleZonePlacementPreview(scenePos);
                         m_mapView->setPlacementMode(true,
-                                                    tr("3. Klick legt die Breite fest. 4. Klick speichert '%1'.")
+                                                    tr("3rd click sets the width. 4th click saves '%1'.")
                                                         .arg(m_pendingSimpleZoneRequest->nickname));
                     } else if (m_pendingSimpleZoneStep == 3 && m_pendingSimpleZoneHasEnd) {
                         m_pendingSimpleZoneHalfWidthScene = std::max<qreal>(1.0,
@@ -6520,7 +6520,7 @@ bool SystemEditorPage::eventFilter(QObject *watched, QEvent *event)
                         }
                         m_pendingSimpleZoneStep = 4;
                         m_mapView->setPlacementMode(true,
-                                                    tr("4. Klick speichert '%1'. [Esc] oder Rechtsklick bricht ab.")
+                                                    tr("4th click saves '%1'. [Esc] or right-click cancels.")
                                                         .arg(m_pendingSimpleZoneRequest->nickname));
                     } else if (m_pendingSimpleZoneStep == 4 && m_pendingSimpleZoneHasEnd) {
                         finalizeSimpleZonePlacement(scenePos);
@@ -6571,7 +6571,7 @@ bool SystemEditorPage::eventFilter(QObject *watched, QEvent *event)
                     }
                     updatePatrolZonePlacementPreview(scenePos);
                     m_mapView->setPlacementMode(true,
-                                                tr("3. Klick legt die Breite fest. 4. Klick speichert '%1'.")
+                                                tr("3rd click sets the width. 4th click saves '%1'.")
                                                     .arg(m_pendingPatrolZoneRequest->nickname));
                 } else if (m_pendingPatrolZoneStep == 3 && m_pendingPatrolZoneHasEnd) {
                     m_pendingPatrolZoneHalfWidthScene = std::max<qreal>(1.0,
@@ -6585,7 +6585,7 @@ bool SystemEditorPage::eventFilter(QObject *watched, QEvent *event)
                     }
                     m_pendingPatrolZoneStep = 4;
                     m_mapView->setPlacementMode(true,
-                                                tr("4. Klick speichert '%1'. [Esc] oder Rechtsklick bricht ab.")
+                                                tr("4th click saves '%1'. [Esc] or right-click cancels.")
                                                     .arg(m_pendingPatrolZoneRequest->nickname));
                 } else if (m_pendingPatrolZoneStep == 4 && m_pendingPatrolZoneHasEnd) {
                     finalizePatrolZonePlacement(scenePos);
@@ -6725,7 +6725,7 @@ void SystemEditorPage::createQuickObject(SolarObject::Type type,
 
     bool ok = false;
     const QString nickname = QInputDialog::getText(this,
-                                                   tr("Objekt erstellen"),
+                                                   tr("Create Object"),
                                                    tr("Nickname:"),
                                                    QLineEdit::Normal,
                                                    suggestedNickname,
@@ -6783,15 +6783,15 @@ void SystemEditorPage::openSystemSettingsDialog()
         || editedSettings.backgroundNebulae != currentSettings.backgroundNebulae;
 
     if (dialog.shouldNormalizeSectionOrder() && (hadDirtyStateBefore || settingsChanged)) {
-        QMessageBox::warning(this, tr("System-Einstellungen"),
+        QMessageBox::warning(this, tr("System Settings"),
                              tr("The section order can only be standardized without unsaved changes.\n"
-                                "Bitte speichere oder verwerfe zuerst bestehende Aenderungen und starte die Standardisierung danach separat."));
+                                "Please save or discard existing changes first, then start standardization separately."));
         return;
     }
 
     QString errorMessage;
     if (settingsChanged && !SystemSettingsService::apply(m_document.get(), editedSettings, &errorMessage)) {
-        QMessageBox::warning(this, tr("System-Einstellungen"),
+        QMessageBox::warning(this, tr("System Settings"),
                              errorMessage.trimmed().isEmpty()
                                  ? tr("The system settings could not be applied.")
                                  : errorMessage);
@@ -6800,16 +6800,16 @@ void SystemEditorPage::openSystemSettingsDialog()
 
     if (dialog.shouldNormalizeSectionOrder()) {
         if (m_document->isDirty()) {
-            QMessageBox::warning(this, tr("System-Einstellungen"),
+            QMessageBox::warning(this, tr("System Settings"),
                                  tr("The section order can only be standardized for the current file state on disk.\n"
-                                    "Bitte speichere oder verwerfe zuerst ungespeicherte Aenderungen."));
+                                    "Please save or discard unsaved changes first."));
             return;
         }
 
         bool changed = false;
         QString errorMessage;
         if (!SystemPersistence::normalizeSectionOrderInFile(m_document->filePath(), &changed, &errorMessage)) {
-            QMessageBox::warning(this, tr("System-Einstellungen"),
+            QMessageBox::warning(this, tr("System Settings"),
                                  errorMessage.trimmed().isEmpty()
                                      ? tr("The section order could not be standardized.")
                                      : errorMessage);
@@ -6853,7 +6853,7 @@ void SystemEditorPage::onCreateSun()
             return;
 
         if (findObjectByNickname(request.nickname) || findZoneByNickname(QStringLiteral("Zone_%1_death").arg(request.nickname))) {
-            QMessageBox::warning(this, tr("Sonne erstellen"),
+            QMessageBox::warning(this, tr("Create Sun"),
                                  tr("An entry with this nickname already exists in the current system."));
             return;
         }
@@ -6872,9 +6872,9 @@ void SystemEditorPage::onCreateSun()
                     dataset, targetDll, 261008, request.ingameName, &newGlobalId, &idsError)) {
                 assignedIdsName = newGlobalId;
             } else {
-                QMessageBox::warning(this, tr("Sonne erstellen"),
+                QMessageBox::warning(this, tr("Create Sun"),
                                      tr("The ingame name could not be written to the IDS data.\n%1")
-                                         .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
+                                         .arg(idsError.isEmpty() ? tr("Unknown error.") : idsError));
                 return;
             }
         }
@@ -6888,9 +6888,9 @@ void SystemEditorPage::onCreateSun()
                     dataset, targetDll, 66162, request.infoCardText, &newGlobalId, &idsError)) {
                 assignedIdsInfo = newGlobalId;
             } else {
-                QMessageBox::warning(this, tr("Sonne erstellen"),
+                QMessageBox::warning(this, tr("Create Sun"),
                                      tr("The ids_info text could not be written to the IDS data.\n%1")
-                                         .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
+                                         .arg(idsError.isEmpty() ? tr("Unknown error.") : idsError));
                 return;
             }
         }
@@ -6939,7 +6939,7 @@ void SystemEditorPage::onCreateSun()
         });
 
         auto *stack = flatlas::core::UndoManager::instance().stack();
-        stack->beginMacro(tr("Sonne erstellen"));
+        stack->beginMacro(tr("Create Sun"));
         stack->push(new AddObjectCommand(m_document.get(), sun, tr("Create Sun")));
         stack->push(new AddZoneCommand(m_document.get(), deathZone, tr("Create Sun Death Zone")));
         stack->endMacro();
@@ -6992,7 +6992,7 @@ void SystemEditorPage::onCreateLightSource()
         if (findLightSourceSectionIndexByNickname(request.nickname) >= 0
             || findObjectByNickname(request.nickname)
             || findZoneByNickname(request.nickname)) {
-            QMessageBox::warning(this, tr("Lichtquelle erstellen"),
+            QMessageBox::warning(this, tr("Create Light Source"),
                                  tr("An entry with this nickname already exists in the current system."));
             return;
         }
@@ -7064,7 +7064,7 @@ void SystemEditorPage::onCreateSurprise()
         if (!m_document)
             return;
         if (findObjectByNickname(request.nickname) || findZoneByNickname(request.nickname)) {
-            QMessageBox::warning(this, tr("Surprise erstellen"),
+            QMessageBox::warning(this, tr("Create Surprise"),
                                  tr("An entry with this nickname already exists in the current system."));
             return;
         }
@@ -7083,9 +7083,9 @@ void SystemEditorPage::onCreateSurprise()
                     dataset, targetDll, 0, request.ingameName, &newGlobalId, &idsError)) {
                 assignedIdsName = newGlobalId;
             } else {
-                QMessageBox::warning(this, tr("Surprise erstellen"),
+                QMessageBox::warning(this, tr("Create Surprise"),
                                      tr("The ingame name could not be written to the IDS data.\n%1")
-                                         .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
+                                         .arg(idsError.isEmpty() ? tr("Unknown error.") : idsError));
                 return;
             }
         }
@@ -7102,9 +7102,9 @@ void SystemEditorPage::onCreateSurprise()
                     dataset, targetDll, 0, infocardXml, &newGlobalId, &idsError)) {
                 assignedIdsInfo = newGlobalId;
             } else {
-                QMessageBox::warning(this, tr("Surprise erstellen"),
+                QMessageBox::warning(this, tr("Create Surprise"),
                                      tr("The ids_info text could not be written to the IDS data.\n%1")
-                                         .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
+                                         .arg(idsError.isEmpty() ? tr("Unknown error.") : idsError));
                 return;
             }
         }
@@ -7283,15 +7283,15 @@ void SystemEditorPage::onCreateJumpConnection()
     if (!m_document || !m_mapView || m_mapView->isPlacementModeActive())
         return;
 
-    if (!ensureSavedForCrossSystemOperation(tr("Jump-Verbindung erstellen"),
-                                            tr("Jump-Verbindungen bearbeiten immer beide Systemdateien direkt."))) {
+    if (!ensureSavedForCrossSystemOperation(tr("Create Jump Connection"),
+                                            tr("Jump connections always edit both system files directly."))) {
         return;
     }
 
     const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
     const auto universe = loadUniverseForEditor(gameRoot);
     if (!universe || universe->systems.isEmpty()) {
-        QMessageBox::warning(this, tr("Jump-Verbindung erstellen"),
+        QMessageBox::warning(this, tr("Create Jump Connection"),
                              tr("No valid systems could be loaded from universe.ini."));
         return;
     }
@@ -7342,14 +7342,14 @@ void SystemEditorPage::onCreateJumpConnection()
     }
 
     if (request.destinationSystemFilePath.trimmed().isEmpty()) {
-        QMessageBox::warning(this, tr("Jump-Verbindung erstellen"),
+        QMessageBox::warning(this, tr("Create Jump Connection"),
                              tr("The target system could not be resolved."));
         return;
     }
 
     QString errorMessage;
     if (!JumpConnectionService::createConnection(request, &errorMessage)) {
-        QMessageBox::warning(this, tr("Jump-Verbindung erstellen"),
+        QMessageBox::warning(this, tr("Create Jump Connection"),
                              errorMessage.isEmpty() ? tr("The jump connection could not be created.")
                                                     : errorMessage);
         return;
@@ -7392,7 +7392,7 @@ void SystemEditorPage::onCreatePlanet()
 
         const QString deathZoneNickname = QStringLiteral("Zone_%1_death").arg(request.nickname);
         if (findObjectByNickname(request.nickname) || findZoneByNickname(deathZoneNickname)) {
-            QMessageBox::warning(this, tr("Planet erstellen"),
+            QMessageBox::warning(this, tr("Create Planet"),
                                  tr("An entry with this nickname already exists in the current system."));
             return;
         }
@@ -7405,9 +7405,9 @@ void SystemEditorPage::onCreatePlanet()
         QString idsError;
         if (!flatlas::infrastructure::IdsDataService::writeStringEntry(
                 dataset, targetDll, 0, request.ingameName, &assignedIdsName, &idsError)) {
-            QMessageBox::warning(this, tr("Planet erstellen"),
+            QMessageBox::warning(this, tr("Create Planet"),
                                  tr("The planet name could not be written to the IDS data.\n%1")
-                                     .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
+                                     .arg(idsError.isEmpty() ? tr("Unknown error.") : idsError));
             return;
         }
 
@@ -7415,9 +7415,9 @@ void SystemEditorPage::onCreatePlanet()
         int assignedIdsInfo = 0;
         if (!flatlas::infrastructure::IdsDataService::writeInfocardEntry(
                 dataset, targetDll, 0, infocardXml, &assignedIdsInfo, &idsError)) {
-            QMessageBox::warning(this, tr("Planet erstellen"),
+            QMessageBox::warning(this, tr("Create Planet"),
                                  tr("The infocard text could not be saved as a new ids_info entry.\n%1")
-                                     .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
+                                     .arg(idsError.isEmpty() ? tr("Unknown error.") : idsError));
             return;
         }
 
@@ -7462,7 +7462,7 @@ void SystemEditorPage::onCreatePlanet()
         });
 
         auto *stack = flatlas::core::UndoManager::instance().stack();
-        stack->beginMacro(tr("Planet erstellen"));
+        stack->beginMacro(tr("Create Planet"));
         stack->push(new AddObjectCommand(m_document.get(), planet, tr("Create Planet")));
         stack->push(new AddZoneCommand(m_document.get(), deathZone, tr("Create Planet Death Zone")));
         stack->endMacro();
@@ -7499,7 +7499,7 @@ void SystemEditorPage::onCreateBuoy()
     const CreateBuoyRequest request = dialog.result();
     const int minimumCount = request.mode == CreateBuoyRequest::Mode::Line ? 2 : 3;
     if (request.count < minimumCount) {
-        QMessageBox::warning(this, tr("Bojen erstellen"),
+        QMessageBox::warning(this, tr("Create Buoys"),
                              request.mode == CreateBuoyRequest::Mode::Line
                                  ? tr("At least two buoys must be created.")
                                  : tr("At least three buoys must be created for a circle."));
@@ -7508,7 +7508,7 @@ void SystemEditorPage::onCreateBuoy()
     if (request.mode == CreateBuoyRequest::Mode::Line
         && request.lineConstraint == CreateBuoyRequest::LineConstraint::FixedSpacing
         && request.spacingMeters < 100) {
-        QMessageBox::warning(this, tr("Bojen erstellen"),
+        QMessageBox::warning(this, tr("Create Buoys"),
                              tr("The distance between buoys is invalid."));
         return;
     }
@@ -7551,7 +7551,7 @@ void SystemEditorPage::onCreateWeaponPlatform()
         if (!m_document)
             return;
         if (findObjectByNickname(request.nickname) || findZoneByNickname(request.nickname)) {
-            QMessageBox::warning(this, tr("Waffenplattform erstellen"),
+            QMessageBox::warning(this, tr("Create Weapons Platform"),
                                  tr("An entry with this nickname already exists in the current system."));
             return;
         }
@@ -7569,9 +7569,9 @@ void SystemEditorPage::onCreateWeaponPlatform()
                     dataset, targetDll, 261164, request.ingameName, &newGlobalId, &idsError)) {
                 assignedIdsName = newGlobalId;
             } else {
-                QMessageBox::warning(this, tr("Waffenplattform erstellen"),
+                QMessageBox::warning(this, tr("Create Weapons Platform"),
                                      tr("The ingame name could not be written to the IDS data.\n%1")
-                                         .arg(idsError.isEmpty() ? tr("Unbekannter Fehler.") : idsError));
+                                         .arg(idsError.isEmpty() ? tr("Unknown error.") : idsError));
                 return;
             }
         }
@@ -7656,7 +7656,7 @@ void SystemEditorPage::onCreateRing()
         placementGuard->deleteLater();
         if (!hostObject) {
             QMessageBox::information(this,
-                                     tr("Ring erstellen"),
+                                     tr("Create Ring"),
                                      tr("Please click a planet or sun to attach a ring."));
             onCreateRing();
             return;
@@ -7682,7 +7682,7 @@ void SystemEditorPage::onEditRing()
     SolarObject *hostObject = findRingHostForSelection();
     if (!hostObject || !RingEditService::hasRing(*hostObject)) {
         QMessageBox::information(this,
-                                 tr("Ring bearbeiten"),
+                                 tr("Edit Ring"),
                                  tr("Please select an object with an existing ring or the ring zone directly."));
         return;
     }
@@ -7698,7 +7698,7 @@ void SystemEditorPage::onEditTradeLane()
     const TradeLaneChainDetection detection = TradeLaneEditService::inspectChain(*m_document, primarySelectedNickname());
     if (!detection.chain.has_value()) {
         QMessageBox::warning(this,
-                             tr("Trade Lane bearbeiten"),
+                             tr("Edit Trade Lane"),
                              detection.errorMessage.trimmed().isEmpty()
                                  ? tr("The selected trade lane could not be recognized.")
                                  : detection.errorMessage);
@@ -7712,9 +7712,9 @@ void SystemEditorPage::onEditTradeLane()
             : QStringLiteral("next_ring");
         const int answer = QMessageBox::question(
             this,
-            tr("Trade Lane reparieren"),
+            tr("Repair Trade Lane"),
             tr("The trade lane references a missing ring '%1'.\n\n"
-               "Soll der defekte %2-Verweis automatisch entfernt werden, damit die vorhandene Kette bearbeitet werden kann?")
+               "Should the broken %2 reference be removed automatically so the existing chain can be edited?")
                 .arg(detection.referencedNickname, brokenKey),
             QMessageBox::Yes | QMessageBox::No,
             QMessageBox::Yes);
@@ -7724,14 +7724,14 @@ void SystemEditorPage::onEditTradeLane()
         auto repairedRing = cloneSolarObject(detection.boundaryRing);
         if (!repairedRing) {
             QMessageBox::warning(this,
-                                 tr("Trade Lane reparieren"),
+                                 tr("Repair Trade Lane"),
                                  tr("The broken ring could not be prepared for repair."));
             return;
         }
         repairedRing->setRawEntries(removeRawEntriesByKey(repairedRing->rawEntries(), brokenKey));
 
         auto *stack = flatlas::core::UndoManager::instance().stack();
-        stack->beginMacro(tr("Trade Lane reparieren"));
+        stack->beginMacro(tr("Repair Trade Lane"));
         stack->push(new RemoveObjectCommand(m_document.get(), detection.boundaryRing, tr("Remove Broken Trade Lane Ring")));
         stack->push(new AddObjectCommand(m_document.get(), repairedRing, tr("Add Repaired Trade Lane Ring")));
         stack->endMacro();
@@ -7851,7 +7851,7 @@ void SystemEditorPage::onEditTradeLane()
                                   &request.endSpaceNameId,
                                   &idsError)) {
         QMessageBox::warning(this,
-                             tr("Trade Lane bearbeiten"),
+                             tr("Edit Trade Lane"),
                              idsError.trimmed().isEmpty()
                                  ? tr("The trade lane IDS texts could not be updated.")
                                  : idsError);
@@ -7878,7 +7878,7 @@ void SystemEditorPage::onEditTradeLane()
                                                        &replacementObjects,
                                                        &rebuildError)) {
         QMessageBox::warning(this,
-                             tr("Trade Lane bearbeiten"),
+                             tr("Edit Trade Lane"),
                              rebuildError.trimmed().isEmpty()
                                  ? tr("The trade lane could not be rebuilt.")
                                  : rebuildError);
@@ -7886,7 +7886,7 @@ void SystemEditorPage::onEditTradeLane()
     }
 
     auto *stack = flatlas::core::UndoManager::instance().stack();
-    stack->beginMacro(tr("Trade Lane bearbeiten"));
+    stack->beginMacro(tr("Edit Trade Lane"));
     for (const auto &ring : chain.rings)
         stack->push(new RemoveObjectCommand(m_document.get(), ring, tr("Remove Trade Lane Ring")));
     for (const auto &ring : replacementObjects)
@@ -7914,7 +7914,7 @@ void SystemEditorPage::onCreateBase()
                                                                   flatlas::core::EditingContext::instance().primaryGamePath(),
                                                                   &errorMessage);
     if (!errorMessage.trimmed().isEmpty()) {
-        QMessageBox::warning(this, tr("Base erstellen"), errorMessage);
+        QMessageBox::warning(this, tr("Create Base"), errorMessage);
         return;
     }
 
@@ -7946,7 +7946,7 @@ void SystemEditorPage::onCreateBase()
                                           &applyResult,
                                           &errorMessage)) {
             QMessageBox::warning(this,
-                                 tr("Base erstellen"),
+                                 tr("Create Base"),
                                  errorMessage.trimmed().isEmpty()
                                      ? tr("The base could not be created.")
                                      : errorMessage);
@@ -7990,7 +7990,7 @@ void SystemEditorPage::beginDockingRingPlacement()
     m_dockingRingPlacement.step = DockingRingPlacementStep::SelectPlanet;
     m_mapView->viewport()->installEventFilter(this);
     m_mapView->setPlacementMode(true,
-                                tr("1. Klick waehlt den Planeten. 2. Klick waehlt die Ringposition. 3. Klick bestaetigt und oeffnet den Dialog."));
+                                tr("1st click selects the planet. 2nd click selects the ring position. 3rd click confirms and opens the dialog."));
     emit selectionStatusChanged(tr("Docking Ring: Select a planet as host."));
 }
 
@@ -8051,7 +8051,7 @@ void SystemEditorPage::updateDockingRingPlacementPreview(const QPointF &scenePos
     refreshDockingRingPlacementAnimation();
 
     m_mapView->setPlacementMode(true,
-                                tr("2. Klick legt die genaue Ringposition am Planetenrand fest. [Esc] oder Rechtsklick bricht ab."));
+                                tr("2nd click sets the exact ring position at the planet edge. [Esc] or right-click cancels."));
     emit selectionStatusChanged(tr("Docking-Ring: Ziehe auf den Planetenrand und bestaetige die Position."));
 }
 
@@ -8091,8 +8091,8 @@ void SystemEditorPage::handleDockingRingPlacementClick(const QPointF &scenePos)
         m_dockingRingPlacement.step = DockingRingPlacementStep::ConfirmPosition;
         refreshDockingRingPlacementAnimation();
         m_mapView->setPlacementMode(true,
-                                    tr("3. Klick bestaetigt die Ringposition und oeffnet den Docking-Ring-Dialog. [Esc] oder Rechtsklick bricht ab."));
-        emit selectionStatusChanged(tr("Docking-Ring: Position fixiert. Bestaetige jetzt mit dem dritten Klick."));
+                                    tr("3rd click confirms the ring position and opens the docking ring dialog. [Esc] or right-click cancels."));
+        emit selectionStatusChanged(tr("Docking ring: position fixed. Confirm now with the third click."));
         return;
     }
 
@@ -8289,27 +8289,27 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
     request.factionDisplay = factionNicknameFromDisplay(request.factionDisplay);
 
     if (request.nickname.trimmed().isEmpty()) {
-        QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Please enter a nickname for the docking ring."));
+        QMessageBox::warning(this, tr("Create Docking Ring"), tr("Please enter a nickname for the docking ring."));
         return false;
     }
     for (const auto &objectPtr : m_document->objects()) {
         if (objectPtr && objectPtr->nickname().compare(request.nickname.trimmed(), Qt::CaseInsensitive) == 0) {
-            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("The nickname '%1' already exists.").arg(request.nickname.trimmed()));
+            QMessageBox::warning(this, tr("Create Docking Ring"), tr("The nickname '%1' already exists.").arg(request.nickname.trimmed()));
             return false;
         }
     }
     if (request.needsBase) {
         if (request.baseNickname.trimmed().isEmpty()) {
-            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("Please enter a base nickname for the planet."));
+            QMessageBox::warning(this, tr("Create Docking Ring"), tr("Please enter a base nickname for the planet."));
             return false;
         }
         if (request.roomNames.isEmpty()) {
-            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("At least one room must be enabled for a new planetary base."));
+            QMessageBox::warning(this, tr("Create Docking Ring"), tr("At least one room must be enabled for a new planetary base."));
             return false;
         }
         request.startRoom = DockingRingCreationService::chooseStartRoom(request.roomNames, request.startRoom);
         if (!request.roomNames.contains(request.startRoom, Qt::CaseInsensitive)) {
-            QMessageBox::warning(this, tr("Docking Ring erstellen"), tr("The start room must be one of the enabled rooms."));
+            QMessageBox::warning(this, tr("Create Docking Ring"), tr("The start room must be one of the enabled rooms."));
             return false;
         }
     }
@@ -8323,7 +8323,7 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
                                &resolvedIdsName,
                                &idsError)) {
         QMessageBox::warning(this,
-                             tr("Docking Ring erstellen"),
+                             tr("Create Docking Ring"),
                              idsError.trimmed().isEmpty()
                                  ? tr("The IDS name for the docking ring could not be resolved.")
                                  : idsError);
@@ -8338,7 +8338,7 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
 
     if (request.distanceToPlanetCore <= 0.0) {
         QMessageBox::warning(this,
-                             tr("Docking Ring erstellen"),
+                             tr("Create Docking Ring"),
                              tr("The distance to the planet core must be greater than 0."));
         return false;
     }
@@ -8380,7 +8380,7 @@ bool SystemEditorPage::openDockingRingDialogForPlacement()
                                            &createResult,
                                            &errorMessage)) {
         QMessageBox::warning(this,
-                             tr("Docking Ring erstellen"),
+                             tr("Create Docking Ring"),
                              errorMessage.trimmed().isEmpty()
                                  ? tr("The docking ring could not be created.")
                                  : errorMessage);
@@ -8674,7 +8674,7 @@ void SystemEditorPage::beginSimpleZonePlacement(const CreateSimpleZoneRequest &r
                 if (m_pendingSimpleZoneRequest->shape.trimmed().compare(QStringLiteral("BOX"), Qt::CaseInsensitive) == 0) {
                     m_pendingSimpleZoneStep = 2;
                     m_mapView->setPlacementMode(true,
-                                                tr("2. Klick setzt das Ende der Box-Zone. [Esc] oder Rechtsklick bricht ab."));
+                                                tr("2nd click sets the end of the box zone. [Esc] or right-click cancels."));
                 }
                 m_mapView->viewport()->installEventFilter(this);
                 m_mapView->viewport()->setMouseTracking(true);
@@ -8689,7 +8689,7 @@ void SystemEditorPage::beginSimpleZonePlacement(const CreateSimpleZoneRequest &r
 
     m_mapView->setPlacementMode(true,
                                 request.shape.trimmed().compare(QStringLiteral("BOX"), Qt::CaseInsensitive) == 0
-                                    ? tr("1. Klick setzt den Startpunkt fuer '%1'. 2. Klick Ende. 3. Klick Breite. 4. Klick speichert.")
+                                    ? tr("1st click sets the start point for '%1'. 2nd click sets the end. 3rd click sets width. 4th click saves.")
                                           .arg(request.nickname)
                                     : tr("Click the map to place '%1'.").arg(request.nickname));
 }
@@ -8725,7 +8725,7 @@ void SystemEditorPage::beginPatrolZonePlacement(const CreatePatrolZoneRequest &r
     });
 
     m_mapView->setPlacementMode(true,
-                                tr("1. Klick Startpunkt fuer '%1'. 2. Klick Endpunkt. 3. Klick Breite. 4. Klick speichert.")
+                                tr("1st click sets the start point for '%1'. 2nd click sets the end point. 3rd click sets width. 4th click saves.")
                                     .arg(request.nickname));
 }
 
@@ -8750,8 +8750,8 @@ void SystemEditorPage::beginBuoyPlacement(const CreateBuoyRequest &request)
         updateBuoyPlacementPreview(scenePos);
         m_mapView->setPlacementMode(true,
                                     m_pendingBuoyRequest->mode == CreateBuoyRequest::Mode::Line
-                                        ? tr("2. Klick bestimmt die Richtung fuer das Bojenmuster. [Esc] oder Rechtsklick bricht ab.")
-                                        : tr("2. Klick bestimmt den Radius fuer das Bojenmuster. [Esc] oder Rechtsklick bricht ab."));
+                                        ? tr("2nd click sets the direction for the buoy pattern. [Esc] or right-click cancels.")
+                                        : tr("2nd click sets the radius for the buoy pattern. [Esc] or right-click cancels."));
         placementGuard->deleteLater();
     });
     connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
@@ -8763,9 +8763,9 @@ void SystemEditorPage::beginBuoyPlacement(const CreateBuoyRequest &request)
     m_mapView->setPlacementMode(true,
                                 request.mode == CreateBuoyRequest::Mode::Line
                                     ? (request.lineConstraint == CreateBuoyRequest::LineConstraint::FixedCount
-                                           ? tr("1. Klick setzt den Startpunkt. Linienmodus: feste Anzahl, Abstand wird waehrend der Platzierung berechnet.")
-                                           : tr("1. Klick setzt den Startpunkt. Linienmodus: fester Abstand, Anzahl wird waehrend der Platzierung berechnet."))
-                                    : tr("1. Klick setzt den Mittelpunkt des Bojenkreises."));
+                                           ? tr("1st click sets the start point. Line mode: fixed count, spacing is calculated during placement.")
+                                           : tr("1st click sets the start point. Line mode: fixed spacing, count is calculated during placement."))
+                                    : tr("1st click sets the center of the buoy circle."));
 }
 
 void SystemEditorPage::updateBuoyPlacementPreview(const QPointF &currentScenePos)
@@ -8813,17 +8813,17 @@ void SystemEditorPage::updateBuoyPlacementPreview(const QPointF &currentScenePos
             }
             const QString helpText =
                 m_pendingBuoyRequest->lineConstraint == CreateBuoyRequest::LineConstraint::FixedCount
-                    ? tr("2. Klick bestaetigt die Linie. Feste Anzahl: %1, berechneter Abstand: %2 m. [Esc] oder Rechtsklick bricht ab.")
+                    ? tr("2nd click confirms the line. Fixed count: %1, calculated spacing: %2 m. [Esc] or right-click cancels.")
                           .arg(countForPreview)
                           .arg(QString::number(derivedSpacingMeters, 'f', 0))
-                    : tr("2. Klick bestaetigt die Linie. Fester Abstand: %1 m, berechnete Anzahl: %2. [Esc] oder Rechtsklick bricht ab.")
+                    : tr("2nd click confirms the line. Fixed spacing: %1 m, calculated count: %2. [Esc] or right-click cancels.")
                           .arg(m_pendingBuoyRequest->spacingMeters)
                           .arg(countForPreview);
             m_mapView->setPlacementMode(true, helpText);
             emit selectionStatusChanged(
                 m_pendingBuoyRequest->lineConstraint == CreateBuoyRequest::LineConstraint::FixedCount
-                    ? tr("Bojenlinie: %1 Bojen, Abstand %2 m").arg(countForPreview).arg(QString::number(derivedSpacingMeters, 'f', 0))
-                    : tr("Bojenlinie: Abstand %1 m, %2 Bojen").arg(m_pendingBuoyRequest->spacingMeters).arg(countForPreview));
+                    ? tr("Buoy line: %1 buoys, spacing %2 m").arg(countForPreview).arg(QString::number(derivedSpacingMeters, 'f', 0))
+                    : tr("Buoy line: spacing %1 m, %2 buoys").arg(m_pendingBuoyRequest->spacingMeters).arg(countForPreview));
         } else {
             m_buoyLinePreview->setLine(QLineF(m_pendingBuoyAnchorScenePos, currentScenePos));
         }
@@ -8908,7 +8908,7 @@ void SystemEditorPage::beginTradeLanePlacement()
         placementGuard->deleteLater();
     });
 
-    m_mapView->setPlacementMode(true, tr("1. Klick setzt den Startpunkt der Trade Lane."));
+    m_mapView->setPlacementMode(true, tr("1st click sets the start point of the trade lane."));
 }
 
 void SystemEditorPage::updateTradeLanePlacementPreview(const QPointF &currentScenePos)
@@ -9077,7 +9077,7 @@ void SystemEditorPage::finalizeFieldZonePlacement(const QPointF &edgeScenePos)
 
     QFile sourceFile(m_pendingFieldZoneRequest->referenceAbsolutePath);
     if (!sourceFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        QMessageBox::warning(this, tr("Zone erstellen"),
+        QMessageBox::warning(this, tr("Create Zone"),
                              tr("The reference file could not be read:\n%1")
                                  .arg(m_pendingFieldZoneRequest->referenceAbsolutePath));
         cancelFieldZonePlacement();
@@ -9106,7 +9106,7 @@ void SystemEditorPage::finalizeFieldZonePlacement(const QPointF &edgeScenePos)
         int newGlobalId = 0;
         if (!flatlas::infrastructure::IdsDataService::writeStringEntry(
                 dataset, targetDll, 0, m_pendingFieldZoneRequest->ingameName.trimmed(), &newGlobalId, &idsError)) {
-            QMessageBox::warning(this, tr("Zone erstellen"),
+            QMessageBox::warning(this, tr("Create Zone"),
                                  idsError.trimmed().isEmpty()
                                      ? tr("The ingame name could not be written as IDS entry.")
                                      : tr("The ingame name could not be written as IDS entry:\n%1")
@@ -9344,13 +9344,13 @@ void SystemEditorPage::finalizeSimpleZonePlacement(const QPointF &edgeScenePos)
     const QString requestedNickname = m_pendingSimpleZoneRequest->nickname.trimmed();
     static const QRegularExpression validNickname(QStringLiteral("^[A-Za-z0-9_]+$"));
     if (requestedNickname.isEmpty() || !validNickname.match(requestedNickname).hasMatch()) {
-        QMessageBox::warning(this, tr("Zone erstellen"),
+        QMessageBox::warning(this, tr("Create Zone"),
                              tr("The nickname is invalid. Please check the name in the dialog."));
         cancelSimpleZonePlacement();
         return;
     }
     if (findZoneByNickname(requestedNickname) || findObjectByNickname(requestedNickname)) {
-        QMessageBox::warning(this, tr("Zone erstellen"),
+        QMessageBox::warning(this, tr("Create Zone"),
                              tr("Im aktuellen System existiert bereits ein Objekt oder eine Zone mit diesem Nickname."));
         cancelSimpleZonePlacement();
         return;
@@ -9458,13 +9458,13 @@ void SystemEditorPage::finalizePatrolZonePlacement(const QPointF &endScenePos)
     const CreatePatrolZoneRequest request = *m_pendingPatrolZoneRequest;
     static const QRegularExpression validNickname(QStringLiteral("^[A-Za-z0-9_]+$"));
     if (request.nickname.trimmed().isEmpty() || !validNickname.match(request.nickname.trimmed()).hasMatch()) {
-        QMessageBox::warning(this, tr("Patrol-Zone erstellen"),
+        QMessageBox::warning(this, tr("Create Patrol Zone"),
                              tr("The nickname is invalid. Please check the name in the dialog."));
         cancelPatrolZonePlacement();
         return;
     }
     if (findZoneByNickname(request.nickname) || findObjectByNickname(request.nickname)) {
-        QMessageBox::warning(this, tr("Patrol-Zone erstellen"),
+        QMessageBox::warning(this, tr("Create Patrol Zone"),
                              tr("Im aktuellen System existiert bereits ein Objekt oder eine Zone mit diesem Nickname."));
         cancelPatrolZonePlacement();
         return;
@@ -9472,8 +9472,8 @@ void SystemEditorPage::finalizePatrolZonePlacement(const QPointF &endScenePos)
 
     const QString factionNickname = factionNicknameFromDisplay(request.factionDisplay);
     if (request.encounter.trimmed().isEmpty() || factionNickname.isEmpty()) {
-        QMessageBox::warning(this, tr("Patrol-Zone erstellen"),
-                             tr("Encounter und Faction muessen gesetzt sein."));
+        QMessageBox::warning(this, tr("Create Patrol Zone"),
+                             tr("Encounter and faction must be set."));
         cancelPatrolZonePlacement();
         return;
     }
@@ -9481,7 +9481,7 @@ void SystemEditorPage::finalizePatrolZonePlacement(const QPointF &endScenePos)
     QString encounterError;
     const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
     if (!ensureEncounterParameterExists(m_document.get(), request.encounter, gameRoot, &encounterError)) {
-        QMessageBox::warning(this, tr("Patrol-Zone erstellen"), encounterError);
+        QMessageBox::warning(this, tr("Create Patrol Zone"), encounterError);
         cancelPatrolZonePlacement();
         return;
     }
@@ -9573,7 +9573,7 @@ void SystemEditorPage::finalizeBuoyPlacement(const QPointF &scenePos)
 
     const QString archetype = m_pendingBuoyRequest->archetype.trimmed().toLower();
     if (archetype.isEmpty()) {
-        QMessageBox::warning(this, tr("Bojen erstellen"),
+        QMessageBox::warning(this, tr("Create Buoys"),
                              tr("No valid buoy type was selected."));
         cancelBuoyPlacement();
         return;
@@ -9586,10 +9586,10 @@ void SystemEditorPage::finalizeBuoyPlacement(const QPointF &scenePos)
         const QLineF directionLine(m_pendingBuoyAnchorScenePos, scenePos);
         const qreal directionLength = directionLine.length();
         if (directionLength <= 0.001) {
-            QMessageBox::warning(this, tr("Bojen erstellen"),
+            QMessageBox::warning(this, tr("Create Buoys"),
                                  tr("The direction for the buoy line is invalid."));
             m_mapView->setPlacementMode(true,
-                                        tr("2. Klick bestimmt die Richtung fuer das Bojenmuster. [Esc] oder Rechtsklick bricht ab."));
+                                        tr("2nd click sets the direction for the buoy pattern. [Esc] or right-click cancels."));
             return;
         }
 
@@ -9611,10 +9611,10 @@ void SystemEditorPage::finalizeBuoyPlacement(const QPointF &scenePos)
     } else {
         const qreal radius = QLineF(m_pendingBuoyAnchorScenePos, scenePos).length();
         if (radius <= 0.001) {
-            QMessageBox::warning(this, tr("Bojen erstellen"),
+            QMessageBox::warning(this, tr("Create Buoys"),
                                  tr("The radius for the buoy circle is invalid."));
             m_mapView->setPlacementMode(true,
-                                        tr("2. Klick bestimmt den Radius fuer das Bojenmuster. [Esc] oder Rechtsklick bricht ab."));
+                                        tr("2nd click sets the radius for the buoy pattern. [Esc] or right-click cancels."));
             return;
         }
 
@@ -9695,10 +9695,10 @@ void SystemEditorPage::finalizeTradeLanePlacement(const QPointF &endScenePos)
     const QLineF laneLine(m_pendingTradeLaneStartScenePos, endScenePos);
     const qreal laneLengthScene = laneLine.length();
     if (laneLengthScene <= 0.001) {
-        QMessageBox::warning(this, tr("Trade Lane erstellen"),
+        QMessageBox::warning(this, tr("Create Trade Lane"),
                              tr("Start and end point of the trade lane are invalid."));
         m_mapView->setPlacementMode(true,
-                                    tr("2. Klick setzt das Ende der Trade Lane. [Esc] oder Rechtsklick bricht ab."));
+                                    tr("2nd click sets the end of the trade lane. [Esc] or right-click cancels."));
         return;
     }
 
@@ -9722,13 +9722,13 @@ void SystemEditorPage::finalizeTradeLanePlacement(const QPointF &endScenePos)
 
     const CreateTradeLaneRequest request = dialog.result();
     if (request.ringCount < 2) {
-        QMessageBox::warning(this, tr("Trade Lane erstellen"),
+        QMessageBox::warning(this, tr("Create Trade Lane"),
                              tr("At least two trade lane rings must be created."));
         cancelTradeLanePlacement();
         return;
     }
     if (request.loadout.trimmed().isEmpty()) {
-        QMessageBox::warning(this, tr("Trade Lane erstellen"),
+        QMessageBox::warning(this, tr("Create Trade Lane"),
                              tr("Please select a valid loadout for the trade lane."));
         cancelTradeLanePlacement();
         return;
@@ -9747,7 +9747,7 @@ void SystemEditorPage::finalizeTradeLanePlacement(const QPointF &endScenePos)
             QStringLiteral("%1_Trade_Lane_Ring_%2").arg(systemNickname).arg(request.startNumber + index);
         const QString key = nickname.trimmed().toLower();
         if (usedNicknames.contains(key)) {
-            QMessageBox::warning(this, tr("Trade Lane erstellen"),
+            QMessageBox::warning(this, tr("Create Trade Lane"),
                                  tr("The ring nickname '%1' already exists. Please choose another start number.")
                                      .arg(nickname));
             cancelTradeLanePlacement();
@@ -9764,7 +9764,7 @@ void SystemEditorPage::finalizeTradeLanePlacement(const QPointF &endScenePos)
     if (!resolveIdsStringInput(gameRoot, request.routeName, 0, QString(), &routeIdsName, &idsError)
         || !resolveIdsStringInput(gameRoot, request.startSpaceName, 0, QString(), &startSpaceNameId, &idsError)
         || !resolveIdsStringInput(gameRoot, request.endSpaceName, 0, QString(), &endSpaceNameId, &idsError)) {
-        QMessageBox::warning(this, tr("Trade Lane erstellen"),
+        QMessageBox::warning(this, tr("Create Trade Lane"),
                              idsError.trimmed().isEmpty()
                                  ? tr("The IDS texts for the trade lane could not be written.")
                                  : tr("The IDS texts for the trade lane could not be written:\n%1")
@@ -9777,7 +9777,7 @@ void SystemEditorPage::finalizeTradeLanePlacement(const QPointF &endScenePos)
     const double yawDegrees = tradeLaneYawDegrees(m_pendingTradeLaneStartScenePos, endScenePos);
 
     auto *stack = flatlas::core::UndoManager::instance().stack();
-    stack->beginMacro(tr("Trade Lane erstellen"));
+    stack->beginMacro(tr("Create Trade Lane"));
 
     QStringList createdNicknames;
     createdNicknames.reserve(request.ringCount);
@@ -10543,7 +10543,7 @@ bool SystemEditorPage::openRingDialogForHost(SolarObject *hostObject, bool force
     QString errorMessage;
     if (!RingEditService::apply(m_document.get(), hostObject, newState, &errorMessage)) {
         QMessageBox::warning(this,
-                             newState.enabled ? tr("Ring erstellen") : tr("Ring entfernen"),
+                             newState.enabled ? tr("Create Ring") : tr("Remove Ring"),
                              errorMessage.trimmed().isEmpty() ? tr("The ring could not be saved.") : errorMessage);
         return false;
     }
@@ -10629,7 +10629,7 @@ bool SystemEditorPage::openDockingRingDialogForEdit(SolarObject *ringObject)
     DockingRingCreateRequest request = dialog.result();
     request.factionDisplay = factionNicknameFromDisplay(request.factionDisplay);
     if (request.nickname.trimmed().isEmpty()) {
-        QMessageBox::warning(this, tr("Docking Ring bearbeiten"), tr("Please enter a nickname for the docking ring."));
+        QMessageBox::warning(this, tr("Edit Docking Ring"), tr("Please enter a nickname for the docking ring."));
         return false;
     }
     for (const auto &objectPtr : m_document->objects()) {
@@ -10637,7 +10637,7 @@ bool SystemEditorPage::openDockingRingDialogForEdit(SolarObject *ringObject)
             continue;
         if (objectPtr->nickname().compare(request.nickname.trimmed(), Qt::CaseInsensitive) == 0) {
             QMessageBox::warning(this,
-                                 tr("Docking Ring bearbeiten"),
+                                 tr("Edit Docking Ring"),
                                  tr("The nickname '%1' already exists.").arg(request.nickname.trimmed()));
             return false;
         }
@@ -10652,7 +10652,7 @@ bool SystemEditorPage::openDockingRingDialogForEdit(SolarObject *ringObject)
                                &resolvedIdsName,
                                &idsError)) {
         QMessageBox::warning(this,
-                             tr("Docking Ring bearbeiten"),
+                             tr("Edit Docking Ring"),
                              idsError.trimmed().isEmpty()
                                  ? tr("The IDS name for the docking ring could not be resolved.")
                                  : idsError);
@@ -10664,26 +10664,26 @@ bool SystemEditorPage::openDockingRingDialogForEdit(SolarObject *ringObject)
 
     if (request.distanceToPlanetCore <= 0.0) {
         QMessageBox::warning(this,
-                             tr("Docking Ring bearbeiten"),
+                             tr("Edit Docking Ring"),
                              tr("The distance to the planet core must be greater than 0."));
         return false;
     }
     if (!planetObject) {
         QMessageBox::warning(this,
-                             tr("Docking Ring bearbeiten"),
+                             tr("Edit Docking Ring"),
                              tr("The host planet for this docking ring could not be determined unambiguously."));
         return false;
     }
 
     if (request.createFixture && fixtureMatchCount > 1) {
         QMessageBox::warning(this,
-                             tr("Docking Ring bearbeiten"),
+                             tr("Edit Docking Ring"),
                              tr("Multiple docking_fixture objects with identical dock_with were found for this docking ring. Please clean up the data first so no wrong fixtures are duplicated or removed."));
         return false;
     }
     if (!request.createFixture && fixtureMatchCount > 1) {
         QMessageBox::warning(this,
-                             tr("Docking Ring bearbeiten"),
+                             tr("Edit Docking Ring"),
                              tr("Multiple docking_fixture objects share this dock_with. Automatic removal would be unsafe and was aborted."));
         return false;
     }
@@ -10753,7 +10753,7 @@ bool SystemEditorPage::openDockingRingDialogForEdit(SolarObject *ringObject)
             const auto newFixture = DockingRingCreationService::buildFixtureObject(*m_document, *ringObject, &fixtureError);
             if (!newFixture) {
                 QMessageBox::warning(this,
-                                     tr("Docking Ring bearbeiten"),
+                                     tr("Edit Docking Ring"),
                                      fixtureError.trimmed().isEmpty()
                                          ? tr("The docking_fixture could not be created.")
                                          : fixtureError);
@@ -10794,7 +10794,7 @@ void SystemEditorPage::openBaseEditorForSelection()
     SolarObject *hostObject = findBaseHostForSelection();
     if (!hostObject) {
         QMessageBox::information(this,
-                                 tr("Base bearbeiten"),
+                                 tr("Edit Base"),
                                  tr("Please select an object with a linked base."));
         return;
     }
@@ -10812,7 +10812,7 @@ void SystemEditorPage::openBaseEditorForSelection()
                                     &state,
                                     &errorMessage)) {
         QMessageBox::warning(this,
-                             tr("Base bearbeiten"),
+                             tr("Edit Base"),
                              errorMessage.trimmed().isEmpty()
                                  ? tr("The base data could not be loaded.")
                                  : errorMessage);
@@ -10834,7 +10834,7 @@ void SystemEditorPage::openBaseEditorForSelection()
                                     &applyResult,
                                     &errorMessage)) {
         QMessageBox::warning(this,
-                             tr("Base bearbeiten"),
+                             tr("Edit Base"),
                              errorMessage.trimmed().isEmpty()
                                  ? tr("The base could not be updated.")
                                  : errorMessage);

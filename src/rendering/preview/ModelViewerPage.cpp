@@ -291,11 +291,11 @@ void ModelViewerPage::scheduleRebuildEntries()
 
 void ModelViewerPage::rebuildEntries()
 {
-    reportLoadingProgress(15, tr("3D Model Viewer: Freelancer-Modelle werden gesucht..."));
+    reportLoadingProgress(15, tr("3D Model Viewer: Searching Freelancer models..."));
     m_entries = flatlas::infrastructure::ModelAssetScanner::scanCurrentContext();
     reportLoadingProgress(80, tr("3D Model Viewer: Modellbaum wird aufgebaut..."));
     rebuildTree();
-    reportLoadingProgress(100, tr("3D Model Viewer: %1 Modelle geladen").arg(m_entries.size()));
+    reportLoadingProgress(100, tr("3D Model Viewer: %1 models loaded").arg(m_entries.size()));
 }
 
 void ModelViewerPage::reportLoadingProgress(int percent, const QString &message)

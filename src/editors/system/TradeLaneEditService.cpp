@@ -172,7 +172,7 @@ TradeLaneChainDetection TradeLaneEditService::inspectChain(const flatlas::domain
     const auto lanes = tradeLaneMap(document);
     if (!lanes.contains(selectedKey)) {
         detection.issue = TradeLaneChainIssue::NotTradeLane;
-        detection.errorMessage = QObject::tr("Das ausgewaehlte Objekt gehoert zu keiner Trade Lane.");
+        detection.errorMessage = QObject::tr("The selected object does not belong to a trade lane.");
         return detection;
     }
 
@@ -328,7 +328,7 @@ bool TradeLaneEditService::buildReplacementObjects(const TradeLaneChain &existin
         return false;
     if (request.systemNickname.trimmed().isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Der System-Nickname fuer die Trade Lane fehlt.");
+            *errorMessage = QObject::tr("The system nickname for the trade lane is missing.");
         return false;
     }
     if (request.ringCount < 2) {

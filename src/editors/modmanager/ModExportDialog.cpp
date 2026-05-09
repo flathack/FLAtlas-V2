@@ -54,7 +54,7 @@ void ModExportDialog::setupUi(const QString &profileName,
     root->setContentsMargins(12, 12, 12, 12);
     root->setSpacing(8);
 
-    m_summaryLabel = new QLabel(tr("Noch kein Scan ausgeführt. Klicke auf Scannen, um neue und geänderte Dateien zu ermitteln."), this);
+    m_summaryLabel = new QLabel(tr("No scan has been run yet. Click Scan to find new and changed files."), this);
     m_summaryLabel->setWordWrap(true);
     root->addWidget(m_summaryLabel);
 
@@ -73,7 +73,7 @@ void ModExportDialog::setupUi(const QString &profileName,
         return host;
     };
 
-    form->addRow(tr("Mod-Quelle:"), makePathRow(&m_modRootEdit, modRoot, &ModExportDialog::chooseModRoot));
+    form->addRow(tr("Mod Source:"), makePathRow(&m_modRootEdit, modRoot, &ModExportDialog::chooseModRoot));
     form->addRow(tr("Referenz:"), makePathRow(&m_referenceRootEdit, referenceRoot, &ModExportDialog::chooseReferenceRoot));
 
     m_formatCombo = new QComboBox(this);
@@ -151,7 +151,7 @@ void ModExportDialog::setupUi(const QString &profileName,
 
 void ModExportDialog::chooseModRoot()
 {
-    const QString dir = QFileDialog::getExistingDirectory(this, tr("Mod-Quelle wählen"), m_modRootEdit->text());
+    const QString dir = QFileDialog::getExistingDirectory(this, tr("Choose Mod Source"), m_modRootEdit->text());
     if (!dir.isEmpty())
         m_modRootEdit->setText(dir);
 }
@@ -203,7 +203,7 @@ void ModExportDialog::scan()
     if (!m_plan.errors.isEmpty()) {
         QMessageBox::warning(this, tr("Mod exportieren"), m_plan.errors.join(QLatin1Char('\n')));
     } else if (m_plan.exportFiles().isEmpty()) {
-        QMessageBox::information(this, tr("Mod exportieren"), tr("Keine neuen oder geänderten Dateien gefunden."));
+        QMessageBox::information(this, tr("No new or changed files found."), tr("No new or changed files found."));
     }
 }
 
@@ -224,14 +224,14 @@ void ModExportDialog::exportArchive()
     if (QFileInfo::exists(targetPath())) {
         const auto answer = QMessageBox::question(this,
                                                   tr("Mod exportieren"),
-                                                  tr("Datei existiert bereits. Überschreiben?\n%1").arg(targetPath()));
+                                                  tr("File already exists. Overwrite?\n%1").arg(targetPath()));
         if (answer != QMessageBox::Yes)
             return;
     }
 
     const ModExportPlan plan = filteredPlan();
     if (plan.exportFiles().isEmpty()) {
-        QMessageBox::information(this, tr("Mod exportieren"), tr("Keine Dateien für den Export ausgewählt."));
+        QMessageBox::information(this, tr("No files selected for export."), tr("No files selected for export."));
         return;
     }
 
@@ -299,14 +299,14 @@ void ModExportDialog::refreshFileTable()
     for (int row = 0; row < files.size(); ++row) {
         const ModExportFile &file = files.at(row);
         const bool excluded = m_manualExclusions.contains(file.relativePath);
-        auto *statusItem = new QTableWidgetItem(excluded ? tr("Ausgeschlossen") : file.status);
+        auto *statusItem = new QTableWidgetItem(excluded ? tr("Excluded") : file.status);
         statusItem->setData(Qt::UserRole, file.relativePath);
         m_fileTable->setItem(row, 0, statusItem);
         m_fileTable->setItem(row, 1, new QTableWidgetItem(file.relativePath));
         m_fileTable->setItem(row, 2, new QTableWidgetItem(QString::number(file.size)));
         m_fileTable->setItem(row, 3, new QTableWidgetItem(file.sha256.left(12)));
 
-        auto *button = new QPushButton(excluded ? tr("Einschließen") : tr("Ausschließen"), m_fileTable);
+        auto *button = new QPushButton(excluded ? tr("Include") : tr("Exclude"), m_fileTable);
         connect(button, &QPushButton::clicked, this, [this, path = file.relativePath]() {
             if (m_manualExclusions.contains(path))
                 m_manualExclusions.remove(path);
@@ -324,7 +324,7 @@ void ModExportDialog::refreshFileTable()
 void ModExportDialog::refreshSummary()
 {
     if (!m_hasPlan) {
-        m_summaryLabel->setText(tr("Noch kein Scan ausgeführt. Klicke auf Scannen, um neue und geänderte Dateien zu ermitteln."));
+        m_summaryLabel->setText(tr("No scan has been run yet. Click Scan to find new and changed files."));
         return;
     }
     const ModExportPlan plan = filteredPlan();

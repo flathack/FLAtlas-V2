@@ -1824,12 +1824,12 @@ bool IniEditorPage::confirmCloseSession(int index)
 
     QMessageBox box(this);
     box.setIcon(QMessageBox::Warning);
-    box.setWindowTitle(tr("Ungespeicherte Änderungen"));
-    box.setText(tr("Im Sub-Tab \"%1\" gibt es ungespeicherte Änderungen.").arg(sessionDisplayName(session)));
-    box.setInformativeText(tr("Möchtest du die Änderungen speichern, bevor geschlossen wird?"));
-    auto *saveButton = box.addButton(tr("Speichern"), QMessageBox::AcceptRole);
-    auto *discardButton = box.addButton(tr("Verwerfen"), QMessageBox::DestructiveRole);
-    auto *cancelButton = box.addButton(tr("Abbrechen"), QMessageBox::RejectRole);
+    box.setWindowTitle(tr("Unsaved Changes"));
+    box.setText(tr("Sub-tab \"%1\" has unsaved changes.").arg(sessionDisplayName(session)));
+    box.setInformativeText(tr("Do you want to save the changes before closing?"));
+    auto *saveButton = box.addButton(tr("Save"), QMessageBox::AcceptRole);
+    auto *discardButton = box.addButton(tr("Discard"), QMessageBox::DestructiveRole);
+    auto *cancelButton = box.addButton(tr("Cancel"), QMessageBox::RejectRole);
     box.setDefaultButton(qobject_cast<QPushButton *>(saveButton));
     box.exec();
 

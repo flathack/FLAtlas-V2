@@ -572,7 +572,7 @@ void UniverseEditorPage::refreshMap()
 
     if (visibleSystems == 0) {
         m_mapScene->setSceneRect(QRectF(-320.0, -180.0, 640.0, 360.0));
-        auto *emptyLabel = m_mapScene->addSimpleText(tr("Keine Systeme im ausgewählten Sektor."));
+        auto *emptyLabel = m_mapScene->addSimpleText(tr("No systems in the selected sector."));
         emptyLabel->setBrush(QColor(180, 190, 205));
         emptyLabel->setZValue(10);
         const QRectF labelRect = emptyLabel->boundingRect();
@@ -941,7 +941,7 @@ void UniverseEditorPage::onDeleteSystem(const QString &nickname)
 
     if (!loadFile(m_filePath)) {
         QMessageBox::warning(this, tr("Delete System"),
-                             tr("Das Universe konnte nach dem Löschen nicht neu geladen werden:\n%1").arg(m_filePath));
+                             tr("The universe could not be reloaded after deletion:\n%1").arg(m_filePath));
         return;
     }
 }
@@ -961,15 +961,15 @@ void UniverseEditorPage::onEditSystem(const QString &nickname)
 
     const EditSystemRequest request = dialog.request();
     if (request.name.trimmed().isEmpty()) {
-        QMessageBox::warning(this, tr("System bearbeiten"),
+        QMessageBox::warning(this, tr("Edit System"),
                              tr("Please enter a system name."));
         return;
     }
 
     const QString freelancerIniPath = freelancerIniPathForUniverseFile(m_filePath);
     if (freelancerIniPath.trimmed().isEmpty()) {
-        QMessageBox::warning(this, tr("System bearbeiten"),
-                             tr("freelancer.ini konnte für den aktuellen Kontext nicht gefunden werden."));
+        QMessageBox::warning(this, tr("Edit System"),
+                             tr("freelancer.ini could not be found for the current context."));
         return;
     }
 
@@ -983,7 +983,7 @@ void UniverseEditorPage::onEditSystem(const QString &nickname)
             request.name.trimmed(),
             &updatedNameId,
             &errorMessage)) {
-        QMessageBox::warning(this, tr("System bearbeiten"), errorMessage);
+        QMessageBox::warning(this, tr("Edit System"), errorMessage);
         return;
     }
 
@@ -996,7 +996,7 @@ void UniverseEditorPage::onEditSystem(const QString &nickname)
                 request.infocardXml.trimmed(),
                 &newIdsInfo,
                 &errorMessage)) {
-            QMessageBox::warning(this, tr("System bearbeiten"), errorMessage);
+            QMessageBox::warning(this, tr("Edit System"), errorMessage);
             return;
         }
     }
@@ -1030,8 +1030,8 @@ void UniverseEditorPage::onEditSystem(const QString &nickname)
         sys->sectorPositions.insert(requestedSector, assignedPos);
 
     if (!UniverseSerializer::save(*m_data, m_filePath)) {
-        QMessageBox::warning(this, tr("System bearbeiten"),
-                             tr("Universe.ini konnte nicht gespeichert werden:\n%1").arg(m_filePath));
+        QMessageBox::warning(this, tr("Edit System"),
+                             tr("Universe.ini could not be saved:\n%1").arg(m_filePath));
         return;
     }
 

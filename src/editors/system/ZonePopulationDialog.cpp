@@ -432,7 +432,7 @@ QStringList ZonePopulationDialog::validationErrors(QStringList *warnings) const
             factionWeight += std::max(0.0, weight);
         }
         if (factionWeight > 1.000001)
-            errors.append(tr("Die Summe der Faction-Gewichte in Encounter '%1' darf 1.0 nicht übersteigen.").arg(label));
+            errors.append(tr("The sum of faction weights in encounter '%1' must not exceed 1.0.").arg(label));
     }
 
     for (const QString &restriction : densityRestrictions()) {
@@ -447,7 +447,7 @@ QStringList ZonePopulationDialog::validationErrors(QStringList *warnings) const
             errors.append(tr("Density Restriction '%1' verweist auf einen unbekannten Encounter.").arg(restriction));
     }
     if (totalEncounterChance > 1.000001)
-        errors.append(tr("Die Summe aller Encounter-Chancen darf 1.0 nicht übersteigen."));
+        errors.append(tr("The sum of all encounter chances must not exceed 1.0."));
     if (!rows.isEmpty() && m_densitySpin->value() <= 0 && warnings)
         warnings->append(tr("Die Zone hat Encounters, aber Density ist 0."));
     if (m_densitySpin->value() > 0 && m_battleSpin->value() > m_densitySpin->value() && warnings)
@@ -563,14 +563,14 @@ void ZonePopulationDialog::accept()
     if (!errors.isEmpty()) {
         QMessageBox::warning(this,
                              tr("Zone Population"),
-                             tr("Bitte korrigiere zuerst diese Punkte:\n\n- %1").arg(errors.join(QStringLiteral("\n- "))));
+                             tr("Please correct these points first:\n\n- %1").arg(errors.join(QStringLiteral("\n- "))));
         return;
     }
     if (!warnings.isEmpty()) {
         const auto answer = QMessageBox::question(
             this,
             tr("Zone Population Warnung"),
-            tr("Diese Kombination ist speicherbar, aber auffällig:\n\n- %1\n\nSoll trotzdem fortgefahren werden?")
+            tr("This combination can be saved but looks suspicious:\n\n- %1\n\nContinue anyway?")
                 .arg(warnings.join(QStringLiteral("\n- "))),
             QMessageBox::Yes | QMessageBox::No,
             QMessageBox::No);

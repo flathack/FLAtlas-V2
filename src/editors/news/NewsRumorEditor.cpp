@@ -134,7 +134,7 @@ void NewsRumorEditor::setupUi()
 
     auto *toolbar = new QHBoxLayout();
     auto *reloadButton = new QPushButton(tr("Neu laden"), this);
-    auto *openButton = new QPushButton(tr("Datei öffnen..."), this);
+    auto *openButton = new QPushButton(tr("Open File..."), this);
     auto *addButton = new QPushButton(tr("Neue News"), this);
     auto *removeButton = new QPushButton(tr("News löschen"), this);
     m_saveButton = new QPushButton(tr("Save"), this);
@@ -210,7 +210,7 @@ void NewsRumorEditor::setupUi()
     auto *detailPane = new QWidget(splitter);
     auto *detailLayout = new QVBoxLayout(detailPane);
     detailLayout->setContentsMargins(0, 0, 0, 0);
-    detailLayout->addWidget(new QLabel(tr("News bearbeiten"), detailPane));
+    detailLayout->addWidget(new QLabel(tr("Edit News"), detailPane));
     m_detailHintLabel = new QLabel(tr("Wähle eine News aus."), detailPane);
     m_detailHintLabel->setWordWrap(true);
     detailLayout->addWidget(m_detailHintLabel);
@@ -269,7 +269,7 @@ void NewsRumorEditor::setupUi()
 
     connect(reloadButton, &QPushButton::clicked, this, &NewsRumorEditor::scheduleLoadFromContext);
     connect(openButton, &QPushButton::clicked, this, [this]() {
-        const QString path = QFileDialog::getOpenFileName(this, tr("News-Datei öffnen"), QString(), tr("INI Files (*.ini);;All Files (*)"));
+        const QString path = QFileDialog::getOpenFileName(this, tr("Open News File"), QString(), tr("INI Files (*.ini);;All Files (*)"));
         if (!path.isEmpty())
             loadFromFile(path);
     });
@@ -340,7 +340,7 @@ void NewsRumorEditor::loadFromContext()
     if (!loadWorkspace(flatlas::core::EditingContext::instance().primaryGamePath(), &error)) {
         clearData();
         m_statusLabel->setText(error.isEmpty() ? tr("No active mod installation.") : error);
-        reportLoadingProgress(100, error.isEmpty() ? tr("News Editor: keine aktive Mod-Installation") : error);
+        reportLoadingProgress(100, error.isEmpty() ? tr("News Editor: no active mod installation") : error);
     }
 }
 
@@ -358,7 +358,7 @@ bool NewsRumorEditor::loadWorkspace(const QString &gameRoot, QString *errorMessa
     const QString resolvedGameRoot = gameRoot.trimmed();
     if (resolvedGameRoot.isEmpty()) {
         if (errorMessage)
-            *errorMessage = tr("Bitte zuerst im Mod Manager eine Installation zum Bearbeiten auswählen.");
+            *errorMessage = tr("Please first select an installation for editing in Mod Manager.");
         return false;
     }
 
@@ -544,7 +544,7 @@ void NewsRumorEditor::populateNewsTable()
     for (int row = 0; row < m_entries.size(); ++row) {
     const NewsEntry &entry = m_entries.at(row);
     auto *headline = readOnlyItem(clippedTableText(entry.headlineText.isEmpty()
-        ? tr("<IDS %1 fehlt>").arg(entry.headlineIds)
+        ? tr("<IDS %1 missing>").arg(entry.headlineIds)
         : entry.headlineText, 90));
         headline->setData(Qt::UserRole, row);
         headline->setToolTip(entry.headlineText);
@@ -559,12 +559,12 @@ void NewsRumorEditor::populateNewsTable()
         const QStringList invalid = invalidBases(entry.bases);
         QStringList issues;
         if (missingIds)
-            issues.append(tr("IDS fehlt"));
+            issues.append(tr("IDS missing"));
         if (!invalid.isEmpty())
-            issues.append(tr("Base fehlt"));
+            issues.append(tr("Base missing"));
         auto *issueItem = readOnlyItem(issues.join(QStringLiteral(", ")));
         if (!invalid.isEmpty())
-            issueItem->setToolTip(tr("Nicht gefundene Bases:\n%1").arg(invalid.join(QLatin1Char('\n'))));
+            issueItem->setToolTip(tr("Missing bases:\n%1").arg(invalid.join(QLatin1Char('\n'))));
         m_newsTable->setItem(row, NewsIssueColumn, issueItem);
     }
     refreshFilters();
@@ -768,7 +768,7 @@ bool NewsRumorEditor::save()
         idsDataset = IdsDataService::loadFromGameRoot(m_gameRoot);
         targetDll = IdsDataService::defaultCreationDllName(idsDataset);
         if (targetDll.trimmed().isEmpty()) {
-            QMessageBox::warning(this, tr("News speichern"), tr("Keine Ziel-DLL fÃ¼r IDS-Texte gefunden."));
+            QMessageBox::warning(this, tr("No target DLL found for IDS texts."), tr("No target DLL found for IDS texts."));
             return false;
         }
     }
@@ -780,7 +780,7 @@ bool NewsRumorEditor::save()
         if (!invalid.isEmpty()) {
             QMessageBox::warning(this,
                                  tr("News speichern"),
-                                 tr("Diese News enthält Base-Zuweisungen, die nicht in universe.ini existieren:\n\n%1")
+                                 tr("This news item contains base assignments that do not exist in universe.ini:\n\n%1")
                                      .arg(invalid.join(QLatin1Char('\n'))));
             return false;
         }
@@ -855,7 +855,7 @@ bool NewsRumorEditor::saveIdsText(int currentId, const QString &text, int *outId
     const QString targetDll = IdsDataService::defaultCreationDllName(dataset);
     if (targetDll.trimmed().isEmpty()) {
         if (errorMessage)
-            *errorMessage = tr("Keine Ziel-DLL für IDS-Texte gefunden.");
+            *errorMessage = tr("No target DLL found for IDS texts.");
         return false;
     }
     int newId = currentId;
@@ -881,7 +881,7 @@ bool NewsRumorEditor::saveIdsText(const IdsDataset &dataset,
     }
     if (targetDll.trimmed().isEmpty()) {
         if (errorMessage)
-            *errorMessage = tr("Keine Ziel-DLL fÃ¼r IDS-Texte gefunden.");
+            *errorMessage = tr("No target DLL found for IDS texts.");
         return false;
     }
     int newId = currentId;
@@ -989,7 +989,7 @@ void NewsRumorEditor::removeSelectedNews()
     const int idx = selectedEntryIndex();
     if (idx < 0 || idx >= m_entries.size())
         return;
-    if (QMessageBox::question(this, tr("News löschen"), tr("Diese News wirklich löschen?")) != QMessageBox::Yes)
+    if (QMessageBox::question(this, tr("Really delete this news item?"), tr("Really delete this news item?")) != QMessageBox::Yes)
         return;
     m_entries[idx].removed = true;
     m_entries[idx].modified = true;
@@ -1059,7 +1059,7 @@ void NewsRumorEditor::loadFromFile(const QString &filePath)
     m_newsDoc = IniParser::parseFile(filePath);
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        m_statusLabel->setText(tr("Kann Datei nicht öffnen: %1").arg(filePath));
+        m_statusLabel->setText(tr("Cannot open file: %1").arg(filePath));
         return;
     }
     QTextStream stream(&file);
@@ -1133,7 +1133,7 @@ QString NewsRumorEditor::newsPreview(const NewsEntry &entry) const
 {
     QString text = entry.bodyText.simplified();
     if (text.isEmpty())
-        text = tr("<IDS %1 fehlt>").arg(entry.textIds);
+        text = tr("<IDS %1 missing>").arg(entry.textIds);
     return clippedTableText(text, 140);
 }
 

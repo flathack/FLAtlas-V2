@@ -291,7 +291,7 @@ CreateFieldZoneDialog::CreateFieldZoneDialog(flatlas::domain::SystemDocument *do
     : QDialog(parent)
     , m_document(document)
 {
-    setWindowTitle(tr("Zone erstellen"));
+    setWindowTitle(tr("Create Zone"));
     setMinimumWidth(620);
 
     if (m_document)
@@ -706,13 +706,13 @@ void CreateFieldZoneDialog::accept()
 
     const QString nickname = m_nicknameEdit->text().trimmed();
     if (nickname.isEmpty()) {
-        QMessageBox::warning(this, tr("Zone erstellen"), tr("Please enter a zone name."));
+        QMessageBox::warning(this, tr("Create Zone"), tr("Please enter a zone name."));
         return;
     }
 
     static const QRegularExpression validNickname(QStringLiteral("^[A-Za-z0-9_]+$"));
     if (!validNickname.match(nickname).hasMatch()) {
-        QMessageBox::warning(this, tr("Zone erstellen"),
+        QMessageBox::warning(this, tr("Create Zone"),
                              tr("The zone name may only contain letters, numbers, and underscores."));
         return;
     }
@@ -720,14 +720,14 @@ void CreateFieldZoneDialog::accept()
     if (m_document) {
         for (const auto &zone : m_document->zones()) {
             if (zone && zone->nickname().compare(nickname, Qt::CaseInsensitive) == 0) {
-                QMessageBox::warning(this, tr("Zone erstellen"),
+                QMessageBox::warning(this, tr("Create Zone"),
                                      tr("Eine Zone mit diesem Nickname existiert bereits."));
                 return;
             }
         }
         for (const auto &obj : m_document->objects()) {
             if (obj && obj->nickname().compare(nickname, Qt::CaseInsensitive) == 0) {
-                QMessageBox::warning(this, tr("Zone erstellen"),
+                QMessageBox::warning(this, tr("Create Zone"),
                                      tr("Ein Objekt mit diesem Nickname existiert bereits."));
                 return;
             }
@@ -747,8 +747,8 @@ void CreateFieldZoneDialog::accept()
         }
     }
     if (!foundReference) {
-        QMessageBox::warning(this, tr("Zone erstellen"),
-                             tr("Bitte wähle eine gültige Referenzdatei für den gewählten Typ aus."));
+        QMessageBox::warning(this, tr("Create Zone"),
+                             tr("Please select a valid reference file for the selected type."));
         return;
     }
 
@@ -762,8 +762,8 @@ void CreateFieldZoneDialog::accept()
             }
         }
         if (!knownMusic) {
-            QMessageBox::warning(this, tr("Zone erstellen"),
-                                 tr("Bitte wähle einen gültigen Music-Eintrag aus der Liste."));
+            QMessageBox::warning(this, tr("Create Zone"),
+                                 tr("Please select a valid music entry from the list."));
             return;
         }
     }
@@ -771,16 +771,16 @@ void CreateFieldZoneDialog::accept()
     bool propertyOk = false;
     const int propertyFlags = numericComboValue(m_propertyFlagsCombo, &propertyOk);
     if (!propertyOk) {
-        QMessageBox::warning(this, tr("Zone erstellen"),
-                             tr("Property Flags muss eine gültige Zahl sein."));
+        QMessageBox::warning(this, tr("Create Zone"),
+                             tr("Property Flags must be a valid number."));
         return;
     }
 
     bool visitOk = false;
     const int visit = numericComboValue(m_visitCombo, &visitOk);
     if (!visitOk) {
-        QMessageBox::warning(this, tr("Zone erstellen"),
-                             tr("Visit muss eine gültige Zahl sein."));
+        QMessageBox::warning(this, tr("Create Zone"),
+                             tr("Visit must be a valid number."));
         return;
     }
 
@@ -794,8 +794,8 @@ void CreateFieldZoneDialog::accept()
             }
         }
         if (!knownDust) {
-            QMessageBox::warning(this, tr("Zone erstellen"),
-                                 tr("Bitte wähle einen gültigen Space-Dust-Eintrag aus der Liste."));
+            QMessageBox::warning(this, tr("Create Zone"),
+                                 tr("Please select a valid space dust entry from the list."));
             return;
         }
     }
@@ -803,7 +803,7 @@ void CreateFieldZoneDialog::accept()
     QString normalizedFogColor;
     if (type == CreateFieldZoneResult::Type::Nebula
         && !normalizeRgbText(m_fogColorEdit->text(), &normalizedFogColor)) {
-        QMessageBox::warning(this, tr("Zone erstellen"),
+        QMessageBox::warning(this, tr("Create Zone"),
                              tr("Fog Color must be specified as 'R, G, B' with values from 0 to 255."));
         return;
     }

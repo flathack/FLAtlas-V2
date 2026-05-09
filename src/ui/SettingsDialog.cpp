@@ -230,7 +230,7 @@ void SettingsDialog::setupUi()
     m_updateCheckBox = new QCheckBox(tr("Update-Check beim Start aktivieren"), generalTab);
     generalLayout->addRow(QString(), m_updateCheckBox);
 
-    m_restoreTabsCheckBox = new QCheckBox(tr("Offene Tabs beim Start wiederherstellen"), generalTab);
+    m_restoreTabsCheckBox = new QCheckBox(tr("Restore open tabs on startup"), generalTab);
     generalLayout->addRow(QString(), m_restoreTabsCheckBox);
     tabs->addTab(generalTab, tr("Allgemein"));
 
@@ -595,7 +595,7 @@ void SettingsDialog::refreshIdsTargetDllSettings()
     auto &config = flatlas::core::Config::instance();
     const QString configured = config.getString(QStringLiteral("idsCreationTargetDll")).trimmed();
     QString displayed = configured;
-    QString status = tr("Aktuelles Ziel: FLAtlas-Standard (%1).").arg(ResourceDllWriter::preferredFlatlasDllName());
+    QString status = tr("Current target: FLAtlas default (%1).").arg(ResourceDllWriter::preferredFlatlasDllName());
 
     const QString gamePath = activeGamePath();
     if (!gamePath.isEmpty()) {
@@ -605,7 +605,7 @@ void SettingsDialog::refreshIdsTargetDllSettings()
             : (configured.isEmpty() ? ResourceDllWriter::preferredFlatlasDllName() : QFileInfo(configured).fileName());
         if (displayed.isEmpty())
             displayed = effective;
-        status = tr("Aktiver Kontext: %1\nWirksame Ziel-DLL: %2").arg(gamePath, effective);
+        status = tr("Active context: %1\nEffective target DLL: %2").arg(gamePath, effective);
     } else if (!configured.isEmpty()) {
         status = tr("Effective target DLL: %1. No active Freelancer context loaded.").arg(configured);
     }
@@ -619,7 +619,7 @@ void SettingsDialog::chooseIdsTargetDll()
     const QString startDir = activeGameExeDir();
 
     const QString path = QFileDialog::getOpenFileName(this,
-                                                      tr("Ziel-DLL fuer IDS/Infocards waehlen"),
+                                                      tr("Choose Target DLL for IDS/Infocards"),
                                                       startDir,
                                                       tr("DLL Files (*.dll);;All Files (*.*)"));
     if (path.isEmpty())
@@ -650,7 +650,7 @@ bool SettingsDialog::saveIdsTargetDllSettings(bool offerMigration)
     config.setString(QStringLiteral("idsCreationTargetDll"), dllName);
     config.save();
     refreshIdsTargetDllSettings();
-    m_idsTargetStatusLabel->setText(tr("IDS-/Infocard-Ziel gespeichert: %1").arg(dllName));
+    m_idsTargetStatusLabel->setText(tr("IDS/Infocard target saved: %1").arg(dllName));
     if (offerMigration && targetChanged && !ResourceDllWriter::isFlatlasResourceDll(dllName))
         migrateFlatlasIdsEntriesToTarget(dllName, false);
     return true;
@@ -1023,7 +1023,7 @@ void SettingsDialog::downloadReleaseAsset(const QString &name, const QUrl &url)
             exePath = targetPath;
         }
         if (exePath.isEmpty()) {
-            m_suiteStatusLabel->setText(tr("Download gespeichert, aber keine EXE gefunden: %1").arg(targetPath));
+            m_suiteStatusLabel->setText(tr("Download saved, but no EXE found: %1").arg(targetPath));
             return;
         }
         registerInstalledTool(name, displayName, installDir, exePath);

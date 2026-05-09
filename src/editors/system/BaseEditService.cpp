@@ -1908,7 +1908,7 @@ bool BaseEditService::loadState(const SystemDocument &document,
 
     if (state.baseNickname.isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Das ausgewaehlte Objekt besitzt keine verknuepfte Base.");
+            *errorMessage = QObject::tr("The selected object has no linked base.");
         return false;
     }
 

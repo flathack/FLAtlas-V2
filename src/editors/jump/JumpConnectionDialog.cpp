@@ -62,7 +62,7 @@ QString systemLabel(const flatlas::domain::SystemInfo &system)
 JumpConnectionDialog::JumpConnectionDialog(QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(tr("Jump-Verbindung erstellen"));
+    setWindowTitle(tr("Create Jump Connection"));
     setMinimumSize(1240, 760);
     setupUi();
 }
@@ -81,7 +81,7 @@ void JumpConnectionDialog::setupUi()
 
     m_sourceSystemLabel = new QLabel(topGroup);
     m_sourceSystemLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    topLayout->addRow(tr("Quelle:"), m_sourceSystemLabel);
+    topLayout->addRow(tr("Source:"), m_sourceSystemLabel);
 
     m_destinationSystemCombo = new QComboBox(topGroup);
     m_destinationSystemCombo->setEditable(false);
@@ -91,7 +91,7 @@ void JumpConnectionDialog::setupUi()
     topLayout->addRow(tr("Archetype:"), m_archetypeCombo);
 
     m_sourceObjectEdit = new QLineEdit(topGroup);
-    topLayout->addRow(tr("Quellobjekt:"), m_sourceObjectEdit);
+    topLayout->addRow(tr("Source Object:"), m_sourceObjectEdit);
 
     m_destinationObjectEdit = new QLineEdit(topGroup);
     topLayout->addRow(tr("Target Object:"), m_destinationObjectEdit);
@@ -128,7 +128,7 @@ void JumpConnectionDialog::setupUi()
     mapsLayout->setRowStretch(1, 1);
     for (int column = 0; column < 3; ++column)
         mapsLayout->setColumnMinimumWidth(column, kMapColumnMinimumWidth);
-    auto *sourceLabel = new QLabel(tr("Quelle platzieren"));
+    auto *sourceLabel = new QLabel(tr("Place Source"));
     sourceLabel->setStyleSheet(QStringLiteral("font-weight:600;"));
     mapsLayout->addWidget(sourceLabel, 0, 0);
     auto *destLabel = new QLabel(tr("Place Target"));
@@ -603,22 +603,22 @@ void JumpConnectionDialog::updateStatus()
     const auto destSystem = currentDestinationSystem();
 
     if (m_sourceSystem.nickname.trimmed().isEmpty())
-        issues.append(tr("Quellsystem fehlt."));
+        issues.append(tr("Source system is missing."));
     if (destSystem.nickname.trimmed().isEmpty() || destSystem.filePath.trimmed().isEmpty())
         issues.append(tr("Target system is invalid or could not be resolved."));
     if (conn.fromObject.trimmed().isEmpty() || conn.toObject.trimmed().isEmpty())
-        issues.append(tr("Beide Objekt-Nicknames muessen gesetzt sein."));
+        issues.append(tr("Both object nicknames must be set."));
     if (conn.fromObject.compare(conn.toObject, Qt::CaseInsensitive) == 0
         && conn.fromSystem.compare(conn.toSystem, Qt::CaseInsensitive) == 0) {
         issues.append(tr("Source and target objects must not be identical."));
     }
     if (m_sourcePosition.isNull())
-        issues.append(tr("Quellposition fehlt - bitte auf der linken Karte klicken."));
+        issues.append(tr("Source position is missing - please click the left map."));
     if (m_destinationPosition.isNull())
         issues.append(tr("Target position is missing - please click the right map."));
     if (isJumpGate()) {
         if (m_loadoutCombo->currentText().trimmed().isEmpty())
-            issues.append(tr("Jumpgates brauchen ein gueltiges Loadout."));
+            issues.append(tr("Jump gates need a valid loadout."));
         if (m_factionCombo->currentText().trimmed().isEmpty())
             issues.append(tr("Jumpgates brauchen eine Reputation."));
         if (m_pilotCombo->currentText().trimmed().isEmpty())

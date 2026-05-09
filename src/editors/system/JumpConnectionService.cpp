@@ -148,7 +148,7 @@ bool JumpConnectionService::createConnection(const JumpConnectionCreateRequest &
     }
     if (request.sourceObjectNickname.trimmed().isEmpty() || request.destinationObjectNickname.trimmed().isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Beide Objekt-Nicknames muessen gesetzt sein.");
+            *errorMessage = QObject::tr("Both object nicknames must be set.");
         return false;
     }
 
@@ -173,7 +173,7 @@ bool JumpConnectionService::createConnection(const JumpConnectionCreateRequest &
 
     if (findObjectByNickname(sourceDoc.get(), request.sourceObjectNickname)) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Im Quellsystem existiert bereits ein Objekt mit diesem Nickname.");
+            *errorMessage = QObject::tr("An object with this nickname already exists in the source system.");
         return false;
     }
     SystemDocument *destTargetDoc = sameSystem ? sourceDoc.get() : destDoc.get();
@@ -204,15 +204,15 @@ bool JumpConnectionService::createConnection(const JumpConnectionCreateRequest &
         if (!flatlas::infrastructure::IdsDataService::writeStringEntry(
                 dataset, targetDll, 0, sourceIdsText, &sourceIdsName, &idsError)) {
             if (errorMessage)
-                *errorMessage = QObject::tr("Der IDS-Name fuer die Quellseite konnte nicht geschrieben werden.\n%1")
-                                    .arg(idsError.isEmpty() ? QObject::tr("Unbekannter Fehler.") : idsError);
+                *errorMessage = QObject::tr("The IDS name for the source side could not be written.\n%1")
+                                    .arg(idsError.isEmpty() ? QObject::tr("Unknown error.") : idsError);
             return false;
         }
         if (!flatlas::infrastructure::IdsDataService::writeStringEntry(
                 dataset, targetDll, 0, destIdsText, &destIdsName, &idsError)) {
             if (errorMessage)
-                *errorMessage = QObject::tr("Der IDS-Name fuer die Zielseite konnte nicht geschrieben werden.\n%1")
-                                    .arg(idsError.isEmpty() ? QObject::tr("Unbekannter Fehler.") : idsError);
+                *errorMessage = QObject::tr("The IDS name for the target side could not be written.\n%1")
+                                    .arg(idsError.isEmpty() ? QObject::tr("Unknown error.") : idsError);
             return false;
         }
     }

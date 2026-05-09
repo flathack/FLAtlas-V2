@@ -609,7 +609,7 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     , m_textOverrides(textOverrides)
     , m_roomStates(state.rooms)
 {
-    setWindowTitle(state.editMode ? tr("Base bearbeiten") : tr("Base erstellen"));
+    setWindowTitle(state.editMode ? tr("Edit Base") : tr("Create Base"));
     resize(1240, 760);
 
     const BaseDialogCatalog &catalog = sharedBaseDialogCatalog();
@@ -708,7 +708,7 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
 
     auto *generalPreviewTitle = new QLabel(tr("3D Preview"), generalPreviewSidebar);
     generalPreviewTitle->setStyleSheet(QStringLiteral("font-weight:600;"));
-    auto *generalPreviewHelp = new QLabel(tr("Die Vorschau zeigt den aktuell gewaehlten Base-Archetype."), generalPreviewSidebar);
+    auto *generalPreviewHelp = new QLabel(tr("The preview shows the currently selected base archetype."), generalPreviewSidebar);
     generalPreviewHelp->setWordWrap(true);
     generalPreviewLayout->addWidget(generalPreviewTitle);
     generalPreviewLayout->addWidget(generalPreviewHelp);
@@ -773,13 +773,13 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
 
     auto *roomButtons = new QHBoxLayout();
     m_addRoomButton = new QPushButton(tr("Raum hinzufuegen"), roomsGroup);
-    m_removeRoomButton = new QPushButton(tr("Ausgewaehlten Raum entfernen"), roomsGroup);
+    m_removeRoomButton = new QPushButton(tr("Remove Selected Room"), roomsGroup);
     roomButtons->addWidget(m_addRoomButton);
     roomButtons->addWidget(m_removeRoomButton);
     roomButtons->addStretch(1);
     roomsLayout->addLayout(roomButtons);
 
-    roomsLayout->addWidget(new QLabel(tr("Fixture-NPCs des aktuell ausgewaehlten Raums."), roomsGroup));
+    roomsLayout->addWidget(new QLabel(tr("Fixture NPCs of the currently selected room."), roomsGroup));
 
     m_npcTable = new QTableWidget(0, 2, roomsGroup);
     m_npcTable->setHorizontalHeaderLabels({tr("NPC"), tr("Rolle")});
@@ -792,7 +792,7 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
 
     auto *npcButtons = new QHBoxLayout();
     m_addNpcButton = new QPushButton(tr("NPC hinzufuegen"), roomsGroup);
-    m_removeNpcButton = new QPushButton(tr("Ausgewaehlten NPC entfernen"), roomsGroup);
+    m_removeNpcButton = new QPushButton(tr("Remove Selected NPC"), roomsGroup);
     npcButtons->addWidget(m_addNpcButton);
     npcButtons->addWidget(m_removeNpcButton);
     npcButtons->addStretch(1);
@@ -812,7 +812,7 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
 
     auto *roomPreviewTitle = new QLabel(tr("Room Preview"), roomsPreviewSidebar);
     roomPreviewTitle->setStyleSheet(QStringLiteral("font-weight:600;"));
-    auto *roomPreviewHelp = new QLabel(tr("Die Vorschau zeigt den aktuell ausgewaehlten Raum. Falls kein Modell aufloesbar ist, bleibt die Room-Bearbeitung unveraendert moeglich."), roomsPreviewSidebar);
+    auto *roomPreviewHelp = new QLabel(tr("The preview shows the currently selected room. If no model can be resolved, room editing remains available unchanged."), roomsPreviewSidebar);
     roomPreviewHelp->setWordWrap(true);
     m_selectedRoomLabel = new QLabel(tr("No room selected"), roomsPreviewSidebar);
     m_selectedRoomLabel->setWordWrap(true);
@@ -1632,7 +1632,7 @@ void BaseEditDialog::activateRoomFromTable()
         QMessageBox::warning(this,
                              tr("Room aktivieren"),
                              tr("No renderable interior model was found for %1.")
-                                 .arg(room.roomName.trimmed().isEmpty() ? tr("den ausgewaehlten Raum") : room.roomName.trimmed()));
+                                 .arg(room.roomName.trimmed().isEmpty() ? tr("the selected room") : room.roomName.trimmed()));
         return;
     }
 
@@ -1840,7 +1840,7 @@ void BaseEditDialog::refreshPreview()
     QString errorMessage;
     if (!m_preview->loadModelFile(modelPath, &errorMessage)) {
         showFallback(tr("Model could not be loaded: %1")
-                         .arg(errorMessage.isEmpty() ? tr("unbekannter Fehler") : errorMessage));
+                         .arg(errorMessage.isEmpty() ? tr("unknown error") : errorMessage));
         return;
     }
 
@@ -1920,10 +1920,10 @@ void BaseEditDialog::updateRoomSelectionUi()
     if (m_selectedRoomLabel) {
         m_selectedRoomLabel->setText(roomName.isEmpty()
                                          ? tr("No room selected")
-                                         : tr("Ausgewaehlter Raum: %1").arg(roomName));
+                                         : tr("Selected room: %1").arg(roomName));
     }
     if (m_activeRoomLabel)
-        m_activeRoomLabel->setText(tr("Aktiver Raum im Viewer: %1").arg(activeRoomName().isEmpty() ? QStringLiteral("-") : activeRoomName()));
+        m_activeRoomLabel->setText(tr("Active room in viewer: %1").arg(activeRoomName().isEmpty() ? QStringLiteral("-") : activeRoomName()));
 }
 
 void BaseEditDialog::updateRoomActivationUi()
@@ -1964,7 +1964,7 @@ void BaseEditDialog::refreshRoomPreview()
 
     const BaseRoomState room = m_roomStates.at(row);
     if (room.scenePath.trimmed().isEmpty()) {
-        showFallback(tr("Der ausgewaehlte Raum hat keinen Scene-Pfad."));
+        showFallback(tr("The selected room has no scene path."));
         return;
     }
 
@@ -1973,14 +1973,14 @@ void BaseEditDialog::refreshRoomPreview()
                                                               flatlas::core::EditingContext::instance().primaryGamePath());
     if (modelPath.isEmpty() || !QFileInfo::exists(modelPath)) {
         showFallback(tr("No interior model could be resolved for %1.")
-                         .arg(room.roomName.trimmed().isEmpty() ? tr("diesen Raum") : room.roomName.trimmed()));
+                         .arg(room.roomName.trimmed().isEmpty() ? tr("this room") : room.roomName.trimmed()));
         return;
     }
 
     QString errorMessage;
     if (!m_roomPreview->loadModelFile(modelPath, &errorMessage)) {
         showFallback(tr("Room model could not be loaded: %1")
-                         .arg(errorMessage.isEmpty() ? tr("unbekannter Fehler") : errorMessage));
+                         .arg(errorMessage.isEmpty() ? tr("unknown error") : errorMessage));
         return;
     }
 
@@ -2033,8 +2033,8 @@ void BaseEditDialog::applyTemplateSelection()
 
         m_roomStates = mergedRooms;
         m_templateInfoLabel->setText(infoLines.isEmpty()
-                                         ? tr("Template enthaelt keine Raeume.")
-                                         : tr("Template-Raeume:\n%1").arg(infoLines.join(QLatin1Char('\n'))));
+                                         ? tr("Template contains no rooms.")
+                                         : tr("Template rooms:\n%1").arg(infoLines.join(QLatin1Char('\n'))));
         m_priceVarianceSpin->setValue(templateState.priceVariance);
         if (!templateState.startRoom.trimmed().isEmpty())
             m_startRoomCombo->setCurrentText(templateState.startRoom.trimmed());

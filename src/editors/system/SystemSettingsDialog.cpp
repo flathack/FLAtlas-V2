@@ -33,7 +33,7 @@ QWidget *createColorEditor(QLineEdit **outEdit, QPushButton **outButton, const Q
     layout->setContentsMargins(0, 0, 0, 0);
 
     auto *edit = new QLineEdit(value.trimmed(), container);
-    auto *button = new QPushButton(QObject::tr("Farbe waehlen"), container);
+    auto *button = new QPushButton(QObject::tr("Choose Color"), container);
     layout->addWidget(edit, 1);
     layout->addWidget(button);
 
@@ -53,13 +53,13 @@ SystemSettingsDialog::SystemSettingsDialog(const SystemSettingsState &current,
     : QDialog(parent)
     , m_systemNickname(current.systemNickname.trimmed())
 {
-    setWindowTitle(tr("System-Einstellungen"));
+    setWindowTitle(tr("System Settings"));
     setMinimumWidth(560);
 
     auto *rootLayout = new QVBoxLayout(this);
     m_systemLabel = new QLabel(
-        tr("Bearbeitet die V1-System-Metadaten fuer %1. Universe-Werte wie Visit oder NavMapScale bleiben im Universe-Editor.")
-            .arg(m_systemNickname.isEmpty() ? tr("das aktuelle System") : m_systemNickname),
+        tr("Edits the V1 system metadata for %1. Universe values such as Visit or NavMapScale stay in the Universe editor.")
+            .arg(m_systemNickname.isEmpty() ? tr("the current system") : m_systemNickname),
         this);
     m_systemLabel->setWordWrap(true);
     rootLayout->addWidget(m_systemLabel);
@@ -153,7 +153,7 @@ void SystemSettingsDialog::accept()
     if (!SystemSettingsService::normalizeRgbText(state.spaceColor, &normalized, &errorMessage)
         || !SystemSettingsService::normalizeRgbText(state.ambientColor, &normalized, &errorMessage)) {
         QMessageBox::warning(this,
-                             tr("System-Einstellungen"),
+                             tr("System Settings"),
                              errorMessage.trimmed().isEmpty()
                                  ? tr("At least one color value is invalid.")
                                  : errorMessage);

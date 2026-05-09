@@ -425,7 +425,7 @@ void CreateObjectDialog::refreshPreview()
     QString errorMessage;
     if (!m_preview->loadModelFile(match->modelPath, &errorMessage)) {
         showFallback(tr("Model could not be loaded: %1")
-                     .arg(errorMessage.isEmpty() ? tr("unbekannter Fehler") : errorMessage));
+                     .arg(errorMessage.isEmpty() ? tr("unknown error") : errorMessage));
         return;
     }
     if (stack)
@@ -490,7 +490,7 @@ void CreateObjectDialog::accept()
 
     const QString nickname = m_nicknameEdit->text().trimmed();
     if (nickname.isEmpty() || !kNicknamePattern.match(nickname).hasMatch()) {
-        QMessageBox::warning(this, tr("Ungueltiger Nickname"),
+        QMessageBox::warning(this, tr("Invalid Nickname"),
                              tr("Please enter a valid nickname (letters, digits, _ and -)."));
         m_nicknameEdit->setFocus();
         return;

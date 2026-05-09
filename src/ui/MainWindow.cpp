@@ -1048,9 +1048,9 @@ void MainWindow::createMenus()
                "<p>Systems are shown as interactive 2-D/3-D maps. Objects, zones, bases, docking rings, tradelanes, and connections can be created, edited, and moved.</p>"
                "<p>Thanks to IGx89 for Freelancer Mod Manager (FLMM) and his work for the modding community.</p>"
                "<hr>"
-               "<p><b>Technology:</b> C++ ? Qt 6 ? Qt3D</p>"
+               "<p><b>Technology:</b> C++ - Qt 6 - Qt3D</p>"
                "<p><b>Game:</b> Freelancer (2003, Digital Anvil / Microsoft)</p>"
-               "<p>&copy; 2024?2025 flathack</p>")
+               "<p>&copy; 2024-2025 flathack</p>")
                 .arg(qApp->applicationVersion()));
     });
 
@@ -1585,7 +1585,7 @@ void MainWindow::restoreOpenToolTabs()
                 if (!showModelInViewer(modelPath, displayLabel)) {
                     QMessageBox::warning(this,
                                          tr("Room Preview"),
-                                         tr("Der ausgewaehlte Room konnte nicht im Haupt-3D-Viewer angezeigt werden."));
+                                         tr("The selected room could not be shown in the main 3D viewer."));
                 }
             });
             m_centerTabs->setCurrentIndex(idx);
@@ -2120,7 +2120,7 @@ void MainWindow::openSystemFromUniverse(const QString &nickname,
         if (!showModelInViewer(modelPath, displayLabel)) {
             QMessageBox::warning(this,
                                  tr("Room Preview"),
-                                 tr("Der ausgewaehlte Room konnte nicht im Haupt-3D-Viewer angezeigt werden."));
+                                 tr("The selected room could not be shown in the main 3D viewer."));
         }
     });
 

@@ -26,7 +26,7 @@ EditSystemDialog::EditSystemDialog(const SystemInfo &systemInfo,
                                    QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(tr("System bearbeiten: %1").arg(systemInfo.nickname));
+    setWindowTitle(tr("Edit System: %1").arg(systemInfo.nickname));
     resize(720, 620);
 
     auto *layout = new QVBoxLayout(this);
@@ -135,7 +135,7 @@ void EditSystemDialog::updateInfocardPreview()
 {
     const QString xml = m_infocardEdit->toPlainText().trimmed();
     if (xml.isEmpty()) {
-        m_infocardPreview->setText(tr("Keine Infocard gesetzt."));
+        m_infocardPreview->setText(tr("No infocard set."));
         return;
     }
 

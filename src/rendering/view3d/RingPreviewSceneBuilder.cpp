@@ -278,9 +278,9 @@ RingPreviewSceneResult RingPreviewSceneBuilder::build(const RingPreviewSceneRequ
         result.sceneRoot.children.append(ringNode);
         result.hasRingGeometry = true;
     } else if (result.hasHostModel) {
-        result.statusMessage = QObject::tr("Ungueltige Ringabmessungen: Die Vorschau zeigt aktuell nur das Host-Objekt.");
+        result.statusMessage = QObject::tr("Invalid ring dimensions: the preview currently shows only the host object.");
     } else {
-        result.statusMessage = QObject::tr("Ungueltige Ringabmessungen und kein Host-Modell verfuegbar.");
+        result.statusMessage = QObject::tr("Invalid ring dimensions and no host model available.");
     }
 
     result.hasRenderableScene = !result.sceneRoot.children.isEmpty() || !result.sceneRoot.meshes.isEmpty();

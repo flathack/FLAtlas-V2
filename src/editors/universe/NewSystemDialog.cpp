@@ -18,7 +18,7 @@ NewSystemDialog::NewSystemDialog(const NewSystemDialogOptions &options, QWidget 
     : QDialog(parent)
     , m_options(options)
 {
-    setWindowTitle(tr("Neues System erstellen"));
+    setWindowTitle(tr("Create New System"));
     setMinimumWidth(460);
 
     auto *layout = new QVBoxLayout(this);

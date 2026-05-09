@@ -1051,7 +1051,7 @@ void SystemMapView::drawForeground(QPainter *painter, const QRectF &rect)
         painter->drawRect(vp.adjusted(inset, inset, -inset, -inset));
 
         const QString helpText = m_placementHelpText.isEmpty()
-            ? tr("Klicke auf die Map, um das Objekt zu platzieren. [Esc] bricht ab.")
+            ? tr("Click the map to place the object. [Esc] cancels.")
             : m_placementHelpText;
         QFont bannerFont(QStringLiteral("Segoe UI"), 11, QFont::Bold);
         painter->setFont(bannerFont);

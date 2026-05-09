@@ -201,7 +201,7 @@ const SharedCreationCatalog &sharedCreationCatalog()
                 displayEntries.append(QStringLiteral("%1 - %2")
                                           .arg(itemNickname,
                                                ingameName.isEmpty()
-                                                   ? QObject::tr("(kein Ingame-Name)")
+                                                   ? QObject::tr("(no ingame name)")
                                                    : ingameName));
             }
             catalog.loadoutContents.insert(normalizedKey(nickname), displayEntries);
@@ -307,7 +307,7 @@ void refreshArchetypePreview(QComboBox *archetypeCombo,
     QString errorMessage;
     if (!preview->loadModelFile(modelPath, &errorMessage)) {
         showFallback(QObject::tr("Model could not be loaded: %1")
-                         .arg(errorMessage.isEmpty() ? QObject::tr("unbekannter Fehler") : errorMessage));
+                         .arg(errorMessage.isEmpty() ? QObject::tr("unknown error") : errorMessage));
         return;
     }
 
@@ -396,7 +396,7 @@ QComboBox *createEditableCombo(const QStringList &values, QWidget *parent)
 CreateSimpleZoneDialog::CreateSimpleZoneDialog(const QString &suggestedNickname, QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(tr("Zone erstellen"));
+    setWindowTitle(tr("Create Zone"));
     setMinimumWidth(420);
 
     auto *layout = new QFormLayout(this);
@@ -442,7 +442,7 @@ CreateSimpleZoneRequest CreateSimpleZoneDialog::result() const
 CreateBuoyDialog::CreateBuoyDialog(QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(tr("Bojen erstellen"));
+    setWindowTitle(tr("Create Buoys"));
     setMinimumWidth(440);
 
     auto *layout = new QFormLayout(this);
@@ -462,13 +462,13 @@ CreateBuoyDialog::CreateBuoyDialog(QWidget *parent)
                                    QVariant::fromValue(static_cast<int>(CreateBuoyRequest::LineConstraint::FixedCount)));
     m_lineConstraintCombo->addItem(tr("Fester Abstand"),
                                    QVariant::fromValue(static_cast<int>(CreateBuoyRequest::LineConstraint::FixedSpacing)));
-    layout->addRow(tr("Linienmodus:"), m_lineConstraintCombo);
+    layout->addRow(tr("Line Mode:"), m_lineConstraintCombo);
 
     m_countSpin = new QSpinBox(this);
     m_countSpin->setRange(2, 128);
     m_countSpin->setValue(8);
     layout->addRow(tr("Anzahl:"), m_countSpin);
-    m_countDerivedLabel = new QLabel(tr("Wird waehrend der Platzierung berechnet."), this);
+    m_countDerivedLabel = new QLabel(tr("Calculated during placement."), this);
     m_countDerivedLabel->setWordWrap(true);
     layout->addRow(QString(), m_countDerivedLabel);
 
@@ -478,7 +478,7 @@ CreateBuoyDialog::CreateBuoyDialog(QWidget *parent)
     m_spacingSpin->setSingleStep(100);
     m_spacingSpin->setValue(3000);
     layout->addRow(m_spacingLabel, m_spacingSpin);
-    m_spacingDerivedLabel = new QLabel(tr("Wird waehrend der Platzierung berechnet."), this);
+    m_spacingDerivedLabel = new QLabel(tr("Calculated during placement."), this);
     m_spacingDerivedLabel->setWordWrap(true);
     layout->addRow(QString(), m_spacingDerivedLabel);
 
@@ -509,8 +509,8 @@ void CreateBuoyDialog::updateModeUi()
         m_spacingLabel->setVisible(false);
         m_spacingSpin->setVisible(false);
         m_spacingDerivedLabel->setVisible(false);
-        m_modeHintLabel->setText(tr("1. Klick setzt den Mittelpunkt. 2. Klick bestimmt den Radius. "
-                                    "Die Bojen werden gleichmaessig auf dem Kreis verteilt."));
+        m_modeHintLabel->setText(tr("1st click sets the center. 2nd click sets the radius. "
+                                    "The buoys are distributed evenly around the circle."));
         return;
     }
 
@@ -538,10 +538,10 @@ void CreateBuoyDialog::updateLineConstraintUi()
     m_countDerivedLabel->setText(tr("The count is calculated from line length and spacing during placement."));
     m_spacingDerivedLabel->setText(tr("The spacing is calculated from line length and count during placement."));
     m_modeHintLabel->setText(fixedCount
-                                 ? tr("Linienmodus: feste Anzahl. 1. Klick setzt den Startpunkt. 2. Klick bestimmt die Richtung. "
-                                      "Der Abstand zwischen den Bojen wird aus der gezeichneten Linienlaenge berechnet.")
-                                 : tr("Linienmodus: fester Abstand. 1. Klick setzt den Startpunkt. 2. Klick bestimmt die Richtung. "
-                                      "Die Anzahl der Bojen wird aus Linienlaenge und Abstand berechnet."));
+                                 ? tr("Line mode: fixed count. 1st click sets the start point. 2nd click sets the direction. "
+                                      "Spacing between buoys is calculated from the drawn line length.")
+                                 : tr("Line mode: fixed spacing. 1st click sets the start point. 2nd click sets the direction. "
+                                      "The buoy count is calculated from line length and spacing."));
 }
 
 CreateBuoyRequest CreateBuoyDialog::result() const
@@ -566,7 +566,7 @@ CreateTradeLaneDialog::CreateTradeLaneDialog(const QString &systemNickname,
     : QDialog(parent)
     , m_distanceMeters(std::max(distanceMeters, 0.0))
 {
-    setWindowTitle(tr("Trade Lane erstellen"));
+    setWindowTitle(tr("Create Trade Lane"));
     setMinimumWidth(480);
 
     auto *layout = new QVBoxLayout(this);
@@ -706,7 +706,7 @@ EditTradeLaneDialog::EditTradeLaneDialog(const QString &laneSummary,
                                          QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(tr("Trade Lane bearbeiten"));
+    setWindowTitle(tr("Edit Trade Lane"));
     setMinimumWidth(560);
 
     auto *layout = new QVBoxLayout(this);
@@ -872,7 +872,7 @@ CreatePatrolZoneDialog::CreatePatrolZoneDialog(const QString &suggestedNickname,
                                                QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(tr("Patrol-Zone erstellen"));
+    setWindowTitle(tr("Create Patrol Zone"));
     setMinimumWidth(520);
 
     auto *layout = new QFormLayout(this);
@@ -1071,7 +1071,7 @@ CreateLightSourceDialog::CreateLightSourceDialog(const QString &suggestedNicknam
                                                  QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(tr("Lichtquelle erstellen"));
+    setWindowTitle(tr("Create Light Source"));
     setMinimumWidth(460);
 
     auto *layout = new QFormLayout(this);
@@ -1140,7 +1140,7 @@ CreateSunDialog::CreateSunDialog(const QString &suggestedNickname,
                                  QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(tr("Sonne erstellen"));
+    setWindowTitle(tr("Create Sun"));
     setMinimumWidth(520);
 
     auto *layout = new QFormLayout(this);
@@ -1231,7 +1231,7 @@ CreatePlanetDialog::CreatePlanetDialog(const QString &suggestedNickname,
     : QDialog(parent)
     , m_catalog(catalog)
 {
-    setWindowTitle(tr("Planet erstellen"));
+    setWindowTitle(tr("Create Planet"));
     resize(760, 640);
 
     auto *layout = new QVBoxLayout(this);
@@ -1296,7 +1296,7 @@ CreatePlanetDialog::CreatePlanetDialog(const QString &suggestedNickname,
 
     m_infoCardEdit = new QTextEdit(this);
     m_infoCardEdit->setMinimumHeight(220);
-    m_infoCardEdit->setPlaceholderText(tr("Infocard-Text fuer den neuen Planeten"));
+    m_infoCardEdit->setPlaceholderText(tr("Infocard text for the new planet"));
     layout->addWidget(m_infoCardEdit, 1);
 
     connect(m_archetypeCombo, &QComboBox::currentTextChanged, this, &CreatePlanetDialog::onArchetypeChanged);
@@ -1311,33 +1311,33 @@ void CreatePlanetDialog::accept()
 {
     const CreatePlanetRequest request = result();
     if (request.nickname.isEmpty()) {
-        QMessageBox::warning(this, tr("Planet erstellen"), tr("Please enter an object nickname."));
+        QMessageBox::warning(this, tr("Create Planet"), tr("Please enter an object nickname."));
         return;
     }
     if (!PlanetCreationService::isValidNickname(request.nickname)) {
-        QMessageBox::warning(this, tr("Planet erstellen"),
+        QMessageBox::warning(this, tr("Create Planet"),
                              tr("The nickname may only contain letters, numbers, and underscores."));
         return;
     }
     if (request.ingameName.isEmpty()) {
-        QMessageBox::warning(this, tr("Planet erstellen"), tr("Please enter a planet name."));
+        QMessageBox::warning(this, tr("Create Planet"), tr("Please enter a planet name."));
         return;
     }
     if (request.archetype.isEmpty()) {
-        QMessageBox::warning(this, tr("Planet erstellen"), tr("Please select a planet archetype."));
+        QMessageBox::warning(this, tr("Create Planet"), tr("Please select a planet archetype."));
         return;
     }
     if (request.infoCardText.isEmpty()) {
-        QMessageBox::warning(this, tr("Planet erstellen"), tr("Please enter an infocard text."));
+        QMessageBox::warning(this, tr("Create Planet"), tr("Please enter an infocard text."));
         return;
     }
     if (request.planetRadius > 0 && request.deathZoneRadius < request.planetRadius) {
-        QMessageBox::warning(this, tr("Planet erstellen"),
+        QMessageBox::warning(this, tr("Create Planet"),
                              tr("The death zone radius must not be smaller than the planet radius."));
         return;
     }
     if (request.planetRadius > 0 && request.atmosphereRange < request.planetRadius) {
-        QMessageBox::warning(this, tr("Planet erstellen"),
+        QMessageBox::warning(this, tr("Create Planet"),
                              tr("The atmosphere range must not be smaller than the planet radius."));
         return;
     }
@@ -1357,7 +1357,7 @@ void CreatePlanetDialog::onInfocardEdited()
 
     m_infocardManuallyEdited = m_infoCardEdit->toPlainText().trimmed() != m_lastSuggestedInfocard.trimmed();
     m_infocardStateLabel->setText(m_infocardManuallyEdited
-                                      ? tr("Manuell angepasst. Archetype-Wechsel behalten den aktuellen Text, bis du den Vorschlag explizit neu laedst.")
+                                      ? tr("Manually adjusted. Archetype changes keep the current text until you explicitly reload the suggestion.")
                                       : tr("The current text follows the loaded archetype suggestion."));
 }
 
@@ -1373,7 +1373,7 @@ void CreatePlanetDialog::applyArchetypeDefaults(const QString &archetype, bool f
 
     if (m_planetRadiusLabel) {
         m_planetRadiusLabel->setText(planetRadius > 0
-                                         ? tr("%1 m aus solar_radius des Archetypes.").arg(planetRadius)
+                                         ? tr("%1 m from the archetype solar_radius.").arg(planetRadius)
                                          : tr("No solar_radius found. The default values remain editable."));
     }
     if (m_deathZoneRadiusSpin)
@@ -1641,7 +1641,7 @@ void ObjectRingDialog::refreshPreview()
     QString errorMessage;
     if (!m_preview->loadModelNode(scene.sceneRoot, &errorMessage)) {
         m_previewFallback->setText(tr("The 3D preview could not be built: %1")
-                                       .arg(errorMessage.trimmed().isEmpty() ? tr("unbekannter Fehler") : errorMessage));
+                                       .arg(errorMessage.trimmed().isEmpty() ? tr("unknown error") : errorMessage));
         m_previewStack->setCurrentWidget(m_previewFallback);
         m_previewStatusLabel->setText(m_previewFallback->text());
         return;
@@ -1660,7 +1660,7 @@ void ObjectRingDialog::refreshPreview()
     if (!scene.hasHostModel)
         statusParts.append(tr("The host object could not be loaded; the preview shows only the ring."));
     if (!scene.geometryInputsValid)
-        statusParts.append(tr("Bis zu gueltigen Ringabmessungen bleibt die Vorschau im sicheren Fallback-Zustand."));
+        statusParts.append(tr("Until the ring dimensions are valid, the preview remains in the safe fallback state."));
     m_previewStatusLabel->setText(statusParts.join(QLatin1Char('\n')));
 }
 
@@ -1685,7 +1685,7 @@ CreateSurpriseDialog::CreateSurpriseDialog(const QString &suggestedNickname,
                                            QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(tr("Surprise erstellen"));
+    setWindowTitle(tr("Create Surprise"));
     setMinimumSize(1020, 660);
 
     const SharedCreationCatalog &catalog = sharedCreationCatalog();
@@ -1809,7 +1809,7 @@ CreateWeaponPlatformDialog::CreateWeaponPlatformDialog(const QString &suggestedN
                                                        QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(tr("Waffenplattform erstellen"));
+    setWindowTitle(tr("Create Weapons Platform"));
     setMinimumSize(1060, 720);
 
     const SharedCreationCatalog &catalog = sharedCreationCatalog();

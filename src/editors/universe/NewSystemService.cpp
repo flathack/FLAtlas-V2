@@ -310,7 +310,7 @@ bool NewSystemService::createSystem(const QString &universeFilePath,
     const QString nickname = nextSystemNickname(request.systemPrefix, updatedUniverse);
     if (nickname.isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Es konnte kein gültiger System-Nickname erzeugt werden.");
+            *errorMessage = QObject::tr("No valid system nickname could be generated.");
         return false;
     }
     if (updatedUniverse.findSystem(nickname)) {
@@ -327,14 +327,14 @@ bool NewSystemService::createSystem(const QString &universeFilePath,
 
     if (!QDir().mkpath(absoluteSystemDir)) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Der Systemordner konnte nicht erstellt werden:\n%1").arg(absoluteSystemDir);
+            *errorMessage = QObject::tr("The system folder could not be created:\n%1").arg(absoluteSystemDir);
         return false;
     }
 
     QFile systemFile(absoluteSystemFilePath);
     if (!systemFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Die Systemdatei konnte nicht geschrieben werden:\n%1").arg(absoluteSystemFilePath);
+            *errorMessage = QObject::tr("The system file could not be written:\n%1").arg(absoluteSystemFilePath);
         return false;
     }
     systemFile.write(systemIniText(nickname, request).toUtf8());
@@ -383,7 +383,7 @@ bool NewSystemService::createSystem(const QString &universeFilePath,
         QFile::remove(absoluteSystemFilePath);
         QDir().rmdir(absoluteSystemDir);
         if (errorMessage)
-            *errorMessage = QObject::tr("Universe.ini konnte nicht aktualisiert werden:\n%1").arg(universeFilePath);
+            *errorMessage = QObject::tr("Universe.ini could not be updated:\n%1").arg(universeFilePath);
         return false;
     }
 

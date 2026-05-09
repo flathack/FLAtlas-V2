@@ -276,7 +276,7 @@ bool SystemSettingsService::apply(flatlas::domain::SystemDocument *document,
 {
     if (!document) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Es ist kein System geladen.");
+            *errorMessage = QObject::tr("No system is loaded.");
         return false;
     }
 
@@ -355,7 +355,7 @@ bool SystemSettingsService::normalizeRgbText(const QString &rawValue,
     const QStringList parts = trimmed.split(QLatin1Char(','), Qt::SkipEmptyParts);
     if (parts.size() != 3) {
         if (errorMessage)
-            *errorMessage = QObject::tr("RGB-Farben muessen im Format 'R, G, B' eingegeben werden.");
+            *errorMessage = QObject::tr("RGB colors must be entered in 'R, G, B' format.");
         return false;
     }
 
@@ -366,7 +366,7 @@ bool SystemSettingsService::normalizeRgbText(const QString &rawValue,
         const int component = part.trimmed().toInt(&ok);
         if (!ok || component < 0 || component > 255) {
             if (errorMessage)
-                *errorMessage = QObject::tr("RGB-Farbwerte muessen Ganzzahlen zwischen 0 und 255 sein.");
+                *errorMessage = QObject::tr("RGB color values must be integers between 0 and 255.");
             return false;
         }
         normalizedParts.append(QString::number(component));

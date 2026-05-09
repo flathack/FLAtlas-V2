@@ -59,7 +59,7 @@ CreateExclusionZoneDialog::CreateExclusionZoneDialog(const QString &nicknameSugg
     m_sortSpin->setValue(99);
     form->addRow(tr("Sort:"), m_sortSpin);
 
-    m_linkCheck = new QCheckBox(tr("Mit ausgewaehlter Feld-Zone verknuepfen"), this);
+    m_linkCheck = new QCheckBox(tr("Link with selected field zone"), this);
     m_linkCheck->setChecked(true);
     form->addRow(QString(), m_linkCheck);
 
@@ -133,7 +133,7 @@ void CreateExclusionZoneDialog::accept()
 
     if (m_linkCheck->isChecked() && m_fieldFileEdit->text().trimmed().isEmpty()) {
         QMessageBox::warning(this, tr("Exclusion Zone"),
-                             tr("Es ist keine gueltige Feld-Referenzdatei ausgewaehlt."));
+                             tr("No valid field reference file is selected."));
         return;
     }
 

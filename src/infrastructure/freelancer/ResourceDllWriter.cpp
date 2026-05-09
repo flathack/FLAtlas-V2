@@ -144,7 +144,7 @@ bool ensureWritableDllExists(const QString &freelancerIniPath,
     QDir().mkpath(QFileInfo(targetPath).absolutePath());
     if (!QFile::copy(templatePath, targetPath)) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Die Resource-DLL konnte nicht erstellt werden:\n%1").arg(targetPath);
+            *errorMessage = QObject::tr("The resource DLL could not be created:\n%1").arg(targetPath);
         return false;
     }
     return true;
@@ -320,7 +320,7 @@ bool ResourceDllWriter::ensureResourceDllRegistered(const QString &freelancerIni
     QString text = readText(freelancerIniPath);
     if (text.isEmpty() && !QFileInfo::exists(freelancerIniPath)) {
         if (errorMessage)
-            *errorMessage = QObject::tr("freelancer.ini wurde nicht gefunden:\n%1").arg(freelancerIniPath);
+            *errorMessage = QObject::tr("freelancer.ini was not found:\n%1").arg(freelancerIniPath);
         return false;
     }
 
@@ -334,7 +334,7 @@ bool ResourceDllWriter::ensureResourceDllRegistered(const QString &freelancerIni
     insertResourceDllLine(text, dllName);
     if (!writeText(freelancerIniPath, text)) {
         if (errorMessage)
-            *errorMessage = QObject::tr("freelancer.ini konnte nicht aktualisiert werden:\n%1").arg(freelancerIniPath);
+            *errorMessage = QObject::tr("freelancer.ini could not be updated:\n%1").arg(freelancerIniPath);
         return false;
     }
     return true;
@@ -364,7 +364,7 @@ bool ResourceDllWriter::ensureStringResource(const QString &freelancerIniPath,
     const QString trimmedText = text.trimmed();
     if (trimmedText.isEmpty()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Es wurde kein Text für strid_name angegeben.");
+            *errorMessage = QObject::tr("No text was specified for strid_name.");
         return false;
     }
 
@@ -382,7 +382,7 @@ bool ResourceDllWriter::ensureStringResource(const QString &freelancerIniPath,
     const int slot = slotForDll(freelancerIniPath, targetDllName);
     if (slot <= 0) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Der DLL-Slot für %1 konnte nicht bestimmt werden.").arg(targetDllName);
+            *errorMessage = QObject::tr("The DLL slot for %1 could not be determined.").arg(targetDllName);
         return false;
     }
 
@@ -410,7 +410,7 @@ bool ResourceDllWriter::ensureStringResource(const QString &freelancerIniPath,
     HANDLE handle = BeginUpdateResourceW(reinterpret_cast<LPCWSTR>(dllPath.utf16()), FALSE);
     if (!handle) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Die Resource-DLL konnte nicht zum Schreiben geöffnet werden:\n%1").arg(dllPath);
+            *errorMessage = QObject::tr("The resource DLL could not be opened for writing:\n%1").arg(dllPath);
         return false;
     }
 
@@ -430,7 +430,7 @@ bool ResourceDllWriter::ensureStringResource(const QString &freelancerIniPath,
 
     if (!EndUpdateResourceW(handle, FALSE)) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Die Änderungen an %1 konnten nicht gespeichert werden.").arg(dllPath);
+            *errorMessage = QObject::tr("The changes to %1 could not be saved.").arg(dllPath);
         return false;
     }
 #else
@@ -517,7 +517,7 @@ bool ResourceDllWriter::ensureHtmlResource(const QString &freelancerIniPath,
     const int slot = slotForDll(freelancerIniPath, targetDllName);
     if (slot <= 0) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Der DLL-Slot für %1 konnte nicht bestimmt werden.").arg(targetDllName);
+            *errorMessage = QObject::tr("The DLL slot for %1 could not be determined.").arg(targetDllName);
         return false;
     }
 
@@ -542,7 +542,7 @@ bool ResourceDllWriter::ensureHtmlResource(const QString &freelancerIniPath,
     HANDLE handle = BeginUpdateResourceW(reinterpret_cast<LPCWSTR>(dllPath.utf16()), FALSE);
     if (!handle) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Die Resource-DLL konnte nicht zum Schreiben geöffnet werden:\n%1").arg(dllPath);
+            *errorMessage = QObject::tr("The resource DLL could not be opened for writing:\n%1").arg(dllPath);
         return false;
     }
 
@@ -562,7 +562,7 @@ bool ResourceDllWriter::ensureHtmlResource(const QString &freelancerIniPath,
 
     if (!EndUpdateResourceW(handle, FALSE)) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Die Änderungen an %1 konnten nicht gespeichert werden.").arg(dllPath);
+            *errorMessage = QObject::tr("The changes to %1 could not be saved.").arg(dllPath);
         return false;
     }
 #else

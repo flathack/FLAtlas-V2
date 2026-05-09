@@ -67,7 +67,7 @@ bool writeStoredZip(const QString &targetPath, const QVector<ZipEntry> &entries,
     QSaveFile file(targetPath);
     if (!file.open(QIODevice::WriteOnly)) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Zieldatei konnte nicht geöffnet werden: %1").arg(targetPath);
+            *errorMessage = QObject::tr("Target file could not be opened: %1").arg(targetPath);
         return false;
     }
 

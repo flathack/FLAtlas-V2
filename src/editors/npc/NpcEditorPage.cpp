@@ -486,7 +486,7 @@ void NpcEditorPage::setupUi()
     auto *bribeButtonLayout = new QHBoxLayout(bribeButtons);
     bribeButtonLayout->setContentsMargins(0, 0, 0, 0);
     auto *addBribe = new QPushButton(tr("Bribe hinzufuegen"), bribeButtons);
-    auto *removeBribe = new QPushButton(tr("Bribe entfernen"), bribeButtons);
+    auto *removeBribe = new QPushButton(tr("Remove Bribe"), bribeButtons);
     bribeButtonLayout->addWidget(addBribe);
     bribeButtonLayout->addWidget(removeBribe);
     bribeButtonLayout->addStretch();
@@ -505,7 +505,7 @@ void NpcEditorPage::setupUi()
     m_rumorKindCombo->addItems({QStringLiteral("rumor"), QStringLiteral("rumor_type2")});
     auto *addRumor = new QPushButton(tr("Rumor suchen..."), rumorPicker);
     auto *newRumor = new QPushButton(tr("Neu"), rumorPicker);
-    auto *removeRumor = new QPushButton(tr("Rumor entfernen"), rumorPicker);
+    auto *removeRumor = new QPushButton(tr("Remove Rumor"), rumorPicker);
     rumorPickerLayout->addWidget(new QLabel(tr("Typ:"), rumorPicker));
     rumorPickerLayout->addWidget(m_rumorKindCombo);
     rumorPickerLayout->addStretch(1);
@@ -628,7 +628,7 @@ void NpcEditorPage::reloadCurrentContext()
     if (!loadGameRoot(gameRoot, &error)) {
         m_statusLabel->setText(error.isEmpty() ? tr("No active mod context.") : error);
         emit titleChanged(tr("NPC Editor"));
-        reportLoadingProgress(100, error.isEmpty() ? tr("NPC Editor: kein aktiver Mod-Kontext") : error);
+        reportLoadingProgress(100, error.isEmpty() ? tr("NPC Editor: no active mod context") : error);
         m_loading = false;
         if (m_reloadAction)
             m_reloadAction->setEnabled(true);
@@ -1176,7 +1176,7 @@ void NpcEditorPage::populateNpcTable()
     const QString selectedRoom = m_roomList->currentItem() ? m_roomList->currentItem()->text() : QString();
     for (int i = 0; i < base->npcs.size(); ++i) {
         const NpcRecord &npc = base->npcs.at(i);
-        const QString effectiveRoom = npc.room.trimmed().isEmpty() ? tr("Nicht zugeordnet") : npc.room;
+        const QString effectiveRoom = npc.room.trimmed().isEmpty() ? tr("Not assigned") : npc.room;
         if (effectiveRoom.compare(selectedRoom, Qt::CaseInsensitive) != 0)
             continue;
         const int row = m_npcTable->rowCount();
@@ -1390,7 +1390,7 @@ void NpcEditorPage::saveEditorToCurrentNpc()
         return;
     npc->nickname = m_nicknameEdit->text().trimmed();
     npc->room = m_roomCombo->currentText().trimmed();
-    if (npc->room == tr("Nicht zugeordnet"))
+    if (npc->room == tr("Not assigned"))
         npc->room.clear();
     npc->baseFaction = currentFactionComboNickname(m_baseFactionCombo);
     npc->affiliation = currentFactionComboNickname(m_affiliationCombo);
@@ -1592,7 +1592,7 @@ QStringList NpcEditorPage::allRoomNames(const NpcBaseRecord &base) const
         appendUnique(&rooms, room.nickname);
     for (const NpcRecord &npc : base.npcs)
         appendUnique(&rooms, npc.room);
-    appendUnique(&rooms, tr("Nicht zugeordnet"));
+    appendUnique(&rooms, tr("Not assigned"));
     return rooms;
 }
 
@@ -1668,7 +1668,7 @@ void NpcEditorPage::onNewNpc()
     NpcRecord npc;
     npc.baseNickname = base->nickname;
     npc.room = m_roomList->currentItem() ? m_roomList->currentItem()->text() : QString();
-    if (npc.room == tr("Nicht zugeordnet"))
+    if (npc.room == tr("Not assigned"))
         npc.room.clear();
     npc.baseFaction = m_factionChoices.isEmpty() ? QString() : m_factionChoices.first();
     npc.affiliation = npc.baseFaction;
@@ -1912,7 +1912,7 @@ void NpcEditorPage::onAddRumor()
 void NpcEditorPage::onNewRumor()
 {
     QDialog dialog(this);
-    dialog.setWindowTitle(tr("Neuen Rumor erstellen"));
+    dialog.setWindowTitle(tr("Create New Rumor"));
     dialog.resize(680, 520);
 
     auto *layout = new QVBoxLayout(&dialog);
@@ -1953,18 +1953,18 @@ void NpcEditorPage::onNewRumor()
     int ids = 0;
     const QString rumorText = textEdit->toPlainText().trimmed();
     if (kind.isEmpty() || stateFrom.isEmpty() || stateTo.isEmpty()) {
-        QMessageBox::warning(this, tr("Rumor erstellen"), tr("Typ, Von-State und Bis-State muessen gesetzt sein."));
+        QMessageBox::warning(this, tr("Type, from-state, and to-state must be set."), tr("Type, from-state, and to-state must be set."));
         return;
     }
     if (rumorText.isEmpty()) {
-        QMessageBox::warning(this, tr("Rumor erstellen"), tr("Please enter a rumor text."));
+        QMessageBox::warning(this, tr("Create Rumor"), tr("Please enter a rumor text."));
         return;
     }
 
     const IdsDataset dataset = IdsDataService::loadFromGameRoot(m_gameRoot);
     const QString targetDll = IdsDataService::defaultCreationDllName(dataset);
     if (targetDll.trimmed().isEmpty()) {
-        QMessageBox::warning(this, tr("Rumor erstellen"), tr("No target DLL could be determined for the rumor text."));
+        QMessageBox::warning(this, tr("Create Rumor"), tr("No target DLL could be determined for the rumor text."));
         return;
     }
     QString idsError;
@@ -1976,7 +1976,7 @@ void NpcEditorPage::onNewRumor()
                                           &newGlobalId,
                                           &idsError)) {
         QMessageBox::warning(this,
-                             tr("Rumor erstellen"),
+                             tr("Create Rumor"),
                              tr("Rumor text could not be saved: %1").arg(idsError));
         return;
     }

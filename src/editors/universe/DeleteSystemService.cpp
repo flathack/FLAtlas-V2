@@ -204,7 +204,7 @@ DeleteSystemPrecheckReport buildPrecheckReport(const QString &universeFilePath,
     report.systemDisplayName = systemNickname.trimmed();
 
     if (report.systemNickname.isEmpty()) {
-        appendUniqueBlocker(report.blockers, QObject::tr("Es wurde kein System-Nickname für den Löschvorgang übergeben."));
+        appendUniqueBlocker(report.blockers, QObject::tr("No system nickname was provided for deletion."));
         return report;
     }
 
@@ -255,14 +255,14 @@ DeleteSystemPrecheckReport buildPrecheckReport(const QString &universeFilePath,
 
     if (!foundSystemSection) {
         appendUniqueBlocker(report.blockers,
-                            QObject::tr("Für das System '%1' wurde kein [System]-Eintrag in universe.ini gefunden.")
+                            QObject::tr("No [System] entry was found in universe.ini for system '%1'.")
                                 .arg(report.systemNickname));
         return report;
     }
 
     if (systemFileRel.isEmpty()) {
         appendUniqueBlocker(report.blockers,
-                            QObject::tr("Der [System]-Eintrag für '%1' enthält keinen file-Wert.")
+                            QObject::tr("The [System] entry for '%1' has no file value.")
                                 .arg(report.systemNickname));
         return report;
     }
@@ -272,14 +272,14 @@ DeleteSystemPrecheckReport buildPrecheckReport(const QString &universeFilePath,
 
     if (!QFileInfo::exists(report.systemFilePath)) {
         appendUniqueBlocker(report.blockers,
-                            QObject::tr("Die Systemdatei wurde nicht gefunden:\n%1").arg(report.systemFilePath));
+                            QObject::tr("The system file was not found:\n%1").arg(report.systemFilePath));
         return report;
     }
 
     const IniDocument systemDoc = IniParser::parseFile(report.systemFilePath);
     if (systemDoc.isEmpty()) {
         appendUniqueBlocker(report.blockers,
-                            QObject::tr("Die Systemdatei konnte nicht gelesen werden:\n%1").arg(report.systemFilePath));
+                            QObject::tr("The system file could not be read:\n%1").arg(report.systemFilePath));
         return report;
     }
 
@@ -305,7 +305,7 @@ DeleteSystemPrecheckReport buildPrecheckReport(const QString &universeFilePath,
 
             const QString resolvedPath = resolveDataFilePath(universeFilePath, relativeFile);
             const bool asteroid = section.name.compare(QStringLiteral("Asteroids"), Qt::CaseInsensitive) == 0;
-            const QString label = asteroid ? QObject::tr("Asteroidenfeld") : QObject::tr("Nebel");
+            const QString label = asteroid ? QObject::tr("Asteroid Field") : QObject::tr("Nebula");
             const QString normalizedResolved = normalizedPath(resolvedPath);
             if (!(normalizedResolved.contains(QStringLiteral("/solar/asteroids/"))
                   || normalizedResolved.contains(QStringLiteral("/solar/nebula/")))) {
@@ -339,7 +339,7 @@ DeleteSystemPrecheckReport buildPrecheckReport(const QString &universeFilePath,
     for (const QString &baseFilePath : baseFilePaths) {
         if (!startsWithPath(baseFilePath, report.systemFolderPath)) {
             appendUniqueBlocker(report.blockers,
-                                QObject::tr("Base-INI liegt außerhalb des Systemordners und kann nicht sicher mitgelöscht werden:\n%1")
+                                QObject::tr("Base INI is outside the system folder and cannot be safely deleted with it:\n%1")
                                     .arg(baseFilePath));
             continue;
         }
@@ -347,7 +347,7 @@ DeleteSystemPrecheckReport buildPrecheckReport(const QString &universeFilePath,
         const IniDocument baseDoc = IniParser::parseFile(baseFilePath);
         if (baseDoc.isEmpty()) {
             appendUniqueWarning(report.warnings,
-                                QObject::tr("Base-INI konnte nicht gelesen werden:\n%1").arg(baseFilePath));
+                                QObject::tr("Base INI could not be read:\n%1").arg(baseFilePath));
             continue;
         }
 
@@ -360,13 +360,13 @@ DeleteSystemPrecheckReport buildPrecheckReport(const QString &universeFilePath,
             const QString roomPath = resolveDataFilePath(universeFilePath, roomFileRel);
             if (!startsWithPath(roomPath, report.systemFolderPath)) {
                 appendUniqueBlocker(report.blockers,
-                                    QObject::tr("Room-Datei liegt außerhalb des Systemordners und kann nicht sicher mitgelöscht werden:\n%1")
+                                    QObject::tr("Room file is outside the system folder and cannot be safely deleted with it:\n%1")
                                         .arg(roomPath));
                 continue;
             }
             if (roomUsageCounts.value(normalizedRelativeKey(roomFileRel)) > 0) {
                 appendUniqueBlocker(report.blockers,
-                                    QObject::tr("Room-Datei wird noch von anderen Basen referenziert:\n%1").arg(roomPath));
+                                    QObject::tr("Room file is still referenced by other bases:\n%1").arg(roomPath));
             }
         }
     }
@@ -383,7 +383,7 @@ DeleteSystemPrecheckReport buildPrecheckReport(const QString &universeFilePath,
         const IniDocument otherDoc = IniParser::parseFile(systemFile);
         if (otherDoc.isEmpty()) {
             appendUniqueWarning(report.warnings,
-                                QObject::tr("Eine Nachbarsystem-Datei konnte für den Jump-Precheck nicht gelesen werden:\n%1").arg(systemFile));
+                                QObject::tr("A neighboring system file could not be read for the jump precheck:\n%1").arg(systemFile));
             continue;
         }
 
@@ -427,7 +427,7 @@ bool writeIniDocument(const QString &path, const IniDocument &doc, QString *erro
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
         if (errorMessage)
-            *errorMessage = QObject::tr("Datei konnte nicht geschrieben werden:\n%1").arg(path);
+            *errorMessage = QObject::tr("File could not be written:\n%1").arg(path);
         return false;
     }
     file.write(IniParser::serialize(doc).toUtf8());
@@ -496,7 +496,7 @@ bool DeleteSystemService::execute(const DeleteSystemPrecheckReport &report,
         const IniDocument doc = IniParser::parseFile(filePath);
         if (doc.isEmpty()) {
             if (errorMessage)
-                *errorMessage = QObject::tr("Jump-Gegenstück-Datei konnte nicht gelesen werden:\n%1").arg(filePath);
+                *errorMessage = QObject::tr("Jump counterpart file could not be read:\n%1").arg(filePath);
             return false;
         }
 
@@ -529,7 +529,7 @@ bool DeleteSystemService::execute(const DeleteSystemPrecheckReport &report,
             continue;
         if (!QFile::remove(fileDecision.path)) {
             if (errorMessage)
-                *errorMessage = QObject::tr("Datei konnte nicht gelöscht werden:\n%1").arg(fileDecision.path);
+                *errorMessage = QObject::tr("File could not be deleted:\n%1").arg(fileDecision.path);
             return false;
         }
     }
@@ -538,7 +538,7 @@ bool DeleteSystemService::execute(const DeleteSystemPrecheckReport &report,
         QDir dir(report.systemFolderPath);
         if (!dir.removeRecursively()) {
             if (errorMessage)
-                *errorMessage = QObject::tr("Systemordner konnte nicht gelöscht werden:\n%1").arg(report.systemFolderPath);
+                *errorMessage = QObject::tr("System folder could not be deleted:\n%1").arg(report.systemFolderPath);
             return false;
         }
     }
