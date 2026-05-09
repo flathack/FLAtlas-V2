@@ -32,7 +32,6 @@ add_executable(FLAtlas
     app/SplashScreen.cpp
     app/AppConfig.h
     app/AppConfig.cpp
-    ${CMAKE_SOURCE_DIR}/resources/resources.qrc
 )
 
 if(WIN32)

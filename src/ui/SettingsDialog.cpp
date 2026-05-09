@@ -12,6 +12,7 @@
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -167,6 +168,16 @@ QString idsEntrySummary(const IdsEntryRecord &entry)
     return QStringLiteral("%1 | %2 | %3").arg(entry.globalId).arg(kind, text);
 }
 
+QString languageCacheDirectory()
+{
+    const QString appData = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    return QDir(appData.isEmpty() ? QCoreApplication::applicationDirPath() : appData)
+        .absoluteFilePath(QStringLiteral("languages"));
+}
+
+constexpr const char *kLanguageCatalogUrl =
+    "https://raw.githubusercontent.com/flathack/FLAtlas-V2/master/resources/languages/index.json";
+
 }
 
 SettingsDialog::SettingsDialog(QWidget *parent)
@@ -199,8 +210,18 @@ void SettingsDialog::setupUi()
     auto *generalTab = new QWidget(tabs);
     auto *generalLayout = new QFormLayout(generalTab);
     m_languageCombo = new QComboBox(generalTab);
-    m_languageCombo->addItems(flatlas::core::I18n::availableLanguages());
-    generalLayout->addRow(tr("Sprache:"), m_languageCombo);
+    auto *languageRow = new QWidget(generalTab);
+    auto *languageLayout = new QHBoxLayout(languageRow);
+    languageLayout->setContentsMargins(0, 0, 0, 0);
+    languageLayout->addWidget(m_languageCombo, 1);
+    m_languageUpdateButton = new QPushButton(tr("Update Languages"), languageRow);
+    languageLayout->addWidget(m_languageUpdateButton);
+    generalLayout->addRow(tr("Language:"), languageRow);
+    m_languageStatusLabel = new QLabel(generalTab);
+    m_languageStatusLabel->setWordWrap(true);
+    generalLayout->addRow(QString(), m_languageStatusLabel);
+    refreshLanguageCombo();
+    connect(m_languageUpdateButton, &QPushButton::clicked, this, &SettingsDialog::updateLanguagesFromGitHub);
 
     m_themeCombo = new QComboBox(generalTab);
     m_themeCombo->addItems(flatlas::core::Theme::instance().availableThemes());
@@ -749,6 +770,120 @@ void SettingsDialog::migrateFlatlasIdsEntriesToTarget(const QString &targetDll, 
     }
 
     m_idsTargetStatusLabel->setText(tr("%1 Eintraege wurden in %2 angelegt.").arg(copied).arg(targetDll));
+}
+
+void SettingsDialog::refreshLanguageCombo()
+{
+    if (!m_languageCombo)
+        return;
+
+    const QString current = m_languageCombo->currentText().trimmed().isEmpty()
+        ? flatlas::core::Config::instance().getString(QStringLiteral("language"), flatlas::core::I18n::instance().currentLanguage())
+        : m_languageCombo->currentText();
+    m_languageCombo->clear();
+    m_languageCombo->addItems(flatlas::core::I18n::availableLanguages());
+    const int index = m_languageCombo->findText(current);
+    if (index >= 0)
+        m_languageCombo->setCurrentIndex(index);
+}
+
+void SettingsDialog::updateLanguagesFromGitHub()
+{
+    if (!m_network)
+        return;
+
+    m_languageUpdateButton->setEnabled(false);
+    m_languageStatusLabel->setText(tr("Downloading language catalog..."));
+
+    QNetworkRequest request(QUrl(QString::fromLatin1(kLanguageCatalogUrl)));
+    request.setRawHeader("User-Agent", "FLAtlas-V2");
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+    auto *reply = m_network->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        const QByteArray indexBytes = reply->readAll();
+        const QString error = reply->error() == QNetworkReply::NoError ? QString() : reply->errorString();
+        reply->deleteLater();
+        if (!error.isEmpty()) {
+            m_languageUpdateButton->setEnabled(true);
+            m_languageStatusLabel->setText(tr("Language update failed: %1").arg(error));
+            return;
+        }
+
+        QJsonParseError parseError;
+        const QJsonDocument doc = QJsonDocument::fromJson(indexBytes, &parseError);
+        if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+            m_languageUpdateButton->setEnabled(true);
+            m_languageStatusLabel->setText(tr("Language catalog is invalid."));
+            return;
+        }
+
+        const QJsonArray languages = doc.object().value(QStringLiteral("languages")).toArray();
+        if (languages.isEmpty()) {
+            m_languageUpdateButton->setEnabled(true);
+            m_languageStatusLabel->setText(tr("Language catalog does not contain any languages."));
+            return;
+        }
+
+        QDir().mkpath(languageCacheDirectory());
+        QFile indexFile(QDir(languageCacheDirectory()).absoluteFilePath(QStringLiteral("index.json")));
+        if (indexFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
+            indexFile.write(indexBytes);
+
+        auto *remaining = new int(0);
+        auto *failed = new bool(false);
+        const QUrl baseUrl(QString::fromLatin1(kLanguageCatalogUrl));
+
+        for (const QJsonValue &value : languages) {
+            const QString fileName = QFileInfo(value.toObject().value(QStringLiteral("file")).toString()).fileName();
+            if (fileName.isEmpty() || !fileName.endsWith(QStringLiteral(".json"), Qt::CaseInsensitive))
+                continue;
+
+            ++(*remaining);
+            QNetworkRequest fileRequest(baseUrl.resolved(QUrl(fileName)));
+            fileRequest.setRawHeader("User-Agent", "FLAtlas-V2");
+            fileRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+            auto *fileReply = m_network->get(fileRequest);
+            connect(fileReply, &QNetworkReply::finished, this, [this, fileReply, fileName, remaining, failed]() {
+                const QByteArray bytes = fileReply->readAll();
+                const QString fileError = fileReply->error() == QNetworkReply::NoError ? QString() : fileReply->errorString();
+                fileReply->deleteLater();
+
+                if (!fileError.isEmpty()) {
+                    *failed = true;
+                } else {
+                    QJsonParseError fileParseError;
+                    const QJsonDocument languageDoc = QJsonDocument::fromJson(bytes, &fileParseError);
+                    if (fileParseError.error != QJsonParseError::NoError || !languageDoc.isObject()) {
+                        *failed = true;
+                    } else {
+                        QFile target(QDir(languageCacheDirectory()).absoluteFilePath(fileName));
+                        if (!target.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                            *failed = true;
+                        } else {
+                            target.write(bytes);
+                        }
+                    }
+                }
+
+                --(*remaining);
+                if (*remaining > 0)
+                    return;
+
+                m_languageUpdateButton->setEnabled(true);
+                refreshLanguageCombo();
+                m_languageStatusLabel->setText(*failed ? tr("Languages updated with errors.") : tr("Languages updated."));
+                delete remaining;
+                delete failed;
+            });
+        }
+
+        if (*remaining == 0) {
+            m_languageUpdateButton->setEnabled(true);
+            m_languageStatusLabel->setText(tr("Language catalog does not contain any downloadable files."));
+            delete remaining;
+            delete failed;
+        }
+    });
 }
 
 void SettingsDialog::updateThemeColorButton(const QString &key)

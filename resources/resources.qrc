@@ -17,4 +17,8 @@
     <qresource prefix="/data">
         <!-- TODO: Add static data files -->
     </qresource>
+    <qresource prefix="/languages">
+        <file alias="index.json">languages/index.json</file>
+        <file alias="de.json">languages/de.json</file>
+    </qresource>
 </RCC>

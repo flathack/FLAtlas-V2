@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "languages": [
+    {
+      "code": "de",
+      "name": "Deutsch",
+      "file": "de.json"
+    }
+  ]
+}

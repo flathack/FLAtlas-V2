@@ -37,6 +37,22 @@ private slots:
         i18n.setLanguage(QStringLiteral("en"));
     }
 
+    void germanJsonTranslation()
+    {
+        auto &i18n = I18n::instance();
+        i18n.setLanguage(QStringLiteral("de"));
+        QCOMPARE(QCoreApplication::translate("test", "&File"), QStringLiteral("&Datei"));
+        QCOMPARE(QCoreApplication::translate("test", "Opening system: %1"), QStringLiteral("Öffne System: %1"));
+        i18n.setLanguage(QStringLiteral("en"));
+    }
+
+    void englishFallsBackToSourceText()
+    {
+        auto &i18n = I18n::instance();
+        i18n.setLanguage(QStringLiteral("en"));
+        QCOMPARE(QCoreApplication::translate("test", "&File"), QStringLiteral("&File"));
+    }
+
     void setLanguageSameNoSignal()
     {
         auto &i18n = I18n::instance();

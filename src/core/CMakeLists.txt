@@ -8,6 +8,7 @@ add_library(flatlas_core STATIC
     Logger.h Logger.cpp
     PathUtils.h PathUtils.cpp
     UndoManager.h UndoManager.cpp
+    ${CMAKE_SOURCE_DIR}/resources/resources.qrc
 )
 
 target_include_directories(flatlas_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
