@@ -3,6 +3,7 @@
 #include "core/Config.h"
 #include "core/EditingContext.h"
 #include "core/I18n.h"
+#include "core/PathUtils.h"
 #include "core/Theme.h"
 #include "core/ThemeColors.h"
 #include "infrastructure/freelancer/IdsDataService.h"
@@ -120,6 +121,38 @@ QString activeGamePath()
 {
     const auto &ctx = flatlas::core::EditingContext::instance();
     return ctx.hasContext() ? ctx.primaryGamePath() : QString();
+}
+
+QString activeGameExeDir()
+{
+    const QString gamePath = activeGamePath();
+    if (gamePath.trimmed().isEmpty())
+        return {};
+
+    const QFileInfo info(gamePath);
+    if (info.isFile() && info.fileName().compare(QStringLiteral("freelancer.ini"), Qt::CaseInsensitive) == 0)
+        return info.absolutePath();
+
+    QString exeDir = flatlas::core::PathUtils::ciResolvePath(gamePath, QStringLiteral("EXE"));
+    if (!exeDir.isEmpty())
+        return exeDir;
+
+    const QString fallback = QDir(gamePath).absoluteFilePath(QStringLiteral("EXE"));
+    return QFileInfo::exists(fallback) ? fallback : QString();
+}
+
+QString activeFreelancerIniPath()
+{
+    const QString exeDir = activeGameExeDir();
+    if (exeDir.trimmed().isEmpty())
+        return {};
+
+    QString freelancerIni = flatlas::core::PathUtils::ciResolvePath(exeDir, QStringLiteral("freelancer.ini"));
+    if (!freelancerIni.isEmpty())
+        return freelancerIni;
+
+    const QString fallback = QDir(exeDir).absoluteFilePath(QStringLiteral("freelancer.ini"));
+    return QFileInfo::exists(fallback) ? fallback : QString();
 }
 
 QString idsEntrySummary(const IdsEntryRecord &entry)
@@ -545,8 +578,10 @@ void SettingsDialog::refreshIdsTargetDllSettings()
 
     const QString gamePath = activeGamePath();
     if (!gamePath.isEmpty()) {
-        const IdsDataset dataset = IdsDataService::loadFromGameRoot(gamePath);
-        const QString effective = IdsDataService::defaultCreationDllName(dataset);
+        const QString freelancerIni = activeFreelancerIniPath();
+        const QString effective = configured.isEmpty() && !freelancerIni.isEmpty()
+            ? ResourceDllWriter::targetFlatlasResourceDll(freelancerIni)
+            : (configured.isEmpty() ? ResourceDllWriter::preferredFlatlasDllName() : QFileInfo(configured).fileName());
         if (displayed.isEmpty())
             displayed = effective;
         status = tr("Aktiver Kontext: %1\nWirksame Ziel-DLL: %2").arg(gamePath, effective);
@@ -560,12 +595,7 @@ void SettingsDialog::refreshIdsTargetDllSettings()
 
 void SettingsDialog::chooseIdsTargetDll()
 {
-    QString startDir;
-    const QString gamePath = activeGamePath();
-    if (!gamePath.isEmpty()) {
-        const IdsDataset dataset = IdsDataService::loadFromGameRoot(gamePath);
-        startDir = dataset.exeDir;
-    }
+    const QString startDir = activeGameExeDir();
 
     const QString path = QFileDialog::getOpenFileName(this,
                                                       tr("Ziel-DLL fuer IDS/Infocards waehlen"),

@@ -9,6 +9,7 @@
 #include "core/EditingContext.h"
 #include "core/PathUtils.h"
 #include "core/Theme.h"
+#include "core/ThemeColors.h"
 #include "domain/UniverseData.h"
 #include "infrastructure/freelancer/IdsStringTable.h"
 #include "infrastructure/freelancer/ResourceDllWriter.h"
@@ -24,6 +25,7 @@
 #include <QGraphicsEllipseItem>
 #include <QGraphicsLineItem>
 #include <QGraphicsSimpleTextItem>
+#include <QGraphicsSceneHoverEvent>
 #include <QMessageBox>
 #include <QInputDialog>
 #include <QWheelEvent>
@@ -50,6 +52,7 @@
 #include <QBrush>
 #include <QApplication>
 #include <QPalette>
+#include <QRadialGradient>
 
 namespace flatlas::editors {
 
@@ -244,12 +247,13 @@ private:
 // ─── Clickable system node ───────────────────────────────
 
 static constexpr double NODE_RADIUS = 6.0;
+static constexpr double NODE_PAINT_RADIUS = 18.0;
 
 class SystemNodeItem : public QGraphicsEllipseItem {
 public:
     SystemNodeItem(const QString &nickname, const QString &labelText, double x, double y)
-        : QGraphicsEllipseItem(-NODE_RADIUS, -NODE_RADIUS,
-                                NODE_RADIUS * 2, NODE_RADIUS * 2)
+        : QGraphicsEllipseItem(-NODE_PAINT_RADIUS, -NODE_PAINT_RADIUS,
+                                NODE_PAINT_RADIUS * 2, NODE_PAINT_RADIUS * 2)
         , m_nickname(nickname)
     {
         setPos(x, y);
@@ -257,6 +261,8 @@ public:
         setPen(Qt::NoPen);
         setToolTip(labelText == nickname ? nickname : QStringLiteral("%1 (%2)").arg(labelText, nickname));
         setData(0, nickname);
+        setAcceptHoverEvents(true);
+        setCursor(Qt::PointingHandCursor);
         setFlag(QGraphicsItem::ItemIsSelectable, true);
         setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
         setZValue(10);
@@ -290,6 +296,22 @@ protected:
             onMoveFinished(m_nickname);
     }
 
+    void hoverEnterEvent(QGraphicsSceneHoverEvent *event) override
+    {
+        m_hovered = true;
+        setZValue(12);
+        update();
+        QGraphicsEllipseItem::hoverEnterEvent(event);
+    }
+
+    void hoverLeaveEvent(QGraphicsSceneHoverEvent *event) override
+    {
+        m_hovered = false;
+        setZValue(10);
+        update();
+        QGraphicsEllipseItem::hoverLeaveEvent(event);
+    }
+
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override
     {
         Q_UNUSED(option)
@@ -298,16 +320,22 @@ protected:
         painter->setRenderHint(QPainter::Antialiasing, true);
 
         const bool selected = isSelected();
-        const QColor coreColor = selected ? QColor(255, 220, 120) : QColor(185, 225, 255);
-        const QColor glowColor = selected ? QColor(255, 200, 80, 110) : QColor(120, 190, 255, 80);
-        const QColor haloColor = selected ? QColor(255, 170, 60, 55) : QColor(110, 180, 255, 35);
+        const QColor accent = flatlas::core::ThemeColors::color(QStringLiteral("uiAccent"));
+        const QColor coreColor = selected ? accent.lighter(150) : (m_hovered ? accent.lighter(135) : accent.lighter(118));
+        const QColor glowColor(coreColor.red(), coreColor.green(), coreColor.blue(), selected ? 135 : (m_hovered ? 126 : 92));
+        const QColor haloColor(coreColor.red(), coreColor.green(), coreColor.blue(), selected ? 74 : (m_hovered ? 72 : 42));
+        const qreal hoverBoost = m_hovered ? 1.0 : 0.0;
 
         painter->setPen(Qt::NoPen);
-        painter->setBrush(haloColor);
-        painter->drawEllipse(QPointF(0.0, 0.0), NODE_RADIUS + 4.0, NODE_RADIUS + 4.0);
+        QRadialGradient haloGradient(QPointF(0.0, 0.0), NODE_RADIUS + 6.5 + hoverBoost * 5.0);
+        haloGradient.setColorAt(0.0, haloColor);
+        haloGradient.setColorAt(0.58, QColor(haloColor.red(), haloColor.green(), haloColor.blue(), haloColor.alpha() / 2));
+        haloGradient.setColorAt(1.0, QColor(haloColor.red(), haloColor.green(), haloColor.blue(), 0));
+        painter->setBrush(haloGradient);
+        painter->drawEllipse(QPointF(0.0, 0.0), NODE_RADIUS + 6.5 + hoverBoost * 5.0, NODE_RADIUS + 6.5 + hoverBoost * 5.0);
 
         painter->setBrush(glowColor);
-        painter->drawEllipse(QPointF(0.0, 0.0), NODE_RADIUS + 2.2, NODE_RADIUS + 2.2);
+        painter->drawEllipse(QPointF(0.0, 0.0), NODE_RADIUS + 2.4 + hoverBoost * 1.2, NODE_RADIUS + 2.4 + hoverBoost * 1.2);
 
         QRadialGradient coreGradient(QPointF(-1.4, -1.4), NODE_RADIUS + 1.8);
         coreGradient.setColorAt(0.0, QColor(255, 255, 255, 255));
@@ -317,12 +345,13 @@ protected:
         painter->setBrush(coreGradient);
         painter->drawEllipse(QPointF(0.0, 0.0), NODE_RADIUS, NODE_RADIUS);
 
-        painter->setBrush(QColor(255, 255, 255, selected ? 210 : 180));
+        painter->setBrush(QColor(255, 255, 255, selected ? 220 : 185));
         painter->drawEllipse(QPointF(-1.4, -1.4), 1.8, 1.8);
     }
 
 private:
     QString m_nickname;
+    bool m_hovered = false;
 };
 
 // ─── Constructor / Destructor ────────────────────────────
