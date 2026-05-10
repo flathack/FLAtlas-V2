@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "ActivityLogPage.h"
+#include "ToolboxPage.h"
 #include "WelcomePage.h"
 #include "PropertiesPanel.h"
 #include "CenterTabWidget.h"
@@ -99,6 +100,8 @@ QString toolKeyForWidget(QWidget *widget)
 {
     if (!widget)
         return {};
+    if (qobject_cast<flatlas::ui::ToolboxPage *>(widget))
+        return QStringLiteral("toolbox");
     if (qobject_cast<flatlas::editors::ModManagerPage *>(widget))
         return QStringLiteral("modManager");
     if (qobject_cast<flatlas::editors::UniverseEditorPage *>(widget))
@@ -934,6 +937,8 @@ void MainWindow::createMenus()
     auto *toolsMenu = menuBar()->addMenu(tr("&Tools"));
 
     // -- Editors --
+    addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("toolbox")), tr("&Toolbox"), this, [this]() { openToolbox(); });
+    toolsMenu->addSeparator();
     addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("iniEditor")), tr("Open &File Editor..."), this, [this]() { openIniFile(); });
     addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("tradeRoutes")), tr("&Trade Routes"), this, [this]() { openTradeRoutes(); });
     addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("idsEditor")), tr("&IDS Editor"), this, [this]() { openIdsEditor(); });
@@ -946,26 +951,7 @@ void MainWindow::createMenus()
 
     // -- Tools --
     addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("modelViewer")), tr("&3D Model Viewer"), this, [this]() { openModelViewer(); });
-    addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("universe")), tr("&Shortest Path..."), this, [this]() {
-        // Versuche UniverseData vom aktiven UniverseEditorPage zu holen
-        const flatlas::domain::UniverseData *udata = nullptr;
-        if (m_centerTabs) {
-            for (int i = 0; i < m_centerTabs->count(); ++i) {
-                if (auto *uep = qobject_cast<flatlas::editors::UniverseEditorPage *>(m_centerTabs->widget(i))) {
-                    udata = uep->data();
-                    break;
-                }
-            }
-        }
-        if (!udata) {
-            QMessageBox::information(this, tr("Shortest Path"),
-                tr("Please open a Universe file first."));
-            return;
-        }
-        auto *dlg = new flatlas::tools::PathFinderDialog(udata, this);
-        dlg->setAttribute(Qt::WA_DeleteOnClose);
-        dlg->show();
-    });
+    addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("universe")), tr("&Shortest Path..."), this, [this]() { openShortestPathDialog(); });
     addMenuAction(toolsMenu, flatlas::ui::launchIcon(), tr("&Launch Freelancer..."), this, &MainWindow::launchFreelancerFromContext);
 
     auto *externalToolsMenu = menuBar()->addMenu(tr("External Tools"));
@@ -1636,6 +1622,10 @@ bool MainWindow::openToolByKey(const QString &key, bool pinned)
         openUniverseFromContext();
         return true;
     }
+    if (key == QStringLiteral("toolbox")) {
+        openToolbox();
+        return true;
+    }
     for (int i = 0; i < m_centerTabs->count(); ++i) {
         if (toolKeyForWidget(m_centerTabs->widget(i)) == key) {
             if (key == QStringLiteral("idsEditor")) {
@@ -1866,6 +1856,36 @@ void MainWindow::openIniFile(const QString &filePath, const QString &searchText,
         editor->goToLine(lineNumber);
 
     statusBar()->showMessage(tr("Opened: %1").arg(filePath), 3000);
+}
+
+void MainWindow::openToolbox()
+{
+    for (int i = 0; i < m_centerTabs->count(); ++i) {
+        if (qobject_cast<flatlas::ui::ToolboxPage *>(m_centerTabs->widget(i))) {
+            m_centerTabs->setCurrentIndex(i);
+            statusBar()->showMessage(tr("Toolbox opened"), 3000);
+            return;
+        }
+    }
+
+    auto *page = new flatlas::ui::ToolboxPage(this);
+    connect(page, &flatlas::ui::ToolboxPage::toolRequested, this, [this](const QString &key) {
+        if (key == QStringLiteral("iniEditor")) {
+            openIniFile();
+        } else if (key == QStringLiteral("modManager")) {
+            openModManager();
+        } else if (key == QStringLiteral("shortestPath")) {
+            openShortestPathDialog();
+        } else if (key == QStringLiteral("launchFreelancer")) {
+            launchFreelancerFromContext();
+        } else {
+            openToolByKey(key, false);
+        }
+    });
+
+    const int idx = m_centerTabs->addTab(page, flatlas::ui::toolIcon(QStringLiteral("toolbox")), tr("Toolbox"));
+    m_centerTabs->setCurrentIndex(idx);
+    statusBar()->showMessage(tr("Toolbox opened"), 3000);
 }
 
 void MainWindow::openActivityLog()
@@ -2284,6 +2304,27 @@ void MainWindow::openModelViewer()
     if (ensureModelViewerPage()) {
         statusBar()->showMessage(tr("3D Model Viewer opened"), 3000);
     }
+}
+
+void MainWindow::openShortestPathDialog()
+{
+    const flatlas::domain::UniverseData *udata = nullptr;
+    if (m_centerTabs) {
+        for (int i = 0; i < m_centerTabs->count(); ++i) {
+            if (auto *uep = qobject_cast<flatlas::editors::UniverseEditorPage *>(m_centerTabs->widget(i))) {
+                udata = uep->data();
+                break;
+            }
+        }
+    }
+    if (!udata) {
+        QMessageBox::information(this, tr("Shortest Path"),
+            tr("Please open a Universe file first."));
+        return;
+    }
+    auto *dlg = new flatlas::tools::PathFinderDialog(udata, this);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->show();
 }
 
 void MainWindow::connectNpcEditorPage(flatlas::editors::NpcEditorPage *editor)

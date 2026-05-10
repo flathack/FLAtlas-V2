@@ -10,6 +10,7 @@ class QStackedWidget;
 class QPushButton;
 namespace flatlas::ui { class CenterTabWidget; }
 namespace flatlas::ui { class PropertiesPanel; }
+namespace flatlas::ui { class ToolboxPage; }
 namespace flatlas::editors { class SystemEditorPage; }
 namespace flatlas::editors { class UniverseEditorPage; }
 namespace flatlas::editors { class TradeRoutePage; }
@@ -46,6 +47,7 @@ private:
     void applyThemeStyling();
     void openIniFile();
     void openIniFile(const QString &filePath, const QString &searchText = QString(), int lineNumber = 0);
+    void openToolbox();
     void openTradeRoutes();
     void openIdsEditor();
     void openModManager();
@@ -54,6 +56,7 @@ private:
     void openFactionEditor();
     void openNewsRumorEditor();
     void openModelViewer();
+    void openShortestPathDialog();
     void openActivityLog();
     void connectNpcEditorPage(flatlas::editors::NpcEditorPage *editor);
     void connectFactionEditorPage(flatlas::editors::FactionEditorPage *editor);

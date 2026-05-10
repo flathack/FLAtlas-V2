@@ -189,6 +189,8 @@ QIcon toolIcon(const QString &key)
 {
     if (key == QStringLiteral("universe"))
         return cachedIcon(key, QColor(54, 168, 255), QStringLiteral("universe"));
+    if (key == QStringLiteral("toolbox"))
+        return cachedIcon(key, QColor(124, 188, 255), QStringLiteral("mod"));
     if (key == QStringLiteral("tradeRoutes"))
         return cachedIcon(key, QColor(89, 214, 145), QStringLiteral("trade"));
     if (key == QStringLiteral("idsEditor"))
@@ -207,6 +209,8 @@ QIcon toolIcon(const QString &key)
         return cachedIcon(key, QColor(110, 210, 255), QStringLiteral("activity"));
     if (key == QStringLiteral("modelViewer") || key == QStringLiteral("system3d"))
         return cachedIcon(key, QColor(95, 186, 255), QStringLiteral("model3d"));
+    if (key == QStringLiteral("launch"))
+        return launchIcon();
     if (key == QStringLiteral("systemEditor"))
         return cachedIcon(key, QColor(74, 196, 255), QStringLiteral("system"));
     if (key == QStringLiteral("iniEditor") || key == QStringLiteral("welcome"))
