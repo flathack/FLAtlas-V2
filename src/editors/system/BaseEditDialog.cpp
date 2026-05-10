@@ -325,6 +325,19 @@ int previewSidebarPreferredWidth(QWidget *dialog)
     return std::clamp(dialogWidth / 3, 320, 420);
 }
 
+bool isDockableBaseSolarArchetype(const IniSection &section)
+{
+    for (const auto &entry : section.entries) {
+        if (entry.first.compare(QStringLiteral("docking_sphere"), Qt::CaseInsensitive) != 0)
+            continue;
+
+        const QString kind = entry.second.section(QLatin1Char(','), 0, 0).trimmed().toLower();
+        if (kind == QStringLiteral("berth") || kind == QStringLiteral("airlock"))
+            return true;
+    }
+    return false;
+}
+
 struct BaseDialogCatalog {
     QStringList archetypes;
     QStringList loadouts;
@@ -398,7 +411,7 @@ const BaseDialogCatalog &sharedBaseDialogCatalog()
                 continue;
 
             const QString key = normalizedKey(nickname);
-            if (!seen.contains(key)) {
+            if (isDockableBaseSolarArchetype(section) && !seen.contains(key)) {
                 seen.insert(key);
                 catalog.archetypes.append(nickname);
             }
@@ -715,10 +728,10 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     generalPreviewLayout->addWidget(createPreviewFrame(&m_preview, &m_previewFallback, &m_previewStack, generalPreviewSidebar), 1);
     m_tabs->addTab(generalTab, tr("General"));
 
-    auto *roomsTab = new QWidget(m_tabs);
-    auto *roomsSplitter = new QSplitter(Qt::Horizontal, roomsTab);
+    m_roomsTab = new QWidget(m_tabs);
+    auto *roomsSplitter = new QSplitter(Qt::Horizontal, m_roomsTab);
     roomsSplitter->setChildrenCollapsible(false);
-    auto *roomsTabLayout = new QVBoxLayout(roomsTab);
+    auto *roomsTabLayout = new QVBoxLayout(m_roomsTab);
     roomsTabLayout->setContentsMargins(0, 0, 0, 0);
     roomsTabLayout->addWidget(roomsSplitter, 1);
 
@@ -823,9 +836,11 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     roomsPreviewLayout->addWidget(m_selectedRoomLabel);
     roomsPreviewLayout->addWidget(m_activeRoomLabel);
     roomsPreviewLayout->addWidget(createPreviewFrame(&m_roomPreview, &m_roomPreviewFallback, &m_roomPreviewStack, roomsPreviewSidebar), 1);
-    m_tabs->addTab(roomsTab, tr("Rooms"));
-    m_tabs->addTab(createEquipmentShipsTab(state), tr("Equipment & Ships"));
-    m_tabs->addTab(createCommoditiesTab(state), tr("Commodities"));
+    m_tabs->addTab(m_roomsTab, tr("Rooms"));
+    m_equipmentShipsTab = new QWidget(m_tabs);
+    m_tabs->addTab(m_equipmentShipsTab, tr("Equipment & Ships"));
+    m_commoditiesTab = new QWidget(m_tabs);
+    m_tabs->addTab(m_commoditiesTab, tr("Commodities"));
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     root->addWidget(buttons);
@@ -845,6 +860,16 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     });
     connect(m_templateCombo, &QComboBox::currentTextChanged, this, [this]() { applyTemplateSelection(); });
     connect(m_copyNpcsCheck, &QCheckBox::toggled, this, [this]() { applyTemplateSelection(); });
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this](int index) {
+        QWidget *page = m_tabs ? m_tabs->widget(index) : nullptr;
+        if (page == m_equipmentShipsTab) {
+            ensureEquipmentShipsTab();
+        } else if (page == m_commoditiesTab) {
+            ensureCommoditiesTab();
+        } else if (page == m_roomsTab) {
+            refreshRoomPreview();
+        }
+    });
 
     m_selectedRoomKey = m_roomStates.value(0).roomName.trimmed();
     m_activeRoomKey = !state.startRoom.trimmed().isEmpty() ? state.startRoom.trimmed() : m_selectedRoomKey;
@@ -856,9 +881,46 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     setActiveRoom(m_activeRoomKey);
     m_lastSuggestedLoadout = state.loadout.trimmed();
     m_lastSuggestedIdsInfo = state.infocardXml.trimmed();
-    refreshPreview();
     updateRoomSelectionUi();
-    refreshRoomPreview();
+    QTimer::singleShot(100, this, [this]() { refreshPreview(); });
+}
+
+void BaseEditDialog::ensureEquipmentShipsTab()
+{
+    if (m_equipmentShipsTabLoaded || !m_equipmentShipsTab || !m_tabs)
+        return;
+
+    m_equipmentShipsTabLoaded = true;
+    const int index = m_tabs->indexOf(m_equipmentShipsTab);
+    if (index < 0)
+        return;
+
+    QWidget *placeholder = m_equipmentShipsTab;
+    QWidget *tab = createEquipmentShipsTab(m_initialState);
+    m_tabs->removeTab(index);
+    placeholder->deleteLater();
+    m_equipmentShipsTab = tab;
+    m_tabs->insertTab(index, m_equipmentShipsTab, tr("Equipment & Ships"));
+    m_tabs->setCurrentIndex(index);
+}
+
+void BaseEditDialog::ensureCommoditiesTab()
+{
+    if (m_commoditiesTabLoaded || !m_commoditiesTab || !m_tabs)
+        return;
+
+    m_commoditiesTabLoaded = true;
+    const int index = m_tabs->indexOf(m_commoditiesTab);
+    if (index < 0)
+        return;
+
+    QWidget *placeholder = m_commoditiesTab;
+    QWidget *tab = createCommoditiesTab(m_initialState);
+    m_tabs->removeTab(index);
+    placeholder->deleteLater();
+    m_commoditiesTab = tab;
+    m_tabs->insertTab(index, m_commoditiesTab, tr("Commodities"));
+    m_tabs->setCurrentIndex(index);
 }
 
 QWidget *BaseEditDialog::createEquipmentShipsTab(const BaseEditState &state)
@@ -1352,7 +1414,7 @@ QStringList BaseEditDialog::selectedEquipment() const
 {
     QStringList equipment;
     if (!m_equipmentList)
-        return equipment;
+        return m_initialState.equipment;
     for (int row = 0; row < m_equipmentList->count(); ++row) {
         const QString nickname = m_equipmentList->item(row)->data(Qt::UserRole).toString().trimmed();
         if (!nickname.isEmpty() && !equipment.contains(nickname, Qt::CaseInsensitive))
@@ -1365,7 +1427,7 @@ QStringList BaseEditDialog::selectedCommodities() const
 {
     QStringList commodities;
     if (!m_assignedCommodityList)
-        return commodities;
+        return m_initialState.commodities;
     for (int row = 0; row < m_assignedCommodityList->count(); ++row) {
         const QString nickname = m_assignedCommodityList->item(row)->data(Qt::UserRole).toString().trimmed();
         if (!nickname.isEmpty() && !commodities.contains(nickname, Qt::CaseInsensitive))
@@ -1378,7 +1440,7 @@ QVector<QStringList> BaseEditDialog::selectedCommodityMarketRows() const
 {
     QVector<QStringList> rows;
     if (!m_assignedCommodityList)
-        return rows;
+        return m_initialState.commodityMarketRows;
     for (int rowIndex = 0; rowIndex < m_assignedCommodityList->count(); ++rowIndex) {
         const QListWidgetItem *item = m_assignedCommodityList->item(rowIndex);
         QStringList row = item->data(Qt::UserRole + 1).toStringList();
@@ -1395,6 +1457,9 @@ QVector<QStringList> BaseEditDialog::selectedCommodityMarketRows() const
 
 QStringList BaseEditDialog::selectedShipPackages() const
 {
+    if (!m_equipmentShipsTabLoaded)
+        return m_initialState.shipPackages;
+
     QStringList ships;
     for (const QComboBox *combo : m_shipSlotCombos) {
         const QString nickname = comboDataValue(combo);
@@ -1408,6 +1473,9 @@ QStringList BaseEditDialog::selectedShipPackages() const
 
 QStringList BaseEditDialog::selectedShipPackageLevels() const
 {
+    if (!m_equipmentShipsTabLoaded)
+        return m_initialState.shipPackageLevels;
+
     QStringList levels;
     for (int slot = 0; slot < BaseEquipmentService::MaxShipsPerBase; ++slot) {
         const QString nickname = comboDataValue(m_shipSlotCombos[slot]);
@@ -1948,6 +2016,8 @@ void BaseEditDialog::updateRoomActivationUi()
 void BaseEditDialog::refreshRoomPreview()
 {
     if (!m_roomPreview || !m_roomPreviewFallback || !m_roomPreviewStack)
+        return;
+    if (m_tabs && m_roomsTab && m_tabs->currentWidget() != m_roomsTab)
         return;
 
     auto showFallback = [&](const QString &message) {

@@ -70,6 +70,8 @@ private:
     void updateRoomActivationUi();
     QWidget *createEquipmentShipsTab(const BaseEditState &state);
     QWidget *createCommoditiesTab(const BaseEditState &state);
+    void ensureEquipmentShipsTab();
+    void ensureCommoditiesTab();
     void addSelectedEquipment();
     void removeSelectedEquipment();
     void addSelectedCommodities();
@@ -91,6 +93,11 @@ private:
     QHash<QString, QString> m_textOverrides;
     QVector<BaseRoomState> m_roomStates;
     QTabWidget *m_tabs = nullptr;
+    QWidget *m_roomsTab = nullptr;
+    QWidget *m_equipmentShipsTab = nullptr;
+    QWidget *m_commoditiesTab = nullptr;
+    bool m_equipmentShipsTabLoaded = false;
+    bool m_commoditiesTabLoaded = false;
     QLineEdit *m_objectNicknameEdit = nullptr;
     QLineEdit *m_baseNicknameEdit = nullptr;
     QComboBox *m_archetypeCombo = nullptr;
