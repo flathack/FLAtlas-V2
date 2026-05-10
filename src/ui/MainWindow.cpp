@@ -755,11 +755,13 @@ void MainWindow::checkForUpdates(bool userInitiated)
 void MainWindow::handleUpdateInfo(const flatlas::tools::UpdateInfo &info, bool userInitiated)
 {
     if (!info.errorMessage.isEmpty()) {
-        flatlas::core::Logger::warning(QStringLiteral("Updater"),
-                                       QStringLiteral("Update check failed: %1").arg(info.errorMessage));
+        if (!info.releaseMissing) {
+            flatlas::core::Logger::warning(QStringLiteral("Updater"),
+                                           QStringLiteral("Update check failed: %1").arg(info.errorMessage));
+        }
         if (userInitiated)
             QMessageBox::warning(this, tr("Update Check"), info.errorMessage);
-        else
+        else if (!info.releaseMissing)
             statusBar()->showMessage(tr("Update check failed: %1").arg(info.errorMessage), 5000);
         return;
     }
@@ -1334,9 +1336,9 @@ void MainWindow::applyThemeStyling()
 
     if (m_editingLabel) {
         m_editingLabel->setStyleSheet(
-            QStringLiteral("QLabel { color:%1; background:%2; border:1px solid %3;"
-                           " border-radius:3px; padding:4px 12px; }")
-                .arg(dimText.name(), base.name(), border.name()));
+            QStringLiteral("QLabel { color:%1; background:transparent; border:none;"
+                           " padding:4px 12px; }")
+                .arg(dimText.name()));
     }
 
     if (m_settingsButton) {

@@ -169,6 +169,7 @@ void UpdateChecker::onReplyFinished(QNetworkReply *reply)
         const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         if (httpStatus == 404) {
             info.errorMessage = tr("No FLAtlas release is available on GitHub yet.");
+            info.releaseMissing = true;
         } else if (httpStatus == 403) {
             info.errorMessage = tr("GitHub rejected the update check. Please try again later.");
         } else if (httpStatus >= 400) {

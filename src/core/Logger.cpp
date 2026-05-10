@@ -37,6 +37,12 @@ void Logger::messageHandler(QtMsgType type, const QMessageLogContext &context, c
 {
     if (msg.contains(QStringLiteral("Setting a new default format with a different version or profile after the global shared context is created")))
         return;
+    if (msg.startsWith(QStringLiteral("QPainter::begin: Paint device returned engine == 0"))
+        || msg == QStringLiteral("QPainter::setCompositionMode: Painter not active")
+        || msg == QStringLiteral("QPainter::fillRect: Painter not active")
+        || msg == QStringLiteral("QPainter::end: Painter not active, aborted")) {
+        return;
+    }
 
     static const char *levels[] = {"DEBUG", "WARNING", "CRITICAL", "FATAL", "INFO"};
     const char *level = (type >= 0 && type <= 4) ? levels[type] : "UNKNOWN";

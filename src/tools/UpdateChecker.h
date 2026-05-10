@@ -29,6 +29,7 @@ struct UpdateInfo {
     QString architecture;         ///< Lokale Architektur
     QString releaseNotes;         ///< Release-Notes (Markdown)
     QString errorMessage;         ///< Fehlermeldung (leer bei Erfolg)
+    bool releaseMissing = false;  ///< GitHub hat noch keinen Release.
 };
 
 /// Prueft GitHub Releases auf neue Versionen.
