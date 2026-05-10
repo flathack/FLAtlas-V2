@@ -7,6 +7,8 @@
 #include "ModWorkflow.h"
 
 class QListWidget;
+class QCheckBox;
+class QTabWidget;
 class QToolBar;
 class QLabel;
 class QTableWidget;
@@ -45,6 +47,9 @@ private:
     void onScanClicked();
     void onExportClicked();
     void onLaunchFlClicked();
+    void onInstallGitClicked();
+    void onInitializeGitClicked();
+    void refreshGitPanel();
     QString selectedProfileSourcePath() const;
     QString suggestedReferencePath(const QString &modRoot) const;
 
@@ -58,8 +63,16 @@ private:
     QTableWidget *m_profileTable = nullptr;
     QTableWidget *m_conflictTable = nullptr;
     QLabel *m_statusLabel = nullptr;
+    QCheckBox *m_gitSupportCheck = nullptr;
+    QLabel *m_gitStatusLabel = nullptr;
+    QTabWidget *m_gitTabs = nullptr;
+    QListWidget *m_gitChangesList = nullptr;
+    QListWidget *m_gitCommitList = nullptr;
+    QPushButton *m_gitInstallBtn = nullptr;
+    QPushButton *m_gitInitBtn = nullptr;
     QPushButton *m_editCtxBtn = nullptr;
     QPushButton *m_clearCtxBtn = nullptr;
+    int m_gitRefreshGeneration = 0;
 };
 
 } // namespace flatlas::editors

@@ -66,5 +66,6 @@ target_link_libraries(flatlas_editors PUBLIC
     flatlas_rendering
     flatlas_tools
     Qt6::Core
+    Qt6::Concurrent
     Qt6::Widgets
 )

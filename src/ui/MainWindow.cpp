@@ -8,6 +8,7 @@
 #include "SettingsDialog.h"
 #include "core/Config.h"
 #include "core/EditingContext.h"
+#include "core/GitSupport.h"
 #include "core/Theme.h"
 #include "core/ThemeColors.h"
 #include "core/I18n.h"
@@ -46,6 +47,7 @@
 #include <QDir>
 #include <QMenuBar>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QAction>
 #include <QSplitter>
 #include <QStatusBar>
@@ -53,6 +55,8 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -66,6 +70,7 @@
 #include <QJsonObject>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QTabBar>
 #include <QStackedWidget>
 #include <QDesktopServices>
@@ -78,6 +83,8 @@
 #include <QSet>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
+#include <QTableWidget>
+#include <QTableWidgetItem>
 #include <QAbstractItemView>
 #include <QBrush>
 #include <QFont>
@@ -87,9 +94,25 @@
 
 #include <algorithm>
 #include <exception>
+#include <functional>
 #include <memory>
 
 namespace {
+
+class ClickableLabel final : public QLabel
+{
+public:
+    using QLabel::QLabel;
+    std::function<void()> clicked;
+
+protected:
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        QLabel::mouseReleaseEvent(event);
+        if (event->button() == Qt::LeftButton && clicked)
+            clicked();
+    }
+};
 
 QStringList defaultPinnedTools()
 {
@@ -1048,6 +1071,17 @@ void MainWindow::createMenus()
     m_editingLabel = new QLabel(tr("Currently Editing: -"), this);
     cornerLayout->addWidget(m_editingLabel);
 
+    auto *gitLabel = new ClickableLabel(this);
+    m_gitStatusButton = gitLabel;
+    m_gitStatusButton->setVisible(false);
+    m_gitStatusButton->setTextFormat(Qt::RichText);
+    m_gitStatusButton->setCursor(Qt::PointingHandCursor);
+    m_gitStatusButton->setStyleSheet(
+        QStringLiteral("QLabel { color: #89b4fa; padding: 2px 6px; font-weight: bold; }"));
+    m_gitStatusButton->setText(tr("GIT: -"));
+    cornerLayout->addWidget(m_gitStatusButton);
+    gitLabel->clicked = [this]() { showGitStatusDetails(); };
+
     auto *launchBtn = new QPushButton(tr("Launch FL"), this);
     launchBtn->setIcon(flatlas::ui::launchIcon());
     launchBtn->setStyleSheet(
@@ -1068,6 +1102,11 @@ void MainWindow::createMenus()
     });
 
     menuBar()->setCornerWidget(cornerWidget);
+
+    auto *gitTimer = new QTimer(this);
+    gitTimer->setInterval(10000);
+    connect(gitTimer, &QTimer::timeout, this, &MainWindow::refreshGitStatus);
+    gitTimer->start();
 }
 
 void MainWindow::createPanels()
@@ -2052,12 +2091,100 @@ void MainWindow::handleEditingContextChanged()
         statusBar()->showMessage(tr("Editing context cleared"), 3000);
     }
 
+    refreshGitStatus();
+
     if (!m_openToolTabsRestored && flatlas::core::Config::instance().getBool(QStringLiteral("restoreOpenTabs"), false)) {
         m_openToolTabsRestored = true;
         restoreOpenToolTabs();
     }
     m_suppressTabStateSave = false;
     saveOpenToolTabs();
+}
+
+void MainWindow::refreshGitStatus()
+{
+    if (!m_gitStatusButton)
+        return;
+
+    if (!flatlas::core::Config::instance().getBool(QStringLiteral("gitSupportEnabled"), true)) {
+        m_gitStatus = {};
+        m_gitStatusButton->setVisible(false);
+        return;
+    }
+
+    const QString gamePath = flatlas::core::EditingContext::instance().primaryGamePath();
+    if (gamePath.isEmpty()) {
+        m_gitStatus = {};
+        m_gitStatusButton->setVisible(false);
+        return;
+    }
+
+    m_gitStatus = flatlas::core::GitSupport::statusForPath(gamePath);
+    if (!m_gitStatus.gitAvailable) {
+        m_gitStatusButton->setText(tr("GIT: not installed"));
+        m_gitStatusButton->setVisible(true);
+        return;
+    }
+    if (!m_gitStatus.repository) {
+        m_gitStatusButton->setText(tr("GIT: no repository"));
+        m_gitStatusButton->setVisible(true);
+        return;
+    }
+
+    m_gitStatusButton->setText(QStringLiteral("GIT: (%1) <span style='color:#45c46f;'>+%2</span> / <span style='color:#ff6b6b;'>-%3</span>")
+        .arg(m_gitStatus.changedFileCount())
+        .arg(m_gitStatus.addedLineCount())
+        .arg(m_gitStatus.deletedLineCount()));
+    m_gitStatusButton->setVisible(true);
+}
+
+void MainWindow::showGitStatusDetails()
+{
+    refreshGitStatus();
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Git Changes"));
+    dialog.resize(760, 480);
+    auto *layout = new QVBoxLayout(&dialog);
+
+    QString summary;
+    if (!m_gitStatus.gitAvailable) {
+        summary = tr("Git is not installed.");
+    } else if (!m_gitStatus.repository) {
+        summary = tr("The current editing context is not a Git repository.");
+    } else {
+        summary = tr("Repository: %1\nChanged files: %2, added lines: %3, deleted lines: %4")
+            .arg(m_gitStatus.workTreeRoot)
+            .arg(m_gitStatus.changedFileCount())
+            .arg(m_gitStatus.addedLineCount())
+            .arg(m_gitStatus.deletedLineCount());
+    }
+    auto *summaryLabel = new QLabel(summary, &dialog);
+    summaryLabel->setWordWrap(true);
+    layout->addWidget(summaryLabel);
+
+    auto *table = new QTableWidget(&dialog);
+    table->setColumnCount(4);
+    table->setHorizontalHeaderLabels({tr("File"), tr("Added"), tr("Deleted"), tr("Status")});
+    table->horizontalHeader()->setStretchLastSection(true);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table->verticalHeader()->setVisible(false);
+    table->setRowCount(m_gitStatus.files.size());
+    for (int row = 0; row < m_gitStatus.files.size(); ++row) {
+        const auto &file = m_gitStatus.files.at(row);
+        table->setItem(row, 0, new QTableWidgetItem(file.path));
+        table->setItem(row, 1, new QTableWidgetItem(QString::number(file.addedLines)));
+        table->setItem(row, 2, new QTableWidgetItem(QString::number(file.deletedLines)));
+        table->setItem(row, 3, new QTableWidgetItem(file.untracked ? tr("New") : tr("Modified")));
+    }
+    table->resizeColumnsToContents();
+    layout->addWidget(table, 1);
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+    dialog.exec();
 }
 
 void MainWindow::closeContextBoundTabs()

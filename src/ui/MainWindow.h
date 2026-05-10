@@ -2,6 +2,8 @@
 
 #include <QMainWindow>
 
+#include "core/GitSupport.h"
+
 class QSplitter;
 class QLabel;
 class QProgressBar;
@@ -75,6 +77,8 @@ private:
     void open3DSystemEditorFor(flatlas::editors::SystemEditorPage *editor);
     void openUniverseFromContext();
     void handleEditingContextChanged();
+    void refreshGitStatus();
+    void showGitStatusDetails();
     void closeContextBoundTabs();
     bool closeTabWithPrompt(int index, bool force = false);
     bool confirmCloseDirtyWidget(QWidget *widget, const QString &titleForUser);
@@ -100,7 +104,9 @@ private:
     QLabel *m_editingLabel = nullptr;
     QLabel *m_progressPercentLabel = nullptr;
     QPushButton *m_settingsButton = nullptr;
+    QLabel *m_gitStatusButton = nullptr;
     QProgressBar *m_progressBar = nullptr;
+    flatlas::core::GitStatus m_gitStatus;
     bool m_openToolTabsRestored = false;
     bool m_suppressTabStateSave = true;
 };

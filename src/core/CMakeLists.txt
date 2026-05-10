@@ -2,6 +2,7 @@
 add_library(flatlas_core STATIC
     Config.h Config.cpp
     EditingContext.h EditingContext.cpp
+    GitSupport.h GitSupport.cpp
     I18n.h I18n.cpp
     Theme.h Theme.cpp
     ThemeColors.h ThemeColors.cpp

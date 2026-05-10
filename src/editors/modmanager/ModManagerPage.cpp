@@ -2,14 +2,22 @@
 
 #include "ModManagerPage.h"
 #include "ModExportDialog.h"
+#include "core/Config.h"
 #include "core/EditingContext.h"
+#include "core/GitSupport.h"
 #include "core/PathUtils.h"
 
+#include <QDesktopServices>
+#include <QCheckBox>
+#include <QFutureWatcher>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QSplitter>
 #include <QToolBar>
+#include <QGroupBox>
+#include <QFrame>
 #include <QListWidget>
+#include <QTabWidget>
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QLabel>
@@ -20,6 +28,47 @@
 #include <QProcess>
 #include <QFileInfo>
 #include <QFileIconProvider>
+#include <QUrl>
+#include <QtConcurrent>
+
+namespace {
+
+struct GitPanelData
+{
+    flatlas::core::GitStatus status;
+    QVector<flatlas::core::GitCommitInfo> commits;
+};
+
+QWidget *createGitRow(const QString &title, const QString &subtitle, QWidget *parent)
+{
+    auto *row = new QFrame(parent);
+    row->setObjectName(QStringLiteral("gitListRow"));
+    auto *layout = new QVBoxLayout(row);
+    layout->setContentsMargins(8, 6, 8, 6);
+    layout->setSpacing(2);
+
+    auto *titleLabel = new QLabel(title, row);
+    titleLabel->setObjectName(QStringLiteral("gitListRowTitle"));
+    titleLabel->setWordWrap(false);
+    layout->addWidget(titleLabel);
+
+    auto *subtitleLabel = new QLabel(subtitle, row);
+    subtitleLabel->setObjectName(QStringLiteral("gitListRowSubtitle"));
+    subtitleLabel->setWordWrap(false);
+    layout->addWidget(subtitleLabel);
+
+    return row;
+}
+
+void addGitRow(QListWidget *list, QWidget *row)
+{
+    auto *item = new QListWidgetItem(list);
+    item->setSizeHint(QSize(0, 54));
+    list->addItem(item);
+    list->setItemWidget(item, row);
+}
+
+} // namespace
 
 namespace flatlas::editors {
 
@@ -31,10 +80,16 @@ ModManagerPage::ModManagerPage(QWidget *parent)
 
     connect(&flatlas::core::EditingContext::instance(),
             &flatlas::core::EditingContext::contextChanged,
-            this, [this]() { refreshProfileTable(); });
+            this, [this]() {
+        refreshProfileTable();
+        refreshGitPanel();
+    });
     connect(&flatlas::core::EditingContext::instance(),
             &flatlas::core::EditingContext::profilesChanged,
-            this, [this]() { refreshProfileTable(); });
+            this, [this]() {
+        refreshProfileTable();
+        refreshGitPanel();
+    });
 }
 
 void ModManagerPage::setupUi()
@@ -110,7 +165,12 @@ void ModManagerPage::setupUi()
     // Right side: Profile table + Conflict table (stacked)
     auto *rightSide = new QSplitter(Qt::Vertical, this);
 
-    m_profileTable = new QTableWidget(this);
+    auto *profilePanel = new QWidget(this);
+    auto *profileLayout = new QVBoxLayout(profilePanel);
+    profileLayout->setContentsMargins(0, 0, 0, 0);
+    profileLayout->setSpacing(6);
+
+    m_profileTable = new QTableWidget(profilePanel);
     m_profileTable->setColumnCount(4);
     m_profileTable->setHorizontalHeaderLabels({tr("Name"), tr("Type"), tr("Source Path"), tr("Status")});
     m_profileTable->horizontalHeader()->setStretchLastSection(true);
@@ -119,7 +179,59 @@ void ModManagerPage::setupUi()
     m_profileTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_profileTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_profileTable->verticalHeader()->setVisible(false);
-    rightSide->addWidget(m_profileTable);
+    connect(m_profileTable, &QTableWidget::itemSelectionChanged, this, &ModManagerPage::refreshGitPanel);
+    m_profileTable->setMinimumHeight(170);
+    profileLayout->addWidget(m_profileTable, 0);
+
+    auto *gitGroup = new QGroupBox(tr("Git"), profilePanel);
+    gitGroup->setStyleSheet(QStringLiteral(
+        "QGroupBox { font-weight: 600; border: 1px solid palette(mid); border-radius: 6px; margin-top: 8px; padding-top: 10px; }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }"
+        "QListWidget { border: none; outline: 0; }"
+        "QListWidget::item { border-bottom: 1px solid palette(mid); }"
+        "QFrame#gitListRow { background: palette(base); border: none; }"
+        "QLabel#gitListRowTitle { font-weight: 700; }"
+        "QLabel#gitListRowSubtitle { color: palette(midlight); }"));
+    auto *gitLayout = new QVBoxLayout(gitGroup);
+    gitLayout->setSpacing(8);
+    m_gitSupportCheck = new QCheckBox(tr("Enable Git support"), gitGroup);
+    m_gitSupportCheck->setChecked(flatlas::core::Config::instance().getBool(QStringLiteral("gitSupportEnabled"), true));
+    connect(m_gitSupportCheck, &QCheckBox::toggled, this, [this](bool enabled) {
+        flatlas::core::Config::instance().setBool(QStringLiteral("gitSupportEnabled"), enabled);
+        flatlas::core::Config::instance().save();
+        refreshGitPanel();
+    });
+    gitLayout->addWidget(m_gitSupportCheck);
+
+    m_gitStatusLabel = new QLabel(tr("Select an installation to view Git information."), gitGroup);
+    m_gitStatusLabel->setWordWrap(true);
+    m_gitStatusLabel->setStyleSheet(QStringLiteral("QLabel { color: palette(text); padding: 4px 0; }"));
+    gitLayout->addWidget(m_gitStatusLabel);
+
+    auto *gitButtonRow = new QHBoxLayout();
+    m_gitInstallBtn = new QPushButton(tr("Install Git to better manage your mod"), gitGroup);
+    connect(m_gitInstallBtn, &QPushButton::clicked, this, &ModManagerPage::onInstallGitClicked);
+    gitButtonRow->addWidget(m_gitInstallBtn);
+    m_gitInitBtn = new QPushButton(tr("Initialize Git Repository"), gitGroup);
+    connect(m_gitInitBtn, &QPushButton::clicked, this, &ModManagerPage::onInitializeGitClicked);
+    gitButtonRow->addWidget(m_gitInitBtn);
+    gitButtonRow->addStretch();
+    gitLayout->addLayout(gitButtonRow);
+
+    m_gitTabs = new QTabWidget(gitGroup);
+    m_gitTabs->setDocumentMode(true);
+    m_gitChangesList = new QListWidget(m_gitTabs);
+    m_gitChangesList->setAlternatingRowColors(true);
+    m_gitChangesList->setSelectionMode(QAbstractItemView::NoSelection);
+    m_gitTabs->addTab(m_gitChangesList, tr("Changes"));
+    m_gitCommitList = new QListWidget(m_gitTabs);
+    m_gitCommitList->setAlternatingRowColors(true);
+    m_gitCommitList->setSelectionMode(QAbstractItemView::NoSelection);
+    m_gitTabs->addTab(m_gitCommitList, tr("History"));
+    gitLayout->addWidget(m_gitTabs, 1);
+
+    profileLayout->addWidget(gitGroup, 1);
+    rightSide->addWidget(profilePanel);
 
     m_conflictTable = new QTableWidget(this);
     m_conflictTable->setColumnCount(2);
@@ -137,7 +249,7 @@ void ModManagerPage::setupUi()
 
     splitter->setStretchFactor(0, 0);
     splitter->setStretchFactor(1, 1);
-    layout->addWidget(splitter);
+    layout->addWidget(splitter, 1);
 
     m_statusLabel = new QLabel(tr("Add a Freelancer installation to begin"), this);
     m_statusLabel->setContentsMargins(8, 4, 8, 4);
@@ -200,6 +312,7 @@ void ModManagerPage::refreshProfileTable()
 
     m_statusLabel->setText(tr("%1 installations").arg(profiles.size()));
     emit titleChanged(QStringLiteral("Mod Manager (%1)").arg(profiles.size()));
+    refreshGitPanel();
 }
 
 void ModManagerPage::refreshConflicts()
@@ -411,6 +524,141 @@ void ModManagerPage::onLaunchFlClicked()
 
     QProcess::startDetached(exe, {}, QFileInfo(exe).absolutePath());
     m_statusLabel->setText(tr("Freelancer launched"));
+}
+
+void ModManagerPage::onInstallGitClicked()
+{
+    QDesktopServices::openUrl(QUrl(QStringLiteral("https://git-scm.com/download/win")));
+}
+
+void ModManagerPage::onInitializeGitClicked()
+{
+    const QString path = selectedProfileSourcePath();
+    if (path.trimmed().isEmpty() || !QDir(path).exists()) {
+        QMessageBox::information(this, tr("Git"), tr("Select an installation in the table first."));
+        return;
+    }
+
+    const auto answer = QMessageBox::question(
+        this,
+        tr("Initialize Git Repository"),
+        tr("Initialize a Git repository in this installation and create an initial commit?\n\n%1").arg(path));
+    if (answer != QMessageBox::Yes)
+        return;
+
+    QString errorMessage;
+    if (!flatlas::core::GitSupport::initializeRepository(path, &errorMessage)) {
+        QMessageBox::warning(this,
+                             tr("Git"),
+                             tr("Git repository could not be initialized:\n%1").arg(errorMessage));
+        refreshGitPanel();
+        return;
+    }
+
+    m_statusLabel->setText(tr("Git repository initialized."));
+    refreshGitPanel();
+}
+
+void ModManagerPage::refreshGitPanel()
+{
+    if (!m_gitStatusLabel || !m_gitInstallBtn || !m_gitInitBtn || !m_gitSupportCheck
+        || !m_gitTabs || !m_gitChangesList || !m_gitCommitList) {
+        return;
+    }
+
+    m_gitChangesList->clear();
+    m_gitCommitList->clear();
+    const bool enabled = m_gitSupportCheck->isChecked();
+    m_gitInstallBtn->setVisible(false);
+    m_gitInitBtn->setVisible(false);
+    m_gitTabs->setVisible(enabled);
+    m_gitTabs->setTabText(0, tr("Changes"));
+    m_gitTabs->setTabText(1, tr("History"));
+    if (!enabled) {
+        m_gitStatusLabel->setText(tr("Git support is disabled."));
+        m_gitTabs->setVisible(false);
+        return;
+    }
+
+    const QString path = selectedProfileSourcePath();
+    const bool hasPath = !path.trimmed().isEmpty() && QDir(path).exists();
+    if (!hasPath) {
+        m_gitStatusLabel->setText(tr("Select an installation to view Git information."));
+        m_gitInitBtn->setVisible(false);
+        m_gitTabs->setVisible(false);
+        return;
+    }
+
+    m_gitTabs->setVisible(true);
+    m_gitStatusLabel->setText(tr("Loading Git information..."));
+    addGitRow(m_gitChangesList, createGitRow(tr("Loading..."), tr("Reading working tree status."), m_gitChangesList));
+    addGitRow(m_gitCommitList, createGitRow(tr("Loading..."), tr("Reading commit history."), m_gitCommitList));
+
+    const int generation = ++m_gitRefreshGeneration;
+    auto *watcher = new QFutureWatcher<GitPanelData>(this);
+    connect(watcher, &QFutureWatcher<GitPanelData>::finished, this, [this, watcher, generation]() {
+        const GitPanelData data = watcher->result();
+        watcher->deleteLater();
+        if (generation != m_gitRefreshGeneration)
+            return;
+
+        m_gitChangesList->clear();
+        m_gitCommitList->clear();
+
+        const auto &status = data.status;
+        m_gitInstallBtn->setVisible(!status.gitAvailable);
+        m_gitInitBtn->setVisible(status.gitAvailable && !status.repository);
+
+        if (!status.gitAvailable) {
+            m_gitStatusLabel->setText(tr("Git is not installed. Install Git to better manage your mod."));
+            m_gitTabs->setVisible(false);
+            return;
+        }
+        if (!status.repository) {
+            m_gitStatusLabel->setText(tr("No Git repository found for this installation."));
+            m_gitInitBtn->setEnabled(true);
+            m_gitTabs->setVisible(false);
+            return;
+        }
+
+        m_gitInitBtn->setVisible(false);
+        m_gitStatusLabel->setText(tr("Repository: %1\nChanged files: %2, added lines: %3, deleted lines: %4")
+            .arg(status.workTreeRoot)
+            .arg(status.changedFileCount())
+            .arg(status.addedLineCount())
+            .arg(status.deletedLineCount()));
+        m_gitTabs->setVisible(true);
+
+        m_gitTabs->setTabText(0, tr("Changes (%1)").arg(status.changedFileCount()));
+        if (status.files.isEmpty()) {
+            addGitRow(m_gitChangesList, createGitRow(tr("No changes"), tr("Working tree is clean."), m_gitChangesList));
+        } else {
+            for (const auto &file : status.files) {
+                const QString subtitle = file.untracked
+                    ? tr("New file - +%1 / -%2").arg(file.addedLines).arg(file.deletedLines)
+                    : tr("Modified - +%1 / -%2").arg(file.addedLines).arg(file.deletedLines);
+                addGitRow(m_gitChangesList, createGitRow(file.path, subtitle, m_gitChangesList));
+            }
+        }
+
+        if (data.commits.isEmpty()) {
+            addGitRow(m_gitCommitList, createGitRow(tr("No commits found."), tr("Repository history is empty."), m_gitCommitList));
+            return;
+        }
+        for (const auto &commit : data.commits) {
+            addGitRow(m_gitCommitList,
+                      createGitRow(QStringLiteral("%1  %2").arg(commit.shortHash, commit.subject),
+                                   QStringLiteral("%1 - %2").arg(commit.author, commit.relativeDate),
+                                   m_gitCommitList));
+        }
+    });
+    watcher->setFuture(QtConcurrent::run([path]() {
+        GitPanelData data;
+        data.status = flatlas::core::GitSupport::statusForPath(path);
+        if (data.status.repository)
+            data.commits = flatlas::core::GitSupport::recentCommitsForPath(path, 8);
+        return data;
+    }));
 }
 
 } // namespace flatlas::editors
