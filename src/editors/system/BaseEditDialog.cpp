@@ -4,6 +4,7 @@
 #include "core/PathUtils.h"
 #include "editors/base/BaseEquipmentService.h"
 #include "infrastructure/freelancer/IdsStringTable.h"
+#include "infrastructure/io/CmpLoader.h"
 #include "infrastructure/parser/IniParser.h"
 #include "rendering/view3d/ModelViewport3D.h"
 
@@ -338,9 +339,56 @@ bool isDockableBaseSolarArchetype(const IniSection &section)
     return false;
 }
 
+QStringList hardpointsFromLoadoutSection(const IniSection &section)
+{
+    QStringList hardpoints;
+    for (const auto &entry : section.entries) {
+        if (entry.first.compare(QStringLiteral("equip"), Qt::CaseInsensitive) != 0)
+            continue;
+
+        const QString hardpoint = entry.second.section(QLatin1Char(','), 1, 1).trimmed();
+        if (hardpoint.startsWith(QStringLiteral("Hp"), Qt::CaseInsensitive)
+            && !hardpoints.contains(hardpoint, Qt::CaseInsensitive)) {
+            hardpoints.append(hardpoint);
+        }
+    }
+    return hardpoints;
+}
+
+QSet<QString> normalizedHardpointsFromModel(const QString &modelPath)
+{
+    static QHash<QString, QSet<QString>> cache;
+
+    const QString key = normalizedPathKey(modelPath);
+    if (key.isEmpty())
+        return {};
+    if (cache.contains(key))
+        return cache.value(key);
+
+    QSet<QString> hardpoints;
+    if (QFileInfo::exists(modelPath)) {
+        const auto decoded = flatlas::infrastructure::CmpLoader::loadModel(modelPath);
+        for (const auto &node : decoded.utfNodes) {
+            const QString name = node.name.trimmed();
+            if (name.startsWith(QStringLiteral("Hp"), Qt::CaseInsensitive))
+                hardpoints.insert(normalizedKey(name));
+        }
+    }
+
+    cache.insert(key, hardpoints);
+    return hardpoints;
+}
+
+struct BaseLoadoutCatalogEntry {
+    QString nickname;
+    QString explicitArchetype;
+    QStringList hardpoints;
+};
+
 struct BaseDialogCatalog {
     QStringList archetypes;
     QStringList loadouts;
+    QVector<BaseLoadoutCatalogEntry> loadoutEntries;
     QVector<QPair<QString, QString>> factions;
     QStringList pilots;
     QStringList voices;
@@ -448,6 +496,9 @@ const BaseDialogCatalog &sharedBaseDialogCatalog()
                 continue;
             seenLoadouts.insert(key);
             catalog.loadouts.append(nickname);
+            catalog.loadoutEntries.append({nickname,
+                                           section.value(QStringLiteral("archetype")).trimmed(),
+                                           hardpointsFromLoadoutSection(section)});
         }
     }
     std::sort(catalog.loadouts.begin(), catalog.loadouts.end(), [](const QString &left, const QString &right) {
@@ -571,6 +622,66 @@ const BaseDialogCatalog &sharedBaseDialogCatalog()
     }
 
     return catalog;
+}
+
+QStringList rankedLoadoutsForArchetype(const BaseDialogCatalog &catalog, const QString &archetype)
+{
+    struct RankedLoadout {
+        QString nickname;
+        int group = 2;
+        int matchedHardpoints = 0;
+        int loadoutHardpoints = 0;
+    };
+
+    const QString archetypeKey = normalizedKey(archetype);
+    const QSet<QString> archetypeHardpoints = normalizedHardpointsFromModel(catalog.archetypeModelPaths.value(archetypeKey));
+    QVector<RankedLoadout> ranked;
+    ranked.reserve(catalog.loadoutEntries.size());
+
+    for (const BaseLoadoutCatalogEntry &entry : catalog.loadoutEntries) {
+        RankedLoadout item;
+        item.nickname = entry.nickname;
+        item.loadoutHardpoints = entry.hardpoints.size();
+
+        if (!archetypeKey.isEmpty() && normalizedKey(entry.explicitArchetype) == archetypeKey) {
+            item.group = 0;
+        } else if (!archetypeHardpoints.isEmpty() && !entry.hardpoints.isEmpty()) {
+            for (const QString &hardpoint : entry.hardpoints) {
+                if (archetypeHardpoints.contains(normalizedKey(hardpoint)))
+                    ++item.matchedHardpoints;
+            }
+            if (item.matchedHardpoints > 0)
+                item.group = 1;
+        }
+
+        ranked.append(item);
+    }
+
+    std::sort(ranked.begin(), ranked.end(), [](const RankedLoadout &left, const RankedLoadout &right) {
+        if (left.group != right.group)
+            return left.group < right.group;
+        if (left.group == 1) {
+            const double leftCoverage = left.loadoutHardpoints > 0
+                ? static_cast<double>(left.matchedHardpoints) / static_cast<double>(left.loadoutHardpoints)
+                : 0.0;
+            const double rightCoverage = right.loadoutHardpoints > 0
+                ? static_cast<double>(right.matchedHardpoints) / static_cast<double>(right.loadoutHardpoints)
+                : 0.0;
+            if (!qFuzzyCompare(leftCoverage + 1.0, rightCoverage + 1.0))
+                return leftCoverage > rightCoverage;
+            if (left.matchedHardpoints != right.matchedHardpoints)
+                return left.matchedHardpoints > right.matchedHardpoints;
+        }
+        return left.nickname.compare(right.nickname, Qt::CaseInsensitive) < 0;
+    });
+
+    QStringList result;
+    result.reserve(ranked.size());
+    for (const RankedLoadout &item : ranked)
+        result.append(item.nickname);
+    if (result.isEmpty())
+        return catalog.loadouts;
+    return result;
 }
 
 QWidget *createPreviewFrame(flatlas::rendering::ModelViewport3D **outPreview,
@@ -855,6 +966,7 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     connect(m_addNpcButton, &QPushButton::clicked, this, &BaseEditDialog::addNpc);
     connect(m_removeNpcButton, &QPushButton::clicked, this, &BaseEditDialog::removeSelectedNpc);
     connect(m_archetypeCombo, &QComboBox::currentTextChanged, this, [this]() {
+        refreshLoadoutOptionsForArchetype();
         applyArchetypeDefaults();
         refreshPreview();
     });
@@ -882,7 +994,10 @@ BaseEditDialog::BaseEditDialog(const BaseEditState &state,
     m_lastSuggestedLoadout = state.loadout.trimmed();
     m_lastSuggestedIdsInfo = state.infocardXml.trimmed();
     updateRoomSelectionUi();
-    QTimer::singleShot(100, this, [this]() { refreshPreview(); });
+    QTimer::singleShot(100, this, [this]() {
+        refreshLoadoutOptionsForArchetype();
+        refreshPreview();
+    });
 }
 
 void BaseEditDialog::ensureEquipmentShipsTab()
@@ -1879,6 +1994,30 @@ void BaseEditDialog::populateSceneCombo(int row, const QString &roomName, const 
             refreshRoomPreview();
     });
     m_roomTable->setCellWidget(row, 3, sceneCombo);
+}
+
+void BaseEditDialog::refreshLoadoutOptionsForArchetype(const QString &preferredLoadout)
+{
+    if (!m_loadoutCombo || !m_archetypeCombo)
+        return;
+
+    const BaseDialogCatalog &catalog = sharedBaseDialogCatalog();
+    const QString currentLoadout = preferredLoadout.trimmed().isEmpty()
+        ? m_loadoutCombo->currentText().trimmed()
+        : preferredLoadout.trimmed();
+    QStringList loadouts = rankedLoadoutsForArchetype(catalog, m_archetypeCombo->currentText().trimmed());
+    loadouts.removeDuplicates();
+
+    QSignalBlocker blocker(m_loadoutCombo);
+    m_loadoutCombo->clear();
+    m_loadoutCombo->addItem(QString());
+    for (const QString &loadout : loadouts) {
+        if (!loadout.trimmed().isEmpty())
+            m_loadoutCombo->addItem(loadout.trimmed());
+    }
+    configureContainsCompleter(m_loadoutCombo);
+    if (!currentLoadout.isEmpty())
+        m_loadoutCombo->setCurrentText(currentLoadout);
 }
 
 void BaseEditDialog::refreshPreview()

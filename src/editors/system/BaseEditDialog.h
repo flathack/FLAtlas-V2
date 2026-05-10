@@ -57,6 +57,7 @@ private:
     void populateSceneCombo(int row, const QString &roomName, const QString &currentScene);
     void refreshPreview();
     void refreshRoomPreview();
+    void refreshLoadoutOptionsForArchetype(const QString &preferredLoadout = {});
     void applyTemplateSelection();
     void applyArchetypeDefaults();
     int selectedRoomRow() const;
