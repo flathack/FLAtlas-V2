@@ -1734,6 +1734,7 @@ void BaseEditDialog::addRoom()
     m_roomStates.append(room);
     BaseEditState defaultNpcState = m_initialState;
     defaultNpcState.baseNickname = m_baseNicknameEdit ? m_baseNicknameEdit->text().trimmed() : defaultNpcState.baseNickname;
+    defaultNpcState.displayName = m_displayNameEdit ? m_displayNameEdit->text().trimmed() : defaultNpcState.displayName;
     defaultNpcState.reputation = comboStoredValue(m_reputationCombo);
     defaultNpcState.rooms = m_roomStates;
     BaseEditService::ensureDefaultRoomNpcs(&defaultNpcState);
@@ -1795,6 +1796,7 @@ void BaseEditDialog::onRoomItemChanged(QTableWidgetItem *item)
     m_roomStates[row] = updated;
     BaseEditState defaultNpcState = m_initialState;
     defaultNpcState.baseNickname = m_baseNicknameEdit ? m_baseNicknameEdit->text().trimmed() : defaultNpcState.baseNickname;
+    defaultNpcState.displayName = m_displayNameEdit ? m_displayNameEdit->text().trimmed() : defaultNpcState.displayName;
     defaultNpcState.reputation = comboStoredValue(m_reputationCombo);
     defaultNpcState.rooms = m_roomStates;
     BaseEditService::ensureDefaultRoomNpcs(&defaultNpcState);
@@ -2243,7 +2245,8 @@ void BaseEditDialog::applyTemplateSelection()
         targetState.reputation = comboStoredValue(m_reputationCombo);
         QVector<BaseRoomState> mergedRooms = BaseEditService::applyTemplateRoomsForCreate(targetState,
                                                                                           templateState,
-                                                                                          m_copyNpcsCheck->isChecked());
+                                                                                          m_copyNpcsCheck->isChecked(),
+                                                                                          flatlas::core::EditingContext::instance().primaryGamePath());
 
         QStringList infoLines;
         for (const BaseRoomState &room : templateState.rooms) {
@@ -2268,6 +2271,7 @@ void BaseEditDialog::applyTemplateSelection()
 
     BaseEditState defaultNpcState = m_initialState;
     defaultNpcState.baseNickname = m_baseNicknameEdit ? m_baseNicknameEdit->text().trimmed() : defaultNpcState.baseNickname;
+    defaultNpcState.displayName = m_displayNameEdit ? m_displayNameEdit->text().trimmed() : defaultNpcState.displayName;
     defaultNpcState.reputation = comboStoredValue(m_reputationCombo);
     defaultNpcState.rooms = m_roomStates;
     BaseEditService::ensureDefaultRoomNpcs(&defaultNpcState);

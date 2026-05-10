@@ -82,6 +82,8 @@ QString safeNickPart(const QString &value)
 
 QString generatedBaseStem(const QString &baseNickname);
 QString roomKey(const QString &roomName);
+QString resolvedDisplayName(const QString &gameRoot, int idsName);
+QString normalizedRoleForRoom(const QString &role, const QString &roomName);
 
 QString vendorRoleForRoom(const QString &roomName)
 {
@@ -154,12 +156,126 @@ QString generatedVendorNpcNickname(const QString &baseNickname, const QString &r
     return suffix.isEmpty() ? base : QStringLiteral("%1_fix_%2").arg(base, suffix);
 }
 
-QString generatedVendorDisplayName(const QString &baseNickname, const QString &role)
+QString generatedVendorDisplayName(const BaseEditState &state, const QString &role)
 {
+    const QString baseName = state.displayName.trimmed().isEmpty()
+        ? state.baseNickname.trimmed()
+        : state.displayName.trimmed();
     return QStringLiteral("%1 %2 %3")
-        .arg(baseNickname.trimmed(),
+        .arg(baseName,
              vendorDisplayRole(role),
              randomNpcPersonName());
+}
+
+QString factionDisplayName(const QString &gameRoot, const QString &factionNickname)
+{
+    const QString nickname = nicknameFromDisplayValue(factionNickname);
+    if (nickname.isEmpty())
+        return {};
+
+    const QString path = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA/initialworld.ini"));
+    if (path.isEmpty())
+        return nickname;
+
+    const IniDocument doc = IniParser::parseFile(path);
+    for (const IniSection &section : doc) {
+        if (section.name.compare(QStringLiteral("Group"), Qt::CaseInsensitive) != 0)
+            continue;
+        if (normalizeKey(section.value(QStringLiteral("nickname"))) != normalizeKey(nickname))
+            continue;
+        const QString displayName = resolvedDisplayName(gameRoot, rawEntryIntValue(section.entries, QStringLiteral("ids_name")));
+        return displayName.trimmed().isEmpty() ? nickname : displayName.trimmed();
+    }
+    return nickname;
+}
+
+QString copiedNpcDisplayName(const BaseEditState &targetState,
+                             const BaseRoomState &room,
+                             const BaseRoomNpcState &npc,
+                             const QString &gameRoot)
+{
+    const QString roomKeyText = roomKey(room.roomName);
+    const QString npcRole = normalizedRoleForRoom(npc.role, room.roomName);
+    if (roomKeyText == QStringLiteral("bar")
+        && (npcRole.compare(QStringLiteral("bartender"), Qt::CaseInsensitive) != 0
+            || !rawEntryValue(npc.templateEntries, QStringLiteral("room")).trimmed().isEmpty())) {
+        const QString factionNickname = nicknameFromDisplayValue(npc.affiliation.trimmed().isEmpty() ? npc.reputation : npc.affiliation);
+        const QString factionName = factionDisplayName(gameRoot, factionNickname);
+        return QStringLiteral("%1 %2").arg(factionName.trimmed(), randomNpcPersonName()).trimmed();
+    }
+
+    const QString npcRoleKey = normalizeKey(npcRole);
+    if (npcRoleKey == QStringLiteral("bartender")
+        || npcRoleKey == QStringLiteral("trader")
+        || npcRoleKey == QStringLiteral("equipment")
+        || npcRoleKey == QStringLiteral("shipdealer")) {
+        return generatedVendorDisplayName(targetState, npcRole);
+    }
+
+    const QString role = vendorRoleForRoom(room.roomName);
+    if (!role.isEmpty())
+        return generatedVendorDisplayName(targetState, role);
+
+    const QString baseName = targetState.displayName.trimmed().isEmpty()
+        ? targetState.baseNickname.trimmed()
+        : targetState.displayName.trimmed();
+    return QStringLiteral("%1 %2").arg(baseName, randomNpcPersonName()).trimmed();
+}
+
+bool isGeneratedNpcNickname(const BaseEditState &state, const BaseRoomNpcState &npc)
+{
+    const QString base = safeNickPart(generatedBaseStem(state.baseNickname));
+    const QString nickname = normalizeKey(npc.nickname);
+    return !base.isEmpty()
+        && (nickname.startsWith(base + QStringLiteral("_"))
+            || nickname.startsWith(base + QStringLiteral("_base_")));
+}
+
+QString expectedNpcNamePrefix(const BaseEditState &state,
+                              const BaseRoomState &room,
+                              const BaseRoomNpcState &npc,
+                              const QString &gameRoot)
+{
+    const QString role = normalizedRoleForRoom(npc.role, room.roomName);
+    const QString roleKey = normalizeKey(role);
+    const bool barGuest = roomKey(room.roomName) == QStringLiteral("bar")
+        && (roleKey != QStringLiteral("bartender")
+            || !rawEntryValue(npc.templateEntries, QStringLiteral("room")).trimmed().isEmpty());
+    if (barGuest) {
+        const QString factionNickname = nicknameFromDisplayValue(npc.affiliation.trimmed().isEmpty() ? npc.reputation : npc.affiliation);
+        const QString factionName = factionDisplayName(gameRoot, factionNickname);
+        return factionName.trimmed();
+    }
+
+    if (roleKey == QStringLiteral("bartender")
+        || roleKey == QStringLiteral("trader")
+        || roleKey == QStringLiteral("equipment")
+        || roleKey == QStringLiteral("shipdealer")) {
+        const QString baseName = state.displayName.trimmed().isEmpty()
+            ? state.baseNickname.trimmed()
+            : state.displayName.trimmed();
+        return QStringLiteral("%1 %2").arg(baseName, vendorDisplayRole(role)).trimmed();
+    }
+
+    return state.displayName.trimmed().isEmpty() ? state.baseNickname.trimmed() : state.displayName.trimmed();
+}
+
+void refreshGeneratedNpcDisplayNames(BaseEditState *state, const QString &gameRoot)
+{
+    if (!state)
+        return;
+    for (BaseRoomState &room : state->rooms) {
+        for (BaseRoomNpcState &npc : room.npcs) {
+            if (!isGeneratedNpcNickname(*state, npc))
+                continue;
+            const QString prefix = expectedNpcNamePrefix(*state, room, npc, gameRoot);
+            if (prefix.isEmpty())
+                continue;
+            if (npc.nameText.trimmed().startsWith(prefix + QLatin1Char(' '), Qt::CaseInsensitive))
+                continue;
+            npc.nameText = QStringLiteral("%1 %2").arg(prefix, randomNpcPersonName()).trimmed();
+        }
+    }
 }
 
 QPair<int, int> mbaseBlockRange(const IniDocument &doc, int mbaseIndex);
@@ -668,11 +784,12 @@ bool loadBaseFileState(BaseEditState *state,
                 continue;
             const QString npcKey = normalizeKey(npcNickname);
             const auto fixture = fixtureMap.value(npcKey);
-            if (!fixtureMap.isEmpty() && fixture.first.isEmpty())
+            const QString assignedRoom = section.value(QStringLiteral("room")).trimmed();
+            if (!fixtureMap.isEmpty() && fixture.first.isEmpty() && assignedRoom.isEmpty())
                 continue;
 
             const QString roomName = canonicalRoomName(fixture.first.isEmpty()
-                                                           ? roomKey(section.value(QStringLiteral("room")).trimmed())
+                                                           ? roomKey(assignedRoom)
                                                            : fixture.first);
             if (roomName.isEmpty())
                 continue;
@@ -683,6 +800,10 @@ bool loadBaseFileState(BaseEditState *state,
                                                           gameRoot);
             if (!fixture.second.isEmpty())
                 npc.role = fixture.second;
+            if (!fixture.first.isEmpty() && !assignedRoom.isEmpty()
+                && normalizeKey(fixture.first) != normalizeKey(assignedRoom)) {
+                setOrRemoveRawEntry(&npc.templateEntries, QStringLiteral("room"), QString());
+            }
             if (!npc.nickname.isEmpty())
                 roomNpcs[normalizeKey(roomName)].append(npc);
         }
@@ -873,6 +994,69 @@ QString hotspotNameForRoom(const QString &roomName)
     return QStringLiteral("IDS_HOTSPOT_EXIT");
 }
 
+void appendRoomActionHotspots(QStringList *lines, const QString &roomName, const QSet<QString> &existingBehaviors = {})
+{
+    if (!lines)
+        return;
+
+    const QString room = normalizeKey(roomName);
+    auto hasBehavior = [&existingBehaviors](const QString &behavior) {
+        return existingBehaviors.contains(normalizeKey(behavior));
+    };
+    auto appendFrontDesk = [lines, &hasBehavior]() {
+        if (hasBehavior(QStringLiteral("FrontDesk")))
+            return;
+        *lines << QStringLiteral("[Hotspot]")
+               << QStringLiteral("name = IDS_DEALER_FRONT_DESK")
+               << QStringLiteral("behavior = FrontDesk")
+               << QStringLiteral("state_read = 1")
+               << QStringLiteral("state_send = 2")
+               << QString();
+    };
+    auto appendRepair = [lines, &hasBehavior]() {
+        if (hasBehavior(QStringLiteral("Repair")))
+            return;
+        *lines << QStringLiteral("[Hotspot]")
+               << QStringLiteral("name = IDS_NN_REPAIR_YOUR_SHIP")
+               << QStringLiteral("behavior = Repair")
+               << QString();
+    };
+
+    if (room == QStringLiteral("trader")) {
+        appendFrontDesk();
+        if (!hasBehavior(QStringLiteral("StartDealer"))) {
+            *lines << QStringLiteral("[Hotspot]")
+                   << QStringLiteral("name = IDS_HOTSPOT_COMMODITYTRADER")
+                   << QStringLiteral("behavior = StartDealer")
+                   << QStringLiteral("state_read = 2")
+                   << QStringLiteral("state_send = 1")
+                   << QString();
+        }
+    } else if (room == QStringLiteral("equipment")) {
+        appendRepair();
+        appendFrontDesk();
+        if (!hasBehavior(QStringLiteral("StartEquipDealer"))) {
+            *lines << QStringLiteral("[Hotspot]")
+                   << QStringLiteral("name = IDS_HOTSPOT_EQUIPMENTDEALER")
+                   << QStringLiteral("behavior = StartEquipDealer")
+                   << QStringLiteral("state_read = 2")
+                   << QStringLiteral("state_send = 1")
+                   << QString();
+        }
+    } else if (room == QStringLiteral("shipdealer")) {
+        appendRepair();
+        appendFrontDesk();
+        if (!hasBehavior(QStringLiteral("StartShipDealer"))) {
+            *lines << QStringLiteral("[Hotspot]")
+                   << QStringLiteral("name = IDS_HOTSPOT_SHIPDEALER")
+                   << QStringLiteral("behavior = StartShipDealer")
+                   << QStringLiteral("state_read = 2")
+                   << QStringLiteral("state_send = 1")
+                   << QString();
+        }
+    }
+}
+
 QStringList orderedNavigationTargets(const QString &roomName,
                                      const QStringList &allRooms,
                                      const QString &startRoom,
@@ -931,6 +1115,7 @@ QString normalizeRoomNavigation(const QString &content,
     int insertIndex = -1;
     QHash<QString, QStringList> existingBlocksByTarget;
     QSet<QString> virtualTargets;
+    QSet<QString> existingBehaviors;
     int index = 0;
     while (index < lines.size()) {
         if (lines.at(index).trimmed().compare(QStringLiteral("[Hotspot]"), Qt::CaseInsensitive) == 0) {
@@ -956,6 +1141,8 @@ QString normalizeRoomNavigation(const QString &content,
                 else if (key == QStringLiteral("set_virtual_room") || key == QStringLiteral("virtual_room"))
                     virtualRoom = value;
             }
+            if (!behavior.trimmed().isEmpty())
+                existingBehaviors.insert(normalizeKey(behavior));
 
             const bool navigationBehavior = behavior.compare(QStringLiteral("ExitDoor"), Qt::CaseInsensitive) == 0
                 || behavior.compare(QStringLiteral("VirtualRoom"), Qt::CaseInsensitive) == 0;
@@ -1005,6 +1192,7 @@ QString normalizeRoomNavigation(const QString &content,
                  << QStringLiteral("room_switch = %1").arg(target)
                  << QString();
     }
+    appendRoomActionHotspots(&navLines, roomName, existingBehaviors);
 
     for (int navIndex = navLines.size() - 1; navIndex >= 0; --navIndex)
         result.insert(insertIndex, navLines.at(navIndex));
@@ -1289,6 +1477,7 @@ QString generateRoomIniText(const QString &roomName, const QStringList &allRooms
               << QStringLiteral("room_switch = %1").arg(entry.second)
               << QString();
     }
+    appendRoomActionHotspots(&lines, roomName);
 
     return normalizeGeneratedText(lines.join(QLatin1Char('\n')));
 }
@@ -1594,6 +1783,8 @@ void syncMbaseRooms(IniDocument *doc, const BaseEditState &state)
             const QString nickname = npc.nickname.trimmed();
             if (nickname.isEmpty())
                 continue;
+            if (!rawEntryValue(npc.templateEntries, QStringLiteral("room")).trimmed().isEmpty())
+                continue;
             const QString lowered = nickname.toLower();
             if (seenNpcNames.contains(lowered))
                 continue;
@@ -1688,6 +1879,8 @@ void populateCreateMbaseBlock(IniDocument *doc, const BaseEditState &state)
         for (const BaseRoomNpcState &npc : room.npcs) {
             const QString npcName = npc.nickname.trimmed();
             if (npcName.isEmpty() || seenNpcNames.contains(normalizeKey(npcName)))
+                continue;
+            if (!rawEntryValue(npc.templateEntries, QStringLiteral("room")).trimmed().isEmpty())
                 continue;
             seenNpcNames.insert(normalizeKey(npcName));
             fixtures.append({npcName, normalizedRoleForRoom(npc.role, room.roomName)});
@@ -1964,7 +2157,7 @@ void BaseEditService::ensureDefaultRoomNpcs(BaseEditState *state)
 
         BaseRoomNpcState npc;
         npc.nickname = generatedVendorNpcNickname(state->baseNickname, canonicalRole);
-        npc.nameText = generatedVendorDisplayName(state->baseNickname, canonicalRole);
+        npc.nameText = generatedVendorDisplayName(*state, canonicalRole);
         npc.reputation = state->reputation;
         npc.affiliation = nicknameFromDisplayValue(state->reputation);
         npc.role = canonicalRole;
@@ -1996,7 +2189,8 @@ QVector<BaseRoomState> BaseEditService::defaultRoomsForArchetype(const QString &
 
 QVector<BaseRoomState> BaseEditService::applyTemplateRoomsForCreate(const BaseEditState &targetState,
                                                                     const BaseEditState &templateState,
-                                                                    bool copyNpcs)
+                                                                    bool copyNpcs,
+                                                                    const QString &gameRoot)
 {
     QVector<BaseRoomState> mergedRooms;
     QHash<QString, int> indexByRoom;
@@ -2014,12 +2208,11 @@ QVector<BaseRoomState> BaseEditService::applyTemplateRoomsForCreate(const BaseEd
             for (int npcIndex = 0; npcIndex < room.npcs.size(); ++npcIndex) {
                 BaseRoomNpcState npc = room.npcs.at(npcIndex);
                 npc.nickname = makeGeneratedNpcNickname(targetState.baseNickname, room.roomName, npcIndex + 1);
-                if (npc.nameText.trimmed().isEmpty())
-                    npc.nameText = npc.nickname;
                 if (npc.reputation.trimmed().isEmpty())
                     npc.reputation = baseFaction;
                 if (npc.affiliation.trimmed().isEmpty())
                     npc.affiliation = npc.reputation;
+                npc.nameText = copiedNpcDisplayName(targetState, room, npc, gameRoot);
                 copiedNpcs.append(npc);
             }
             room.npcs = copiedNpcs;
@@ -2202,6 +2395,7 @@ bool BaseEditService::applyCreate(const BaseEditState &state,
 
     BaseEditState working = state;
     ensureDefaultRoomNpcs(&working);
+    refreshGeneratedNpcDisplayNames(&working, gameRoot);
     if (!prepareIds(gameRoot,
                     working.idsName,
                     working.displayName,
@@ -2282,6 +2476,7 @@ bool BaseEditService::applyEdit(SolarObject &object,
 
     BaseEditState working = state;
     ensureDefaultRoomNpcs(&working);
+    refreshGeneratedNpcDisplayNames(&working, gameRoot);
     if (!prepareIds(gameRoot,
                     working.idsName,
                     working.displayName,

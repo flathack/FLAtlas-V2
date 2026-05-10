@@ -32,6 +32,7 @@ void TestBaseEditService::defaultRoomNpcsAreGeneratedForPhysicalAndVirtualRooms(
 {
     BaseEditState state;
     state.baseNickname = QStringLiteral("Li01_01_Base");
+    state.displayName = QStringLiteral("Manhattan");
     state.reputation = QStringLiteral("li_n_grp");
 
     BaseRoomState deck;
@@ -76,7 +77,7 @@ void TestBaseEditService::defaultRoomNpcsAreGeneratedForPhysicalAndVirtualRooms(
         for (const BaseRoomNpcState &npc : room->npcs) {
             if (npc.role.compare(role, Qt::CaseInsensitive) == 0)
                 return !npc.nickname.trimmed().isEmpty()
-                    && npc.nameText.startsWith(QStringLiteral("Li01_01_Base "))
+                    && npc.nameText.startsWith(QStringLiteral("Manhattan "))
                     && npc.affiliation == QStringLiteral("li_n_grp");
         }
         return false;
@@ -213,6 +214,16 @@ void TestBaseEditService::loadTemplateStateReadsRoomsAndNpcs()
                   "[MRoom]\n"
                   "nickname = Bar\n"
                   "fixture = bar_npc, scripts\\vendors\\li_host_fidget.thn, stand, bartender\n\n"
+                  "[GF_NPC]\n"
+                  "nickname = bar_guest\n"
+                  "body = li_male_guard_body\n"
+                  "head = li_sales_head\n"
+                  "room = bar\n\n"
+                  "[GF_NPC]\n"
+                  "nickname = deck_npc\n"
+                  "body = li_male_elite_body\n"
+                  "head = li_sales_head\n"
+                  "room = bar\n\n"
                   "[MRoom]\n"
                   "nickname = Deck\n"
                   "fixture = deck_npc, scripts\\vendors\\li_commtrader_fidget.thn, stand, trader\n");
@@ -232,11 +243,35 @@ void TestBaseEditService::loadTemplateStateReadsRoomsAndNpcs()
     const BaseRoomState *bar = findRoom(QStringLiteral("Bar"));
     QVERIFY(bar != nullptr);
     QVERIFY(bar->enabled);
-    QCOMPARE(bar->npcs.size(), 1);
-    QCOMPARE(bar->npcs.at(0).nickname, QStringLiteral("bar_npc"));
+    QCOMPARE(bar->npcs.size(), 2);
+    const BaseRoomNpcState *barFixtureNpc = nullptr;
+    const BaseRoomNpcState *barGuestNpc = nullptr;
+    for (const BaseRoomNpcState &npc : bar->npcs) {
+        if (npc.nickname == QStringLiteral("bar_npc"))
+            barFixtureNpc = &npc;
+        if (npc.nickname == QStringLiteral("bar_guest"))
+            barGuestNpc = &npc;
+    }
+    QVERIFY(barFixtureNpc != nullptr);
+    QVERIFY(barGuestNpc != nullptr);
+    bool guestKeepsRoomEntry = false;
+    for (const auto &entry : barGuestNpc->templateEntries) {
+        if (entry.first.compare(QStringLiteral("room"), Qt::CaseInsensitive) == 0
+            && entry.second.compare(QStringLiteral("bar"), Qt::CaseInsensitive) == 0) {
+            guestKeepsRoomEntry = true;
+            break;
+        }
+    }
+    QVERIFY(guestKeepsRoomEntry);
     const BaseRoomState *shipDealer = findRoom(QStringLiteral("ShipDealer"));
     QVERIFY(shipDealer != nullptr);
     QVERIFY(!shipDealer->enabled);
+    const BaseRoomState *deck = findRoom(QStringLiteral("Deck"));
+    QVERIFY(deck != nullptr);
+    QCOMPARE(deck->npcs.size(), 1);
+    QCOMPARE(deck->npcs.at(0).nickname, QStringLiteral("deck_npc"));
+    for (const auto &entry : deck->npcs.at(0).templateEntries)
+        QVERIFY(entry.first.compare(QStringLiteral("room"), Qt::CaseInsensitive) != 0);
 }
 
 void TestBaseEditService::archetypeDefaultsPreferExistingBaseObject()
@@ -537,6 +572,7 @@ void TestBaseEditService::createFromTemplateCopiesRoomContentAndNpcData()
 
     bool sawRoomCopy = false;
     bool sawDeckCopy = false;
+    bool sawShipDealerCopy = false;
     bool sawNpcCopy = false;
     for (const BaseStagedWrite &write : result.stagedWrites) {
         if (write.absolutePath.endsWith("_bar.ini", Qt::CaseInsensitive)) {
@@ -574,6 +610,15 @@ void TestBaseEditService::createFromTemplateCopiesRoomContentAndNpcData()
             QCOMPARE(write.content.count("name = IDS_HOTSPOT_DECK"), 1);
             QCOMPARE(write.content.count("behavior = ExitDoor\nroom_switch = Deck"), 1);
         }
+        if (write.absolutePath.endsWith("_shipdealer.ini", Qt::CaseInsensitive)) {
+            sawShipDealerCopy = true;
+            QVERIFY(write.content.contains("name = IDS_HOTSPOT_SHIPDEALER_ROOM"));
+            QVERIFY(write.content.contains("behavior = ExitDoor\nroom_switch = ShipDealer"));
+            QVERIFY(write.content.contains("name = IDS_HOTSPOT_SHIPDEALER"));
+            QVERIFY(write.content.contains("behavior = StartShipDealer"));
+            QVERIFY(write.content.contains("name = IDS_DEALER_FRONT_DESK"));
+            QVERIFY(write.content.contains("behavior = FrontDesk"));
+        }
         if (write.absolutePath.endsWith("mbases.ini", Qt::CaseInsensitive)) {
             sawNpcCopy = true;
             QVERIFY(write.content.contains("[GF_NPC]"));
@@ -590,6 +635,7 @@ void TestBaseEditService::createFromTemplateCopiesRoomContentAndNpcData()
 
     QVERIFY(sawRoomCopy);
     QVERIFY(sawDeckCopy);
+    QVERIFY(sawShipDealerCopy);
     QVERIFY(sawNpcCopy);
 }
 

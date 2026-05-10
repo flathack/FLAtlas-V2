@@ -97,7 +97,8 @@ public:
                                                    const QHash<QString, QString> &textOverrides = {});
     static QVector<BaseRoomState> applyTemplateRoomsForCreate(const BaseEditState &targetState,
                                                               const BaseEditState &templateState,
-                                                              bool copyNpcs);
+                                                              bool copyNpcs,
+                                                              const QString &gameRoot = {});
 
     static BaseEditState makeCreateState(const flatlas::domain::SystemDocument &document,
                                          const QString &gameRoot,
