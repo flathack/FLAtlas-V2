@@ -62,6 +62,8 @@ public:
     bool centerOnSelectedObject();
     void setZoomLevel(int percent);
     void setZoneWireframesVisible(bool visible);
+    void setModelTexturesVisible(bool visible);
+    bool modelTexturesVisible() const { return m_modelTexturesVisible; }
     void setFreeCameraModeEnabled(bool enabled);
     bool isFreeCameraModeEnabled() const;
     float freeCameraSpeed() const;
@@ -201,6 +203,7 @@ private:
     SystemDisplayFilterSettings m_displayFilterSettings;
     int m_zoomLevel = 50;
     bool m_zoneWireframesVisible = true;
+    bool m_modelTexturesVisible = false;
     bool m_flightModeEnabled = false;
     bool m_transformGizmoEnabled = false;
     bool m_documentRefreshPending = false;

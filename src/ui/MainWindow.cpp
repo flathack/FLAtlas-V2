@@ -430,6 +430,11 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     leftLayout->addWidget(freeCamSpeedLabel);
 
     commandBar->addSeparator();
+    auto *texturesButton = commandBar->addAction(QObject::tr("Textures"));
+    texturesButton->setCheckable(true);
+    texturesButton->setChecked(false);
+    texturesButton->setToolTip(QObject::tr("Show model textures in the 3D system view."));
+
     auto *centerButton = commandBar->addAction(QObject::tr("Center to Object"));
     centerButton->setEnabled(false);
 
@@ -494,6 +499,9 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
     });
     QObject::connect(wireframesCheck, &QCheckBox::toggled, view, [view](bool checked) {
         view->setZoneWireframesVisible(checked);
+    });
+    QObject::connect(texturesButton, &QAction::toggled, view, [view](bool checked) {
+        view->setModelTexturesVisible(checked);
     });
     QObject::connect(freeCamButton, &QAction::toggled, view, [view](bool checked) {
         view->setFreeCameraModeEnabled(checked);

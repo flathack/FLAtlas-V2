@@ -4,6 +4,7 @@
 #include <QWidget>
 #include <QString>
 #include <QVector3D>
+#include <memory>
 
 class QLabel;
 
@@ -54,6 +55,8 @@ public:
     bool boundingBoxVisible() const { return m_boundingBoxVisible; }
     void setWhiteBackground(bool enabled);
     bool whiteBackground() const { return m_whiteBackground; }
+    void setTexturesVisible(bool visible);
+    bool texturesVisible() const { return m_texturesVisible; }
 
 signals:
     void modelLoaded(const QString &filePath, bool success, const QString &message);
@@ -97,11 +100,13 @@ private:
     QLabel *m_statusLabel = nullptr;
 
     QString m_filePath;
+    std::unique_ptr<flatlas::infrastructure::ModelNode> m_currentModel;
     bool m_hasModel = false;
     bool m_wireframeVisible = false;
     bool m_meshVisible = true;
     bool m_boundingBoxVisible = false;
     bool m_whiteBackground = false;
+    bool m_texturesVisible = true;
     int m_loadGeneration = 0; // incremented on each loadModelFile(); stale async results are discarded
 };
 

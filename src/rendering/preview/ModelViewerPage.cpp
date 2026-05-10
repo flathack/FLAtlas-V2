@@ -133,6 +133,10 @@ ModelViewerPage::ModelViewerPage(QWidget *parent)
     m_meshCheck = new QCheckBox(tr("Mesh"), rightPane);
     m_meshCheck->setChecked(true);
     previewControls->addWidget(m_meshCheck);
+    m_texturesCheck = new QCheckBox(tr("Textures"), rightPane);
+    m_texturesCheck->setChecked(true);
+    m_texturesCheck->setToolTip(tr("Show model textures."));
+    previewControls->addWidget(m_texturesCheck);
     m_whiteBgCheck = new QCheckBox(tr("White BG"), rightPane);
     previewControls->addWidget(m_whiteBgCheck);
     previewControls->addStretch(1);
@@ -265,6 +269,7 @@ bool ModelViewerPage::ensureViewport()
     connect(m_boundsCheck, &QCheckBox::toggled, m_viewport, &ModelViewport3D::setBoundingBoxVisible);
     connect(m_wireframeCheck, &QCheckBox::toggled, m_viewport, &ModelViewport3D::setWireframeVisible);
     connect(m_meshCheck, &QCheckBox::toggled, m_viewport, &ModelViewport3D::setMeshVisible);
+    connect(m_texturesCheck, &QCheckBox::toggled, m_viewport, &ModelViewport3D::setTexturesVisible);
     connect(m_whiteBgCheck, &QCheckBox::toggled, m_viewport, &ModelViewport3D::setWhiteBackground);
     connect(m_viewport, &ModelViewport3D::modelLoaded, this,
             [this](const QString &filePath, bool success, const QString &message) {
@@ -278,6 +283,7 @@ bool ModelViewerPage::ensureViewport()
     m_viewport->setBoundingBoxVisible(m_boundsCheck->isChecked());
     m_viewport->setWireframeVisible(m_wireframeCheck->isChecked());
     m_viewport->setMeshVisible(m_meshCheck->isChecked());
+    m_viewport->setTexturesVisible(m_texturesCheck->isChecked());
     m_viewport->setWhiteBackground(m_whiteBgCheck->isChecked());
     return true;
 }

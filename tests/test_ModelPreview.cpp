@@ -2,6 +2,7 @@
 // Qt3D tests use the OpenGL renderer to avoid RHI plugin issues in test envs.
 
 #include <QtTest/QtTest>
+#include <QCheckBox>
 #include <QTemporaryDir>
 
 #include "rendering/preview/ModelPreview.h"
@@ -15,6 +16,7 @@ class TestModelPreview : public QObject {
 private slots:
     void initTestCase();
     void testModelPreviewCreation();
+    void testModelPreviewTextureToggleDefaultsOn();
     void testModelPreviewLoadNonexistent();
     void testCharacterPreviewCreation();
     void testCharacterPreviewScanEmptyDir();
@@ -32,6 +34,15 @@ void TestModelPreview::testModelPreviewCreation()
     ModelPreview dlg;
     QCOMPARE(dlg.hasModel(), false);
     QVERIFY(dlg.filePath().isEmpty());
+}
+
+void TestModelPreview::testModelPreviewTextureToggleDefaultsOn()
+{
+    ModelPreview dlg;
+    auto *texturesCheck = dlg.findChild<QCheckBox *>(QString(), Qt::FindChildrenRecursively);
+    QVERIFY(texturesCheck != nullptr);
+    QCOMPARE(texturesCheck->text(), QStringLiteral("Textures"));
+    QVERIFY(texturesCheck->isChecked());
 }
 
 void TestModelPreview::testModelPreviewLoadNonexistent()

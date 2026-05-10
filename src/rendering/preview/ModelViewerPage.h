@@ -66,6 +66,7 @@ private:
     QCheckBox *m_wireframeCheck = nullptr;
     QCheckBox *m_boundsCheck = nullptr;
     QCheckBox *m_whiteBgCheck = nullptr;
+    QCheckBox *m_texturesCheck = nullptr;
     QTimer *m_loadTimer = nullptr;
     QString m_pendingModelPath;
     bool m_pendingLoadRequiresCurrentEntryMatch = false;

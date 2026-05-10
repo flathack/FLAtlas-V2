@@ -7,6 +7,8 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QDirIterator>
+#include <QRegularExpression>
+#include <QSet>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -18,6 +20,7 @@ QHash<QString, QHash<QString, QStringList>> FreelancerMaterialResolver::s_materi
 QHash<QString, QHash<QString, QImage>> FreelancerMaterialResolver::s_embeddedTextureCache;
 QHash<QString, QHash<QString, QString>> FreelancerMaterialResolver::s_dataRootFileScanCache;
 QHash<QString, bool> FreelancerMaterialResolver::s_dataRootScannedFlag;
+QHash<QString, QStringList> FreelancerMaterialResolver::s_materialLibraryPathCache;
 
 namespace {
 
@@ -235,6 +238,65 @@ void appendUniqueCaseInsensitive(QStringList *values, const QString &value)
         return;
     if (!values->contains(value, Qt::CaseInsensitive))
         values->append(value);
+}
+
+void appendUniquePath(QStringList *paths, const QString &path)
+{
+    if (!paths)
+        return;
+    const QFileInfo info(path);
+    if (!info.exists() || !info.isFile())
+        return;
+    const QString absolute = info.absoluteFilePath();
+    if (!paths->contains(absolute, Qt::CaseInsensitive))
+        paths->append(absolute);
+}
+
+void appendMatFilesFromDir(QStringList *paths, const QString &dirPath)
+{
+    const QDir dir(dirPath);
+    if (!dir.exists())
+        return;
+    const QFileInfoList mats = dir.entryInfoList(QStringList{QStringLiteral("*.mat")},
+                                                 QDir::Files,
+                                                 QDir::Name | QDir::IgnoreCase);
+    for (const QFileInfo &mat : mats)
+        appendUniquePath(paths, mat.absoluteFilePath());
+}
+
+QSet<quint32> materialIdsForMesh(const MeshData &mesh)
+{
+    QSet<quint32> ids;
+    if (mesh.materialId != -1)
+        ids.insert(static_cast<quint32>(mesh.materialId));
+
+    static const QRegularExpression materialIdPattern(QStringLiteral("^material_(-?\\d+)$"),
+                                                      QRegularExpression::CaseInsensitiveOption);
+    const QStringList values{mesh.materialName, mesh.materialValue};
+    for (const QString &value : values) {
+        const QRegularExpressionMatch match = materialIdPattern.match(value.trimmed());
+        if (!match.hasMatch())
+            continue;
+        bool ok = false;
+        const qint64 parsed = match.captured(1).toLongLong(&ok);
+        if (ok && parsed != -1)
+            ids.insert(static_cast<quint32>(static_cast<qint32>(parsed)));
+    }
+    return ids;
+}
+
+bool materialKeyMatchesMesh(const QString &materialKey, const MeshData &mesh)
+{
+    const QString normalizedKey = normalizeMaterialKey(materialKey);
+    if (normalizedKey.isEmpty())
+        return false;
+
+    const QString meshMaterialKey = normalizeMaterialKey(!mesh.materialName.isEmpty() ? mesh.materialName : mesh.materialValue);
+    if (!meshMaterialKey.isEmpty() && normalizedKey.compare(meshMaterialKey, Qt::CaseInsensitive) == 0)
+        return true;
+
+    const QSet<quint32> ids = materialIdsForMesh(mesh);
+    return !ids.isEmpty() && ids.contains(CmpLoader::freelancerCrc32(normalizedKey));
 }
 
 void walkSphereMaterialNames(const std::shared_ptr<UtfNode> &node,
@@ -616,19 +678,17 @@ QString FreelancerMaterialResolver::resolveTextureValue(const QString &sourcePat
 QStringList FreelancerMaterialResolver::textureCandidatesForMesh(const QString &modelPath, const MeshData &mesh)
 {
     QStringList candidates;
-    if (!mesh.textureName.isEmpty())
-        candidates.append(mesh.textureName);
-    for (const QString &candidate : mesh.textureCandidates) {
-        if (!candidates.contains(candidate, Qt::CaseInsensitive))
-            candidates.append(candidate);
-    }
 
     const auto modelMap = extractUtfMaterialTextureMap(modelPath);
     const QString materialKey = normalizeMaterialKey(!mesh.materialName.isEmpty() ? mesh.materialName : mesh.materialValue);
     if (!materialKey.isEmpty() && modelMap.contains(materialKey)) {
-        for (const QString &candidate : modelMap.value(materialKey)) {
-            if (!candidates.contains(candidate, Qt::CaseInsensitive))
-                candidates.append(candidate);
+        for (const QString &candidate : modelMap.value(materialKey))
+            appendUniqueCaseInsensitive(&candidates, candidate);
+    }
+    for (auto it = modelMap.constBegin(); it != modelMap.constEnd(); ++it) {
+        if (materialKeyMatchesMesh(it.key(), mesh)) {
+            for (const QString &candidate : it.value())
+                appendUniqueCaseInsensitive(&candidates, candidate);
         }
     }
 
@@ -636,20 +696,31 @@ QStringList FreelancerMaterialResolver::textureCandidatesForMesh(const QString &
         const QString matPath = resolveTextureValue(modelPath, mesh.materialValue);
         if (!matPath.isEmpty()) {
             const auto matMap = extractUtfMaterialTextureMap(matPath);
+            bool matchedMatMap = false;
             if (!materialKey.isEmpty() && matMap.contains(materialKey)) {
-                for (const QString &candidate : matMap.value(materialKey)) {
-                    if (!candidates.contains(candidate, Qt::CaseInsensitive))
-                        candidates.append(candidate);
+                matchedMatMap = true;
+                for (const QString &candidate : matMap.value(materialKey))
+                    appendUniqueCaseInsensitive(&candidates, candidate);
+            }
+            for (auto it = matMap.constBegin(); it != matMap.constEnd(); ++it) {
+                if (materialKeyMatchesMesh(it.key(), mesh)) {
+                    matchedMatMap = true;
+                    for (const QString &candidate : it.value())
+                        appendUniqueCaseInsensitive(&candidates, candidate);
                 }
-            } else if (matMap.size() == 1) {
+            }
+            if (!matchedMatMap && matMap.size() == 1) {
                 const auto it = matMap.cbegin();
-                for (const QString &candidate : it.value()) {
-                    if (!candidates.contains(candidate, Qt::CaseInsensitive))
-                        candidates.append(candidate);
-                }
+                for (const QString &candidate : it.value())
+                    appendUniqueCaseInsensitive(&candidates, candidate);
             }
         }
     }
+
+    if (!mesh.textureName.isEmpty())
+        appendUniqueCaseInsensitive(&candidates, mesh.textureName);
+    for (const QString &candidate : mesh.textureCandidates)
+        appendUniqueCaseInsensitive(&candidates, candidate);
 
     return candidates;
 }
@@ -694,6 +765,96 @@ QImage FreelancerMaterialResolver::resolveEmbeddedTextureForMesh(const QString &
     return {};
 }
 
+QStringList FreelancerMaterialResolver::candidateMaterialLibraryPaths(const QString &modelPath)
+{
+    const QFileInfo modelInfo(modelPath);
+    if (!modelInfo.exists())
+        return {};
+
+    const QString cacheKey = modelInfo.absoluteFilePath().toLower();
+    {
+        QMutexLocker locker(&s_cacheMutex);
+        const auto it = s_materialLibraryPathCache.constFind(cacheKey);
+        if (it != s_materialLibraryPathCache.cend())
+            return *it;
+    }
+
+    QStringList paths;
+    appendMatFilesFromDir(&paths, modelInfo.absolutePath());
+
+    const QString dataRoot = findDataRoot(modelInfo.absolutePath());
+    if (!dataRoot.isEmpty()) {
+        const QDir dataDir(dataRoot);
+        const QString relativePath = QDir::fromNativeSeparators(dataDir.relativeFilePath(modelInfo.absoluteFilePath()));
+        const QStringList parts = relativePath.split(QLatin1Char('/'), Qt::SkipEmptyParts);
+        if (!parts.isEmpty()) {
+            const QString top = parts.first().toLower();
+            if (top == QStringLiteral("ships") && parts.size() >= 2) {
+                appendMatFilesFromDir(&paths, dataDir.filePath(QStringLiteral("SHIPS/%1").arg(parts.at(1))));
+            } else if (top == QStringLiteral("solar")) {
+                appendMatFilesFromDir(&paths, dataDir.filePath(QStringLiteral("SOLAR")));
+            } else if (top == QStringLiteral("equipment")) {
+                appendMatFilesFromDir(&paths, dataDir.filePath(QStringLiteral("EQUIPMENT")));
+            }
+        }
+    }
+
+    QMutexLocker locker(&s_cacheMutex);
+    s_materialLibraryPathCache.insert(cacheKey, paths);
+    return paths;
+}
+
+QImage FreelancerMaterialResolver::resolveExternalMaterialTextureForMesh(const QString &modelPath, const MeshData &mesh)
+{
+    if (materialIdsForMesh(mesh).isEmpty()) {
+        const QString materialKey = normalizeMaterialKey(!mesh.materialName.isEmpty() ? mesh.materialName : mesh.materialValue);
+        if (materialKey.isEmpty())
+            return {};
+    }
+
+    const QStringList matPaths = candidateMaterialLibraryPaths(modelPath);
+    for (const QString &matPath : matPaths) {
+        const auto materialMap = extractUtfMaterialTextureMap(matPath);
+        QStringList textureValues;
+        for (auto it = materialMap.constBegin(); it != materialMap.constEnd(); ++it) {
+            if (!materialKeyMatchesMesh(it.key(), mesh))
+                continue;
+            for (const QString &value : it.value())
+                appendUniqueCaseInsensitive(&textureValues, value);
+        }
+        if (textureValues.isEmpty())
+            continue;
+
+        const auto embedded = extractUtfEmbeddedTextures(matPath);
+        for (const QString &value : std::as_const(textureValues)) {
+            for (const QString &key : textureKeysForName(value)) {
+                const auto hit = embedded.constFind(key);
+                if (hit != embedded.cend() && !hit.value().isNull())
+                    return hit.value();
+            }
+        }
+
+        for (const QString &value : std::as_const(textureValues)) {
+            const QString texturePath = resolveTextureValue(matPath, value);
+            if (texturePath.isEmpty())
+                continue;
+
+            QImage image = TextureLoader::load(texturePath);
+            if (!image.isNull())
+                return image;
+
+            const auto textureEmbedded = extractUtfEmbeddedTextures(texturePath);
+            for (const QString &key : textureKeysForName(value)) {
+                const auto hit = textureEmbedded.constFind(key);
+                if (hit != textureEmbedded.cend() && !hit.value().isNull())
+                    return hit.value();
+            }
+        }
+    }
+
+    return {};
+}
+
 QImage FreelancerMaterialResolver::loadTextureForMesh(const QString &modelPath, const MeshData &mesh)
 {
     const QImage embedded = resolveEmbeddedTextureForMesh(modelPath, mesh);
@@ -701,9 +862,10 @@ QImage FreelancerMaterialResolver::loadTextureForMesh(const QString &modelPath, 
         return embedded;
 
     const QString path = resolveTexturePathForMesh(modelPath, mesh);
-    if (path.isEmpty())
-        return {};
-    return TextureLoader::load(path);
+    if (!path.isEmpty())
+        return TextureLoader::load(path);
+
+    return resolveExternalMaterialTextureForMesh(modelPath, mesh);
 }
 
 PlanetSurfaceTextureSet FreelancerMaterialResolver::loadPlanetSurfaceTextures(const QStringList &sourcePaths)

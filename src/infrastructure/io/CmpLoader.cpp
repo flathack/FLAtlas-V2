@@ -360,7 +360,7 @@ VMeshDataHeaderHint buildVMeshDataHeaderHint(const QByteArray &blockBytes,
     return hint;
 }
 
-quint32 freelancerCrc32(const QString &value)
+quint32 freelancerCrc32Impl(const QString &value)
 {
     static constexpr quint32 kFreelancerCrcTable[] = {
         0u, 151466134u, 302932268u, 453595578u, 4285383705u, 4134204559u, 3982730549u, 3831797155u,
@@ -1388,6 +1388,104 @@ std::optional<MeshData> decodeStructuredSingleBlockMeshFromHeaders(const QByteAr
     return mesh;
 }
 
+QVector<MeshData> decodeStructuredSingleBlockMeshesFromHeaders(const QByteArray &blockBytes,
+                                                               const VMeshRefRecord &ref,
+                                                               int expectedMeshCount)
+{
+    QVector<MeshData> meshes;
+    if (blockBytes.size() < 16 || expectedMeshCount <= 0)
+        return meshes;
+    if (ref.groupCount <= 0 || ref.vertexCount <= 0 || ref.indexCount <= 0)
+        return meshes;
+
+    const quint16 meshCount = qFromLittleEndian<quint16>(reinterpret_cast<const uchar *>(blockBytes.constData() + 8));
+    const quint16 numRefVertices = qFromLittleEndian<quint16>(reinterpret_cast<const uchar *>(blockBytes.constData() + 10));
+    const quint16 fvf = qFromLittleEndian<quint16>(reinterpret_cast<const uchar *>(blockBytes.constData() + 12));
+    const quint16 numVertices = qFromLittleEndian<quint16>(reinterpret_cast<const uchar *>(blockBytes.constData() + 14));
+
+    if (meshCount <= 0 || meshCount != expectedMeshCount || numVertices <= 0 || numRefVertices < 3)
+        return meshes;
+    if (ref.groupStart < 0 || ref.groupStart + ref.groupCount > meshCount)
+        return meshes;
+
+    const auto headers = parseStructuredMeshHeaders(blockBytes);
+    if (headers.size() != meshCount)
+        return meshes;
+
+    const int triangleDataOffset = 16 + (meshCount * 12);
+    const int triangleCount = numRefVertices / 3;
+    const int triangleBytes = triangleCount * 6;
+    const int vertexDataOffset = triangleDataOffset + triangleBytes;
+    if (vertexDataOffset > blockBytes.size())
+        return meshes;
+
+    QVector<std::array<uint16_t, 3>> triangles;
+    triangles.reserve(triangleCount);
+    for (int i = 0; i < triangleCount; ++i) {
+        const int base = triangleDataOffset + (i * 6);
+        if (base + 6 > blockBytes.size())
+            return {};
+        const uint16_t v1 = qFromLittleEndian<quint16>(reinterpret_cast<const uchar *>(blockBytes.constData() + base));
+        const uint16_t v3 = qFromLittleEndian<quint16>(reinterpret_cast<const uchar *>(blockBytes.constData() + base + 2));
+        const uint16_t v2 = qFromLittleEndian<quint16>(reinterpret_cast<const uchar *>(blockBytes.constData() + base + 4));
+        triangles.append({v1, v2, v3});
+    }
+
+    QVector<MeshVertex> allVertices;
+    if (!decodeStructuredSingleBlockVertices(blockBytes.mid(vertexDataOffset), numVertices, fvf, &allVertices))
+        return meshes;
+
+    int expectedVertexTotal = 0;
+    int expectedIndexTotal = 0;
+    for (int meshIndex = ref.groupStart; meshIndex < ref.groupStart + ref.groupCount; ++meshIndex) {
+        const auto &header = headers.at(meshIndex);
+        const int headerVertexCount = (header.endVertex - header.startVertex) + 1;
+        if (headerVertexCount <= 0)
+            return {};
+
+        const int vertexBegin = ref.vertexStart + header.startVertex;
+        const int vertexEnd = ref.vertexStart + header.endVertex + 1;
+        if (vertexBegin < 0 || vertexEnd > allVertices.size())
+            return {};
+
+        MeshData mesh;
+        mesh.materialId = header.materialId;
+        mesh.materialName = QStringLiteral("material_%1").arg(header.materialId);
+
+        for (int i = vertexBegin; i < vertexEnd; ++i)
+            mesh.vertices.append(allVertices.at(i));
+
+        const int triangleBegin = header.startIndex / 3;
+        const int triangleEnd = (header.startIndex + header.numRefIndices) / 3;
+        if (triangleBegin < 0 || triangleEnd > triangles.size())
+            return {};
+
+        for (int i = triangleBegin; i < triangleEnd; ++i) {
+            const auto &triangle = triangles.at(i);
+            const uint32_t a = triangle[0];
+            const uint32_t b = triangle[1];
+            const uint32_t c = triangle[2];
+            const uint32_t maxVertex = static_cast<uint32_t>(headerVertexCount);
+            if (a >= maxVertex || b >= maxVertex || c >= maxVertex)
+                return {};
+            mesh.indices.append(a);
+            mesh.indices.append(b);
+            mesh.indices.append(c);
+        }
+
+        if (!sanitizeMesh(mesh))
+            return {};
+
+        expectedVertexTotal += headerVertexCount;
+        expectedIndexTotal += header.numRefIndices;
+        meshes.append(mesh);
+    }
+
+    if (expectedVertexTotal != ref.vertexCount || expectedIndexTotal != ref.indexCount)
+        return {};
+    return meshes;
+}
+
 std::optional<QPair<float, MeshData>> decodeStructuredFamilySplitPair(const QByteArray &headerBytes,
                                                                       const QByteArray &streamBytes,
                                                                       int expectedIndexCount,
@@ -1777,7 +1875,7 @@ std::optional<QPair<int, VMeshDataBlock>> resolveVMeshDataBlock(
             crcCandidates.insert(blocks.at(i).familyKey.toLower());
         }
         for (const QString &candidate : std::as_const(crcCandidates)) {
-            if (!candidate.isEmpty() && freelancerCrc32(candidate) == meshDataReference) {
+            if (!candidate.isEmpty() && freelancerCrc32Impl(candidate) == meshDataReference) {
                 crcMatches.append(i);
                 break;
             }
@@ -3102,6 +3200,11 @@ std::shared_ptr<UtfNode> CmpLoader::findNode(const std::shared_ptr<UtfNode> &roo
     return current;
 }
 
+quint32 CmpLoader::freelancerCrc32(const QString &value)
+{
+    return freelancerCrc32Impl(value);
+}
+
 QVector<MeshData> CmpLoader::buildMeshesFromVMesh(const QByteArray &vmeshData,
                                                   const VMeshRefRecord &ref,
                                                   const PreviewMaterialBinding *binding,
@@ -3127,16 +3230,27 @@ QVector<MeshData> CmpLoader::buildMeshesFromVMesh(const QByteArray &vmeshData,
             candidate.textureCandidates = binding->textureCandidates;
             candidate.materialValue = binding->materialValue;
             candidate.matchHint = binding->matchHint;
-            if (!binding->textureValue.isEmpty())
+            if (materialId < 0 && !binding->textureValue.isEmpty())
                 candidate.materialName = binding->textureValue;
-            else if (!binding->materialValue.isEmpty())
+            else if (materialId < 0 && !binding->materialValue.isEmpty())
                 candidate.materialName = binding->materialValue;
         }
-        if (candidate.materialName.isEmpty() && materialId >= 0)
+        if (materialId >= 0)
             candidate.materialName = QStringLiteral("material_%1").arg(materialId);
     };
 
     const auto structuredHeaders = parseStructuredMeshHeaders(vmeshData);
+    const auto materialIdFromStructuredHeaders = [&]() -> int {
+        for (const StructuredMeshHeader &header : structuredHeaders) {
+            const bool indexMatches = ref.indexStart >= header.startIndex
+                                      && ref.indexStart < header.startIndex + header.numRefIndices;
+            const bool vertexMatches = ref.vertexStart >= header.startVertex
+                                       && ref.vertexStart <= header.endVertex;
+            if (indexMatches || vertexMatches)
+                return header.materialId;
+        }
+        return -1;
+    };
 
     const auto sliceDecodedRange = [&](const DecodedMesh &decoded,
                                        int startVertex,
@@ -3186,7 +3300,7 @@ QVector<MeshData> CmpLoader::buildMeshesFromVMesh(const QByteArray &vmeshData,
                                           ref.vertexCount,
                                           ref.indexStart,
                                           ref.indexCount,
-                                          -1);
+                                          materialIdFromStructuredHeaders());
         if (!mesh.vertices.isEmpty()) {
             meshes.append(mesh);
             return true;
@@ -3210,13 +3324,29 @@ QVector<MeshData> CmpLoader::buildMeshesFromVMesh(const QByteArray &vmeshData,
             }
 
             if (!structuredHeaders.isEmpty()) {
+                const auto exactStructuredMeshes = decodeStructuredSingleBlockMeshesFromHeaders(
+                    vmeshData,
+                    ref,
+                    structuredHeaders.size());
+                if (!exactStructuredMeshes.isEmpty()) {
+                    const QString planHint = directPlanHint + QStringLiteral("/structured-mesh-headers-split");
+                    for (MeshData mesh : exactStructuredMeshes) {
+                        applyBinding(mesh, mesh.materialId);
+                        applyPlanHint(mesh, planHint);
+                        meshes.append(mesh);
+                    }
+                    if (resolvedPlanHint)
+                        *resolvedPlanHint = planHint;
+                    return meshes;
+                }
+
                 const auto exactStructuredMesh = decodeStructuredSingleBlockMeshFromHeaders(
                     vmeshData,
                     ref,
                     structuredHeaders.size());
                 if (exactStructuredMesh.has_value()) {
                     MeshData mesh = *exactStructuredMesh;
-                    applyBinding(mesh, -1);
+                    applyBinding(mesh, materialIdFromStructuredHeaders());
                     const QString planHint = directPlanHint + QStringLiteral("/structured-mesh-headers");
                     applyPlanHint(mesh, planHint);
                     if (resolvedPlanHint)
@@ -3228,7 +3358,7 @@ QVector<MeshData> CmpLoader::buildMeshesFromVMesh(const QByteArray &vmeshData,
         }
 
         if (bestMesh.has_value()) {
-            applyBinding(bestMesh.value(), -1);
+            applyBinding(bestMesh.value(), materialIdFromStructuredHeaders());
             const QString planHint = directPlanHint + QStringLiteral("/exact-fit-windowed");
             applyPlanHint(bestMesh.value(), planHint);
             if (resolvedPlanHint)

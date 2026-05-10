@@ -33,6 +33,8 @@ private:
     static QString findDataRoot(const QString &path);
     static QStringList textureCandidatesForMesh(const QString &modelPath, const MeshData &mesh);
     static QImage resolveEmbeddedTextureForMesh(const QString &modelPath, const MeshData &mesh);
+    static QImage resolveExternalMaterialTextureForMesh(const QString &modelPath, const MeshData &mesh);
+    static QStringList candidateMaterialLibraryPaths(const QString &modelPath);
 
     static QMutex s_cacheMutex;
     static QHash<QString, QHash<QString, QStringList>> s_materialTextureMapCache;
@@ -42,6 +44,7 @@ private:
     // for every unresolved texture candidate, blocking the UI for tens of seconds.
     static QHash<QString, QHash<QString, QString>> s_dataRootFileScanCache;
     static QHash<QString, bool> s_dataRootScannedFlag;
+    static QHash<QString, QStringList> s_materialLibraryPathCache;
 };
 
 } // namespace flatlas::infrastructure

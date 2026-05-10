@@ -787,7 +787,8 @@ void SceneView3D::rebuildDocumentScene(bool resetCamera)
     if (resetCamera)
         updateSceneCamera();
     scheduleModelLoading();
-    schedulePlanetTextureLoading();
+    if (m_modelTexturesVisible)
+        schedulePlanetTextureLoading();
     updateTransformGizmo();
     requestViewportUpdate();
 #endif
@@ -857,6 +858,19 @@ void SceneView3D::setZoneWireframesVisible(bool visible)
     m_zoneWireframesVisible = visible;
 #ifdef FLATLAS_HAS_QT3D
     applyZoneWireframeVisibility();
+#endif
+}
+
+void SceneView3D::setModelTexturesVisible(bool visible)
+{
+    if (m_modelTexturesVisible == visible)
+        return;
+    m_modelTexturesVisible = visible;
+#ifdef FLATLAS_HAS_QT3D
+    const QString selected = m_selectionManager ? m_selectionManager->selectedNickname() : QString();
+    rebuildDocumentScene(false);
+    if (m_selectionManager && !selected.isEmpty())
+        m_selectionManager->select(selected);
 #endif
 }
 
@@ -2182,7 +2196,7 @@ int SceneView3D::addModelNodeRecursive(const flatlas::infrastructure::ModelNode 
         auto *meshEntity = new Qt3DCore::QEntity(nodeEntity);
         if (auto *renderer = ModelGeometryBuilder::buildTriangleRenderer(mesh, meshEntity)) {
             Qt3DRender::QMaterial *material = nullptr;
-            if (!modelPath.isEmpty()) {
+            if (m_modelTexturesVisible && !modelPath.isEmpty()) {
                 const QImage texture = flatlas::infrastructure::FreelancerMaterialResolver::loadTextureForMesh(modelPath, mesh);
                 if (!texture.isNull())
                     material = MaterialFactory::createFromImage(texture, meshEntity);

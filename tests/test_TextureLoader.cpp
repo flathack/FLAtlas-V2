@@ -1,7 +1,9 @@
 #include <QtTest>
 #include <QFileInfo>
 #include <QStringList>
+#include <functional>
 #include "infrastructure/freelancer/FreelancerMaterialResolver.h"
+#include "infrastructure/io/CmpLoader.h"
 #include "infrastructure/io/TextureLoader.h"
 
 using namespace flatlas::infrastructure;
@@ -229,6 +231,79 @@ private slots:
         if (!QFileInfo::exists(txmPath) || !QFileInfo::exists(matPath) || !QFileInfo::exists(sphPath))
             QSKIP("Freelancer-HD Li01_02 reference planet files are not available on this machine.");
         verifyPlanet(QStringLiteral("planet_desored_1500"), txmPath, matPath, sphPath);
+    }
+
+    void loadStationTextureFromExternalMaterialLibrary()
+    {
+        const QString modelPath = QStringLiteral(
+            "C:/Users/steve/Github/FL-Installationen/Freelancer-HD/DATA/SOLAR/DOCKABLE/station_large_a_lod.cmp");
+        const QString matPath = QStringLiteral(
+            "C:/Users/steve/Github/FL-Installationen/Freelancer-HD/DATA/SOLAR/solar_mat_dockable01.mat");
+        if (!QFileInfo::exists(modelPath) || !QFileInfo::exists(matPath))
+            QSKIP("Freelancer-HD station material fixture is not available on this machine.");
+
+        const DecodedModel decoded = CmpLoader::loadModel(modelPath);
+        QVERIFY(decoded.isValid());
+
+        QImage resolvedTexture;
+        std::function<void(const ModelNode &)> walk = [&](const ModelNode &node) {
+            if (!resolvedTexture.isNull())
+                return;
+            for (const MeshData &mesh : node.meshes) {
+                const QImage image = FreelancerMaterialResolver::loadTextureForMesh(modelPath, mesh);
+                if (!image.isNull()) {
+                    resolvedTexture = image;
+                    return;
+                }
+            }
+            for (const ModelNode &child : node.children)
+                walk(child);
+        };
+        walk(decoded.rootNode);
+
+        QVERIFY(!resolvedTexture.isNull());
+        QVERIFY(resolvedTexture.width() > 0);
+        QVERIFY(resolvedTexture.height() > 0);
+    }
+
+    void loadLibertyDreadnoughtTexturesFromExternalMaterialLibrary()
+    {
+        const QString modelPath = QStringLiteral(
+            "C:/Users/steve/Github/FL-Installationen/TESTMOD1/DATA/SHIPS/LIBERTY/li_dreadnought/li_dreadnought.cmp");
+        const QString matPath = QStringLiteral(
+            "C:/Users/steve/Github/FL-Installationen/TESTMOD1/DATA/SHIPS/LIBERTY/li_capships.mat");
+        if (!QFileInfo::exists(modelPath) || !QFileInfo::exists(matPath))
+            QSKIP("TESTMOD1 Liberty dreadnought material fixture is not available on this machine.");
+
+        const DecodedModel decoded = CmpLoader::loadModel(modelPath);
+        QVERIFY(decoded.isValid());
+
+        int meshCount = 0;
+        int texturedMeshCount = 0;
+        QStringList unresolvedMaterials;
+        std::function<void(const ModelNode &)> walk = [&](const ModelNode &node) {
+            for (const MeshData &mesh : node.meshes) {
+                ++meshCount;
+                const QImage image = FreelancerMaterialResolver::loadTextureForMesh(modelPath, mesh);
+                if (!image.isNull()) {
+                    ++texturedMeshCount;
+                } else if (mesh.materialId >= 0) {
+                    unresolvedMaterials.append(QStringLiteral("%1:%2").arg(mesh.materialId).arg(mesh.materialName));
+                } else if (!mesh.materialName.isEmpty()) {
+                    unresolvedMaterials.append(mesh.materialName);
+                }
+            }
+            for (const ModelNode &child : node.children)
+                walk(child);
+        };
+        walk(decoded.rootNode);
+
+        QVERIFY(meshCount > 0);
+        QVERIFY2(texturedMeshCount == meshCount,
+                 qPrintable(QStringLiteral("Only %1 of %2 Liberty dreadnought meshes resolved textures; unresolved: %3")
+                                .arg(texturedMeshCount)
+                                .arg(meshCount)
+                                .arg(unresolvedMaterials.join(QStringLiteral(", ")))));
     }
 };
 

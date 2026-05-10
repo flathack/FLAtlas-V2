@@ -235,6 +235,9 @@ public:
     static std::shared_ptr<UtfNode> findNode(const std::shared_ptr<UtfNode> &root,
                                               const QString &path);
 
+    /// Freelancer's CRC used by VMesh material and mesh references.
+    static quint32 freelancerCrc32(const QString &value);
+
 private:
     static UtfFileHeader parseUtfHeader(const QByteArray &data);
     static void parseUtfNode(const QByteArray &data, int nodeOffset,

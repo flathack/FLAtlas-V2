@@ -5,6 +5,7 @@
 #include "rendering/preview/ModelCache.h"
 #include "ModelGeometryBuilder.h"
 #include "infrastructure/freelancer/FreelancerMaterialResolver.h"
+#include "infrastructure/io/CmpLoader.h"
 
 #include <QEvent>
 #include <QFileInfo>
@@ -247,9 +248,12 @@ void ModelViewport3D::addNodeRecursive(const flatlas::infrastructure::ModelNode 
             auto *meshEntity = new Qt3DCore::QEntity(meshNodeEntity);
             if (auto *renderer = ModelGeometryBuilder::buildTriangleRenderer(mesh, meshEntity)) {
                 Qt3DRender::QMaterial *material = nullptr;
-                const QImage texture = flatlas::infrastructure::FreelancerMaterialResolver::loadTextureForMesh(m_filePath, mesh);
-                if (!texture.isNull())
-                    material = MaterialFactory::createFromImage(texture, meshEntity);
+                if (m_texturesVisible) {
+                    const QImage texture =
+                        flatlas::infrastructure::FreelancerMaterialResolver::loadTextureForMesh(m_filePath, mesh);
+                    if (!texture.isNull())
+                        material = MaterialFactory::createFromImage(texture, meshEntity);
+                }
                 if (!material)
                     material = MaterialFactory::createDefault(
                         colorForMesh(mesh, nodeIndex, m_whiteBackground), meshEntity);
@@ -363,6 +367,7 @@ bool ModelViewport3D::loadModelFile(const QString &filePath, QString *errorMessa
         }
 
         m_hasModel = true;
+        m_currentModel = std::make_unique<flatlas::infrastructure::ModelNode>(decoded.rootNode);
         try {
             rebuildScene(decoded.rootNode);
         } catch (...) {
@@ -400,6 +405,7 @@ bool ModelViewport3D::loadModelNode(const flatlas::infrastructure::ModelNode &mo
 #endif
 
     try {
+        m_currentModel = std::make_unique<flatlas::infrastructure::ModelNode>(model);
         rebuildScene(model);
     } catch (...) {
         clearModel();
@@ -443,6 +449,7 @@ void ModelViewport3D::rebuildScene(const flatlas::infrastructure::ModelNode &mod
 void ModelViewport3D::clearModel()
 {
     m_filePath.clear();
+    m_currentModel.reset();
     m_hasModel = false;
 #ifdef FLATLAS_HAS_QT3D
     clearSceneEntities();
@@ -520,14 +527,22 @@ void ModelViewport3D::setWhiteBackground(bool enabled)
     if (m_window && m_window->defaultFrameGraph())
         m_window->defaultFrameGraph()->setClearColor(enabled ? QColor(230, 230, 230) : QColor(40, 40, 40));
     // Material colours are baked at scene build time, so rebuild when a model is loaded.
-    if (m_hasModel && !m_filePath.isEmpty()) {
-        const auto cached = flatlas::rendering::ModelCache::instance().load(m_filePath);
-        if (cached.isValid())
-            rebuildScene(cached.rootNode);
-    }
+    if (m_hasModel && m_currentModel)
+        rebuildScene(*m_currentModel);
 #endif
     if (!m_hasModel)
         setStatusMessage(tr("No model loaded."));
+}
+
+void ModelViewport3D::setTexturesVisible(bool visible)
+{
+    if (m_texturesVisible == visible)
+        return;
+    m_texturesVisible = visible;
+#ifdef FLATLAS_HAS_QT3D
+    if (m_hasModel && m_currentModel)
+        rebuildScene(*m_currentModel);
+#endif
 }
 
 bool ModelViewport3D::eventFilter(QObject *watched, QEvent *event)

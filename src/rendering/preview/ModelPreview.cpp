@@ -5,6 +5,7 @@
 #include "rendering/view3d/ModelViewport3D.h"
 
 #include <QFileInfo>
+#include <QCheckBox>
 #include <QLabel>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -25,6 +26,11 @@ ModelPreview::ModelPreview(QWidget *parent)
     m_titleLabel = new QLabel(tr("No model loaded"), this);
     headerLayout->addWidget(m_titleLabel, 1);
 
+    auto *texturesCheck = new QCheckBox(tr("Textures"), this);
+    texturesCheck->setChecked(true);
+    texturesCheck->setToolTip(tr("Show model textures."));
+    headerLayout->addWidget(texturesCheck);
+
     auto *resetButton = new QPushButton(tr("Reset Camera"), this);
     connect(resetButton, &QPushButton::clicked, this, [this]() {
         if (m_viewport)
@@ -34,6 +40,8 @@ ModelPreview::ModelPreview(QWidget *parent)
     layout->addLayout(headerLayout);
 
     m_viewport = new ModelViewport3D(this);
+    connect(texturesCheck, &QCheckBox::toggled, m_viewport, &ModelViewport3D::setTexturesVisible);
+    m_viewport->setTexturesVisible(texturesCheck->isChecked());
     layout->addWidget(m_viewport, 1);
 }
 

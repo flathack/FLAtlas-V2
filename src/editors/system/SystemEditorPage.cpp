@@ -69,6 +69,7 @@
 #include <QLineEdit>
 #include <QLabel>
 #include <QPushButton>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QAbstractSpinBox>
 #include <QDoubleSpinBox>
@@ -1693,6 +1694,11 @@ public:
         m_titleLabel->setWordWrap(true);
         headerLayout->addWidget(m_titleLabel, 1);
 
+        auto *texturesCheck = new QCheckBox(tr("Textures"), this);
+        texturesCheck->setChecked(true);
+        texturesCheck->setToolTip(tr("Show model textures."));
+        headerLayout->addWidget(texturesCheck);
+
         auto *resetButton = new QPushButton(tr("Reset Camera"), this);
         connect(resetButton, &QPushButton::clicked, this, [this]() {
             if (m_viewport)
@@ -1702,6 +1708,8 @@ public:
         layout->addLayout(headerLayout);
 
         m_viewport = new ModelViewport3D(this);
+        connect(texturesCheck, &QCheckBox::toggled, m_viewport, &ModelViewport3D::setTexturesVisible);
+        m_viewport->setTexturesVisible(texturesCheck->isChecked());
         layout->addWidget(m_viewport, 1);
     }
 
