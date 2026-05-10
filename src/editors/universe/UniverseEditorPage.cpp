@@ -584,9 +584,24 @@ void UniverseEditorPage::refreshMap()
 
     const QRectF placementRect = allowedPlacementSceneRect();
     auto *placementItem = m_mapScene->addRect(placementRect,
-                                             QPen(QColor(130, 190, 255, 140), 1.4, Qt::DashLine),
-                                             QBrush(QColor(80, 150, 230, 22)));
+                                             QPen(QColor(150, 175, 205, 72), 1.0, Qt::DashLine),
+                                             Qt::NoBrush);
     placementItem->setZValue(-20);
+    if (m_pendingSystemPlacement) {
+        const QColor pointColor(170, 176, 185, 112);
+        constexpr double pointRadius = 1.4;
+        for (int x = static_cast<int>(kUniversePlacementMin); x <= static_cast<int>(kUniversePlacementMax); ++x) {
+            for (int y = static_cast<int>(kUniversePlacementMin); y <= static_cast<int>(kUniversePlacementMax); ++y) {
+                auto *point = m_mapScene->addEllipse((x * m_mapScale) - pointRadius,
+                                                     (y * m_mapScale) - pointRadius,
+                                                     pointRadius * 2.0,
+                                                     pointRadius * 2.0,
+                                                     Qt::NoPen,
+                                                     QBrush(pointColor));
+                point->setZValue(-19);
+            }
+        }
+    }
 
     if (visibleSystems == 0) {
         const QRectF contentRect = mapContentRect();
@@ -1543,15 +1558,19 @@ bool UniverseEditorPage::beginPendingSystemPlacement(const NewSystemRequest &req
     m_pendingSystemRequest = std::make_unique<NewSystemRequest>(request);
     if (m_mapView)
         m_mapView->viewport()->setCursor(Qt::CrossCursor);
+    refreshMap();
     return true;
 }
 
 void UniverseEditorPage::cancelPendingSystemPlacement()
 {
+    const bool wasPending = m_pendingSystemPlacement;
     m_pendingSystemPlacement = false;
     m_pendingSystemRequest.reset();
     if (m_mapView)
         m_mapView->viewport()->unsetCursor();
+    if (wasPending)
+        refreshMap();
 }
 
 void UniverseEditorPage::onNodeMoved(const QString &nickname)
