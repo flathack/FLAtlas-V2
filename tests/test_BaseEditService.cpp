@@ -18,6 +18,7 @@ private slots:
     void archetypeDefaultsPreferExistingBaseObject();
     void createNormalizesDisplayedReputationNickname();
     void createWithoutShipDealerDoesNotWriteShipDealerHotspot();
+    void createGeneratedRoomsUseSceneSpecificFreelancerDefaults();
     void createFromTemplateCopiesRoomContentAndNpcData();
 };
 
@@ -421,6 +422,92 @@ void TestBaseEditService::createWithoutShipDealerDoesNotWriteShipDealerHotspot()
             QVERIFY(!write.content.contains(QStringLiteral("nickname = ShipDealer")));
     }
     QVERIFY(sawRoom);
+}
+
+void TestBaseEditService::createGeneratedRoomsUseSceneSpecificFreelancerDefaults()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString gameRoot = dir.path();
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/UNIVERSE"));
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01"));
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/MISSIONS"));
+
+    const QString systemPath = dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/li01.ini";
+    writeTextFile(systemPath, "[SystemInfo]\nnickname = Li01\n");
+    writeTextFile(dir.path() + "/DATA/UNIVERSE/universe.ini", QString());
+    writeTextFile(dir.path() + "/DATA/MISSIONS/mbases.ini", QString());
+
+    SystemDocument document;
+    document.setName("Li01");
+    document.setFilePath(systemPath);
+
+    BaseEditState state = BaseEditService::makeCreateState(document, gameRoot);
+    state.displayName.clear();
+    state.infocardXml.clear();
+    state.reputation = QStringLiteral("fc_lwb_grp");
+    for (BaseRoomState &room : state.rooms) {
+        room.enabled = true;
+        if (room.roomName.compare(QStringLiteral("Deck"), Qt::CaseInsensitive) == 0)
+            room.scenePath = QStringLiteral("Scripts\\Bases\\br_07_Deck_ambi_int_01.thn");
+        else if (room.roomName.compare(QStringLiteral("Bar"), Qt::CaseInsensitive) == 0)
+            room.scenePath = QStringLiteral("scripts\\bases\\cv_01_bar_ambi_Ku05_04.thn");
+        else if (room.roomName.compare(QStringLiteral("Trader"), Qt::CaseInsensitive) == 0)
+            room.scenePath = QStringLiteral("Scripts\\Bases\\Bw_02_Equipment_ambi_int_Trdr.thn");
+        else if (room.roomName.compare(QStringLiteral("Equipment"), Qt::CaseInsensitive) == 0)
+            room.scenePath = QStringLiteral("Scripts\\Bases\\bw_01_equipment_ambi_int_01.thn");
+        else if (room.roomName.compare(QStringLiteral("ShipDealer"), Qt::CaseInsensitive) == 0)
+            room.scenePath = QStringLiteral("Scripts\\Bases\\Bw_01_shipdealer_ambi_int_01.thn");
+    }
+
+    BaseApplyResult result;
+    QString errorMessage;
+    QVERIFY2(BaseEditService::applyCreate(state, QPointF(0.0, 0.0), gameRoot, {}, &result, &errorMessage), qPrintable(errorMessage));
+
+    bool sawDeck = false;
+    bool sawBar = false;
+    bool sawTrader = false;
+    bool sawEquipment = false;
+    bool sawShipDealer = false;
+    bool sawMbase = false;
+    for (const BaseStagedWrite &write : result.stagedWrites) {
+        if (write.absolutePath.endsWith(QStringLiteral("_deck.ini"), Qt::CaseInsensitive)) {
+            sawDeck = true;
+            QVERIFY(write.content.contains(QStringLiteral("set_script = Scripts\\Bases\\br_07_Deck_hardpoint_01.thn")));
+            QVERIFY(write.content.contains(QStringLiteral("ambient = ambience_deck_space_larger")));
+        } else if (write.absolutePath.endsWith(QStringLiteral("_bar.ini"), Qt::CaseInsensitive)) {
+            sawBar = true;
+            QVERIFY(write.content.contains(QStringLiteral("set_script = scripts\\bases\\cv_01_Bar_hardpoint_01.thn")));
+            QVERIFY(write.content.contains(QStringLiteral("start_script = Scripts\\Bases\\cv_01_bar_enter_01.thn")));
+            QVERIFY(write.content.contains(QStringLiteral("music = music_bar_generic07")));
+            QVERIFY(write.content.contains(QStringLiteral("name = IDS_HOTSPOT_NEWSVENDOR")));
+            QVERIFY(write.content.contains(QStringLiteral("name = IDS_HOTSPOT_MISSIONVENDOR")));
+        } else if (write.absolutePath.endsWith(QStringLiteral("_trader.ini"), Qt::CaseInsensitive)) {
+            sawTrader = true;
+            QVERIFY(write.content.contains(QStringLiteral("set_script = Scripts\\Bases\\Bw_02_Equipment_hardpoint_Trdr.thn")));
+        } else if (write.absolutePath.endsWith(QStringLiteral("_equipment.ini"), Qt::CaseInsensitive)) {
+            sawEquipment = true;
+            QVERIFY(write.content.contains(QStringLiteral("set_script = scripts\\bases\\bw_01_equipment_hardpoint_01.thn")));
+            QVERIFY(write.content.contains(QStringLiteral("goodscart_script = scripts\\bases\\bw_01_equipment_carts_01.thn")));
+            QVERIFY(write.content.contains(QStringLiteral("name = IDS_EQUIPMENT_ROOM_RIGHT")));
+        } else if (write.absolutePath.endsWith(QStringLiteral("_shipdealer.ini"), Qt::CaseInsensitive)) {
+            sawShipDealer = true;
+            QVERIFY(write.content.contains(QStringLiteral("start_script = scripts\\bases\\Bw_01_shipdealer_enter_01.thn")));
+            QCOMPARE(write.content.count(QStringLiteral("[ForSaleShipPlacement]")), 1);
+        } else if (write.absolutePath.endsWith(QStringLiteral("mbases.ini"), Qt::CaseInsensitive)) {
+            sawMbase = true;
+            QVERIFY(!write.content.contains(QStringLiteral("[BaseFaction]")));
+            QVERIFY(write.content.contains(QStringLiteral("affiliation = fc_lwb_grp")));
+        }
+    }
+
+    QVERIFY(sawDeck);
+    QVERIFY(sawBar);
+    QVERIFY(sawTrader);
+    QVERIFY(sawEquipment);
+    QVERIFY(sawShipDealer);
+    QVERIFY(sawMbase);
 }
 
 void TestBaseEditService::createFromTemplateCopiesRoomContentAndNpcData()

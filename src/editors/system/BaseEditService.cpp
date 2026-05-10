@@ -282,7 +282,10 @@ QPair<int, int> mbaseBlockRange(const IniDocument &doc, int mbaseIndex);
 IniSection mbaseNpcSection(const BaseRoomNpcState &npc);
 QString extractScenePath(QString content);
 QStringList virtualRoomNamesFromRoomText(QString content);
-QString generateRoomIniText(const QString &roomName, const QStringList &allRooms, const QString &startRoom);
+QString generateRoomIniText(const QString &roomName,
+                            const QStringList &allRooms,
+                            const QString &startRoom,
+                            const QString &scenePath = {});
 QString textForPath(const QString &path, const QHash<QString, QString> &overrides);
 QString resolvedDisplayName(const QString &gameRoot, int idsName);
 
@@ -506,6 +509,23 @@ QPair<QString, QString> fixtureSceneForRole(const QString &role)
     if (roleText == QStringLiteral("barfly"))
         return {QStringLiteral("scripts\\vendors\\li_bartender_fidget.thn"), QStringLiteral("BarFly")};
     return {QStringLiteral("scripts\\vendors\\li_commtrader_fidget.thn"), QStringLiteral("trader")};
+}
+
+bool roleNeedsFixtureOnly(const QString &role)
+{
+    const QString key = normalizeKey(role);
+    return key == QStringLiteral("bartender")
+        || key == QStringLiteral("trader")
+        || key == QStringLiteral("equipment")
+        || key == QStringLiteral("shipdealer");
+}
+
+bool shouldListNpcInBaseFaction(const BaseRoomNpcState &npc, const QString &roomName)
+{
+    const QString role = normalizedRoleForRoom(npc.role, roomName);
+    if (roleNeedsFixtureOnly(role))
+        return false;
+    return true;
 }
 
 BaseRoomNpcState npcFromFixtureEntry(const QString &fixtureValue, const QString &roomName)
@@ -1043,6 +1063,14 @@ void appendRoomActionHotspots(QStringList *lines, const QString &roomName, const
                    << QStringLiteral("state_send = 1")
                    << QString();
         }
+        if (!hasBehavior(QStringLiteral("MoveRight"))) {
+            *lines << QStringLiteral("[Hotspot]")
+                   << QStringLiteral("name = IDS_EQUIPMENT_ROOM_RIGHT")
+                   << QStringLiteral("behavior = MoveRight")
+                   << QStringLiteral("state_read = 2")
+                   << QStringLiteral("state_send = 1")
+                   << QString();
+        }
     } else if (room == QStringLiteral("shipdealer")) {
         appendRepair();
         appendFrontDesk();
@@ -1052,6 +1080,19 @@ void appendRoomActionHotspots(QStringList *lines, const QString &roomName, const
                    << QStringLiteral("behavior = StartShipDealer")
                    << QStringLiteral("state_read = 2")
                    << QStringLiteral("state_send = 1")
+                   << QString();
+        }
+    } else if (room == QStringLiteral("bar")) {
+        if (!hasBehavior(QStringLiteral("NewsVendor"))) {
+            *lines << QStringLiteral("[Hotspot]")
+                   << QStringLiteral("name = IDS_HOTSPOT_NEWSVENDOR")
+                   << QStringLiteral("behavior = NewsVendor")
+                   << QString();
+        }
+        if (!hasBehavior(QStringLiteral("MissionVendor"))) {
+            *lines << QStringLiteral("[Hotspot]")
+                   << QStringLiteral("name = IDS_HOTSPOT_MISSIONVENDOR")
+                   << QStringLiteral("behavior = MissionVendor")
                    << QString();
         }
     }
@@ -1401,42 +1442,110 @@ QStringList virtualRoomNamesFromRoomText(QString content)
     return rooms;
 }
 
-QString generateRoomIniText(const QString &roomName, const QStringList &allRooms, const QString &startRoom)
+QString defaultSceneForRoom(const QString &roomName)
 {
     const QString room = normalizeKey(roomName);
+    if (room == QStringLiteral("deck"))
+        return QStringLiteral("Scripts\\Bases\\Li_08_Deck_ambi_int_01.thn");
+    if (room == QStringLiteral("bar"))
+        return QStringLiteral("Scripts\\Bases\\Li_09_bar_ambi_int_s020x.thn");
+    if (room == QStringLiteral("trader"))
+        return QStringLiteral("Scripts\\Bases\\Li_01_Trader_ambi_int_01.thn");
+    if (room == QStringLiteral("equipment"))
+        return QStringLiteral("Scripts\\Bases\\Li_01_equipment_ambi_int_01.thn");
+    if (room == QStringLiteral("shipdealer"))
+        return QStringLiteral("Scripts\\Bases\\Li_01_shipdealer_ambi_int_01.thn");
+    if (room == QStringLiteral("cityscape"))
+        return QStringLiteral("Scripts\\Bases\\Li_01_cityscape_ambi_day_01.thn");
+    return QStringLiteral("Scripts\\Bases\\Li_08_Deck_ambi_int_01.thn");
+}
+
+QString hardpointScriptForScene(const QString &roomName, const QString &scenePath)
+{
+    const QString room = normalizeKey(roomName);
+    const QString scene = scenePath.toLower();
+    if (room == QStringLiteral("deck") && scene.contains(QStringLiteral("br_07_deck_ambi")))
+        return QStringLiteral("Scripts\\Bases\\br_07_Deck_hardpoint_01.thn");
+    if (room == QStringLiteral("bar") && scene.contains(QStringLiteral("cv_01_bar_ambi")))
+        return QStringLiteral("scripts\\bases\\cv_01_Bar_hardpoint_01.thn");
+    if (room == QStringLiteral("trader") && scene.contains(QStringLiteral("bw_02_equipment_ambi_int_trdr")))
+        return QStringLiteral("Scripts\\Bases\\Bw_02_Equipment_hardpoint_Trdr.thn");
+    if (room == QStringLiteral("equipment") && scene.contains(QStringLiteral("bw_01_equipment_ambi_int_01")))
+        return QStringLiteral("scripts\\bases\\bw_01_equipment_hardpoint_01.thn");
+    if (room == QStringLiteral("shipdealer") && scene.contains(QStringLiteral("bw_01_shipdealer_ambi_int_01")))
+        return QStringLiteral("Scripts\\Bases\\Bw_01_shipdealer_hardpoint_01.thn");
+    if (room == QStringLiteral("cityscape"))
+        return QStringLiteral("Scripts\\Bases\\Li_01_cityscape_hardpoint_01.thn");
+    if (room == QStringLiteral("deck"))
+        return QStringLiteral("Scripts\\Bases\\Li_08_Deck_hardpoint_01.thn");
+    if (room == QStringLiteral("bar"))
+        return QStringLiteral("Scripts\\Bases\\Li_09_bar_hardpoint_s020x.thn");
+    if (room == QStringLiteral("trader"))
+        return QStringLiteral("Scripts\\Bases\\Li_01_Trader_hardpoint_01.thn");
+    if (room == QStringLiteral("equipment"))
+        return QStringLiteral("Scripts\\Bases\\Li_01_equipment_hardpoint_01.thn");
+    if (room == QStringLiteral("shipdealer"))
+        return QStringLiteral("Scripts\\Bases\\Li_01_shipdealer_hardpoint_01.thn");
+    return QStringLiteral("Scripts\\Bases\\Li_08_Deck_hardpoint_01.thn");
+}
+
+QString startScriptForScene(const QString &roomName, const QString &scenePath)
+{
+    const QString room = normalizeKey(roomName);
+    const QString scene = scenePath.toLower();
+    if (room == QStringLiteral("bar") && scene.contains(QStringLiteral("cv_01_bar_ambi")))
+        return QStringLiteral("Scripts\\Bases\\cv_01_bar_enter_01.thn");
+    if (room == QStringLiteral("trader") && scene.contains(QStringLiteral("li_01_trader_ambi")))
+        return QStringLiteral("scripts\\bases\\Li_01_Trader_enter_01.thn");
+    if (room == QStringLiteral("shipdealer") && scene.contains(QStringLiteral("bw_01_shipdealer_ambi")))
+        return QStringLiteral("scripts\\bases\\Bw_01_shipdealer_enter_01.thn");
+    if (room == QStringLiteral("shipdealer") && scene.contains(QStringLiteral("li_01_shipdealer_ambi")))
+        return QStringLiteral("scripts\\bases\\Li_01_shipdealer_enter_01.thn");
+    return {};
+}
+
+QString roomAmbientForScene(const QString &roomName, const QString &scenePath)
+{
+    const QString room = normalizeKey(roomName);
+    const QString scene = scenePath.toLower();
+    if (room == QStringLiteral("deck") && scene.contains(QStringLiteral("br_07_deck_ambi")))
+        return QStringLiteral("ambience_deck_space_larger");
+    if (room == QStringLiteral("equipment"))
+        return QStringLiteral("ambience_equip_ground_larger");
+    if (room == QStringLiteral("shipdealer"))
+        return QStringLiteral("ambience_shipbuy");
+    if (room == QStringLiteral("trader"))
+        return QStringLiteral("ambience_comm");
+    return QStringLiteral("ambience_deck_space_smaller");
+}
+
+QString barMusicForScene(const QString &scenePath)
+{
+    const QString scene = scenePath.toLower();
+    if (scene.contains(QStringLiteral("cv_01_bar_ambi")))
+        return QStringLiteral("music_bar_generic07");
+    return {};
+}
+
+QString generateRoomIniText(const QString &roomName,
+                            const QStringList &allRooms,
+                            const QString &startRoom,
+                            const QString &scenePath)
+{
+    const QString room = normalizeKey(roomName);
+    const QString scene = scenePath.trimmed().isEmpty() ? defaultSceneForRoom(roomName) : scenePath.trimmed();
     QStringList lines;
 
-    if (room == QStringLiteral("deck")) {
-        lines << QStringLiteral("[Room_Info]")
-              << QStringLiteral("set_script = Scripts\\Bases\\Li_08_Deck_hardpoint_01.thn")
-              << QStringLiteral("scene = all, ambient, Scripts\\Bases\\Li_08_Deck_ambi_int_01.thn")
-              << QStringLiteral("animation = Sc_loop");
-    } else if (room == QStringLiteral("bar")) {
-        lines << QStringLiteral("[Room_Info]")
-              << QStringLiteral("set_script = Scripts\\Bases\\Li_09_bar_hardpoint_s020x.thn")
-              << QStringLiteral("scene = all, ambient, Scripts\\Bases\\Li_09_bar_ambi_int_s020x.thn");
-    } else if (room == QStringLiteral("trader")) {
-        lines << QStringLiteral("[Room_Info]")
-              << QStringLiteral("set_script = Scripts\\Bases\\Li_01_Trader_hardpoint_01.thn")
-              << QStringLiteral("scene = all, ambient, Scripts\\Bases\\Li_01_Trader_ambi_int_01.thn");
-    } else if (room == QStringLiteral("equipment")) {
-        lines << QStringLiteral("[Room_Info]")
-              << QStringLiteral("set_script = Scripts\\Bases\\Li_01_equipment_hardpoint_01.thn")
-              << QStringLiteral("scene = all, ambient, Scripts\\Bases\\Li_01_equipment_ambi_int_01.thn");
-    } else if (room == QStringLiteral("shipdealer")) {
-        lines << QStringLiteral("[Room_Info]")
-              << QStringLiteral("set_script = Scripts\\Bases\\Li_01_shipdealer_hardpoint_01.thn")
-              << QStringLiteral("scene = all, ambient, Scripts\\Bases\\Li_01_shipdealer_ambi_int_01.thn");
-    } else if (room == QStringLiteral("cityscape")) {
-        lines << QStringLiteral("[Room_Info]")
-              << QStringLiteral("set_script = Scripts\\Bases\\Li_01_cityscape_hardpoint_01.thn")
-              << QStringLiteral("animation = Sc_loop")
-              << QStringLiteral("scene = all, ambient, Scripts\\Bases\\Li_01_cityscape_ambi_day_01.thn");
-    } else {
-        lines << QStringLiteral("[Room_Info]")
-              << QStringLiteral("set_script = Scripts\\Bases\\Li_08_Deck_hardpoint_01.thn")
-              << QStringLiteral("scene = all, ambient, Scripts\\Bases\\Li_08_Deck_ambi_int_01.thn");
-    }
+    lines << QStringLiteral("[Room_Info]")
+          << QStringLiteral("set_script = %1").arg(hardpointScriptForScene(roomName, scene));
+    if (room == QStringLiteral("bar") && scene.toLower().contains(QStringLiteral("cv_01_bar_ambi")))
+        lines << QStringLiteral("scene = ambient, %1").arg(scene);
+    else
+        lines << QStringLiteral("scene = all, ambient, %1").arg(scene);
+    if (room == QStringLiteral("cityscape") || room == QStringLiteral("deck"))
+        lines << QStringLiteral("animation = Sc_loop");
+    if (room == QStringLiteral("equipment") && scene.toLower().contains(QStringLiteral("bw_01_equipment_ambi_int_01")))
+        lines << QStringLiteral("goodscart_script = scripts\\bases\\bw_01_equipment_carts_01.thn");
 
     lines << QString();
 
@@ -1447,27 +1556,30 @@ QString generateRoomIniText(const QString &roomName, const QStringList &allRooms
     else if (room == QStringLiteral("shipdealer"))
         lines << QStringLiteral("[Spiels]") << QStringLiteral("ShipDealer = manhattan_ship_spiel") << QString();
 
-    if (room == QStringLiteral("equipment"))
-        lines << QStringLiteral("[Room_Sound]") << QStringLiteral("ambient = ambience_equip_ground_larger") << QString();
-    else if (room == QStringLiteral("shipdealer"))
-        lines << QStringLiteral("[Room_Sound]") << QStringLiteral("ambient = ambience_shipbuy") << QString();
-    else if (room == QStringLiteral("trader"))
-        lines << QStringLiteral("[Room_Sound]") << QStringLiteral("ambient = ambience_comm") << QString();
-    else
-        lines << QStringLiteral("[Room_Sound]") << QStringLiteral("ambient = ambience_deck_space_smaller") << QString();
+    lines << QStringLiteral("[Room_Sound]");
+    const QString music = room == QStringLiteral("bar") ? barMusicForScene(scene) : QString();
+    if (!music.isEmpty())
+        lines << QStringLiteral("music = %1").arg(music);
+    lines << QStringLiteral("ambient = %1").arg(roomAmbientForScene(roomName, scene)) << QString();
 
     lines << QStringLiteral("[Camera]") << QStringLiteral("name = Camera_0") << QString();
 
     if (room == QStringLiteral("bar") || room == QStringLiteral("trader")
         || room == QStringLiteral("equipment") || room == QStringLiteral("shipdealer")) {
-        lines << QStringLiteral("[CharacterPlacement]") << QStringLiteral("name = Zg/PC/Player/01/A/Stand") << QString();
+        lines << QStringLiteral("[CharacterPlacement]") << QStringLiteral("name = Zg/PC/Player/01/A/Stand");
+        const QString startScript = startScriptForScene(roomName, scene);
+        if (!startScript.isEmpty())
+            lines << QStringLiteral("start_script = %1").arg(startScript);
+        lines << QString();
     }
     if (room == QStringLiteral("deck") || room == QStringLiteral("cityscape") || room == QStringLiteral("equipment"))
         lines << QStringLiteral("[PlayerShipPlacement]") << QStringLiteral("name = X/Shipcentre/01") << QString();
     if (room == QStringLiteral("shipdealer")) {
-        lines << QStringLiteral("[ForSaleShipPlacement]") << QStringLiteral("name = X/Shipcentre/01") << QString()
-              << QStringLiteral("[ForSaleShipPlacement]") << QStringLiteral("name = X/Shipcentre/02") << QString()
-              << QStringLiteral("[ForSaleShipPlacement]") << QStringLiteral("name = X/Shipcentre/03") << QString();
+        lines << QStringLiteral("[ForSaleShipPlacement]") << QStringLiteral("name = X/Shipcentre/01") << QString();
+        if (!scene.toLower().contains(QStringLiteral("bw_01_shipdealer_ambi_int_01"))) {
+            lines << QStringLiteral("[ForSaleShipPlacement]") << QStringLiteral("name = X/Shipcentre/02") << QString()
+                  << QStringLiteral("[ForSaleShipPlacement]") << QStringLiteral("name = X/Shipcentre/03") << QString();
+        }
     }
 
     for (const auto &entry : navHotspots(allRooms, startRoom)) {
@@ -1838,6 +1950,8 @@ void populateCreateMbaseBlock(IniDocument *doc, const BaseEditState &state)
             if (npc.nickname.trimmed().isEmpty())
                 continue;
             desiredNpcs.append(npc);
+            if (!shouldListNpcInBaseFaction(npc, room.roomName))
+                continue;
             const QString faction = nicknameFromDisplayValue(npc.reputation.trimmed().isEmpty() ? state.reputation : npc.reputation).trimmed();
             if (faction.isEmpty())
                 continue;
@@ -2447,7 +2561,7 @@ bool BaseEditService::applyCreate(const BaseEditState &state,
         const QString canonical = canonicalRoomName(room.roomName);
         const bool fromTemplate = !room.templateContent.trimmed().isEmpty();
         QString roomText = !fromTemplate
-            ? generateRoomIniText(canonical, rooms, startRoom)
+            ? generateRoomIniText(canonical, rooms, startRoom, room.scenePath)
             : adaptTemplateRoom(room.templateContent, rooms);
         if (!room.scenePath.trimmed().isEmpty())
             roomText = overrideRoomScene(roomText, room.scenePath);
@@ -2530,7 +2644,7 @@ bool BaseEditService::applyEdit(SolarObject &object,
         QString roomText = textForPath(roomPath, textOverrides);
         const bool hadExistingText = !roomText.trimmed().isEmpty();
         if (!hadExistingText)
-            roomText = generateRoomIniText(canonical, rooms, startRoom);
+            roomText = generateRoomIniText(canonical, rooms, startRoom, room.scenePath);
         if (!room.scenePath.trimmed().isEmpty())
             roomText = overrideRoomScene(roomText, room.scenePath);
         roomText = normalizeRoomNavigation(roomText, canonical, rooms, startRoom);
