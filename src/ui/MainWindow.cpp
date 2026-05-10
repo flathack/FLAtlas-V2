@@ -993,7 +993,6 @@ void MainWindow::createMenus()
 
     // --- Settings ---
     auto *settingsMenu = menuBar()->addMenu(tr("&Settings"));
-    settingsMenu->setIcon(flatlas::ui::settingsIcon());
     auto *themeMenu = settingsMenu->addMenu(tr("&Theme"));
     for (const auto &theme : flatlas::core::Theme::instance().availableThemes()) {
         themeMenu->addAction(theme, this, [theme]() {
