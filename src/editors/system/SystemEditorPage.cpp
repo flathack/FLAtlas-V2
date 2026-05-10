@@ -5844,14 +5844,14 @@ void SystemEditorPage::applyIniEditorChanges()
 
     const QString text = m_iniEditor->toPlainText().trimmed();
     if (text.isEmpty()) {
-        QMessageBox::warning(this, tr("Leerer Inhalt"),
+        QMessageBox::warning(this, tr("Empty Content"),
                              tr("The object editor does not contain an INI section."));
         return;
     }
 
     const IniDocument parsed = IniParser::parseText(text);
     if (parsed.isEmpty()) {
-        QMessageBox::warning(this, tr("Ungültige Section"),
+        QMessageBox::warning(this, tr("Invalid Section"),
                              tr("Please insert at least one valid INI section."));
         return;
     }
@@ -5880,15 +5880,15 @@ void SystemEditorPage::applyIniEditorChanges()
 
         for (const IniSection &parsedSection : parsed) {
             if (parsedSection.name.trimmed().compare(QStringLiteral("object"), Qt::CaseInsensitive) != 0) {
-                QMessageBox::warning(this, tr("Ungültige Section"),
+                QMessageBox::warning(this, tr("Invalid Section"),
                                      tr("Only [Object] sections may be edited in parent/child groups."));
                 return;
             }
 
             const QString parsedNickname = parsedSection.value(QStringLiteral("nickname")).trimmed();
             if (parsedNickname.isEmpty()) {
-                QMessageBox::warning(this, tr("Ungültige Section"),
-                                     tr("Jede [Object]-Section benötigt einen Nickname."));
+                QMessageBox::warning(this, tr("Invalid Section"),
+                                     tr("Each [Object] section needs a nickname."));
                 return;
             }
             parsedNicknames.insert(parsedNickname);

@@ -70,7 +70,7 @@ void ModSettingsPage::setupUi()
     m_bribePriceSpin = new QSpinBox(bribeGroup);
     m_bribePriceSpin->setRange(0, 999999999);
     m_bribePriceSpin->setSingleStep(1000);
-    form->addRow(tr("Globaler Bribe-Preis:"), m_bribePriceSpin);
+    form->addRow(tr("Global Bribe Price:"), m_bribePriceSpin);
     auto *hint = new QLabel(tr("This value is used for all bribe lines in mbases.ini."), bribeGroup);
     hint->setWordWrap(true);
     form->addRow(QString(), hint);
@@ -83,7 +83,7 @@ void ModSettingsPage::setupUi()
     bottomLayout->setContentsMargins(0, 0, 0, 0);
     m_statusLabel = new QLabel(bottom);
     bottomLayout->addWidget(m_statusLabel, 1);
-    m_saveButton = new QPushButton(tr("Speichern"), bottom);
+    m_saveButton = new QPushButton(tr("Save"), bottom);
     m_saveButton->setMinimumWidth(120);
     m_saveButton->setStyleSheet(QStringLiteral(
         "QPushButton { background: #1f8f4d; color: white; border: 1px solid #2fb365; padding: 6px 14px; font-weight: 600; }"
@@ -148,7 +148,7 @@ void ModSettingsPage::reload()
         return;
     }
     m_bribePriceSpin->setValue(detectedBribePrice());
-    m_statusLabel->setText(tr("Geladen: %1").arg(path));
+    m_statusLabel->setText(tr("Loaded: %1").arg(path));
     emit titleChanged(tr("Mod Settings - %1").arg(QFileInfo(flatlas::core::EditingContext::instance().primaryGamePath()).fileName()));
 }
 

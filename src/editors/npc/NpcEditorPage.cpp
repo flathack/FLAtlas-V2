@@ -406,7 +406,7 @@ void NpcEditorPage::setupUi()
     auto *middle = new QWidget(splitter);
     auto *middleLayout = new QVBoxLayout(middle);
     middleLayout->setContentsMargins(8, 8, 8, 8);
-    middleLayout->addWidget(new QLabel(tr("NPCs im Raum"), middle));
+    middleLayout->addWidget(new QLabel(tr("NPCs in Room"), middle));
     m_npcTable = new QTableWidget(middle);
     m_npcTable->setColumnCount(6);
     m_npcTable->setHorizontalHeaderLabels({tr("Nickname"), tr("Name"), tr("Faction"), tr("Affiliation"), tr("Bribes"), tr("Rumors")});
@@ -454,8 +454,8 @@ void NpcEditorPage::setupUi()
     m_infoPreviewLabel = new QLabel(generalTab);
     m_infoPreviewLabel->setWordWrap(true);
     generalLayout->addRow(tr("Nickname:"), m_nicknameEdit);
-    generalLayout->addRow(tr("Raum:"), m_roomCombo);
-    generalLayout->addRow(tr("BaseFaction:"), m_baseFactionCombo);
+    generalLayout->addRow(tr("Room:"), m_roomCombo);
+    generalLayout->addRow(tr("Base Faction:"), m_baseFactionCombo);
     generalLayout->addRow(tr("Affiliation:"), m_affiliationCombo);
     generalLayout->addRow(tr("Body:"), m_bodyCombo);
     generalLayout->addRow(tr("Head:"), m_headCombo);
@@ -465,14 +465,14 @@ void NpcEditorPage::setupUi()
     generalLayout->addRow(tr("IDS Name ID:"), m_individualNameSpin);
     generalLayout->addRow(tr("NPC Name:"), m_individualNameTextEdit);
     generalLayout->addRow(tr("IDS Info:"), m_infoSpin);
-    generalLayout->addRow(tr("Info Vorschau:"), m_infoPreviewLabel);
+    generalLayout->addRow(tr("Info Preview:"), m_infoPreviewLabel);
     tabs->addTab(generalTab, tr("NPC"));
 
     auto *bribeTab = new QWidget(tabs);
     auto *bribeLayout = new QVBoxLayout(bribeTab);
     m_bribeTable = new QTableWidget(bribeTab);
     m_bribeTable->setColumnCount(2);
-    m_bribeTable->setHorizontalHeaderLabels({tr("Ingamename"), tr("Nickname")});
+    m_bribeTable->setHorizontalHeaderLabels({tr("Ingame Name"), tr("Nickname")});
     m_bribeTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     m_bribeTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     m_bribeTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -485,7 +485,7 @@ void NpcEditorPage::setupUi()
     auto *bribeButtons = new QWidget(bribeTab);
     auto *bribeButtonLayout = new QHBoxLayout(bribeButtons);
     bribeButtonLayout->setContentsMargins(0, 0, 0, 0);
-    auto *addBribe = new QPushButton(tr("Bribe hinzufuegen"), bribeButtons);
+    auto *addBribe = new QPushButton(tr("Add Bribe"), bribeButtons);
     auto *removeBribe = new QPushButton(tr("Remove Bribe"), bribeButtons);
     bribeButtonLayout->addWidget(addBribe);
     bribeButtonLayout->addWidget(removeBribe);
@@ -503,10 +503,10 @@ void NpcEditorPage::setupUi()
     rumorPickerLayout->setContentsMargins(0, 0, 0, 0);
     m_rumorKindCombo = new QComboBox(rumorPicker);
     m_rumorKindCombo->addItems({QStringLiteral("rumor"), QStringLiteral("rumor_type2")});
-    auto *addRumor = new QPushButton(tr("Rumor suchen..."), rumorPicker);
-    auto *newRumor = new QPushButton(tr("Neu"), rumorPicker);
+    auto *addRumor = new QPushButton(tr("Find Rumor..."), rumorPicker);
+    auto *newRumor = new QPushButton(tr("New"), rumorPicker);
     auto *removeRumor = new QPushButton(tr("Remove Rumor"), rumorPicker);
-    rumorPickerLayout->addWidget(new QLabel(tr("Typ:"), rumorPicker));
+    rumorPickerLayout->addWidget(new QLabel(tr("Type:"), rumorPicker));
     rumorPickerLayout->addWidget(m_rumorKindCombo);
     rumorPickerLayout->addStretch(1);
     rumorPickerLayout->addWidget(addRumor);
@@ -515,7 +515,7 @@ void NpcEditorPage::setupUi()
     rumorLayout->addWidget(rumorPicker);
     m_rumorTable = new QTableWidget(rumorTab);
     m_rumorTable->setColumnCount(5);
-    m_rumorTable->setHorizontalHeaderLabels({tr("Typ"), tr("Von"), tr("Bis"), tr("Gewicht"), tr("IDS")});
+    m_rumorTable->setHorizontalHeaderLabels({tr("Type"), tr("From"), tr("To"), tr("Weight"), tr("IDS")});
     m_rumorTable->horizontalHeader()->setStretchLastSection(true);
     m_rumorTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     rumorLayout->addWidget(m_rumorTable, 1);
@@ -542,7 +542,7 @@ void NpcEditorPage::setupUi()
     bottomLayout->setContentsMargins(8, 6, 8, 6);
     m_statusLabel = new QLabel(bottomBar);
     bottomLayout->addWidget(m_statusLabel, 1);
-    m_bottomSaveButton = new QPushButton(tr("Speichern"), bottomBar);
+    m_bottomSaveButton = new QPushButton(tr("Save"), bottomBar);
     m_bottomSaveButton->setMinimumWidth(120);
     m_bottomSaveButton->setStyleSheet(QStringLiteral(
         "QPushButton { background: #1f8f4d; color: white; border: 1px solid #2fb365; padding: 6px 14px; font-weight: 600; }"
@@ -557,7 +557,7 @@ void NpcEditorPage::setupUi()
             QMessageBox::warning(this, tr("NPC Editor"), error.isEmpty() ? tr("The NPC data could not be saved.") : error);
             return;
         }
-        m_statusLabel->setText(tr("Gespeichert: %1").arg(m_mbasesPath));
+        m_statusLabel->setText(tr("Saved: %1").arg(m_mbasesPath));
     });
 
     connect(m_individualNameSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
@@ -575,9 +575,9 @@ void NpcEditorPage::setupToolBar()
 {
     m_toolBar = new QToolBar(this);
     m_toolBar->setMovable(false);
-    m_reloadAction = m_toolBar->addAction(tr("Neu laden"), this, &NpcEditorPage::scheduleReloadCurrentContext);
+    m_reloadAction = m_toolBar->addAction(tr("Reload"), this, &NpcEditorPage::scheduleReloadCurrentContext);
     m_toolBar->addSeparator();
-    m_newNpcAction = m_toolBar->addAction(tr("Neuer NPC"), this, &NpcEditorPage::onNewNpc);
+    m_newNpcAction = m_toolBar->addAction(tr("New NPC"), this, &NpcEditorPage::onNewNpc);
     m_deleteNpcAction = m_toolBar->addAction(tr("Delete NPC"), this, &NpcEditorPage::onDeleteNpc);
     m_toolBar->addSeparator();
     m_toolBar->addWidget(new QLabel(tr(" System: "), m_toolBar));
@@ -660,7 +660,7 @@ void NpcEditorPage::reportLoadingProgress(int percent, const QString &message)
 
 bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
 {
-    reportLoadingProgress(2, tr("NPC Editor: Kontext wird geprueft..."));
+    reportLoadingProgress(2, tr("NPC Editor: Checking context..."));
     m_gameRoot = gameRoot.trimmed();
     m_mbasesDoc.clear();
     m_systems.clear();
@@ -710,7 +710,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
             m_idsTextByNumber.insert(QString::number(it.key()), it.value());
     }
 
-    reportLoadingProgress(30, tr("NPC Editor: Ressourcen-DLL wird gelesen..."));
+    reportLoadingProgress(30, tr("NPC Editor: Reading resource DLL..."));
     // Bribe text IDs in mbases.ini are local string-table IDs (commonly
     // 16100/16101) from resources.dll, not global Freelancer IDS values.
     // Some mods do not list resources.dll in [Resources], so load it directly.
@@ -809,7 +809,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
         }
     }
 
-    reportLoadingProgress(74, tr("NPC Editor: mbases.ini wird ausgewertet..."));
+    reportLoadingProgress(74, tr("NPC Editor: Evaluating mbases.ini..."));
     m_mbasesDoc = IniParser::parseFile(m_mbasesPath);
     QHash<int, int> bribePriceCounts;
     NpcBaseRecord *currentBase = nullptr;
@@ -952,7 +952,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
     populateChoiceLists();
     populateRumorChoices();
     populateSelectors();
-    m_statusLabel->setText(tr("Geladen: %1 Bases, %2 Rumor-Vorlagen").arg(m_bases.size()).arg(m_existingRumors.size()));
+    m_statusLabel->setText(tr("Loaded: %1 bases, %2 rumor templates").arg(m_bases.size()).arg(m_existingRumors.size()));
     return true;
 }
 
@@ -966,13 +966,13 @@ bool NpcEditorPage::saveCurrentFile(QString *errorMessage)
         for (const NpcRecord &npc : base.npcs) {
             if (npc.nickname.trimmed().isEmpty()) {
                 if (errorMessage)
-                    *errorMessage = tr("In Base %1 gibt es einen NPC ohne Nickname.").arg(base.nickname);
+                    *errorMessage = tr("Base %1 contains an NPC without a nickname.").arg(base.nickname);
                 return false;
             }
             const QString npcKey = keyOf(npc.nickname);
             if (seen.contains(npcKey)) {
                 if (errorMessage)
-                    *errorMessage = tr("In Base %1 ist der NPC-Nickname %2 doppelt vorhanden.").arg(base.nickname, npc.nickname);
+                    *errorMessage = tr("Base %1 contains duplicate NPC nickname %2.").arg(base.nickname, npc.nickname);
                 return false;
             }
             seen.insert(npcKey);
@@ -1579,9 +1579,9 @@ QString NpcEditorPage::bribePreviewText(int row) const
 
     text.replace(QStringLiteral("%d0"), QString::number(m_modBribePrice));
     text.replace(QStringLiteral("%F0v1"), factionDisplay(factionNickname));
-    text.replace(QStringLiteral("%F1v1"), tr("[betroffene Gegenfraktion 1]"));
-    text.replace(QStringLiteral("%F2v1"), tr("[betroffene Gegenfraktion 2]"));
-    text.replace(QStringLiteral("%F3v1"), tr("[betroffene Gegenfraktion 3]"));
+    text.replace(QStringLiteral("%F1v1"), tr("[affected opposing faction 1]"));
+    text.replace(QStringLiteral("%F2v1"), tr("[affected opposing faction 2]"));
+    text.replace(QStringLiteral("%F3v1"), tr("[affected opposing faction 3]"));
     return text;
 }
 
@@ -1716,7 +1716,7 @@ void NpcEditorPage::onAddBribe()
     dialog.resize(720, 520);
     auto *layout = new QVBoxLayout(&dialog);
     auto *searchEdit = new QLineEdit(&dialog);
-    searchEdit->setPlaceholderText(tr("Faction suchen nach Ingame-Name oder Nickname..."));
+    searchEdit->setPlaceholderText(tr("Search faction by ingame name or nickname..."));
     layout->addWidget(searchEdit);
 
     auto *choiceTable = new QTableWidget(&dialog);
@@ -1731,7 +1731,7 @@ void NpcEditorPage::onAddBribe()
     choiceTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     layout->addWidget(choiceTable, 1);
 
-    auto *idsBox = new QGroupBox(tr("Bribe-Text"), &dialog);
+    auto *idsBox = new QGroupBox(tr("Bribe Text"), &dialog);
     auto *idsLayout = new QFormLayout(idsBox);
     auto *idsCombo = new QComboBox(idsBox);
     idsCombo->addItem(QStringLiteral("16100 - %1").arg(resolvedIdsText(16100)), 16100);
@@ -1810,12 +1810,12 @@ void NpcEditorPage::onAddRumor()
     dialog.resize(980, 620);
     auto *layout = new QVBoxLayout(&dialog);
     auto *searchEdit = new QLineEdit(&dialog);
-    searchEdit->setPlaceholderText(tr("Suchen nach Text, IDS, Typ oder State..."));
+    searchEdit->setPlaceholderText(tr("Search by text, IDS, type, or state..."));
     layout->addWidget(searchEdit);
 
     auto *choiceTable = new QTableWidget(&dialog);
     choiceTable->setColumnCount(6);
-    choiceTable->setHorizontalHeaderLabels({tr("Typ"), tr("Von"), tr("Bis"), tr("Gewicht"), tr("IDS"), tr("Text")});
+    choiceTable->setHorizontalHeaderLabels({tr("Type"), tr("From"), tr("To"), tr("Weight"), tr("IDS"), tr("Text")});
     choiceTable->verticalHeader()->setVisible(false);
     choiceTable->setAlternatingRowColors(true);
     choiceTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -1928,14 +1928,14 @@ void NpcEditorPage::onNewRumor()
     weightSpin->setRange(0, 999999);
     weightSpin->setValue(1);
 
-    form->addRow(tr("Typ:"), kindCombo);
-    form->addRow(tr("Von-State:"), fromEdit);
-    form->addRow(tr("Bis-State:"), toEdit);
-    form->addRow(tr("Gewicht:"), weightSpin);
+    form->addRow(tr("Type:"), kindCombo);
+    form->addRow(tr("From State:"), fromEdit);
+    form->addRow(tr("To State:"), toEdit);
+    form->addRow(tr("Weight:"), weightSpin);
     layout->addWidget(formGroup);
 
     auto *textEdit = new QPlainTextEdit(&dialog);
-    textEdit->setPlaceholderText(tr("Rumor-Text eingeben. FLAtlas erstellt die IDS automatisch."));
+    textEdit->setPlaceholderText(tr("Enter rumor text. FLAtlas creates the IDS automatically."));
     textEdit->setMinimumHeight(180);
     layout->addWidget(textEdit, 1);
 

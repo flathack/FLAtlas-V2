@@ -133,10 +133,10 @@ void NewsRumorEditor::setupUi()
     mainLayout->setSpacing(8);
 
     auto *toolbar = new QHBoxLayout();
-    auto *reloadButton = new QPushButton(tr("Neu laden"), this);
+    auto *reloadButton = new QPushButton(tr("Reload"), this);
     auto *openButton = new QPushButton(tr("Open File..."), this);
-    auto *addButton = new QPushButton(tr("Neue News"), this);
-    auto *removeButton = new QPushButton(tr("News löschen"), this);
+    auto *addButton = new QPushButton(tr("New News"), this);
+    auto *removeButton = new QPushButton(tr("Delete News"), this);
     m_saveButton = new QPushButton(tr("Save"), this);
     m_saveButton->setStyleSheet(QStringLiteral("QPushButton { background: #1f9d55; color: white; font-weight: bold; padding: 6px 18px; }"
                                                "QPushButton:disabled { background: #335344; color: #9aaba0; }"));
@@ -160,11 +160,11 @@ void NewsRumorEditor::setupUi()
     baseLayout->setContentsMargins(0, 0, 0, 0);
     baseLayout->addWidget(new QLabel(tr("Bases"), basePane));
     m_baseSearchEdit = new QLineEdit(basePane);
-    m_baseSearchEdit->setPlaceholderText(tr("Base, Nickname oder System suchen..."));
+    m_baseSearchEdit->setPlaceholderText(tr("Search base, nickname, or system..."));
     m_baseSearchEdit->setClearButtonEnabled(true);
     baseLayout->addWidget(m_baseSearchEdit);
     m_baseTable = new QTableWidget(0, BaseColumnCount, basePane);
-    m_baseTable->setHorizontalHeaderLabels({tr("Ingamename"), tr("Nickname"), tr("System"), tr("News")});
+    m_baseTable->setHorizontalHeaderLabels({tr("Ingame Name"), tr("Nickname"), tr("System"), tr("News")});
     m_baseTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_baseTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_baseTable->setAlternatingRowColors(true);
@@ -182,19 +182,19 @@ void NewsRumorEditor::setupUi()
     newsLayout->addWidget(new QLabel(tr("News"), newsPane));
     auto *filterRow = new QHBoxLayout();
     m_scopeCombo = new QComboBox(newsPane);
-    m_scopeCombo->addItem(tr("Gewählte Base"), QStringLiteral("base"));
-    m_scopeCombo->addItem(tr("Alle News"), QStringLiteral("all"));
-    m_scopeCombo->addItem(tr("Globale News"), QStringLiteral("global"));
-    m_missingIdsOnly = new QCheckBox(tr("Fehlende IDS"), newsPane);
+    m_scopeCombo->addItem(tr("Selected Base"), QStringLiteral("base"));
+    m_scopeCombo->addItem(tr("All News"), QStringLiteral("all"));
+    m_scopeCombo->addItem(tr("Global News"), QStringLiteral("global"));
+    m_missingIdsOnly = new QCheckBox(tr("Missing IDS"), newsPane);
     m_newsSearchEdit = new QLineEdit(newsPane);
-    m_newsSearchEdit->setPlaceholderText(tr("Headline, Text, IDS, Base, Rank suchen..."));
+    m_newsSearchEdit->setPlaceholderText(tr("Search headline, text, IDS, base, or rank..."));
     m_newsSearchEdit->setClearButtonEnabled(true);
     filterRow->addWidget(m_scopeCombo);
     filterRow->addWidget(m_missingIdsOnly);
     filterRow->addWidget(m_newsSearchEdit, 1);
     newsLayout->addLayout(filterRow);
     m_newsTable = new QTableWidget(0, NewsColumnCount, newsPane);
-    m_newsTable->setHorizontalHeaderLabels({tr("Headline"), tr("Vorschau"), tr("Bases"), tr("Icon"), tr("Rank"), tr("Status")});
+    m_newsTable->setHorizontalHeaderLabels({tr("Headline"), tr("Preview"), tr("Bases"), tr("Icon"), tr("Rank"), tr("Status")});
     m_newsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_newsTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_newsTable->setAlternatingRowColors(true);
@@ -211,29 +211,29 @@ void NewsRumorEditor::setupUi()
     auto *detailLayout = new QVBoxLayout(detailPane);
     detailLayout->setContentsMargins(0, 0, 0, 0);
     detailLayout->addWidget(new QLabel(tr("Edit News"), detailPane));
-    m_detailHintLabel = new QLabel(tr("Wähle eine News aus."), detailPane);
+    m_detailHintLabel = new QLabel(tr("Select a news item."), detailPane);
     m_detailHintLabel->setWordWrap(true);
     detailLayout->addWidget(m_detailHintLabel);
     m_headlineEdit = new QLineEdit(detailPane);
     m_headlineEdit->setPlaceholderText(tr("Headline"));
     detailLayout->addWidget(m_headlineEdit);
     m_bodyEdit = new QPlainTextEdit(detailPane);
-    m_bodyEdit->setPlaceholderText(tr("News-Text"));
+    m_bodyEdit->setPlaceholderText(tr("News Text"));
     m_bodyEdit->setMinimumHeight(180);
     detailLayout->addWidget(m_bodyEdit, 1);
     m_basesEdit = new QPlainTextEdit(detailPane);
-    m_basesEdit->setPlaceholderText(tr("Base-Nicknames, eine pro Zeile oder komma-getrennt. Leer = globale News."));
+    m_basesEdit->setPlaceholderText(tr("Base nicknames, one per line or comma-separated. Empty = global news."));
     m_basesEdit->setMaximumHeight(100);
     detailLayout->addWidget(m_basesEdit);
     auto *baseAssignRow = new QHBoxLayout();
-    auto *addSelectedBaseButton = new QPushButton(tr("Gewählte Base hinzufügen"), detailPane);
-    auto *clearBasesButton = new QPushButton(tr("Zuweisung leeren"), detailPane);
+    auto *addSelectedBaseButton = new QPushButton(tr("Add Selected Base"), detailPane);
+    auto *clearBasesButton = new QPushButton(tr("Clear Assignments"), detailPane);
     baseAssignRow->addWidget(addSelectedBaseButton);
     baseAssignRow->addWidget(clearBasesButton);
     baseAssignRow->addStretch(1);
     detailLayout->addLayout(baseAssignRow);
 
-    auto *techBox = new QGroupBox(tr("Technische Felder"), detailPane);
+    auto *techBox = new QGroupBox(tr("Technical Fields"), detailPane);
     auto *techLayout = new QVBoxLayout(techBox);
     auto *idsRow = new QHBoxLayout();
     m_categorySpin = new QSpinBox(techBox);
@@ -354,7 +354,7 @@ void NewsRumorEditor::reportLoadingProgress(int percent, const QString &message)
 
 bool NewsRumorEditor::loadWorkspace(const QString &gameRoot, QString *errorMessage)
 {
-    reportLoadingProgress(5, tr("News Editor: Kontext wird geprueft..."));
+    reportLoadingProgress(5, tr("News Editor: Checking context..."));
     const QString resolvedGameRoot = gameRoot.trimmed();
     if (resolvedGameRoot.isEmpty()) {
         if (errorMessage)
@@ -378,7 +378,7 @@ bool NewsRumorEditor::loadWorkspace(const QString &gameRoot, QString *errorMessa
     loadIds(resolvedGameRoot);
     reportLoadingProgress(50, tr("News Editor: Loading bases..."));
     loadBases(dataDir);
-    reportLoadingProgress(70, tr("News Editor: news.ini wird gelesen..."));
+    reportLoadingProgress(70, tr("News Editor: Reading news.ini..."));
     loadNewsFile(newsPath);
     reportLoadingProgress(88, tr("News Editor: Filling tables..."));
     rebuildBaseCounts();
@@ -437,7 +437,7 @@ void NewsRumorEditor::loadBases(const QString &dataDir)
     const IniDocument doc = IniParser::parseFile(universePath);
     NewsBaseRecord all;
     all.nickname = QStringLiteral("*");
-    all.displayName = tr("Alle Bases");
+    all.displayName = tr("All Bases");
     all.system = QStringLiteral("-");
     all.searchBlob = QStringLiteral("alle bases all");
     m_bases.append(all);
@@ -658,7 +658,7 @@ void NewsRumorEditor::showEntryInDetail(int entryIndex)
         m_iconEdit->clear();
         m_logoEdit->clear();
         m_autoselectCheck->setChecked(false);
-        m_detailHintLabel->setText(tr("Wähle eine News aus."));
+        m_detailHintLabel->setText(tr("Select a news item."));
         m_populating = false;
         return;
     }
@@ -674,7 +674,7 @@ void NewsRumorEditor::showEntryInDetail(int entryIndex)
     m_iconEdit->setText(entry.icon);
     m_logoEdit->setText(entry.logo);
     m_autoselectCheck->setChecked(entry.autoselect);
-    m_detailHintLabel->setText(tr("Headline IDS %1 | Text IDS %2 | %3 Base-Zuweisungen")
+    m_detailHintLabel->setText(tr("Headline IDS %1 | Text IDS %2 | %3 base assignments")
                                    .arg(entry.headlineIds)
                                    .arg(entry.textIds)
                                    .arg(entry.bases.size()));
@@ -742,7 +742,7 @@ bool NewsRumorEditor::save()
     applyDetailToCurrentEntry();
     m_saving = false;
     if (m_newsPath.isEmpty()) {
-        QMessageBox::warning(this, tr("News speichern"), tr("No news.ini loaded."));
+        QMessageBox::warning(this, tr("Save News"), tr("No news.ini loaded."));
         return false;
     }
 
@@ -779,7 +779,7 @@ bool NewsRumorEditor::save()
         const QStringList invalid = invalidBases(entry.bases);
         if (!invalid.isEmpty()) {
             QMessageBox::warning(this,
-                                 tr("News speichern"),
+                                 tr("Save News"),
                                  tr("This news item contains base assignments that do not exist in universe.ini:\n\n%1")
                                      .arg(invalid.join(QLatin1Char('\n'))));
             return false;
@@ -794,7 +794,7 @@ bool NewsRumorEditor::save()
             QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         }
         if (needsHeadlineWrite && !saveIdsText(idsDataset, targetDll, entry.headlineIds, entry.headlineText, &entry.headlineIds, &error)) {
-            QMessageBox::warning(this, tr("News speichern"), tr("Headline could not be saved: %1").arg(error));
+            QMessageBox::warning(this, tr("Save News"), tr("Headline could not be saved: %1").arg(error));
             return false;
         }
         if (needsBodyWrite) {
@@ -802,7 +802,7 @@ bool NewsRumorEditor::save()
             QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         }
         if (needsBodyWrite && !saveIdsText(idsDataset, targetDll, entry.textIds, entry.bodyText, &entry.textIds, &error)) {
-            QMessageBox::warning(this, tr("News speichern"), tr("Text could not be saved: %1").arg(error));
+            QMessageBox::warning(this, tr("Save News"), tr("Text could not be saved: %1").arg(error));
             return false;
         }
         if (entry.categoryIds <= 0)
@@ -813,7 +813,7 @@ bool NewsRumorEditor::save()
     m_statusLabel->setText(tr("Saving news.ini..."));
     QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
     if (!writeNewsFile(&error)) {
-        QMessageBox::warning(this, tr("News speichern"), error);
+        QMessageBox::warning(this, tr("Save News"), error);
         return false;
     }
 
@@ -840,7 +840,7 @@ bool NewsRumorEditor::save()
     rebuildBaseCounts();
     m_currentEntryIndex = savedEntryIndex >= 0 && savedEntryIndex < m_entries.size() ? savedEntryIndex : -1;
     setDirty(false);
-    m_statusLabel->setText(tr("Gespeichert: %1").arg(m_newsPath));
+    m_statusLabel->setText(tr("Saved: %1").arg(m_newsPath));
     return true;
 }
 
@@ -848,7 +848,7 @@ bool NewsRumorEditor::saveIdsText(int currentId, const QString &text, int *outId
 {
     if (text.trimmed().isEmpty()) {
         if (errorMessage)
-            *errorMessage = tr("Text ist leer.");
+            *errorMessage = tr("Text is empty.");
         return false;
     }
     const IdsDataset dataset = IdsDataService::loadFromGameRoot(m_gameRoot);
@@ -876,7 +876,7 @@ bool NewsRumorEditor::saveIdsText(const IdsDataset &dataset,
 {
     if (text.trimmed().isEmpty()) {
         if (errorMessage)
-            *errorMessage = tr("Text ist leer.");
+            *errorMessage = tr("Text is empty.");
         return false;
     }
     if (targetDll.trimmed().isEmpty()) {
@@ -962,8 +962,8 @@ void NewsRumorEditor::addNews()
     entry.rank = QStringLiteral("freetime, freetime");
     entry.icon = QStringLiteral("world");
     entry.logo = QStringLiteral("news_manhattan");
-    entry.headlineText = tr("Neue News");
-    entry.bodyText = tr("News-Text eingeben");
+    entry.headlineText = tr("New News");
+    entry.bodyText = tr("Enter news text");
     entry.headlineTextDirty = true;
     entry.bodyTextDirty = true;
     entry.bases = detailBases();
