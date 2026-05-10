@@ -50,6 +50,7 @@ private:
     void onInstallGitClicked();
     void onInitializeGitClicked();
     void refreshGitPanel();
+    bool shouldRefreshGitPanel() const;
     QString selectedProfileSourcePath() const;
     QString suggestedReferencePath(const QString &modRoot) const;
 
@@ -73,6 +74,8 @@ private:
     QPushButton *m_editCtxBtn = nullptr;
     QPushButton *m_clearCtxBtn = nullptr;
     int m_gitRefreshGeneration = 0;
+    qint64 m_lastGitRefreshMs = 0;
+    QString m_lastGitRefreshPath;
 };
 
 } // namespace flatlas::editors

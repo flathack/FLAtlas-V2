@@ -8,7 +8,9 @@
 #include "core/PathUtils.h"
 
 #include <QDesktopServices>
+#include <QApplication>
 #include <QCheckBox>
+#include <QDateTime>
 #include <QFutureWatcher>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -28,6 +30,7 @@
 #include <QProcess>
 #include <QFileInfo>
 #include <QFileIconProvider>
+#include <QTimer>
 #include <QUrl>
 #include <QtConcurrent>
 
@@ -90,6 +93,17 @@ ModManagerPage::ModManagerPage(QWidget *parent)
         refreshProfileTable();
         refreshGitPanel();
     });
+    connect(qApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
+        if (state == Qt::ApplicationActive && isVisible())
+            refreshGitPanel();
+    });
+    auto *gitRefreshTimer = new QTimer(this);
+    gitRefreshTimer->setInterval(30000);
+    connect(gitRefreshTimer, &QTimer::timeout, this, [this]() {
+        if (qApp->applicationState() == Qt::ApplicationActive && isVisible())
+            refreshGitPanel();
+    });
+    gitRefreshTimer->start();
 }
 
 void ModManagerPage::setupUi()
@@ -199,6 +213,7 @@ void ModManagerPage::setupUi()
     connect(m_gitSupportCheck, &QCheckBox::toggled, this, [this](bool enabled) {
         flatlas::core::Config::instance().setBool(QStringLiteral("gitSupportEnabled"), enabled);
         flatlas::core::Config::instance().save();
+        m_lastGitRefreshMs = 0;
         refreshGitPanel();
     });
     gitLayout->addWidget(m_gitSupportCheck);
@@ -551,11 +566,13 @@ void ModManagerPage::onInitializeGitClicked()
         QMessageBox::warning(this,
                              tr("Git"),
                              tr("Git repository could not be initialized:\n%1").arg(errorMessage));
+        m_lastGitRefreshMs = 0;
         refreshGitPanel();
         return;
     }
 
     m_statusLabel->setText(tr("Git repository initialized."));
+    m_lastGitRefreshMs = 0;
     refreshGitPanel();
 }
 
@@ -566,8 +583,6 @@ void ModManagerPage::refreshGitPanel()
         return;
     }
 
-    m_gitChangesList->clear();
-    m_gitCommitList->clear();
     const bool enabled = m_gitSupportCheck->isChecked();
     m_gitInstallBtn->setVisible(false);
     m_gitInitBtn->setVisible(false);
@@ -575,6 +590,8 @@ void ModManagerPage::refreshGitPanel()
     m_gitTabs->setTabText(0, tr("Changes"));
     m_gitTabs->setTabText(1, tr("History"));
     if (!enabled) {
+        m_gitChangesList->clear();
+        m_gitCommitList->clear();
         m_gitStatusLabel->setText(tr("Git support is disabled."));
         m_gitTabs->setVisible(false);
         return;
@@ -583,12 +600,21 @@ void ModManagerPage::refreshGitPanel()
     const QString path = selectedProfileSourcePath();
     const bool hasPath = !path.trimmed().isEmpty() && QDir(path).exists();
     if (!hasPath) {
+        m_gitChangesList->clear();
+        m_gitCommitList->clear();
         m_gitStatusLabel->setText(tr("Select an installation to view Git information."));
         m_gitInitBtn->setVisible(false);
         m_gitTabs->setVisible(false);
         return;
     }
 
+    if (!shouldRefreshGitPanel())
+        return;
+    m_lastGitRefreshPath = QDir::cleanPath(path);
+    m_lastGitRefreshMs = QDateTime::currentMSecsSinceEpoch();
+
+    m_gitChangesList->clear();
+    m_gitCommitList->clear();
     m_gitTabs->setVisible(true);
     m_gitStatusLabel->setText(tr("Loading Git information..."));
     addGitRow(m_gitChangesList, createGitRow(tr("Loading..."), tr("Reading working tree status."), m_gitChangesList));
@@ -659,6 +685,15 @@ void ModManagerPage::refreshGitPanel()
             data.commits = flatlas::core::GitSupport::recentCommitsForPath(path, 8);
         return data;
     }));
+}
+
+bool ModManagerPage::shouldRefreshGitPanel() const
+{
+    const QString path = QDir::cleanPath(selectedProfileSourcePath());
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (path != m_lastGitRefreshPath)
+        return true;
+    return now - m_lastGitRefreshMs >= 3000;
 }
 
 } // namespace flatlas::editors

@@ -1103,9 +1103,16 @@ void MainWindow::createMenus()
 
     menuBar()->setCornerWidget(cornerWidget);
 
+    connect(qApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
+        if (state == Qt::ApplicationActive)
+            refreshGitStatus();
+    });
     auto *gitTimer = new QTimer(this);
-    gitTimer->setInterval(10000);
-    connect(gitTimer, &QTimer::timeout, this, &MainWindow::refreshGitStatus);
+    gitTimer->setInterval(30000);
+    connect(gitTimer, &QTimer::timeout, this, [this]() {
+        if (qApp->applicationState() == Qt::ApplicationActive)
+            refreshGitStatus();
+    });
     gitTimer->start();
 }
 
