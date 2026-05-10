@@ -677,9 +677,10 @@ QString FreelancerMaterialResolver::resolveTextureValue(const QString &sourcePat
 
 QStringList FreelancerMaterialResolver::textureCandidatesForMesh(const QString &modelPath, const MeshData &mesh)
 {
+    const QString sourcePath = modelPath.trimmed().isEmpty() ? mesh.sourcePath : modelPath;
     QStringList candidates;
 
-    const auto modelMap = extractUtfMaterialTextureMap(modelPath);
+    const auto modelMap = extractUtfMaterialTextureMap(sourcePath);
     const QString materialKey = normalizeMaterialKey(!mesh.materialName.isEmpty() ? mesh.materialName : mesh.materialValue);
     if (!materialKey.isEmpty() && modelMap.contains(materialKey)) {
         for (const QString &candidate : modelMap.value(materialKey))
@@ -693,7 +694,7 @@ QStringList FreelancerMaterialResolver::textureCandidatesForMesh(const QString &
     }
 
     if (!mesh.materialValue.isEmpty() && mesh.materialValue.endsWith(QStringLiteral(".mat"), Qt::CaseInsensitive)) {
-        const QString matPath = resolveTextureValue(modelPath, mesh.materialValue);
+        const QString matPath = resolveTextureValue(sourcePath, mesh.materialValue);
         if (!matPath.isEmpty()) {
             const auto matMap = extractUtfMaterialTextureMap(matPath);
             bool matchedMatMap = false;
@@ -727,9 +728,10 @@ QStringList FreelancerMaterialResolver::textureCandidatesForMesh(const QString &
 
 QString FreelancerMaterialResolver::resolveTexturePathForMesh(const QString &modelPath, const MeshData &mesh)
 {
-    const QStringList candidates = textureCandidatesForMesh(modelPath, mesh);
+    const QString sourcePath = modelPath.trimmed().isEmpty() ? mesh.sourcePath : modelPath;
+    const QStringList candidates = textureCandidatesForMesh(sourcePath, mesh);
     for (const QString &candidate : candidates) {
-        const QString path = resolveTextureValue(modelPath, candidate);
+        const QString path = resolveTextureValue(sourcePath, candidate);
         if (!path.isEmpty())
             return path;
     }
@@ -738,8 +740,9 @@ QString FreelancerMaterialResolver::resolveTexturePathForMesh(const QString &mod
 
 QImage FreelancerMaterialResolver::resolveEmbeddedTextureForMesh(const QString &modelPath, const MeshData &mesh)
 {
-    const QStringList candidates = textureCandidatesForMesh(modelPath, mesh);
-    const auto modelTextures = extractUtfEmbeddedTextures(modelPath);
+    const QString sourcePath = modelPath.trimmed().isEmpty() ? mesh.sourcePath : modelPath;
+    const QStringList candidates = textureCandidatesForMesh(sourcePath, mesh);
+    const auto modelTextures = extractUtfEmbeddedTextures(sourcePath);
     for (const QString &candidate : candidates) {
         for (const QString &key : textureKeysForName(candidate)) {
             const auto it = modelTextures.constFind(key);
@@ -749,7 +752,7 @@ QImage FreelancerMaterialResolver::resolveEmbeddedTextureForMesh(const QString &
     }
 
     if (!mesh.materialValue.isEmpty() && mesh.materialValue.endsWith(QStringLiteral(".mat"), Qt::CaseInsensitive)) {
-        const QString matPath = resolveTextureValue(modelPath, mesh.materialValue);
+        const QString matPath = resolveTextureValue(sourcePath, mesh.materialValue);
         if (!matPath.isEmpty()) {
             const auto matTextures = extractUtfEmbeddedTextures(matPath);
             for (const QString &candidate : candidates) {
@@ -806,13 +809,14 @@ QStringList FreelancerMaterialResolver::candidateMaterialLibraryPaths(const QStr
 
 QImage FreelancerMaterialResolver::resolveExternalMaterialTextureForMesh(const QString &modelPath, const MeshData &mesh)
 {
+    const QString sourcePath = modelPath.trimmed().isEmpty() ? mesh.sourcePath : modelPath;
     if (materialIdsForMesh(mesh).isEmpty()) {
         const QString materialKey = normalizeMaterialKey(!mesh.materialName.isEmpty() ? mesh.materialName : mesh.materialValue);
         if (materialKey.isEmpty())
             return {};
     }
 
-    const QStringList matPaths = candidateMaterialLibraryPaths(modelPath);
+    const QStringList matPaths = candidateMaterialLibraryPaths(sourcePath);
     for (const QString &matPath : matPaths) {
         const auto materialMap = extractUtfMaterialTextureMap(matPath);
         QStringList textureValues;
@@ -857,15 +861,16 @@ QImage FreelancerMaterialResolver::resolveExternalMaterialTextureForMesh(const Q
 
 QImage FreelancerMaterialResolver::loadTextureForMesh(const QString &modelPath, const MeshData &mesh)
 {
-    const QImage embedded = resolveEmbeddedTextureForMesh(modelPath, mesh);
+    const QString sourcePath = modelPath.trimmed().isEmpty() ? mesh.sourcePath : modelPath;
+    const QImage embedded = resolveEmbeddedTextureForMesh(sourcePath, mesh);
     if (!embedded.isNull())
         return embedded;
 
-    const QString path = resolveTexturePathForMesh(modelPath, mesh);
+    const QString path = resolveTexturePathForMesh(sourcePath, mesh);
     if (!path.isEmpty())
         return TextureLoader::load(path);
 
-    return resolveExternalMaterialTextureForMesh(modelPath, mesh);
+    return resolveExternalMaterialTextureForMesh(sourcePath, mesh);
 }
 
 PlanetSurfaceTextureSet FreelancerMaterialResolver::loadPlanetSurfaceTextures(const QStringList &sourcePaths)

@@ -51,6 +51,7 @@ struct StructuredMeshHeader {
 QVector<StructuredMeshHeader> parseStructuredMeshHeaders(const QByteArray &vmeshData);
 
 bool sanitizeMesh(MeshData &mesh);
+void annotateModelSourcePath(ModelNode *node, const QString &sourcePath);
 QString matchedPartNameForRef(const VMeshRefRecord &ref,
                               const QVector<NativeModelPart> &parts,
                               const QVector<FlatUtfNode> &nodes);
@@ -3084,6 +3085,18 @@ bool sanitizeMesh(MeshData &mesh)
     return true;
 }
 
+void annotateModelSourcePath(ModelNode *node, const QString &sourcePath)
+{
+    if (!node)
+        return;
+    for (MeshData &mesh : node->meshes) {
+        if (mesh.sourcePath.isEmpty())
+            mesh.sourcePath = sourcePath;
+    }
+    for (ModelNode &child : node->children)
+        annotateModelSourcePath(&child, sourcePath);
+}
+
 QVector<MeshData> decodeMeshVariantsFromBlock(const QByteArray &blockBytes)
 {
     QVector<MeshData> meshes;
@@ -3715,6 +3728,7 @@ DecodedModel CmpLoader::loadModel(const QString &filePath)
         }
     }
 
+    annotateModelSourcePath(&root, result.sourcePath);
     result.rootNode = root;
     return result;
 }

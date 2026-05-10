@@ -28,6 +28,7 @@ struct MeshData {
     QString materialName;
     QString textureName;
     QString materialValue;
+    QString sourcePath;
     QStringList textureCandidates;
     QString matchHint;
     QString debugHint;

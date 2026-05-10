@@ -305,6 +305,53 @@ private slots:
                                 .arg(meshCount)
                                 .arg(unresolvedMaterials.join(QStringLiteral(", ")))));
     }
+
+    void loadLi01_07StationTexturesFromExternalMaterialLibrary()
+    {
+        const QStringList modelPaths{
+            QStringLiteral("C:/Users/steve/Github/FL-Installationen/TESTMOD1/DATA/SOLAR/DOCKABLE/space_factory01.cmp"),
+            QStringLiteral("C:/Users/steve/Github/FL-Installationen/TESTMOD1/DATA/SOLAR/DOCKABLE/shipyard_a.3db"),
+        };
+        const QString matPath =
+            QStringLiteral("C:/Users/steve/Github/FL-Installationen/TESTMOD1/DATA/SOLAR/Solar_mat_tink.mat");
+        for (const QString &modelPath : modelPaths) {
+            if (!QFileInfo::exists(modelPath) || !QFileInfo::exists(matPath))
+                QSKIP("TESTMOD1 Li01_07 station material fixture is not available on this machine.");
+
+            const DecodedModel decoded = CmpLoader::loadModel(modelPath);
+            QVERIFY2(decoded.isValid(), qPrintable(QStringLiteral("Invalid model: %1").arg(modelPath)));
+
+            int meshCount = 0;
+            int texturedMeshCount = 0;
+            QStringList unresolvedMaterials;
+            std::function<void(const ModelNode &)> walk = [&](const ModelNode &node) {
+                for (const MeshData &mesh : node.meshes) {
+                    ++meshCount;
+                    const QImage image = FreelancerMaterialResolver::loadTextureForMesh(QString(), mesh);
+                    if (!image.isNull()) {
+                        ++texturedMeshCount;
+                    } else if (!mesh.materialName.isEmpty() || !mesh.materialValue.isEmpty()) {
+                        unresolvedMaterials.append(QStringLiteral("%1:%2:%3")
+                                                       .arg(mesh.materialId)
+                                                       .arg(mesh.materialName, mesh.materialValue));
+                    } else {
+                        unresolvedMaterials.append(QStringLiteral("%1:<empty>").arg(mesh.materialId));
+                    }
+                }
+                for (const ModelNode &child : node.children)
+                    walk(child);
+            };
+            walk(decoded.rootNode);
+
+            QVERIFY2(meshCount > 0, qPrintable(QStringLiteral("No meshes decoded for %1").arg(modelPath)));
+            QVERIFY2(texturedMeshCount == meshCount,
+                     qPrintable(QStringLiteral("Only %1 of %2 Li01_07 station meshes resolved textures for %3; unresolved=%4")
+                                    .arg(texturedMeshCount)
+                                    .arg(meshCount)
+                                    .arg(modelPath)
+                                    .arg(unresolvedMaterials.join(QStringLiteral(", ")))));
+        }
+    }
 };
 
 QTEST_GUILESS_MAIN(TestTextureLoader)
