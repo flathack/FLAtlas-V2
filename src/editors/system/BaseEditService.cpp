@@ -288,6 +288,8 @@ struct RoomSceneDefaults {
     QString startScript;
     QString music;
     QString ambient;
+    QStringList animations;
+    QStringList extraScenes;
     bool sceneAmbientOnly = false;
     bool valid = false;
 };
@@ -1436,6 +1438,58 @@ void setRoomSectionValue(QStringList *lines, const QString &sectionName, const Q
     lines->insert(insertIndex, QStringLiteral("%1 = %2").arg(key, value.trimmed()));
 }
 
+void setRoomSectionValues(QStringList *lines, const QString &sectionName, const QString &key, const QStringList &values)
+{
+    if (!lines)
+        return;
+
+    int start = sectionStartIndex(*lines, sectionName);
+    if (start < 0) {
+        if (values.isEmpty())
+            return;
+        while (!lines->isEmpty() && lines->constLast().trimmed().isEmpty())
+            lines->removeLast();
+        if (!lines->isEmpty())
+            lines->append(QString());
+        lines->append(QStringLiteral("[%1]").arg(sectionName));
+        for (const QString &value : values) {
+            if (!value.trimmed().isEmpty())
+                lines->append(QStringLiteral("%1 = %2").arg(key, value.trimmed()));
+        }
+        lines->append(QString());
+        return;
+    }
+
+    int end = sectionEndIndex(*lines, start);
+    int firstKeyIndex = -1;
+    for (int index = start + 1; index < end;) {
+        const QString trimmed = lines->at(index).trimmed();
+        const int eq = trimmed.indexOf(QLatin1Char('='));
+        const QString existingKey = eq >= 0 ? trimmed.left(eq).trimmed() : QString();
+        if (existingKey.compare(key, Qt::CaseInsensitive) != 0) {
+            ++index;
+            continue;
+        }
+        if (firstKeyIndex < 0)
+            firstKeyIndex = index;
+        lines->removeAt(index);
+        --end;
+    }
+
+    if (values.isEmpty())
+        return;
+
+    int insertIndex = firstKeyIndex >= 0 ? firstKeyIndex : end;
+    while (insertIndex > start + 1 && lines->at(insertIndex - 1).trimmed().isEmpty())
+        --insertIndex;
+    for (const QString &value : values) {
+        if (value.trimmed().isEmpty())
+            continue;
+        lines->insert(insertIndex, QStringLiteral("%1 = %2").arg(key, value.trimmed()));
+        ++insertIndex;
+    }
+}
+
 QString applyRoomSceneSelection(QString content,
                                 const QString &roomName,
                                 const QString &scenePath,
@@ -1464,12 +1518,19 @@ QString applyRoomSceneSelection(QString content,
     const QString startScript = sceneDefaults.valid && !sceneDefaults.startScript.isEmpty()
         ? sceneDefaults.startScript
         : startScriptForScene(roomName, scene);
+    QStringList sceneValues;
+    sceneValues.append(QStringLiteral("%1, %2").arg(ambientOnly ? QStringLiteral("ambient") : QStringLiteral("all, ambient"), scene));
+    if (sceneDefaults.valid) {
+        for (const QString &extraScene : sceneDefaults.extraScenes) {
+            if (!extraScene.trimmed().isEmpty())
+                sceneValues.append(extraScene.trimmed());
+        }
+    }
 
     setRoomSectionValue(&lines, QStringLiteral("Room_Info"), QStringLiteral("set_script"), setScript);
-    setRoomSectionValue(&lines,
-                        QStringLiteral("Room_Info"),
-                        QStringLiteral("scene"),
-                        QStringLiteral("%1, %2").arg(ambientOnly ? QStringLiteral("ambient") : QStringLiteral("all, ambient"), scene));
+    if (sceneDefaults.valid || room == QStringLiteral("bar"))
+        setRoomSectionValues(&lines, QStringLiteral("Room_Info"), QStringLiteral("animation"), sceneDefaults.animations);
+    setRoomSectionValues(&lines, QStringLiteral("Room_Info"), QStringLiteral("scene"), sceneValues);
     setRoomSectionValue(&lines, QStringLiteral("Room_Sound"), QStringLiteral("music"), music);
     setRoomSectionValue(&lines, QStringLiteral("Room_Sound"), QStringLiteral("ambient"), ambient);
     setRoomSectionValue(&lines, QStringLiteral("CharacterPlacement"), QStringLiteral("start_script"), startScript);
@@ -1662,13 +1723,20 @@ RoomSceneDefaults roomSceneDefaultsFromText(const QString &content, const QStrin
             for (const auto &entry : section.entries) {
                 if (entry.first.compare(QStringLiteral("set_script"), Qt::CaseInsensitive) == 0) {
                     defaults.setScript = entry.second.trimmed();
+                } else if (entry.first.compare(QStringLiteral("animation"), Qt::CaseInsensitive) == 0) {
+                    const QString animation = entry.second.trimmed();
+                    if (!animation.isEmpty())
+                        defaults.animations.append(animation);
                 } else if (entry.first.compare(QStringLiteral("scene"), Qt::CaseInsensitive) == 0) {
                     const QStringList parts = entry.second.split(QLatin1Char(','), Qt::SkipEmptyParts);
-                    if (parts.isEmpty())
+                    const QString sceneValue = entry.second.trimmed();
+                    if (parts.isEmpty() || sceneValue.isEmpty())
                         continue;
                     const QString existingScene = parts.constLast().trimmed();
-                    if (normalizedScenePathKey(existingScene) != wantedScene)
+                    if (normalizedScenePathKey(existingScene) != wantedScene) {
+                        defaults.extraScenes.append(sceneValue);
                         continue;
+                    }
                     sceneMatched = true;
                     defaults.sceneAmbientOnly = parts.constFirst().trimmed().compare(QStringLiteral("ambient"), Qt::CaseInsensitive) == 0;
                 }
@@ -1737,8 +1805,20 @@ QString generateRoomIniText(const QString &roomName,
     } else {
         lines << QStringLiteral("scene = all, ambient, %1").arg(scene);
     }
+    if (sceneDefaults.valid) {
+        for (const QString &extraScene : sceneDefaults.extraScenes) {
+            if (!extraScene.trimmed().isEmpty())
+                lines << QStringLiteral("scene = %1").arg(extraScene.trimmed());
+        }
+    }
     if (room == QStringLiteral("cityscape") || room == QStringLiteral("deck"))
         lines << QStringLiteral("animation = Sc_loop");
+    if (sceneDefaults.valid) {
+        for (const QString &animation : sceneDefaults.animations) {
+            if (!animation.trimmed().isEmpty())
+                lines << QStringLiteral("animation = %1").arg(animation.trimmed());
+        }
+    }
     if (room == QStringLiteral("equipment") && scene.toLower().contains(QStringLiteral("bw_01_equipment_ambi_int_01")))
         lines << QStringLiteral("goodscart_script = scripts\\bases\\bw_01_equipment_carts_01.thn");
 

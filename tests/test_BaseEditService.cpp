@@ -23,6 +23,7 @@ private slots:
     void createGeneratedInteriorBarUsesMatchingRoomDefaults();
     void createGeneratedBarUsesExistingSceneDefaults();
     void editExistingBarAppliesSceneDefaultsWhenSceneChanges();
+    void createGeneratedTraderUsesExistingAnimationDefaults();
     void createFromTemplateCopiesRoomContentAndNpcData();
 };
 
@@ -623,6 +624,7 @@ void TestBaseEditService::createGeneratedBarUsesExistingSceneDefaults()
     writeTextFile(dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/BASES/ROOMS/li01_09_bar.ini",
                   "[Room_Info]\n"
                   "set_script = scripts\\bases\\li_09_Bar_hardpoint_R6.thn\n"
+                  "animation = Sc_rh_bizmark_bar\n"
                   "scene = ambient, scripts\\bases\\li_09_bar_ambi_Li01_09.thn\n\n"
                   "[Room_Sound]\n"
                   "music = music_bar_generic09\n"
@@ -654,12 +656,69 @@ void TestBaseEditService::createGeneratedBarUsesExistingSceneDefaults()
 
         sawBar = true;
         QVERIFY(write.content.contains(QStringLiteral("set_script = scripts\\bases\\li_09_Bar_hardpoint_R6.thn")));
+        QVERIFY(write.content.contains(QStringLiteral("animation = Sc_rh_bizmark_bar")));
         QVERIFY(write.content.contains(QStringLiteral("scene = ambient, scripts\\bases\\li_09_bar_ambi_Li01_09.thn")));
         QVERIFY(write.content.contains(QStringLiteral("music = music_bar_generic09")));
         QVERIFY(write.content.contains(QStringLiteral("ambient = ambience_bar_ground_smaller")));
         QVERIFY(write.content.contains(QStringLiteral("start_script = Scripts\\Bases\\li_09_bar_enter_01.thn")));
     }
     QVERIFY(sawBar);
+}
+
+void TestBaseEditService::createGeneratedTraderUsesExistingAnimationDefaults()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString gameRoot = dir.path();
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/UNIVERSE"));
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/UNIVERSE/SYSTEMS/RH01/BASES/ROOMS"));
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01"));
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/MISSIONS"));
+
+    const QString systemPath = dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/li01.ini";
+    writeTextFile(systemPath, "[SystemInfo]\nnickname = Li01\n");
+    writeTextFile(dir.path() + "/DATA/UNIVERSE/universe.ini", QString());
+    writeTextFile(dir.path() + "/DATA/MISSIONS/mbases.ini", QString());
+    writeTextFile(dir.path() + "/DATA/UNIVERSE/SYSTEMS/RH01/BASES/ROOMS/rh01_01_trader.ini",
+                  "[Room_Info]\n"
+                  "set_script = Scripts\\Bases\\Rh_01_Trader_hardpoint_01.thn\n"
+                  "scene = all, ambient, Scripts\\Bases\\Rh_01_Trader_ambi_int_01.thn\n"
+                  "animation = Sc_rotate fan\n"
+                  "animation = Sc_loop\n\n"
+                  "[Room_Sound]\n"
+                  "ambient = ambience_comm\n\n"
+                  "[CharacterPlacement]\n"
+                  "name = Zg/PC/Player/01/A/Stand\n");
+
+    SystemDocument document;
+    document.setName("Li01");
+    document.setFilePath(systemPath);
+
+    BaseEditState state = BaseEditService::makeCreateState(document, gameRoot);
+    state.displayName.clear();
+    state.infocardXml.clear();
+    for (BaseRoomState &room : state.rooms) {
+        if (room.roomName.compare(QStringLiteral("Trader"), Qt::CaseInsensitive) == 0)
+            room.scenePath = QStringLiteral("Scripts\\Bases\\Rh_01_Trader_ambi_int_01.thn");
+    }
+
+    BaseApplyResult result;
+    QString errorMessage;
+    QVERIFY2(BaseEditService::applyCreate(state, QPointF(0.0, 0.0), gameRoot, {}, &result, &errorMessage), qPrintable(errorMessage));
+
+    bool sawTrader = false;
+    for (const BaseStagedWrite &write : result.stagedWrites) {
+        if (!write.absolutePath.endsWith(QStringLiteral("_trader.ini"), Qt::CaseInsensitive))
+            continue;
+
+        sawTrader = true;
+        QVERIFY(write.content.contains(QStringLiteral("set_script = Scripts\\Bases\\Rh_01_Trader_hardpoint_01.thn")));
+        QVERIFY(write.content.contains(QStringLiteral("scene = all, ambient, Scripts\\Bases\\Rh_01_Trader_ambi_int_01.thn")));
+        QVERIFY(write.content.contains(QStringLiteral("animation = Sc_rotate fan")));
+        QVERIFY(write.content.contains(QStringLiteral("animation = Sc_loop")));
+    }
+    QVERIFY(sawTrader);
 }
 
 void TestBaseEditService::editExistingBarAppliesSceneDefaultsWhenSceneChanges()
@@ -705,6 +764,7 @@ void TestBaseEditService::editExistingBarAppliesSceneDefaultsWhenSceneChanges()
     writeTextFile(dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/BASES/ROOMS/li01_09_bar.ini",
                   "[Room_Info]\n"
                   "set_script = scripts\\bases\\li_09_Bar_hardpoint_R6.thn\n"
+                  "animation = Sc_rh_bizmark_bar\n"
                   "scene = ambient, scripts\\bases\\li_09_bar_ambi_Li01_09.thn\n\n"
                   "[Room_Sound]\n"
                   "music = music_bar_generic09\n"
@@ -748,6 +808,7 @@ void TestBaseEditService::editExistingBarAppliesSceneDefaultsWhenSceneChanges()
 
         sawBar = true;
         QVERIFY(write.content.contains(QStringLiteral("set_script = scripts\\bases\\li_09_Bar_hardpoint_R6.thn")));
+        QVERIFY(write.content.contains(QStringLiteral("animation = Sc_rh_bizmark_bar")));
         QVERIFY(write.content.contains(QStringLiteral("scene = ambient, scripts\\bases\\li_09_bar_ambi_Li01_09.thn")));
         QVERIFY(write.content.contains(QStringLiteral("music = music_bar_generic09")));
         QVERIFY(write.content.contains(QStringLiteral("ambient = ambience_bar_ground_smaller")));
