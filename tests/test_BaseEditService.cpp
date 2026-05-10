@@ -19,6 +19,10 @@ private slots:
     void createNormalizesDisplayedReputationNickname();
     void createWithoutShipDealerDoesNotWriteShipDealerHotspot();
     void createGeneratedRoomsUseSceneSpecificFreelancerDefaults();
+    void createGeneratedLi01BarUsesLi01RoomDefaults();
+    void createGeneratedInteriorBarUsesMatchingRoomDefaults();
+    void createGeneratedBarUsesExistingSceneDefaults();
+    void editExistingBarAppliesSceneDefaultsWhenSceneChanges();
     void createFromTemplateCopiesRoomContentAndNpcData();
 };
 
@@ -479,6 +483,7 @@ void TestBaseEditService::createGeneratedRoomsUseSceneSpecificFreelancerDefaults
         } else if (write.absolutePath.endsWith(QStringLiteral("_bar.ini"), Qt::CaseInsensitive)) {
             sawBar = true;
             QVERIFY(write.content.contains(QStringLiteral("set_script = scripts\\bases\\cv_01_Bar_hardpoint_01.thn")));
+            QVERIFY(write.content.contains(QStringLiteral("scene = ambient, scripts\\bases\\cv_01_bar_ambi_Ku05_04.thn")));
             QVERIFY(write.content.contains(QStringLiteral("start_script = Scripts\\Bases\\cv_01_bar_enter_01.thn")));
             QVERIFY(write.content.contains(QStringLiteral("music = music_bar_generic07")));
             QVERIFY(write.content.contains(QStringLiteral("name = IDS_HOTSPOT_NEWSVENDOR")));
@@ -508,6 +513,249 @@ void TestBaseEditService::createGeneratedRoomsUseSceneSpecificFreelancerDefaults
     QVERIFY(sawEquipment);
     QVERIFY(sawShipDealer);
     QVERIFY(sawMbase);
+}
+
+void TestBaseEditService::createGeneratedLi01BarUsesLi01RoomDefaults()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString gameRoot = dir.path();
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/UNIVERSE"));
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01"));
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/MISSIONS"));
+
+    const QString systemPath = dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/li01.ini";
+    writeTextFile(systemPath, "[SystemInfo]\nnickname = Li01\n");
+    writeTextFile(dir.path() + "/DATA/UNIVERSE/universe.ini", QString());
+    writeTextFile(dir.path() + "/DATA/MISSIONS/mbases.ini", QString());
+
+    SystemDocument document;
+    document.setName("Li01");
+    document.setFilePath(systemPath);
+
+    BaseEditState state = BaseEditService::makeCreateState(document, gameRoot);
+    state.displayName.clear();
+    state.infocardXml.clear();
+    for (BaseRoomState &room : state.rooms) {
+        if (room.roomName.compare(QStringLiteral("Bar"), Qt::CaseInsensitive) == 0)
+            room.scenePath = QStringLiteral("Scripts\\Bases\\Li_01_Bar_ambi_int_01.thn");
+    }
+
+    BaseApplyResult result;
+    QString errorMessage;
+    QVERIFY2(BaseEditService::applyCreate(state, QPointF(0.0, 0.0), gameRoot, {}, &result, &errorMessage), qPrintable(errorMessage));
+
+    bool sawBar = false;
+    for (const BaseStagedWrite &write : result.stagedWrites) {
+        if (!write.absolutePath.endsWith(QStringLiteral("_bar.ini"), Qt::CaseInsensitive))
+            continue;
+
+        sawBar = true;
+        QVERIFY(write.content.contains(QStringLiteral("set_script = Scripts\\Bases\\Li_01_Bar_hardpoint_01.thn")));
+        QVERIFY(write.content.contains(QStringLiteral("scene = all, ambient, Scripts\\Bases\\Li_01_Bar_ambi_int_01.thn")));
+        QVERIFY(write.content.contains(QStringLiteral("music = music_bar_li01")));
+        QVERIFY(write.content.contains(QStringLiteral("ambient = ambience_bar_ground_larger")));
+        QVERIFY(write.content.contains(QStringLiteral("start_script = Scripts\\Bases\\Li_01_Bar_enter_01.thn")));
+    }
+    QVERIFY(sawBar);
+}
+
+void TestBaseEditService::createGeneratedInteriorBarUsesMatchingRoomDefaults()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString gameRoot = dir.path();
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/UNIVERSE"));
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01"));
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/MISSIONS"));
+
+    const QString systemPath = dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/li01.ini";
+    writeTextFile(systemPath, "[SystemInfo]\nnickname = Li01\n");
+    writeTextFile(dir.path() + "/DATA/UNIVERSE/universe.ini", QString());
+    writeTextFile(dir.path() + "/DATA/MISSIONS/mbases.ini", QString());
+
+    SystemDocument document;
+    document.setName("Li01");
+    document.setFilePath(systemPath);
+
+    BaseEditState state = BaseEditService::makeCreateState(document, gameRoot);
+    state.displayName.clear();
+    state.infocardXml.clear();
+    for (BaseRoomState &room : state.rooms) {
+        if (room.roomName.compare(QStringLiteral("Bar"), Qt::CaseInsensitive) == 0)
+            room.scenePath = QStringLiteral("Scripts\\Bases\\Li_05_Bar_ambi_int_01.thn");
+    }
+
+    BaseApplyResult result;
+    QString errorMessage;
+    QVERIFY2(BaseEditService::applyCreate(state, QPointF(0.0, 0.0), gameRoot, {}, &result, &errorMessage), qPrintable(errorMessage));
+
+    bool sawBar = false;
+    for (const BaseStagedWrite &write : result.stagedWrites) {
+        if (!write.absolutePath.endsWith(QStringLiteral("_bar.ini"), Qt::CaseInsensitive))
+            continue;
+
+        sawBar = true;
+        QVERIFY(write.content.contains(QStringLiteral("set_script = Scripts\\Bases\\Li_05_Bar_hardpoint_01.thn")));
+        QVERIFY(write.content.contains(QStringLiteral("scene = all, ambient, Scripts\\Bases\\Li_05_Bar_ambi_int_01.thn")));
+        QVERIFY(write.content.contains(QStringLiteral("ambient = ambience_bar_ground_larger")));
+        QVERIFY(write.content.contains(QStringLiteral("start_script = Scripts\\Bases\\Li_05_Bar_enter_01.thn")));
+    }
+    QVERIFY(sawBar);
+}
+
+void TestBaseEditService::createGeneratedBarUsesExistingSceneDefaults()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString gameRoot = dir.path();
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/UNIVERSE"));
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/BASES/ROOMS"));
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/MISSIONS"));
+
+    const QString systemPath = dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/li01.ini";
+    writeTextFile(systemPath, "[SystemInfo]\nnickname = Li01\n");
+    writeTextFile(dir.path() + "/DATA/UNIVERSE/universe.ini", QString());
+    writeTextFile(dir.path() + "/DATA/MISSIONS/mbases.ini", QString());
+    writeTextFile(dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/BASES/ROOMS/li01_09_bar.ini",
+                  "[Room_Info]\n"
+                  "set_script = scripts\\bases\\li_09_Bar_hardpoint_R6.thn\n"
+                  "scene = ambient, scripts\\bases\\li_09_bar_ambi_Li01_09.thn\n\n"
+                  "[Room_Sound]\n"
+                  "music = music_bar_generic09\n"
+                  "ambient = ambience_bar_ground_smaller\n\n"
+                  "[CharacterPlacement]\n"
+                  "name = Zg/PC/Player/01/A/Stand\n"
+                  "start_script = Scripts\\Bases\\li_09_bar_enter_01.thn\n");
+
+    SystemDocument document;
+    document.setName("Li01");
+    document.setFilePath(systemPath);
+
+    BaseEditState state = BaseEditService::makeCreateState(document, gameRoot);
+    state.displayName.clear();
+    state.infocardXml.clear();
+    for (BaseRoomState &room : state.rooms) {
+        if (room.roomName.compare(QStringLiteral("Bar"), Qt::CaseInsensitive) == 0)
+            room.scenePath = QStringLiteral("scripts\\bases\\li_09_bar_ambi_Li01_09.thn");
+    }
+
+    BaseApplyResult result;
+    QString errorMessage;
+    QVERIFY2(BaseEditService::applyCreate(state, QPointF(0.0, 0.0), gameRoot, {}, &result, &errorMessage), qPrintable(errorMessage));
+
+    bool sawBar = false;
+    for (const BaseStagedWrite &write : result.stagedWrites) {
+        if (!write.absolutePath.endsWith(QStringLiteral("_bar.ini"), Qt::CaseInsensitive))
+            continue;
+
+        sawBar = true;
+        QVERIFY(write.content.contains(QStringLiteral("set_script = scripts\\bases\\li_09_Bar_hardpoint_R6.thn")));
+        QVERIFY(write.content.contains(QStringLiteral("scene = ambient, scripts\\bases\\li_09_bar_ambi_Li01_09.thn")));
+        QVERIFY(write.content.contains(QStringLiteral("music = music_bar_generic09")));
+        QVERIFY(write.content.contains(QStringLiteral("ambient = ambience_bar_ground_smaller")));
+        QVERIFY(write.content.contains(QStringLiteral("start_script = Scripts\\Bases\\li_09_bar_enter_01.thn")));
+    }
+    QVERIFY(sawBar);
+}
+
+void TestBaseEditService::editExistingBarAppliesSceneDefaultsWhenSceneChanges()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString gameRoot = dir.path();
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/BASES/ROOMS"));
+    QVERIFY(QDir().mkpath(dir.path() + "/DATA/MISSIONS"));
+
+    const QString systemPath = dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/li01.ini";
+    writeTextFile(systemPath, "[SystemInfo]\nnickname = Li01\n");
+    writeTextFile(dir.path() + "/DATA/UNIVERSE/universe.ini",
+                  "[Base]\n"
+                  "nickname = Li01_20_Base\n"
+                  "system = Li01\n"
+                  "file = Universe\\Systems\\LI01\\BASES\\li01_20_base.ini\n");
+    writeTextFile(dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/BASES/li01_20_base.ini",
+                  "[BaseInfo]\n"
+                  "nickname = Li01_20_Base\n"
+                  "start_room = Deck\n\n"
+                  "[Room]\n"
+                  "nickname = Deck\n"
+                  "file = Universe\\Systems\\LI01\\BASES\\ROOMS\\li01_20_deck.ini\n\n"
+                  "[Room]\n"
+                  "nickname = Bar\n"
+                  "file = Universe\\Systems\\LI01\\BASES\\ROOMS\\li01_20_bar.ini\n");
+    writeTextFile(dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/BASES/ROOMS/li01_20_deck.ini",
+                  "[Room_Info]\n"
+                  "set_script = Scripts\\Bases\\Li_08_Deck_hardpoint_01.thn\n"
+                  "scene = all, ambient, Scripts\\Bases\\Li_08_Deck_ambi_int_01.thn\n");
+    writeTextFile(dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/BASES/ROOMS/li01_20_bar.ini",
+                  "[Room_Info]\n"
+                  "set_script = Scripts\\Bases\\Li_01_Bar_hardpoint_01.thn\n"
+                  "scene = all, ambient, Scripts\\Bases\\Li_01_Bar_ambi_int_01.thn\n\n"
+                  "[Room_Sound]\n"
+                  "music = music_bar_li01\n"
+                  "ambient = ambience_bar_ground_larger\n\n"
+                  "[CharacterPlacement]\n"
+                  "name = Zg/PC/Player/01/A/Stand\n"
+                  "start_script = scripts\\bases\\Li_01_Bar_enter_01.thn\n");
+    writeTextFile(dir.path() + "/DATA/UNIVERSE/SYSTEMS/LI01/BASES/ROOMS/li01_09_bar.ini",
+                  "[Room_Info]\n"
+                  "set_script = scripts\\bases\\li_09_Bar_hardpoint_R6.thn\n"
+                  "scene = ambient, scripts\\bases\\li_09_bar_ambi_Li01_09.thn\n\n"
+                  "[Room_Sound]\n"
+                  "music = music_bar_generic09\n"
+                  "ambient = ambience_bar_ground_smaller\n\n"
+                  "[CharacterPlacement]\n"
+                  "name = Zg/PC/Player/01/A/Stand\n"
+                  "start_script = Scripts\\Bases\\li_09_bar_enter_01.thn\n");
+    writeTextFile(dir.path() + "/DATA/MISSIONS/mbases.ini",
+                  "[MBase]\n"
+                  "nickname = Li01_20_Base\n"
+                  "local_faction = li_n_grp\n"
+                  "diff = 1\n"
+                  "msg_id_prefix = gcs_refer_base_Li01_20_Base\n");
+
+    SystemDocument document;
+    document.setName("Li01");
+    document.setFilePath(systemPath);
+
+    SolarObject object;
+    object.setNickname(QStringLiteral("Li01_20"));
+    object.setArchetype(QStringLiteral("space_station"));
+    object.setBase(QStringLiteral("Li01_20_Base"));
+    object.setRawEntries({{QStringLiteral("base"), QStringLiteral("Li01_20_Base")},
+                          {QStringLiteral("reputation"), QStringLiteral("li_n_grp")}});
+
+    BaseEditState state;
+    QString errorMessage;
+    QVERIFY2(BaseEditService::loadState(document, object, gameRoot, {}, &state, &errorMessage), qPrintable(errorMessage));
+    for (BaseRoomState &room : state.rooms) {
+        if (room.roomName.compare(QStringLiteral("Bar"), Qt::CaseInsensitive) == 0)
+            room.scenePath = QStringLiteral("scripts\\bases\\li_09_bar_ambi_Li01_09.thn");
+    }
+
+    BaseApplyResult result;
+    QVERIFY2(BaseEditService::applyEdit(object, state, gameRoot, {}, &result, &errorMessage), qPrintable(errorMessage));
+
+    bool sawBar = false;
+    for (const BaseStagedWrite &write : result.stagedWrites) {
+        if (!write.absolutePath.endsWith(QStringLiteral("li01_20_bar.ini"), Qt::CaseInsensitive))
+            continue;
+
+        sawBar = true;
+        QVERIFY(write.content.contains(QStringLiteral("set_script = scripts\\bases\\li_09_Bar_hardpoint_R6.thn")));
+        QVERIFY(write.content.contains(QStringLiteral("scene = ambient, scripts\\bases\\li_09_bar_ambi_Li01_09.thn")));
+        QVERIFY(write.content.contains(QStringLiteral("music = music_bar_generic09")));
+        QVERIFY(write.content.contains(QStringLiteral("ambient = ambience_bar_ground_smaller")));
+        QVERIFY(write.content.contains(QStringLiteral("start_script = Scripts\\Bases\\li_09_bar_enter_01.thn")));
+        QVERIFY(!write.content.contains(QStringLiteral("Li_01_Bar_hardpoint_01.thn")));
+        QVERIFY(!write.content.contains(QStringLiteral("music_bar_li01")));
+    }
+    QVERIFY(sawBar);
 }
 
 void TestBaseEditService::createFromTemplateCopiesRoomContentAndNpcData()

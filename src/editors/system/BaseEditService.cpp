@@ -11,6 +11,7 @@
 #include "rendering/view2d/MapScene.h"
 
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QRandomGenerator>
@@ -282,10 +283,23 @@ QPair<int, int> mbaseBlockRange(const IniDocument &doc, int mbaseIndex);
 IniSection mbaseNpcSection(const BaseRoomNpcState &npc);
 QString extractScenePath(QString content);
 QStringList virtualRoomNamesFromRoomText(QString content);
+struct RoomSceneDefaults {
+    QString setScript;
+    QString startScript;
+    QString music;
+    QString ambient;
+    bool sceneAmbientOnly = false;
+    bool valid = false;
+};
+QString hardpointScriptForScene(const QString &roomName, const QString &scenePath);
+QString startScriptForScene(const QString &roomName, const QString &scenePath);
+QString roomAmbientForScene(const QString &roomName, const QString &scenePath);
+QString barMusicForScene(const QString &scenePath);
 QString generateRoomIniText(const QString &roomName,
                             const QStringList &allRooms,
                             const QString &startRoom,
-                            const QString &scenePath = {});
+                            const QString &scenePath = {},
+                            const RoomSceneDefaults &sceneDefaults = {});
 QString textForPath(const QString &path, const QHash<QString, QString> &overrides);
 QString resolvedDisplayName(const QString &gameRoot, int idsName);
 
@@ -1346,38 +1360,120 @@ QVector<QPair<QString, QString>> buildOrderedObjectEntries(const BaseEditState &
     return result;
 }
 
-QString overrideRoomScene(QString content, const QString &scenePath)
+int sectionStartIndex(const QStringList &lines, const QString &sectionName)
 {
-    QStringList lines = content.replace(QStringLiteral("\r\n"), QStringLiteral("\n")).replace(QLatin1Char('\r'), QLatin1Char('\n')).split(QLatin1Char('\n'));
-    bool inRoomInfo = false;
-    bool updated = false;
+    const QString wanted = QStringLiteral("[%1]").arg(sectionName);
     for (int index = 0; index < lines.size(); ++index) {
+        if (lines.at(index).trimmed().compare(wanted, Qt::CaseInsensitive) == 0)
+            return index;
+    }
+    return -1;
+}
+
+int sectionEndIndex(const QStringList &lines, int startIndex)
+{
+    if (startIndex < 0)
+        return lines.size();
+    for (int index = startIndex + 1; index < lines.size(); ++index) {
         const QString trimmed = lines.at(index).trimmed();
-        if (trimmed.startsWith(QLatin1Char('[')))
-            inRoomInfo = trimmed.compare(QStringLiteral("[Room_Info]"), Qt::CaseInsensitive) == 0;
-        if (!inRoomInfo)
-            continue;
+        if (trimmed.startsWith(QLatin1Char('[')) && trimmed.endsWith(QLatin1Char(']')))
+            return index;
+    }
+    return lines.size();
+}
+
+void setRoomSectionValue(QStringList *lines, const QString &sectionName, const QString &key, const QString &value)
+{
+    if (!lines)
+        return;
+
+    int start = sectionStartIndex(*lines, sectionName);
+    if (start < 0) {
+        if (value.trimmed().isEmpty())
+            return;
+        while (!lines->isEmpty() && lines->constLast().trimmed().isEmpty())
+            lines->removeLast();
+        if (!lines->isEmpty())
+            lines->append(QString());
+        lines->append(QStringLiteral("[%1]").arg(sectionName));
+        lines->append(QStringLiteral("%1 = %2").arg(key, value.trimmed()));
+        lines->append(QString());
+        return;
+    }
+
+    int end = sectionEndIndex(*lines, start);
+    bool updated = false;
+    for (int index = start + 1; index < end;) {
+        const QString trimmed = lines->at(index).trimmed();
         const int eq = trimmed.indexOf(QLatin1Char('='));
-        if (eq < 0)
+        const QString existingKey = eq >= 0 ? trimmed.left(eq).trimmed() : QString();
+        if (existingKey.compare(key, Qt::CaseInsensitive) != 0) {
+            ++index;
             continue;
-        const QString key = trimmed.left(eq).trimmed();
-        if (key.compare(QStringLiteral("scene"), Qt::CaseInsensitive) != 0)
-            continue;
-        lines[index] = QStringLiteral("scene = all, ambient, %1").arg(scenePath.trimmed());
-        updated = true;
-        break;
-    }
-    if (!updated) {
-        int insertIndex = 0;
-        for (int index = 0; index < lines.size(); ++index) {
-            const QString trimmed = lines.at(index).trimmed();
-            if (trimmed.compare(QStringLiteral("[Room_Info]"), Qt::CaseInsensitive) == 0) {
-                insertIndex = index + 1;
-                break;
-            }
         }
-        lines.insert(insertIndex, QStringLiteral("scene = all, ambient, %1").arg(scenePath.trimmed()));
+        if (value.trimmed().isEmpty()) {
+            lines->removeAt(index);
+            --end;
+            continue;
+        }
+        if (!updated) {
+            (*lines)[index] = QStringLiteral("%1 = %2").arg(key, value.trimmed());
+            updated = true;
+        } else {
+            lines->removeAt(index);
+            --end;
+            continue;
+        }
+        ++index;
     }
+
+    if (updated || value.trimmed().isEmpty())
+        return;
+
+    int insertIndex = end;
+    while (insertIndex > start + 1 && lines->at(insertIndex - 1).trimmed().isEmpty())
+        --insertIndex;
+    lines->insert(insertIndex, QStringLiteral("%1 = %2").arg(key, value.trimmed()));
+}
+
+QString applyRoomSceneSelection(QString content,
+                                const QString &roomName,
+                                const QString &scenePath,
+                                const RoomSceneDefaults &sceneDefaults)
+{
+    const QString scene = scenePath.trimmed();
+    if (scene.isEmpty())
+        return normalizeGeneratedText(content);
+
+    const QString room = normalizeKey(roomName);
+    QStringList lines = content.replace(QStringLiteral("\r\n"), QStringLiteral("\n"))
+                            .replace(QLatin1Char('\r'), QLatin1Char('\n'))
+                            .split(QLatin1Char('\n'));
+
+    const QString setScript = sceneDefaults.valid && !sceneDefaults.setScript.isEmpty()
+        ? sceneDefaults.setScript
+        : hardpointScriptForScene(roomName, scene);
+    const bool ambientOnly = (sceneDefaults.valid && sceneDefaults.sceneAmbientOnly)
+        || (room == QStringLiteral("bar") && scene.toLower().contains(QStringLiteral("cv_01_bar_ambi")));
+    const QString music = sceneDefaults.valid && !sceneDefaults.music.isEmpty()
+        ? sceneDefaults.music
+        : (room == QStringLiteral("bar") ? barMusicForScene(scene) : QString());
+    const QString ambient = sceneDefaults.valid && !sceneDefaults.ambient.isEmpty()
+        ? sceneDefaults.ambient
+        : roomAmbientForScene(roomName, scene);
+    const QString startScript = sceneDefaults.valid && !sceneDefaults.startScript.isEmpty()
+        ? sceneDefaults.startScript
+        : startScriptForScene(roomName, scene);
+
+    setRoomSectionValue(&lines, QStringLiteral("Room_Info"), QStringLiteral("set_script"), setScript);
+    setRoomSectionValue(&lines,
+                        QStringLiteral("Room_Info"),
+                        QStringLiteral("scene"),
+                        QStringLiteral("%1, %2").arg(ambientOnly ? QStringLiteral("ambient") : QStringLiteral("all, ambient"), scene));
+    setRoomSectionValue(&lines, QStringLiteral("Room_Sound"), QStringLiteral("music"), music);
+    setRoomSectionValue(&lines, QStringLiteral("Room_Sound"), QStringLiteral("ambient"), ambient);
+    setRoomSectionValue(&lines, QStringLiteral("CharacterPlacement"), QStringLiteral("start_script"), startScript);
+
     return normalizeGeneratedText(lines.join(QLatin1Char('\n')));
 }
 
@@ -1468,6 +1564,14 @@ QString hardpointScriptForScene(const QString &roomName, const QString &scenePat
         return QStringLiteral("Scripts\\Bases\\br_07_Deck_hardpoint_01.thn");
     if (room == QStringLiteral("bar") && scene.contains(QStringLiteral("cv_01_bar_ambi")))
         return QStringLiteral("scripts\\bases\\cv_01_Bar_hardpoint_01.thn");
+    if (room == QStringLiteral("bar")) {
+        static const QRegularExpression interiorPattern(
+            QStringLiteral(R"(^(.+[\\/])([^\\/]+)_bar_ambi_int_01\.thn$)"),
+            QRegularExpression::CaseInsensitiveOption);
+        const QRegularExpressionMatch match = interiorPattern.match(scenePath.trimmed());
+        if (match.hasMatch())
+            return match.captured(1) + match.captured(2) + QStringLiteral("_Bar_hardpoint_01.thn");
+    }
     if (room == QStringLiteral("trader") && scene.contains(QStringLiteral("bw_02_equipment_ambi_int_trdr")))
         return QStringLiteral("Scripts\\Bases\\Bw_02_Equipment_hardpoint_Trdr.thn");
     if (room == QStringLiteral("equipment") && scene.contains(QStringLiteral("bw_01_equipment_ambi_int_01")))
@@ -1495,6 +1599,14 @@ QString startScriptForScene(const QString &roomName, const QString &scenePath)
     const QString scene = scenePath.toLower();
     if (room == QStringLiteral("bar") && scene.contains(QStringLiteral("cv_01_bar_ambi")))
         return QStringLiteral("Scripts\\Bases\\cv_01_bar_enter_01.thn");
+    if (room == QStringLiteral("bar")) {
+        static const QRegularExpression interiorPattern(
+            QStringLiteral(R"(^(.+[\\/])([^\\/]+)_bar_ambi_int_01\.thn$)"),
+            QRegularExpression::CaseInsensitiveOption);
+        const QRegularExpressionMatch match = interiorPattern.match(scenePath.trimmed());
+        if (match.hasMatch())
+            return match.captured(1) + match.captured(2) + QStringLiteral("_Bar_enter_01.thn");
+    }
     if (room == QStringLiteral("trader") && scene.contains(QStringLiteral("li_01_trader_ambi")))
         return QStringLiteral("scripts\\bases\\Li_01_Trader_enter_01.thn");
     if (room == QStringLiteral("shipdealer") && scene.contains(QStringLiteral("bw_01_shipdealer_ambi")))
@@ -1510,6 +1622,8 @@ QString roomAmbientForScene(const QString &roomName, const QString &scenePath)
     const QString scene = scenePath.toLower();
     if (room == QStringLiteral("deck") && scene.contains(QStringLiteral("br_07_deck_ambi")))
         return QStringLiteral("ambience_deck_space_larger");
+    if (room == QStringLiteral("bar") && scene.contains(QStringLiteral("_bar_ambi_int_01")))
+        return QStringLiteral("ambience_bar_ground_larger");
     if (room == QStringLiteral("equipment"))
         return QStringLiteral("ambience_equip_ground_larger");
     if (room == QStringLiteral("shipdealer"))
@@ -1522,26 +1636,107 @@ QString roomAmbientForScene(const QString &roomName, const QString &scenePath)
 QString barMusicForScene(const QString &scenePath)
 {
     const QString scene = scenePath.toLower();
+    if (scene.contains(QStringLiteral("li_01_bar_ambi")))
+        return QStringLiteral("music_bar_li01");
     if (scene.contains(QStringLiteral("cv_01_bar_ambi")))
         return QStringLiteral("music_bar_generic07");
+    return {};
+}
+
+QString normalizedScenePathKey(const QString &path)
+{
+    return path.trimmed().replace(QLatin1Char('/'), QLatin1Char('\\')).toLower();
+}
+
+RoomSceneDefaults roomSceneDefaultsFromText(const QString &content, const QString &scenePath)
+{
+    RoomSceneDefaults defaults;
+    const QString wantedScene = normalizedScenePathKey(scenePath);
+    if (wantedScene.isEmpty())
+        return defaults;
+
+    const IniDocument doc = IniParser::parseText(content);
+    bool sceneMatched = false;
+    for (const IniSection &section : doc) {
+        if (section.name.compare(QStringLiteral("Room_Info"), Qt::CaseInsensitive) == 0) {
+            for (const auto &entry : section.entries) {
+                if (entry.first.compare(QStringLiteral("set_script"), Qt::CaseInsensitive) == 0) {
+                    defaults.setScript = entry.second.trimmed();
+                } else if (entry.first.compare(QStringLiteral("scene"), Qt::CaseInsensitive) == 0) {
+                    const QStringList parts = entry.second.split(QLatin1Char(','), Qt::SkipEmptyParts);
+                    if (parts.isEmpty())
+                        continue;
+                    const QString existingScene = parts.constLast().trimmed();
+                    if (normalizedScenePathKey(existingScene) != wantedScene)
+                        continue;
+                    sceneMatched = true;
+                    defaults.sceneAmbientOnly = parts.constFirst().trimmed().compare(QStringLiteral("ambient"), Qt::CaseInsensitive) == 0;
+                }
+            }
+        } else if (section.name.compare(QStringLiteral("Room_Sound"), Qt::CaseInsensitive) == 0) {
+            defaults.music = section.value(QStringLiteral("music")).trimmed();
+            defaults.ambient = section.value(QStringLiteral("ambient")).trimmed();
+        } else if (section.name.compare(QStringLiteral("CharacterPlacement"), Qt::CaseInsensitive) == 0) {
+            if (defaults.startScript.isEmpty())
+                defaults.startScript = section.value(QStringLiteral("start_script")).trimmed();
+        }
+    }
+
+    defaults.valid = sceneMatched && !defaults.setScript.isEmpty();
+    return defaults;
+}
+
+RoomSceneDefaults existingRoomSceneDefaults(const QString &roomName,
+                                            const QString &scenePath,
+                                            const QString &gameRoot,
+                                            const QHash<QString, QString> &textOverrides)
+{
+    const QString wantedScene = normalizedScenePathKey(scenePath);
+    if (wantedScene.isEmpty())
+        return {};
+
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
+    const QString universeDir = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("UNIVERSE"));
+    if (universeDir.isEmpty())
+        return {};
+
+    const QString wantedRoom = normalizeKey(roomName);
+    QDirIterator it(universeDir, {QStringLiteral("*.ini")}, QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString absolutePath = it.next();
+        const QFileInfo fileInfo(absolutePath);
+        if (fileInfo.dir().dirName().compare(QStringLiteral("ROOMS"), Qt::CaseInsensitive) != 0)
+            continue;
+        if (!wantedRoom.isEmpty() && !normalizeKey(fileInfo.completeBaseName()).endsWith(QStringLiteral("_") + wantedRoom))
+            continue;
+
+        const RoomSceneDefaults defaults = roomSceneDefaultsFromText(textForPath(absolutePath, textOverrides), scenePath);
+        if (defaults.valid)
+            return defaults;
+    }
     return {};
 }
 
 QString generateRoomIniText(const QString &roomName,
                             const QStringList &allRooms,
                             const QString &startRoom,
-                            const QString &scenePath)
+                            const QString &scenePath,
+                            const RoomSceneDefaults &sceneDefaults)
 {
     const QString room = normalizeKey(roomName);
     const QString scene = scenePath.trimmed().isEmpty() ? defaultSceneForRoom(roomName) : scenePath.trimmed();
     QStringList lines;
 
     lines << QStringLiteral("[Room_Info]")
-          << QStringLiteral("set_script = %1").arg(hardpointScriptForScene(roomName, scene));
-    if (room == QStringLiteral("bar") && scene.toLower().contains(QStringLiteral("cv_01_bar_ambi")))
+          << QStringLiteral("set_script = %1").arg(sceneDefaults.valid && !sceneDefaults.setScript.isEmpty()
+                                                        ? sceneDefaults.setScript
+                                                        : hardpointScriptForScene(roomName, scene));
+    if ((sceneDefaults.valid && sceneDefaults.sceneAmbientOnly)
+        || (room == QStringLiteral("bar") && scene.toLower().contains(QStringLiteral("cv_01_bar_ambi")))) {
         lines << QStringLiteral("scene = ambient, %1").arg(scene);
-    else
+    } else {
         lines << QStringLiteral("scene = all, ambient, %1").arg(scene);
+    }
     if (room == QStringLiteral("cityscape") || room == QStringLiteral("deck"))
         lines << QStringLiteral("animation = Sc_loop");
     if (room == QStringLiteral("equipment") && scene.toLower().contains(QStringLiteral("bw_01_equipment_ambi_int_01")))
@@ -1557,17 +1752,24 @@ QString generateRoomIniText(const QString &roomName,
         lines << QStringLiteral("[Spiels]") << QStringLiteral("ShipDealer = manhattan_ship_spiel") << QString();
 
     lines << QStringLiteral("[Room_Sound]");
-    const QString music = room == QStringLiteral("bar") ? barMusicForScene(scene) : QString();
+    const QString music = sceneDefaults.valid && !sceneDefaults.music.isEmpty()
+        ? sceneDefaults.music
+        : (room == QStringLiteral("bar") ? barMusicForScene(scene) : QString());
     if (!music.isEmpty())
         lines << QStringLiteral("music = %1").arg(music);
-    lines << QStringLiteral("ambient = %1").arg(roomAmbientForScene(roomName, scene)) << QString();
+    lines << QStringLiteral("ambient = %1").arg(sceneDefaults.valid && !sceneDefaults.ambient.isEmpty()
+                                                    ? sceneDefaults.ambient
+                                                    : roomAmbientForScene(roomName, scene))
+          << QString();
 
     lines << QStringLiteral("[Camera]") << QStringLiteral("name = Camera_0") << QString();
 
     if (room == QStringLiteral("bar") || room == QStringLiteral("trader")
         || room == QStringLiteral("equipment") || room == QStringLiteral("shipdealer")) {
         lines << QStringLiteral("[CharacterPlacement]") << QStringLiteral("name = Zg/PC/Player/01/A/Stand");
-        const QString startScript = startScriptForScene(roomName, scene);
+        const QString startScript = sceneDefaults.valid && !sceneDefaults.startScript.isEmpty()
+            ? sceneDefaults.startScript
+            : startScriptForScene(roomName, scene);
         if (!startScript.isEmpty())
             lines << QStringLiteral("start_script = %1").arg(startScript);
         lines << QString();
@@ -2560,11 +2762,12 @@ bool BaseEditService::applyCreate(const BaseEditState &state,
             continue;
         const QString canonical = canonicalRoomName(room.roomName);
         const bool fromTemplate = !room.templateContent.trimmed().isEmpty();
+        const RoomSceneDefaults sceneDefaults = existingRoomSceneDefaults(canonical, room.scenePath, gameRoot, textOverrides);
         QString roomText = !fromTemplate
-            ? generateRoomIniText(canonical, rooms, startRoom, room.scenePath)
+            ? generateRoomIniText(canonical, rooms, startRoom, room.scenePath, sceneDefaults)
             : adaptTemplateRoom(room.templateContent, rooms);
-        if (!room.scenePath.trimmed().isEmpty())
-            roomText = overrideRoomScene(roomText, room.scenePath);
+        if (fromTemplate && !room.scenePath.trimmed().isEmpty())
+            roomText = applyRoomSceneSelection(roomText, canonical, room.scenePath, sceneDefaults);
         roomText = normalizeRoomNavigation(roomText,
                                           canonical,
                                           rooms,
@@ -2643,10 +2846,15 @@ bool BaseEditService::applyEdit(SolarObject &object,
             .absoluteFilePath(QStringLiteral("%1_%2.ini").arg(generatedBaseStem(working.baseNickname), normalizeKey(canonical)));
         QString roomText = textForPath(roomPath, textOverrides);
         const bool hadExistingText = !roomText.trimmed().isEmpty();
-        if (!hadExistingText)
-            roomText = generateRoomIniText(canonical, rooms, startRoom, room.scenePath);
-        if (!room.scenePath.trimmed().isEmpty())
-            roomText = overrideRoomScene(roomText, room.scenePath);
+        if (!hadExistingText) {
+            const RoomSceneDefaults sceneDefaults = existingRoomSceneDefaults(canonical, room.scenePath, gameRoot, textOverrides);
+            roomText = generateRoomIniText(canonical, rooms, startRoom, room.scenePath, sceneDefaults);
+        }
+        if (hadExistingText && !room.scenePath.trimmed().isEmpty())
+            roomText = applyRoomSceneSelection(roomText,
+                                               canonical,
+                                               room.scenePath,
+                                               existingRoomSceneDefaults(canonical, room.scenePath, gameRoot, textOverrides));
         roomText = normalizeRoomNavigation(roomText, canonical, rooms, startRoom);
         outResult->stagedWrites.append({roomPath, roomText});
     }
