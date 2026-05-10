@@ -91,6 +91,7 @@ class BaseEditService {
 public:
     static bool objectHasBase(const flatlas::domain::SolarObject &object);
     static QVector<BaseRoomState> defaultRoomsForArchetype(const QString &archetype);
+    static void ensureDefaultRoomNpcs(BaseEditState *state);
     static BaseArchetypeDefaults archetypeDefaults(const QString &archetype,
                                                    const QString &gameRoot,
                                                    const QHash<QString, QString> &textOverrides = {});

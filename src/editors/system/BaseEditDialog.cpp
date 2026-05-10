@@ -1626,8 +1626,11 @@ void BaseEditDialog::populateRooms(const QVector<BaseRoomState> &rooms)
         m_roomTable->insertRow(row);
 
         auto *enabledItem = new QTableWidgetItem();
-        enabledItem->setFlags(enabledItem->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsEditable);
-        enabledItem->setCheckState(room.enabled ? Qt::Checked : Qt::Unchecked);
+        Qt::ItemFlags enabledFlags = enabledItem->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsEditable;
+        if (room.virtualRoom)
+            enabledFlags &= ~Qt::ItemIsEnabled;
+        enabledItem->setFlags(enabledFlags);
+        enabledItem->setCheckState(room.enabled && !room.virtualRoom ? Qt::Checked : Qt::Unchecked);
         m_roomTable->setItem(row, 0, enabledItem);
 
         auto *activateButton = new QPushButton(tr("Activate"));
@@ -1729,6 +1732,12 @@ void BaseEditDialog::addRoom()
     room.enabled = true;
     room.roomName = roomName;
     m_roomStates.append(room);
+    BaseEditState defaultNpcState = m_initialState;
+    defaultNpcState.baseNickname = m_baseNicknameEdit ? m_baseNicknameEdit->text().trimmed() : defaultNpcState.baseNickname;
+    defaultNpcState.reputation = comboStoredValue(m_reputationCombo);
+    defaultNpcState.rooms = m_roomStates;
+    BaseEditService::ensureDefaultRoomNpcs(&defaultNpcState);
+    m_roomStates = defaultNpcState.rooms;
     m_selectedRoomKey = roomName;
     populateRooms(m_roomStates);
     setSelectedRoom(roomName);
@@ -1784,6 +1793,12 @@ void BaseEditDialog::onRoomItemChanged(QTableWidgetItem *item)
     updated.roomName = visibleState.roomName;
     updated.scenePath = visibleState.scenePath;
     m_roomStates[row] = updated;
+    BaseEditState defaultNpcState = m_initialState;
+    defaultNpcState.baseNickname = m_baseNicknameEdit ? m_baseNicknameEdit->text().trimmed() : defaultNpcState.baseNickname;
+    defaultNpcState.reputation = comboStoredValue(m_reputationCombo);
+    defaultNpcState.rooms = m_roomStates;
+    BaseEditService::ensureDefaultRoomNpcs(&defaultNpcState);
+    m_roomStates = defaultNpcState.rooms;
     if (normalizedKey(m_selectedRoomKey) == normalizedKey(previousRoomName))
         m_selectedRoomKey = updated.roomName.trimmed();
     if (normalizedKey(m_activeRoomKey) == normalizedKey(previousRoomName))
@@ -2250,6 +2265,13 @@ void BaseEditDialog::applyTemplateSelection()
         if (!templateState.bgcsBaseRunBy.trimmed().isEmpty() && m_bgcsEdit->text().trimmed().isEmpty())
             m_bgcsEdit->setText(templateState.bgcsBaseRunBy.trimmed());
     }
+
+    BaseEditState defaultNpcState = m_initialState;
+    defaultNpcState.baseNickname = m_baseNicknameEdit ? m_baseNicknameEdit->text().trimmed() : defaultNpcState.baseNickname;
+    defaultNpcState.reputation = comboStoredValue(m_reputationCombo);
+    defaultNpcState.rooms = m_roomStates;
+    BaseEditService::ensureDefaultRoomNpcs(&defaultNpcState);
+    m_roomStates = defaultNpcState.rooms;
 
     populateRooms(m_roomStates);
     refreshStartRooms();

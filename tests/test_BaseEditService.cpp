@@ -12,6 +12,7 @@ using namespace flatlas::domain;
 class TestBaseEditService : public QObject {
     Q_OBJECT
 private slots:
+    void defaultRoomNpcsAreGeneratedForPhysicalAndVirtualRooms();
     void createStagesFilesAndObject();
     void loadTemplateStateReadsRoomsAndNpcs();
     void archetypeDefaultsPreferExistingBaseObject();
@@ -25,6 +26,66 @@ static void writeTextFile(const QString &path, const QString &text)
     QFile file(path);
     QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate));
     file.write(text.toUtf8());
+}
+
+void TestBaseEditService::defaultRoomNpcsAreGeneratedForPhysicalAndVirtualRooms()
+{
+    BaseEditState state;
+    state.baseNickname = QStringLiteral("Li01_01_Base");
+    state.reputation = QStringLiteral("li_n_grp");
+
+    BaseRoomState deck;
+    deck.roomName = QStringLiteral("Deck");
+    deck.enabled = true;
+    state.rooms.append(deck);
+
+    BaseRoomState bar;
+    bar.roomName = QStringLiteral("Bar");
+    bar.enabled = true;
+    state.rooms.append(bar);
+
+    BaseRoomState trader;
+    trader.roomName = QStringLiteral("Trader");
+    trader.enabled = false;
+    trader.virtualRoom = true;
+    state.rooms.append(trader);
+
+    BaseRoomState equipment;
+    equipment.roomName = QStringLiteral("Equipment");
+    equipment.enabled = false;
+    equipment.virtualRoom = true;
+    state.rooms.append(equipment);
+
+    BaseRoomState shipDealer;
+    shipDealer.roomName = QStringLiteral("ShipDealer");
+    shipDealer.enabled = true;
+    state.rooms.append(shipDealer);
+
+    BaseEditService::ensureDefaultRoomNpcs(&state);
+
+    auto roomByName = [&](const QString &name) -> const BaseRoomState * {
+        for (const BaseRoomState &room : state.rooms) {
+            if (room.roomName.compare(name, Qt::CaseInsensitive) == 0)
+                return &room;
+        }
+        return nullptr;
+    };
+    auto hasRole = [](const BaseRoomState *room, const QString &role) {
+        if (!room)
+            return false;
+        for (const BaseRoomNpcState &npc : room->npcs) {
+            if (npc.role.compare(role, Qt::CaseInsensitive) == 0)
+                return !npc.nickname.trimmed().isEmpty()
+                    && npc.nameText.startsWith(QStringLiteral("Li01_01_Base "))
+                    && npc.affiliation == QStringLiteral("li_n_grp");
+        }
+        return false;
+    };
+
+    QVERIFY(hasRole(roomByName(QStringLiteral("Bar")), QStringLiteral("bartender")));
+    QVERIFY(hasRole(roomByName(QStringLiteral("Deck")), QStringLiteral("trader")));
+    QVERIFY(hasRole(roomByName(QStringLiteral("Deck")), QStringLiteral("Equipment")));
+    QVERIFY(hasRole(roomByName(QStringLiteral("ShipDealer")), QStringLiteral("ShipDealer")));
 }
 
 void TestBaseEditService::createStagesFilesAndObject()
@@ -444,11 +505,11 @@ void TestBaseEditService::createFromTemplateCopiesRoomContentAndNpcData()
     };
     const BaseRoomState *virtualTrader = templateRoom(QStringLiteral("Trader"));
     QVERIFY(virtualTrader != nullptr);
-    QVERIFY(virtualTrader->enabled);
+    QVERIFY(!virtualTrader->enabled);
     QVERIFY(virtualTrader->virtualRoom);
     const BaseRoomState *virtualEquipment = templateRoom(QStringLiteral("Equipment"));
     QVERIFY(virtualEquipment != nullptr);
-    QVERIFY(virtualEquipment->enabled);
+    QVERIFY(!virtualEquipment->enabled);
     QVERIFY(virtualEquipment->virtualRoom);
     const BaseRoomState *physicalDeck = templateRoom(QStringLiteral("Deck"));
     QVERIFY(physicalDeck != nullptr);
@@ -465,6 +526,11 @@ void TestBaseEditService::createFromTemplateCopiesRoomContentAndNpcData()
     createState.rooms = BaseEditService::applyTemplateRoomsForCreate(createState, templateState, true);
     createState.startRoom = templateState.startRoom;
     createState.priceVariance = templateState.priceVariance;
+    QCOMPARE(createState.rooms.size(), templateState.rooms.size());
+    for (const BaseRoomState &room : createState.rooms) {
+        if (room.virtualRoom)
+            QVERIFY(!room.enabled);
+    }
 
     BaseApplyResult result;
     QVERIFY2(BaseEditService::applyCreate(createState, QPointF(0.0, 0.0), gameRoot, {}, &result, &errorMessage), qPrintable(errorMessage));

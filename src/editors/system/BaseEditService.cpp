@@ -13,6 +13,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QRandomGenerator>
 #include <QRegularExpression>
 #include <algorithm>
 
@@ -79,7 +80,90 @@ QString safeNickPart(const QString &value)
     return out.trimmed().trimmed().remove(QRegularExpression(QStringLiteral("^_+|_+$")));
 }
 
+QString generatedBaseStem(const QString &baseNickname);
+QString roomKey(const QString &roomName);
+
+QString vendorRoleForRoom(const QString &roomName)
+{
+    const QString room = roomKey(roomName);
+    if (room == QStringLiteral("bar"))
+        return QStringLiteral("bartender");
+    if (room == QStringLiteral("trader"))
+        return QStringLiteral("trader");
+    if (room == QStringLiteral("equipment"))
+        return QStringLiteral("Equipment");
+    if (room == QStringLiteral("shipdealer"))
+        return QStringLiteral("ShipDealer");
+    return {};
+}
+
+QString vendorNicknameSuffix(const QString &role)
+{
+    const QString key = normalizeKey(role);
+    if (key == QStringLiteral("bartender"))
+        return QStringLiteral("bartender");
+    if (key == QStringLiteral("trader"))
+        return QStringLiteral("trader");
+    if (key == QStringLiteral("equipment"))
+        return QStringLiteral("weaponsdealer");
+    if (key == QStringLiteral("shipdealer"))
+        return QStringLiteral("ship");
+    return safeNickPart(role);
+}
+
+QString vendorDisplayRole(const QString &role)
+{
+    const QString key = normalizeKey(role);
+    if (key == QStringLiteral("bartender"))
+        return QStringLiteral("Bartender");
+    if (key == QStringLiteral("trader"))
+        return QStringLiteral("Trade Dealer");
+    if (key == QStringLiteral("equipment"))
+        return QStringLiteral("Equipment Dealer");
+    if (key == QStringLiteral("shipdealer"))
+        return QStringLiteral("Ship Dealer");
+    return role.trimmed();
+}
+
+QString randomNpcPersonName()
+{
+    static const QStringList firstNames = {
+        QStringLiteral("Alex"), QStringLiteral("Amelia"), QStringLiteral("Anika"), QStringLiteral("Anton"),
+        QStringLiteral("Caleb"), QStringLiteral("Darius"), QStringLiteral("Elena"), QStringLiteral("Hanna"),
+        QStringLiteral("Jonas"), QStringLiteral("Kara"), QStringLiteral("Leona"), QStringLiteral("Marek"),
+        QStringLiteral("Maya"), QStringLiteral("Nadia"), QStringLiteral("Nico"), QStringLiteral("Rafael"),
+        QStringLiteral("Samira"), QStringLiteral("Sofia"), QStringLiteral("Tobias"), QStringLiteral("Victor"),
+    };
+    static const QStringList lastNames = {
+        QStringLiteral("Archer"), QStringLiteral("Bennett"), QStringLiteral("Cortez"), QStringLiteral("Drake"),
+        QStringLiteral("Fischer"), QStringLiteral("Hawkins"), QStringLiteral("Kowalski"), QStringLiteral("Larsen"),
+        QStringLiteral("Mason"), QStringLiteral("Mercer"), QStringLiteral("Novak"), QStringLiteral("Patel"),
+        QStringLiteral("Reyes"), QStringLiteral("Sato"), QStringLiteral("Schneider"), QStringLiteral("Vargas"),
+        QStringLiteral("Volkov"), QStringLiteral("Weber"), QStringLiteral("Wolfe"), QStringLiteral("Zhao"),
+    };
+
+    auto *rng = QRandomGenerator::global();
+    return QStringLiteral("%1 %2").arg(firstNames.at(rng->bounded(firstNames.size())),
+                                       lastNames.at(rng->bounded(lastNames.size())));
+}
+
+QString generatedVendorNpcNickname(const QString &baseNickname, const QString &role)
+{
+    const QString base = safeNickPart(generatedBaseStem(baseNickname));
+    const QString suffix = vendorNicknameSuffix(role);
+    return suffix.isEmpty() ? base : QStringLiteral("%1_fix_%2").arg(base, suffix);
+}
+
+QString generatedVendorDisplayName(const QString &baseNickname, const QString &role)
+{
+    return QStringLiteral("%1 %2 %3")
+        .arg(baseNickname.trimmed(),
+             vendorDisplayRole(role),
+             randomNpcPersonName());
+}
+
 QPair<int, int> mbaseBlockRange(const IniDocument &doc, int mbaseIndex);
+IniSection mbaseNpcSection(const BaseRoomNpcState &npc);
 QString extractScenePath(QString content);
 QStringList virtualRoomNamesFromRoomText(QString content);
 QString generateRoomIniText(const QString &roomName, const QStringList &allRooms, const QString &startRoom);
@@ -387,6 +471,20 @@ QStringList enabledPhysicalRoomNames(const BaseEditState &state)
     return rooms;
 }
 
+QStringList navigationRoomNames(const BaseEditState &state)
+{
+    QStringList rooms;
+    for (const BaseRoomState &room : state.rooms) {
+        const QString canonical = canonicalRoomName(room.roomName);
+        if (canonical.isEmpty())
+            continue;
+        if ((room.enabled && !room.virtualRoom) || room.virtualRoom)
+            rooms.append(canonical);
+    }
+    rooms.removeDuplicates();
+    return rooms;
+}
+
 QString chooseStartRoom(const QStringList &rooms, const QString &preferred)
 {
     const QString target = preferred.trimmed();
@@ -640,16 +738,17 @@ bool loadBaseFileState(BaseEditState *state,
         for (BaseRoomState &room : rooms) {
             if (normalizeKey(room.roomName) != normalizeKey(virtualRoom))
                 continue;
-            room.enabled = true;
-            if (room.templateContent.trimmed().isEmpty())
+            if (room.templateContent.trimmed().isEmpty()) {
+                room.enabled = false;
                 room.virtualRoom = true;
+            }
             found = true;
             break;
         }
         if (!found) {
             BaseRoomState room;
             room.roomName = virtualRoom;
-            room.enabled = true;
+            room.enabled = false;
             room.virtualRoom = true;
             rooms.append(room);
         }
@@ -1082,10 +1181,12 @@ QStringList virtualRoomNamesFromRoomText(QString content)
                                   .split(QLatin1Char('\n'));
     QStringList rooms;
     bool inHotspot = false;
+    QString behavior;
     for (const QString &line : lines) {
         const QString trimmed = line.trimmed();
         if (trimmed.startsWith(QLatin1Char('[')) && trimmed.endsWith(QLatin1Char(']'))) {
             inHotspot = trimmed.compare(QStringLiteral("[Hotspot]"), Qt::CaseInsensitive) == 0;
+            behavior.clear();
             continue;
         }
         if (!inHotspot)
@@ -1094,11 +1195,18 @@ QStringList virtualRoomNamesFromRoomText(QString content)
         if (eq < 0)
             continue;
         const QString key = trimmed.left(eq).trimmed();
-        if (key.compare(QStringLiteral("set_virtual_room"), Qt::CaseInsensitive) != 0
-            && key.compare(QStringLiteral("virtual_room"), Qt::CaseInsensitive) != 0) {
+        const QString value = trimmed.mid(eq + 1).trimmed();
+        QString room;
+        if (key.compare(QStringLiteral("behavior"), Qt::CaseInsensitive) == 0) {
+            behavior = value;
             continue;
+        } else if (key.compare(QStringLiteral("set_virtual_room"), Qt::CaseInsensitive) == 0
+                   || key.compare(QStringLiteral("virtual_room"), Qt::CaseInsensitive) == 0) {
+            room = canonicalRoomName(value);
+        } else if (key.compare(QStringLiteral("room_switch"), Qt::CaseInsensitive) == 0
+                   && behavior.compare(QStringLiteral("VirtualRoom"), Qt::CaseInsensitive) == 0) {
+            room = canonicalRoomName(value);
         }
-        const QString room = canonicalRoomName(trimmed.mid(eq + 1).trimmed());
         if (!room.isEmpty() && !rooms.contains(room, Qt::CaseInsensitive))
             rooms.append(room);
     }
@@ -1403,19 +1511,46 @@ void syncMbaseRooms(IniDocument *doc, const BaseEditState &state)
         return;
     const int mbaseIndex = ensureMbaseSection(doc, state);
     const auto range = mbaseBlockRange(*doc, mbaseIndex);
-    const QStringList rooms = enabledPhysicalRoomNames(state);
     QSet<QString> targetRooms;
+    QSet<QString> targetNpcNames;
+    QSet<QString> oldTargetNpcNames;
     for (const BaseRoomState &room : state.rooms) {
-        if (room.enabled && !room.virtualRoom && !room.roomName.trimmed().isEmpty())
+        if (room.enabled && !room.virtualRoom && !room.roomName.trimmed().isEmpty()) {
             targetRooms.insert(normalizeKey(canonicalRoomName(room.roomName)));
+            for (const BaseRoomNpcState &npc : room.npcs) {
+                const QString nickname = npc.nickname.trimmed();
+                if (!nickname.isEmpty())
+                    targetNpcNames.insert(normalizeKey(nickname));
+            }
+        }
+    }
+
+    for (int index = range.first + 1; index < range.second; ++index) {
+        const IniSection &section = doc->at(index);
+        if (section.name.compare(QStringLiteral("MRoom"), Qt::CaseInsensitive) != 0)
+            continue;
+        if (!targetRooms.contains(normalizeKey(section.value(QStringLiteral("nickname")))))
+            continue;
+        for (const QString &fixture : section.values(QStringLiteral("fixture"))) {
+            const QString nickname = fixture.section(QLatin1Char(','), 0, 0).trimmed();
+            if (!nickname.isEmpty())
+                oldTargetNpcNames.insert(normalizeKey(nickname));
+        }
     }
 
     for (int index = range.second - 1; index > range.first; --index) {
         const IniSection &section = doc->at(index);
-        if (section.name.compare(QStringLiteral("MRoom"), Qt::CaseInsensitive) != 0)
-            continue;
-        if (targetRooms.contains(normalizeKey(section.value(QStringLiteral("nickname")))))
+        const QString sectionName = normalizeKey(section.name);
+        if (sectionName == QStringLiteral("mroom")
+            && targetRooms.contains(normalizeKey(section.value(QStringLiteral("nickname"))))) {
             doc->removeAt(index);
+            continue;
+        }
+        if (sectionName == QStringLiteral("gf_npc")) {
+            const QString nickname = normalizeKey(section.value(QStringLiteral("nickname")));
+            if (targetNpcNames.contains(nickname) || oldTargetNpcNames.contains(nickname))
+                doc->removeAt(index);
+        }
     }
 
     const auto refreshedRange = mbaseBlockRange(*doc, mbaseIndex);
@@ -1425,6 +1560,22 @@ void syncMbaseRooms(IniDocument *doc, const BaseEditState &state)
         if (sectionName == QStringLiteral("gf_npc")
             || sectionName == QStringLiteral("mvendor")) {
             insertAt = index + 1;
+        }
+    }
+
+    QSet<QString> insertedNpcNames;
+    for (const BaseRoomState &roomState : state.rooms) {
+        if (!roomState.enabled || roomState.virtualRoom || roomState.roomName.trimmed().isEmpty())
+            continue;
+        for (const BaseRoomNpcState &npc : roomState.npcs) {
+            const QString nickname = npc.nickname.trimmed();
+            if (nickname.isEmpty())
+                continue;
+            const QString key = normalizeKey(nickname);
+            if (insertedNpcNames.contains(key))
+                continue;
+            insertedNpcNames.insert(key);
+            doc->insert(insertAt++, mbaseNpcSection(npc));
         }
     }
 
@@ -1525,41 +1676,8 @@ void populateCreateMbaseBlock(IniDocument *doc, const BaseEditState &state)
         doc->insert(insertAt++, factionSection);
     }
 
-    for (const BaseRoomNpcState &npc : desiredNpcs) {
-        IniSection npcSection;
-        npcSection.name = QStringLiteral("GF_NPC");
-        npcSection.entries = npc.templateEntries;
-        if (npcSection.entries.isEmpty()) {
-            npcSection.entries = {
-                {QStringLiteral("nickname"), npc.nickname.trimmed()},
-                {QStringLiteral("body"), npc.body.trimmed().isEmpty() ? QStringLiteral("benchmark_male_body") : npc.body.trimmed()},
-                {QStringLiteral("head"), npc.head.trimmed().isEmpty() ? QStringLiteral("benchmark_male_head") : npc.head.trimmed()},
-                {QStringLiteral("lefthand"), npc.leftHand.trimmed().isEmpty() ? QStringLiteral("benchmark_male_hand_left") : npc.leftHand.trimmed()},
-                {QStringLiteral("righthand"), npc.rightHand.trimmed().isEmpty() ? QStringLiteral("benchmark_male_hand_right") : npc.rightHand.trimmed()},
-                {QStringLiteral("affiliation"), nicknameFromDisplayValue(npc.affiliation.trimmed().isEmpty() ? npc.reputation : npc.affiliation)},
-                {QStringLiteral("voice"), QStringLiteral("mc_leg_m01")},
-            };
-        }
-        setOrRemoveRawEntry(&npcSection.entries, QStringLiteral("nickname"), npc.nickname.trimmed());
-        setOrRemoveRawEntry(&npcSection.entries,
-                            QStringLiteral("body"),
-                            npc.body.trimmed().isEmpty() ? QStringLiteral("benchmark_male_body") : npc.body.trimmed());
-        setOrRemoveRawEntry(&npcSection.entries,
-                            QStringLiteral("head"),
-                            npc.head.trimmed().isEmpty() ? QStringLiteral("benchmark_male_head") : npc.head.trimmed());
-        setOrRemoveRawEntry(&npcSection.entries,
-                            QStringLiteral("lefthand"),
-                            npc.leftHand.trimmed().isEmpty() ? QStringLiteral("benchmark_male_hand_left") : npc.leftHand.trimmed());
-        setOrRemoveRawEntry(&npcSection.entries,
-                            QStringLiteral("righthand"),
-                            npc.rightHand.trimmed().isEmpty() ? QStringLiteral("benchmark_male_hand_right") : npc.rightHand.trimmed());
-        setOrRemoveRawEntry(&npcSection.entries,
-                            QStringLiteral("affiliation"),
-                            nicknameFromDisplayValue(npc.affiliation.trimmed().isEmpty() ? npc.reputation : npc.affiliation));
-        setOrRemoveRawEntry(&npcSection.entries, QStringLiteral("voice"), rawEntryValue(npcSection.entries, QStringLiteral("voice")).trimmed().isEmpty() ? QStringLiteral("mc_leg_m01") : rawEntryValue(npcSection.entries, QStringLiteral("voice")));
-        setOrRemoveRawEntry(&npcSection.entries, QStringLiteral("room"), QString());
-        doc->insert(insertAt++, npcSection);
-    }
+    for (const BaseRoomNpcState &npc : desiredNpcs)
+        doc->insert(insertAt++, mbaseNpcSection(npc));
 
     QHash<QString, QVector<QPair<QString, QString>>> fixturesByRoom;
     for (const BaseRoomState &room : state.rooms) {
@@ -1615,6 +1733,77 @@ void populateCreateMbaseBlock(IniDocument *doc, const BaseEditState &state)
         }
         doc->insert(insertAt++, roomSection);
     }
+}
+
+IniSection mbaseNpcSection(const BaseRoomNpcState &npc)
+{
+    IniSection npcSection;
+    npcSection.name = QStringLiteral("GF_NPC");
+    npcSection.entries = npc.templateEntries;
+    setOrRemoveRawEntry(&npcSection.entries, QStringLiteral("nickname"), npc.nickname.trimmed());
+    setOrRemoveRawEntry(&npcSection.entries,
+                        QStringLiteral("body"),
+                        npc.body.trimmed().isEmpty() ? QStringLiteral("benchmark_male_body") : npc.body.trimmed());
+    setOrRemoveRawEntry(&npcSection.entries,
+                        QStringLiteral("head"),
+                        npc.head.trimmed().isEmpty() ? QStringLiteral("benchmark_male_head") : npc.head.trimmed());
+    setOrRemoveRawEntry(&npcSection.entries,
+                        QStringLiteral("lefthand"),
+                        npc.leftHand.trimmed().isEmpty() ? QStringLiteral("benchmark_male_hand_left") : npc.leftHand.trimmed());
+    setOrRemoveRawEntry(&npcSection.entries,
+                        QStringLiteral("righthand"),
+                        npc.rightHand.trimmed().isEmpty() ? QStringLiteral("benchmark_male_hand_right") : npc.rightHand.trimmed());
+    setOrRemoveRawEntry(&npcSection.entries,
+                        QStringLiteral("affiliation"),
+                        nicknameFromDisplayValue(npc.affiliation.trimmed().isEmpty() ? npc.reputation : npc.affiliation));
+    setOrRemoveRawEntry(&npcSection.entries,
+                        QStringLiteral("individual_name"),
+                        rawEntryValue(npc.templateEntries, QStringLiteral("individual_name")));
+    setOrRemoveRawEntry(&npcSection.entries,
+                        QStringLiteral("voice"),
+                        rawEntryValue(npcSection.entries, QStringLiteral("voice")).trimmed().isEmpty()
+                            ? QStringLiteral("mc_leg_m01")
+                            : rawEntryValue(npcSection.entries, QStringLiteral("voice")));
+    setOrRemoveRawEntry(&npcSection.entries, QStringLiteral("room"), QString());
+    return npcSection;
+}
+
+bool prepareNpcNameIds(const QString &gameRoot, BaseEditState *state, QString *errorMessage)
+{
+    if (!state)
+        return false;
+
+    IdsDataset dataset;
+    QString dllName;
+    bool loadedDataset = false;
+    for (BaseRoomState &room : state->rooms) {
+        for (BaseRoomNpcState &npc : room.npcs) {
+            const QString displayName = npc.nameText.trimmed();
+            if (displayName.isEmpty() || displayName == npc.nickname.trimmed())
+                continue;
+
+            const int currentId = rawEntryIntValue(npc.templateEntries, QStringLiteral("individual_name"));
+            if (!loadedDataset) {
+                dataset = IdsDataService::loadFromGameRoot(gameRoot);
+                dllName = IdsDataService::defaultCreationDllName(dataset);
+                loadedDataset = true;
+            }
+            if (dataset.freelancerIniPath.isEmpty())
+                continue;
+
+            int newId = currentId;
+            QString idsError;
+            if (!IdsDataService::writeStringEntry(dataset, dllName, currentId, displayName, &newId, &idsError)) {
+                if (errorMessage)
+                    *errorMessage = idsError.trimmed().isEmpty()
+                        ? QObject::tr("The NPC name could not be written.")
+                        : idsError;
+                return false;
+            }
+            setOrRemoveRawEntry(&npc.templateEntries, QStringLiteral("individual_name"), QString::number(newId));
+        }
+    }
+    return true;
 }
 
 bool prepareIds(const QString &gameRoot,
@@ -1748,6 +1937,58 @@ bool BaseEditService::objectHasBase(const SolarObject &object)
     return !objectBaseNickname(object).isEmpty();
 }
 
+void BaseEditService::ensureDefaultRoomNpcs(BaseEditState *state)
+{
+    if (!state)
+        return;
+
+    int deckIndex = -1;
+    for (int index = 0; index < state->rooms.size(); ++index) {
+        const BaseRoomState &room = state->rooms.at(index);
+        if (room.enabled && !room.virtualRoom && roomKey(room.roomName) == QStringLiteral("deck")) {
+            deckIndex = index;
+            break;
+        }
+    }
+
+    auto addVendorNpc = [state](BaseRoomState *targetRoom, const QString &role) {
+        if (!targetRoom || role.trimmed().isEmpty())
+            return;
+
+        const QString canonicalRole = normalizedRoleForRoom(role, targetRoom->roomName);
+        const bool exists = std::any_of(targetRoom->npcs.cbegin(), targetRoom->npcs.cend(), [&](const BaseRoomNpcState &npc) {
+            return normalizeKey(normalizedRoleForRoom(npc.role, targetRoom->roomName)) == normalizeKey(canonicalRole);
+        });
+        if (exists)
+            return;
+
+        BaseRoomNpcState npc;
+        npc.nickname = generatedVendorNpcNickname(state->baseNickname, canonicalRole);
+        npc.nameText = generatedVendorDisplayName(state->baseNickname, canonicalRole);
+        npc.reputation = state->reputation;
+        npc.affiliation = nicknameFromDisplayValue(state->reputation);
+        npc.role = canonicalRole;
+        npc.body = QStringLiteral("benchmark_male_body");
+        npc.head = QStringLiteral("benchmark_male_head");
+        npc.leftHand = QStringLiteral("benchmark_male_hand_left");
+        npc.rightHand = QStringLiteral("benchmark_male_hand_right");
+        targetRoom->npcs.append(npc);
+    };
+
+    for (int index = 0; index < state->rooms.size(); ++index) {
+        BaseRoomState &room = state->rooms[index];
+        const QString role = vendorRoleForRoom(room.roomName);
+        if (role.isEmpty())
+            continue;
+
+        if (room.enabled && !room.virtualRoom) {
+            addVendorNpc(&room, role);
+        } else if (room.virtualRoom && deckIndex >= 0) {
+            addVendorNpc(&state->rooms[deckIndex], role);
+        }
+    }
+}
+
 QVector<BaseRoomState> BaseEditService::defaultRoomsForArchetype(const QString &archetype)
 {
     return buildDefaultRoomsForArchetype(archetype);
@@ -1757,19 +1998,16 @@ QVector<BaseRoomState> BaseEditService::applyTemplateRoomsForCreate(const BaseEd
                                                                     const BaseEditState &templateState,
                                                                     bool copyNpcs)
 {
-    QVector<BaseRoomState> mergedRooms = buildDefaultRoomsForArchetype(targetState.archetype);
+    QVector<BaseRoomState> mergedRooms;
     QHash<QString, int> indexByRoom;
-    for (int index = 0; index < mergedRooms.size(); ++index)
-        indexByRoom.insert(normalizeKey(mergedRooms.at(index).roomName), index);
 
     const QString baseFaction = nicknameFromDisplayValue(targetState.reputation);
-    QSet<QString> templateRooms;
     for (int roomIndex = 0; roomIndex < templateState.rooms.size(); ++roomIndex) {
         BaseRoomState room = templateState.rooms.at(roomIndex);
         room.roomName = room.roomName.trimmed();
         if (room.roomName.isEmpty())
             continue;
-        room.enabled = true;
+        room.enabled = !room.virtualRoom;
 
         if (copyNpcs) {
             QVector<BaseRoomNpcState> copiedNpcs;
@@ -1790,18 +2028,11 @@ QVector<BaseRoomState> BaseEditService::applyTemplateRoomsForCreate(const BaseEd
         }
 
         const QString roomLookupKey = normalizeKey(room.roomName);
-        templateRooms.insert(roomLookupKey);
         if (indexByRoom.contains(roomLookupKey))
             mergedRooms[indexByRoom.value(roomLookupKey)] = room;
-        else
+        else {
+            indexByRoom.insert(roomLookupKey, mergedRooms.size());
             mergedRooms.append(room);
-    }
-
-    for (BaseRoomState &room : mergedRooms) {
-        if (!templateRooms.contains(normalizeKey(room.roomName))) {
-            room.enabled = false;
-            room.npcs.clear();
-            room.templateContent.clear();
         }
     }
     return mergedRooms;
@@ -1862,6 +2093,7 @@ BaseEditState BaseEditService::makeCreateState(const SystemDocument &document,
     state.shipPackages = {};
     state.shipPackageLevels = {};
     state.startRoom = chooseStartRoom(enabledRoomNames(state), QStringLiteral("Deck"));
+    ensureDefaultRoomNpcs(&state);
 
     const QString systemFile = document.filePath();
     const QString gameData = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
@@ -1969,6 +2201,7 @@ bool BaseEditService::applyCreate(const BaseEditState &state,
         return false;
 
     BaseEditState working = state;
+    ensureDefaultRoomNpcs(&working);
     if (!prepareIds(gameRoot,
                     working.idsName,
                     working.displayName,
@@ -1979,6 +2212,8 @@ bool BaseEditService::applyCreate(const BaseEditState &state,
                     errorMessage)) {
         return false;
     }
+    if (!prepareNpcNameIds(gameRoot, &working, errorMessage))
+        return false;
 
     auto object = std::make_shared<SolarObject>();
     buildObjectForState(object, working, &scenePos);
@@ -2010,7 +2245,7 @@ bool BaseEditService::applyCreate(const BaseEditState &state,
     for (const BaseEquipmentStagedWrite &write : marketWrites)
         outResult->stagedWrites.append({write.absolutePath, write.content});
 
-    const QStringList rooms = enabledRoomNames(working);
+    const QStringList rooms = navigationRoomNames(working);
     const QString startRoom = chooseStartRoom(enabledPhysicalRoomNames(working), working.startRoom);
     for (const BaseRoomState &room : working.rooms) {
         if (!room.enabled || room.virtualRoom || room.roomName.trimmed().isEmpty())
@@ -2046,6 +2281,7 @@ bool BaseEditService::applyEdit(SolarObject &object,
         return false;
 
     BaseEditState working = state;
+    ensureDefaultRoomNpcs(&working);
     if (!prepareIds(gameRoot,
                     working.idsName,
                     working.displayName,
@@ -2056,6 +2292,8 @@ bool BaseEditService::applyEdit(SolarObject &object,
                     errorMessage)) {
         return false;
     }
+    if (!prepareNpcNameIds(gameRoot, &working, errorMessage))
+        return false;
 
     buildObjectForState(std::shared_ptr<SolarObject>(&object, [](SolarObject *) {}), working, nullptr);
     object.setIdsName(working.idsName);
@@ -2086,7 +2324,7 @@ bool BaseEditService::applyEdit(SolarObject &object,
     for (const BaseEquipmentStagedWrite &write : marketWrites)
         outResult->stagedWrites.append({write.absolutePath, write.content});
 
-    const QStringList rooms = enabledRoomNames(working);
+    const QStringList rooms = navigationRoomNames(working);
     const QString startRoom = chooseStartRoom(enabledPhysicalRoomNames(working), working.startRoom);
     for (const BaseRoomState &room : working.rooms) {
         if (!room.enabled || room.virtualRoom || room.roomName.trimmed().isEmpty())
