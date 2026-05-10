@@ -70,6 +70,23 @@ int countTextLines(const QString &filePath)
     return lines;
 }
 
+QString untrackedFileDiff(const QString &root, const QString &relativePath)
+{
+    QFile file(QDir(root).absoluteFilePath(relativePath));
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return {};
+
+    QString diff;
+    QTextStream stream(&file);
+    diff += QStringLiteral("diff --git a/%1 b/%1\n").arg(relativePath);
+    diff += QStringLiteral("new file\n");
+    diff += QStringLiteral("--- /dev/null\n");
+    diff += QStringLiteral("+++ b/%1\n").arg(relativePath);
+    while (!stream.atEnd())
+        diff += QStringLiteral("+%1\n").arg(stream.readLine());
+    return diff.trimmed();
+}
+
 } // namespace
 
 int GitStatus::addedLineCount() const
@@ -151,6 +168,54 @@ GitStatus GitSupport::statusForPath(const QString &path)
     }
 
     return status;
+}
+
+QString GitSupport::diffForFile(const QString &path, const QString &relativeFilePath, QString *errorMessage)
+{
+    if (errorMessage)
+        errorMessage->clear();
+    if (!isGitAvailable()) {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("Git is not installed.");
+        return {};
+    }
+
+    const QString root = resolveWorkTreeRoot(path);
+    if (root.isEmpty()) {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("No Git repository found for this installation.");
+        return {};
+    }
+
+    const QString filePath = normalizeGitPath(relativeFilePath);
+    if (filePath.isEmpty())
+        return {};
+
+    GitResult result = runGit({QStringLiteral("-C"), root,
+                               QStringLiteral("diff"),
+                               QStringLiteral("--unified=0"),
+                               QStringLiteral("--no-ext-diff"),
+                               QStringLiteral("HEAD"),
+                               QStringLiteral("--"),
+                               filePath});
+    if (result.exitCode != 0) {
+        if (errorMessage)
+            *errorMessage = result.error;
+        return {};
+    }
+    if (!result.output.trimmed().isEmpty())
+        return result.output;
+
+    result = runGit({QStringLiteral("-C"), root,
+                     QStringLiteral("ls-files"),
+                     QStringLiteral("--others"),
+                     QStringLiteral("--exclude-standard"),
+                     QStringLiteral("--"),
+                     filePath});
+    if (result.exitCode == 0 && result.output.split(QLatin1Char('\n'), Qt::SkipEmptyParts).contains(filePath))
+        return untrackedFileDiff(root, filePath);
+
+    return {};
 }
 
 QVector<GitCommitInfo> GitSupport::recentCommitsForPath(const QString &path, int maxCount)

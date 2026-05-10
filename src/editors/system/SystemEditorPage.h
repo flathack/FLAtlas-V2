@@ -81,6 +81,7 @@ signals:
     void titleChanged(const QString &title);
     void selectionStatusChanged(const QString &message);
     void loadingProgressChanged(int percent, const QString &message);
+    void savedToDisk();
     void open3DSystemViewRequested();
     void modelPreviewRequested(const QString &modelPath, const QString &displayLabel);
 

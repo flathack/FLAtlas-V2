@@ -75,6 +75,7 @@
 #include <QPlainTextEdit>
 #include <QTextEdit>
 #include <QGroupBox>
+#include <QProgressDialog>
 #include <QHeaderView>
 #include <QListWidget>
 #include <QSet>
@@ -3915,6 +3916,7 @@ bool SystemEditorPage::save()
         m_pendingFileDeletes.clear();
         captureSavedDocumentSnapshot();
         refreshDocumentDirtyState();
+        emit savedToDisk();
     }
     return ok;
 }
@@ -7934,11 +7936,21 @@ void SystemEditorPage::onCreateBase()
     connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
             placementGuard, [this, placementGuard, requestState](const QPointF &scenePos) {
         placementGuard->deleteLater();
+        QProgressDialog progress(tr("Creating base..."), QString(), 0, 100, this);
+        progress.setWindowModality(Qt::WindowModal);
+        progress.setCancelButton(nullptr);
+        progress.setMinimumDuration(0);
+        progress.setValue(10);
+        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+
         QString errorMessage;
         BaseApplyResult applyResult;
         QHash<QString, QString> overrides;
         for (auto it = m_pendingTextFileWrites.constBegin(); it != m_pendingTextFileWrites.constEnd(); ++it)
             overrides.insert(it.key(), it.value().content);
+        progress.setLabelText(tr("Writing base files..."));
+        progress.setValue(35);
+        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         if (!BaseEditService::applyCreate(requestState,
                                           scenePos,
                                           flatlas::core::EditingContext::instance().primaryGamePath(),
@@ -7953,9 +7965,15 @@ void SystemEditorPage::onCreateBase()
             return;
         }
 
+        progress.setLabelText(tr("Staging changes..."));
+        progress.setValue(70);
+        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         for (const BaseStagedWrite &write : applyResult.stagedWrites)
             stagePendingTextWrite(write.absolutePath, write.content);
 
+        progress.setLabelText(tr("Refreshing system view..."));
+        progress.setValue(90);
+        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         auto *cmd = new AddObjectCommand(m_document.get(), applyResult.createdObject, tr("Create Base"));
         flatlas::core::UndoManager::instance().push(cmd);
         logSystemChange(QStringLiteral("Created base: %1").arg(applyResult.createdObject->nickname()));
@@ -7965,6 +7983,7 @@ void SystemEditorPage::onCreateBase()
         syncSceneSelectionFromNicknames(m_selectedNicknames);
         updateSelectionSummary();
         updateIniEditorForSelection();
+        progress.setValue(100);
     });
     connect(m_mapView, &flatlas::rendering::SystemMapView::placementCanceled,
             placementGuard, [placementGuard]() { placementGuard->deleteLater(); });
@@ -10826,7 +10845,17 @@ void SystemEditorPage::openBaseEditorForSelection()
     if (dialog.exec() != QDialog::Accepted)
         return;
 
+    QProgressDialog progress(tr("Saving base..."), QString(), 0, 100, this);
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setCancelButton(nullptr);
+    progress.setMinimumDuration(0);
+    progress.setValue(15);
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+
     BaseApplyResult applyResult;
+    progress.setLabelText(tr("Writing base files..."));
+    progress.setValue(35);
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
     if (!BaseEditService::applyEdit(*hostObject,
                                     dialog.state(),
                                     flatlas::core::EditingContext::instance().primaryGamePath(),
@@ -10841,9 +10870,15 @@ void SystemEditorPage::openBaseEditorForSelection()
         return;
     }
 
+    progress.setLabelText(tr("Staging changes..."));
+    progress.setValue(70);
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
     for (const BaseStagedWrite &write : applyResult.stagedWrites)
         stagePendingTextWrite(write.absolutePath, write.content);
 
+    progress.setLabelText(tr("Refreshing system view..."));
+    progress.setValue(90);
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
     m_document->setDirty(true);
     logSystemChange(QStringLiteral("Edited base: %1").arg(hostObject->nickname()));
     refreshObjectList();
@@ -10851,6 +10886,7 @@ void SystemEditorPage::openBaseEditorForSelection()
     syncSceneSelectionFromNicknames({hostObject->nickname()});
     updateSelectionSummary();
     updateIniEditorForSelection();
+    progress.setValue(100);
 }
 
 void SystemEditorPage::openBaseBuilderForSelection()

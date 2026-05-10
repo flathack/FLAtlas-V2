@@ -40,6 +40,7 @@ class GitSupport
 public:
     static bool isGitAvailable(QString *versionText = nullptr);
     static GitStatus statusForPath(const QString &path);
+    static QString diffForFile(const QString &path, const QString &relativeFilePath, QString *errorMessage = nullptr);
     static QVector<GitCommitInfo> recentCommitsForPath(const QString &path, int maxCount = 8);
     static bool ensureFlatlasGitIgnore(const QString &repoRoot, QString *errorMessage = nullptr);
     static bool initializeRepository(const QString &path, QString *errorMessage = nullptr);

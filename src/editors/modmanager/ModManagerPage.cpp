@@ -11,6 +11,9 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QDateTime>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFontDatabase>
 #include <QFutureWatcher>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -30,6 +33,9 @@
 #include <QProcess>
 #include <QFileInfo>
 #include <QFileIconProvider>
+#include <QPlainTextEdit>
+#include <QSyntaxHighlighter>
+#include <QTextCharFormat>
 #include <QTimer>
 #include <QUrl>
 #include <QtConcurrent>
@@ -40,6 +46,43 @@ struct GitPanelData
 {
     flatlas::core::GitStatus status;
     QVector<flatlas::core::GitCommitInfo> commits;
+};
+
+class GitDiffHighlighter final : public QSyntaxHighlighter
+{
+public:
+    explicit GitDiffHighlighter(QTextDocument *document)
+        : QSyntaxHighlighter(document)
+    {
+        m_addedFormat.setForeground(QColor(92, 214, 118));
+        m_deletedFormat.setForeground(QColor(255, 118, 118));
+        m_hunkFormat.setForeground(QColor(110, 170, 255));
+        m_hunkFormat.setFontWeight(QFont::DemiBold);
+        m_headerFormat.setForeground(QColor(180, 190, 205));
+        m_headerFormat.setFontWeight(QFont::DemiBold);
+    }
+
+protected:
+    void highlightBlock(const QString &text) override
+    {
+        if (text.startsWith(QStringLiteral("@@"))) {
+            setFormat(0, text.length(), m_hunkFormat);
+        } else if (text.startsWith(QStringLiteral("+++")) || text.startsWith(QStringLiteral("---"))) {
+            setFormat(0, text.length(), m_headerFormat);
+        } else if (text.startsWith(QLatin1Char('+'))) {
+            setFormat(0, text.length(), m_addedFormat);
+        } else if (text.startsWith(QLatin1Char('-'))) {
+            setFormat(0, text.length(), m_deletedFormat);
+        } else if (text.startsWith(QStringLiteral("diff --git")) || text.startsWith(QStringLiteral("index "))) {
+            setFormat(0, text.length(), m_headerFormat);
+        }
+    }
+
+private:
+    QTextCharFormat m_addedFormat;
+    QTextCharFormat m_deletedFormat;
+    QTextCharFormat m_hunkFormat;
+    QTextCharFormat m_headerFormat;
 };
 
 QWidget *createGitRow(const QString &title, const QString &subtitle, QWidget *parent)
@@ -63,12 +106,13 @@ QWidget *createGitRow(const QString &title, const QString &subtitle, QWidget *pa
     return row;
 }
 
-void addGitRow(QListWidget *list, QWidget *row)
+QListWidgetItem *addGitRow(QListWidget *list, QWidget *row)
 {
     auto *item = new QListWidgetItem(list);
     item->setSizeHint(QSize(0, 54));
     list->addItem(item);
     list->setItemWidget(item, row);
+    return item;
 }
 
 } // namespace
@@ -237,7 +281,10 @@ void ModManagerPage::setupUi()
     m_gitTabs->setDocumentMode(true);
     m_gitChangesList = new QListWidget(m_gitTabs);
     m_gitChangesList->setAlternatingRowColors(true);
-    m_gitChangesList->setSelectionMode(QAbstractItemView::NoSelection);
+    m_gitChangesList->setSelectionMode(QAbstractItemView::SingleSelection);
+    connect(m_gitChangesList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *) {
+        showGitDiffForCurrentChange();
+    });
     m_gitTabs->addTab(m_gitChangesList, tr("Changes"));
     m_gitCommitList = new QListWidget(m_gitTabs);
     m_gitCommitList->setAlternatingRowColors(true);
@@ -576,6 +623,45 @@ void ModManagerPage::onInitializeGitClicked()
     refreshGitPanel();
 }
 
+void ModManagerPage::showGitDiffForCurrentChange()
+{
+    if (!m_gitChangesList)
+        return;
+
+    auto *item = m_gitChangesList->currentItem();
+    if (!item)
+        return;
+
+    const QString relativePath = item->data(Qt::UserRole).toString();
+    if (relativePath.trimmed().isEmpty())
+        return;
+
+    QString errorMessage;
+    const QString diff = flatlas::core::GitSupport::diffForFile(selectedProfileSourcePath(), relativePath, &errorMessage);
+    if (!errorMessage.trimmed().isEmpty()) {
+        QMessageBox::warning(this, tr("Git Diff"), errorMessage);
+        return;
+    }
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Git Diff: %1").arg(relativePath));
+    dialog.resize(980, 640);
+    auto *layout = new QVBoxLayout(&dialog);
+
+    auto *editor = new QPlainTextEdit(&dialog);
+    editor->setReadOnly(true);
+    editor->setLineWrapMode(QPlainTextEdit::NoWrap);
+    editor->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    editor->setPlainText(diff.trimmed().isEmpty() ? tr("No diff available.") : diff);
+    new GitDiffHighlighter(editor->document());
+    layout->addWidget(editor, 1);
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+    dialog.exec();
+}
+
 void ModManagerPage::refreshGitPanel()
 {
     if (!m_gitStatusLabel || !m_gitInstallBtn || !m_gitInitBtn || !m_gitSupportCheck
@@ -663,7 +749,8 @@ void ModManagerPage::refreshGitPanel()
                 const QString subtitle = file.untracked
                     ? tr("New file - +%1 / -%2").arg(file.addedLines).arg(file.deletedLines)
                     : tr("Modified - +%1 / -%2").arg(file.addedLines).arg(file.deletedLines);
-                addGitRow(m_gitChangesList, createGitRow(file.path, subtitle, m_gitChangesList));
+                auto *item = addGitRow(m_gitChangesList, createGitRow(file.path, subtitle, m_gitChangesList));
+                item->setData(Qt::UserRole, file.path);
             }
         }
 

@@ -83,6 +83,7 @@ private:
     void rebuildSectorTabs();
     void applySector(const QString &sectorKey);
     void applyThemeStyling();
+    QRectF allowedPlacementSceneRect() const;
     QRectF mapContentRect() const;
     void fitMapInView();
     void setMoveEnabled(bool enabled);
@@ -108,6 +109,7 @@ private:
     QToolBar *m_mapToolBar = nullptr;
     QAction *m_addSystemAction = nullptr;
     QAction *m_addSectorAction = nullptr;
+    QAction *m_saveAction = nullptr;
     QAction *m_moveAction = nullptr;
     QTabBar *m_sectorTabs = nullptr;
     QTreeWidget *m_systemTree = nullptr;

@@ -121,6 +121,9 @@ bool hasExternalSectorPosition(const SystemInfo &sys)
     return false;
 }
 
+constexpr double kUniversePlacementMin = 0.0;
+constexpr double kUniversePlacementMax = 15.0;
+
 } // namespace
 
 // ─── Custom graphics view with zoom ──────────────────────
@@ -445,6 +448,15 @@ void UniverseEditorPage::setupUi()
     m_addSectorAction->setEnabled(false);
     m_mapToolBar->addAction(tr("Delete System"), this, [this]() { onDeleteSystem(); });
     m_mapToolBar->addSeparator();
+    m_saveAction = m_mapToolBar->addAction(tr("Save"), this, [this]() {
+        if (!save()) {
+            QMessageBox::warning(this,
+                                 tr("Save Failed"),
+                                 tr("Universe.ini could not be saved:\n%1").arg(m_filePath));
+        }
+    });
+    m_saveAction->setEnabled(false);
+    m_mapToolBar->addSeparator();
     m_mapToolBar->addAction(tr("Fit View"), this, &UniverseEditorPage::fitMapInView);
     m_mapToolBar->addAction(tr("Shortest Path..."), this, &UniverseEditorPage::onFindShortestPath);
     m_mapToolBar->addSeparator();
@@ -558,7 +570,7 @@ void UniverseEditorPage::refreshMap()
     if (!m_data) return;
 
     // Compute adaptive scale: normalize so largest coordinate → 500 scene units
-    double maxCoord = 1.0;
+    double maxCoord = kUniversePlacementMax;
     int visibleSystems = 0;
     for (const auto &sys : m_data->systems) {
         if (!systemVisibleInActiveSector(sys))
@@ -570,8 +582,16 @@ void UniverseEditorPage::refreshMap()
     }
     m_mapScale = 500.0 / maxCoord;
 
+    const QRectF placementRect = allowedPlacementSceneRect();
+    auto *placementItem = m_mapScene->addRect(placementRect,
+                                             QPen(QColor(130, 190, 255, 140), 1.4, Qt::DashLine),
+                                             QBrush(QColor(80, 150, 230, 22)));
+    placementItem->setZValue(-20);
+
     if (visibleSystems == 0) {
-        m_mapScene->setSceneRect(QRectF(-320.0, -180.0, 640.0, 360.0));
+        const QRectF contentRect = mapContentRect();
+        if (contentRect.isValid())
+            m_mapScene->setSceneRect(contentRect);
         auto *emptyLabel = m_mapScene->addSimpleText(tr("No systems in the selected sector."));
         emptyLabel->setBrush(QColor(180, 190, 205));
         emptyLabel->setZValue(10);
@@ -1364,16 +1384,24 @@ void UniverseEditorPage::syncSystemPositionFromMap(const QString &nickname)
     }
 }
 
+QRectF UniverseEditorPage::allowedPlacementSceneRect() const
+{
+    const double minCoord = kUniversePlacementMin * m_mapScale;
+    const double maxCoord = kUniversePlacementMax * m_mapScale;
+    return QRectF(QPointF(minCoord, minCoord), QPointF(maxCoord, maxCoord)).normalized();
+}
+
 QRectF UniverseEditorPage::mapContentRect() const
 {
-    if (!m_data || m_data->systems.isEmpty())
+    if (!m_data)
         return {};
 
-    double minX = 0.0;
-    double maxX = 0.0;
-    double minY = 0.0;
-    double maxY = 0.0;
-    bool first = true;
+    const QRectF allowedRect = allowedPlacementSceneRect();
+    double minX = allowedRect.left();
+    double maxX = allowedRect.right();
+    double minY = allowedRect.top();
+    double maxY = allowedRect.bottom();
+    bool hasContent = allowedRect.isValid() && !allowedRect.isEmpty();
 
     for (const auto &sys : m_data->systems) {
         if (!systemVisibleInActiveSector(sys))
@@ -1381,10 +1409,10 @@ QRectF UniverseEditorPage::mapContentRect() const
         const QPointF pos = scenePositionForSystem(sys);
         const double x = pos.x() * m_mapScale;
         const double y = pos.y() * m_mapScale;
-        if (first) {
+        if (!hasContent) {
             minX = maxX = x;
             minY = maxY = y;
-            first = false;
+            hasContent = true;
         } else {
             minX = std::min(minX, x);
             maxX = std::max(maxX, x);
@@ -1393,7 +1421,7 @@ QRectF UniverseEditorPage::mapContentRect() const
         }
     }
 
-    if (first)
+    if (!hasContent)
         return {};
 
     double width = maxX - minX;
@@ -1423,7 +1451,7 @@ QRectF UniverseEditorPage::mapContentRect() const
 
 void UniverseEditorPage::fitMapInView()
 {
-    if (!m_mapView || !m_mapScene || !m_data || m_data->systems.isEmpty())
+    if (!m_mapView || !m_mapScene || !m_data)
         return;
     if (m_mapView->viewport()->width() <= 1 || m_mapView->viewport()->height() <= 1)
         return;
@@ -1580,6 +1608,8 @@ void UniverseEditorPage::refreshTitle()
 void UniverseEditorPage::setDirty(bool dirty)
 {
     m_dirty = dirty;
+    if (m_saveAction)
+        m_saveAction->setEnabled(m_dirty && m_data && !m_filePath.trimmed().isEmpty());
     refreshTitle();
 }
 

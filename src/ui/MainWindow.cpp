@@ -1441,6 +1441,14 @@ bool MainWindow::saveWidgetWithPrompt(QWidget *widget)
     if (!widget)
         return true;
 
+    auto finishSave = [this](bool ok) {
+        if (ok) {
+            refreshGitStatus();
+            QTimer::singleShot(250, this, &MainWindow::refreshGitStatus);
+        }
+        return ok;
+    };
+
     if (auto *editor = qobject_cast<flatlas::editors::SystemEditorPage *>(widget)) {
         QString targetPath = editor->filePath();
         if (targetPath.isEmpty()) {
@@ -1449,24 +1457,24 @@ bool MainWindow::saveWidgetWithPrompt(QWidget *widget)
                 tr("INI Files (*.ini);;All Files (*)"));
             if (targetPath.isEmpty())
                 return false;
-            return editor->saveAs(targetPath);
+            return finishSave(editor->saveAs(targetPath));
         }
-        return editor->save();
+        return finishSave(editor->save());
     }
 
     if (auto *editor = qobject_cast<flatlas::editors::IniEditorPage *>(widget)) {
-        return editor->saveAllDirtyTabs(this);
+        return finishSave(editor->saveAllDirtyTabs(this));
     }
 
     if (auto *editor = qobject_cast<flatlas::editors::UniverseEditorPage *>(widget)) {
         const QString targetPath = editor->filePath();
         if (!targetPath.isEmpty())
-            return editor->save();
+            return finishSave(editor->save());
         return false;
     }
 
     if (auto *editor = qobject_cast<flatlas::editors::NewsRumorEditor *>(widget)) {
-        return editor->save();
+        return finishSave(editor->save());
     }
 
     if (auto *editor = qobject_cast<flatlas::editors::FactionEditorPage *>(widget)) {
@@ -1474,7 +1482,7 @@ bool MainWindow::saveWidgetWithPrompt(QWidget *widget)
         const bool ok = editor->save(&error);
         if (!ok && !error.trimmed().isEmpty())
             QMessageBox::warning(this, tr("Faction Editor"), tr("Could not save factions:\n%1").arg(error));
-        return ok;
+        return finishSave(ok);
     }
 
     return true;
@@ -1611,6 +1619,11 @@ void MainWindow::restoreOpenToolTabs()
             });
             connect(editor, &flatlas::editors::SystemEditorPage::open3DSystemViewRequested,
                     this, [this, editor]() { open3DSystemEditorFor(editor); });
+            connect(editor, &flatlas::editors::SystemEditorPage::savedToDisk,
+                    this, [this]() {
+                refreshGitStatus();
+                QTimer::singleShot(250, this, &MainWindow::refreshGitStatus);
+            });
             connect(editor, &flatlas::editors::SystemEditorPage::modelPreviewRequested,
                     this, [this](const QString &modelPath, const QString &displayLabel) {
                 if (!showModelInViewer(modelPath, displayLabel)) {
@@ -2259,6 +2272,11 @@ void MainWindow::openSystemFromUniverse(const QString &nickname,
         int i = m_centerTabs->indexOf(editor);
         if (i >= 0)
             m_centerTabs->setTabText(i, formatSystemTabTitle(title, ingameName));
+    });
+    connect(editor, &flatlas::editors::SystemEditorPage::savedToDisk,
+            this, [this]() {
+        refreshGitStatus();
+        QTimer::singleShot(250, this, &MainWindow::refreshGitStatus);
     });
     connect(editor, &flatlas::editors::SystemEditorPage::selectionStatusChanged,
             this, [this](const QString &message) {

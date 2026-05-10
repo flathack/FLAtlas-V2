@@ -49,6 +49,7 @@ private:
     void onLaunchFlClicked();
     void onInstallGitClicked();
     void onInitializeGitClicked();
+    void showGitDiffForCurrentChange();
     void refreshGitPanel();
     bool shouldRefreshGitPanel() const;
     QString selectedProfileSourcePath() const;

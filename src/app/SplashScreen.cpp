@@ -150,8 +150,8 @@ SplashScreen::SplashScreen(QWidget * /*parent*/)
 }
 
 SplashScreen::SplashScreen(const QPixmap &pixmap)
-    : QSplashScreen(pixmap.scaled(500,
-                                  1400,
+    : QSplashScreen(pixmap.scaled(750,
+                                  2100,
                                   Qt::KeepAspectRatio,
                                   Qt::SmoothTransformation),
                     Qt::WindowStaysOnTopHint | Qt::FramelessWindowHint | Qt::SplashScreen)
