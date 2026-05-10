@@ -40,6 +40,8 @@ private:
     void migrateFlatlasIdsEntries();
     void migrateFlatlasIdsEntriesToTarget(const QString &targetDll, bool showNoEntriesMessage);
     void refreshLanguageCombo();
+    void chooseCustomLanguageFile();
+    void clearCustomLanguageFile();
     void updateLanguagesFromGitHub();
     void updateThemeColorButton(const QString &key);
     void startSuiteDownload(const QString &key, const QString &name, const QString &repoApiUrl);
@@ -52,6 +54,7 @@ private:
     QComboBox *m_themeCombo = nullptr;
     QComboBox *m_languageCombo = nullptr;
     QPushButton *m_languageUpdateButton = nullptr;
+    QLineEdit *m_customLanguageFileEdit = nullptr;
     QLabel *m_languageStatusLabel = nullptr;
     QCheckBox *m_updateCheckBox = nullptr;
     QCheckBox *m_restoreTabsCheckBox = nullptr;

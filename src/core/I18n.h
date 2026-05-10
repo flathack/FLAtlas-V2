@@ -25,6 +25,7 @@ private:
     I18n() = default;
     void removeTranslators();
     QString m_language;
+    QString m_customLanguageFile;
     QTranslator *m_appTranslator = nullptr;
     QTranslator *m_qtTranslator = nullptr;
 };

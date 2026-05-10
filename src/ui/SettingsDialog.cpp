@@ -156,6 +156,51 @@ QString activeFreelancerIniPath()
     return QFileInfo::exists(fallback) ? fallback : QString();
 }
 
+QString normalizeLanguageCode(QString langCode)
+{
+    langCode = langCode.trimmed().toLower();
+    const int dash = langCode.indexOf(QLatin1Char('-'));
+    if (dash > 0)
+        langCode = langCode.left(dash);
+    const int underscore = langCode.indexOf(QLatin1Char('_'));
+    if (underscore > 0)
+        langCode = langCode.left(underscore);
+    return langCode.isEmpty() ? QStringLiteral("en") : langCode;
+}
+
+QString languageCodeFromJsonFile(const QString &path, QString *errorMessage = nullptr)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("Language file could not be opened.");
+        return {};
+    }
+
+    QJsonParseError parseError;
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("Language file is not a valid JSON object.");
+        return {};
+    }
+
+    const QJsonObject object = doc.object();
+    const QString rawCode = object.value(QStringLiteral("code")).toString().trimmed();
+    if (rawCode.isEmpty()) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("Language file does not contain a language code.");
+        return {};
+    }
+    const QString code = normalizeLanguageCode(rawCode);
+    if (object.value(QStringLiteral("translations")).toObject().isEmpty()) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("Language file does not contain translations.");
+        return {};
+    }
+    return code;
+}
+
 QString idsEntrySummary(const IdsEntryRecord &entry)
 {
     const QString kind = entry.hasHtmlValue ? QStringLiteral("ids_info") : QStringLiteral("string");
@@ -220,8 +265,24 @@ void SettingsDialog::setupUi()
     m_languageStatusLabel = new QLabel(generalTab);
     m_languageStatusLabel->setWordWrap(true);
     generalLayout->addRow(QString(), m_languageStatusLabel);
+
+    auto *customLanguageRow = new QWidget(generalTab);
+    auto *customLanguageLayout = new QHBoxLayout(customLanguageRow);
+    customLanguageLayout->setContentsMargins(0, 0, 0, 0);
+    m_customLanguageFileEdit = new QLineEdit(customLanguageRow);
+    m_customLanguageFileEdit->setReadOnly(true);
+    m_customLanguageFileEdit->setPlaceholderText(tr("No custom language file selected"));
+    customLanguageLayout->addWidget(m_customLanguageFileEdit, 1);
+    auto *chooseCustomLanguageButton = new QPushButton(tr("Choose JSON"), customLanguageRow);
+    customLanguageLayout->addWidget(chooseCustomLanguageButton);
+    auto *clearCustomLanguageButton = new QPushButton(tr("Clear"), customLanguageRow);
+    customLanguageLayout->addWidget(clearCustomLanguageButton);
+    generalLayout->addRow(tr("Custom Language File:"), customLanguageRow);
+
     refreshLanguageCombo();
     connect(m_languageUpdateButton, &QPushButton::clicked, this, &SettingsDialog::updateLanguagesFromGitHub);
+    connect(chooseCustomLanguageButton, &QPushButton::clicked, this, &SettingsDialog::chooseCustomLanguageFile);
+    connect(clearCustomLanguageButton, &QPushButton::clicked, this, &SettingsDialog::clearCustomLanguageFile);
 
     m_themeCombo = new QComboBox(generalTab);
     m_themeCombo->addItems(flatlas::core::Theme::instance().availableThemes());
@@ -427,6 +488,9 @@ void SettingsDialog::loadSettings()
 {
     auto &config = flatlas::core::Config::instance();
     m_themeCombo->setCurrentText(config.getString(QStringLiteral("theme"), flatlas::core::Theme::instance().currentTheme()));
+    if (m_customLanguageFileEdit)
+        m_customLanguageFileEdit->setText(config.getString(QStringLiteral("customLanguageFile")));
+    refreshLanguageCombo();
     m_languageCombo->setCurrentText(config.getString(QStringLiteral("language"), flatlas::core::I18n::instance().currentLanguage()));
     m_updateCheckBox->setChecked(config.getBool(QStringLiteral("updateCheckEnabled"), true));
     m_restoreTabsCheckBox->setChecked(config.getBool(QStringLiteral("restoreOpenTabs"), false));
@@ -451,6 +515,7 @@ void SettingsDialog::saveSettings()
     const QString lang = m_languageCombo->currentText();
     config.setString(QStringLiteral("theme"), theme);
     config.setString(QStringLiteral("language"), lang);
+    config.setString(QStringLiteral("customLanguageFile"), m_customLanguageFileEdit ? m_customLanguageFileEdit->text().trimmed() : QString());
     config.setBool(QStringLiteral("updateCheckEnabled"), m_updateCheckBox->isChecked());
     config.setBool(QStringLiteral("restoreOpenTabs"), m_restoreTabsCheckBox->isChecked());
     for (auto it = m_themeColorButtons.constBegin(); it != m_themeColorButtons.constEnd(); ++it) {
@@ -485,6 +550,7 @@ void SettingsDialog::resetToDefaults()
     config.clear();
     config.setString(QStringLiteral("theme"), QStringLiteral("dark"));
     config.setString(QStringLiteral("language"), QStringLiteral("en"));
+    config.setString(QStringLiteral("customLanguageFile"), QString());
     config.setBool(QStringLiteral("updateCheckEnabled"), true);
     config.setBool(QStringLiteral("restoreOpenTabs"), false);
     config.setStringList(QStringLiteral("pinnedTools"), defaultPinnedTools());
@@ -782,9 +848,59 @@ void SettingsDialog::refreshLanguageCombo()
         : m_languageCombo->currentText();
     m_languageCombo->clear();
     m_languageCombo->addItems(flatlas::core::I18n::availableLanguages());
+    if (m_customLanguageFileEdit && !m_customLanguageFileEdit->text().trimmed().isEmpty()) {
+        const QString customCode = languageCodeFromJsonFile(m_customLanguageFileEdit->text().trimmed());
+        if (!customCode.isEmpty() && m_languageCombo->findText(customCode) < 0)
+            m_languageCombo->addItem(customCode);
+    }
     const int index = m_languageCombo->findText(current);
     if (index >= 0)
         m_languageCombo->setCurrentIndex(index);
+}
+
+void SettingsDialog::chooseCustomLanguageFile()
+{
+    const QString current = m_customLanguageFileEdit ? m_customLanguageFileEdit->text().trimmed() : QString();
+    const QString startPath = current.isEmpty() ? QDir::homePath() : current;
+    const QString path = QFileDialog::getOpenFileName(this,
+                                                      tr("Choose Custom Language File"),
+                                                      startPath,
+                                                      tr("JSON Files (*.json);;All Files (*)"));
+    if (path.isEmpty())
+        return;
+
+    QString errorMessage;
+    const QString code = languageCodeFromJsonFile(path, &errorMessage);
+    if (code.isEmpty()) {
+        QMessageBox::warning(this, tr("Custom Language File"), errorMessage);
+        return;
+    }
+
+    if (m_customLanguageFileEdit)
+        m_customLanguageFileEdit->setText(QDir::cleanPath(path));
+
+    refreshLanguageCombo();
+    const int index = m_languageCombo->findText(code);
+    if (index >= 0)
+        m_languageCombo->setCurrentIndex(index);
+    if (m_languageStatusLabel)
+        m_languageStatusLabel->setText(tr("Custom language loaded: %1").arg(code));
+}
+
+void SettingsDialog::clearCustomLanguageFile()
+{
+    const QString oldCustomCode = m_customLanguageFileEdit
+        ? languageCodeFromJsonFile(m_customLanguageFileEdit->text().trimmed())
+        : QString();
+    if (m_customLanguageFileEdit)
+        m_customLanguageFileEdit->clear();
+
+    if (m_languageCombo && !oldCustomCode.isEmpty() && m_languageCombo->currentText() == oldCustomCode)
+        m_languageCombo->setCurrentText(QStringLiteral("en"));
+
+    refreshLanguageCombo();
+    if (m_languageStatusLabel)
+        m_languageStatusLabel->setText(tr("Custom language file cleared."));
 }
 
 void SettingsDialog::updateLanguagesFromGitHub()

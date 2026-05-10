@@ -1,8 +1,11 @@
 #include "I18n.h"
 
+#include "Config.h"
+
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -83,10 +86,40 @@ QJsonObject readJsonObject(const QString &path)
     return doc.object();
 }
 
+QString customLanguageFilePath()
+{
+    const QString path = Config::instance().getString(QStringLiteral("customLanguageFile")).trimmed();
+    if (path.isEmpty() || !QFileInfo::exists(path))
+        return {};
+    return path;
+}
+
+QString customLanguageCode()
+{
+    const QJsonObject object = readJsonObject(customLanguageFilePath());
+    return normalizeLanguage(object.value(QStringLiteral("code")).toString());
+}
+
 QHash<QString, QString> loadTranslations(const QString &language)
 {
     if (language == QStringLiteral("en"))
         return {};
+
+    const QString customPath = customLanguageFilePath();
+    if (!customPath.isEmpty()) {
+        const QJsonObject object = readJsonObject(customPath);
+        if (normalizeLanguage(object.value(QStringLiteral("code")).toString()) == language) {
+            const QJsonObject translationObject = object.value(QStringLiteral("translations")).toObject();
+            QHash<QString, QString> translations;
+            for (auto it = translationObject.constBegin(); it != translationObject.constEnd(); ++it) {
+                const QString value = it.value().toString();
+                if (!it.key().isEmpty() && !value.isEmpty())
+                    translations.insert(it.key(), value);
+            }
+            if (!translations.isEmpty())
+                return translations;
+        }
+    }
 
     const QString fileName = language + QStringLiteral(".json");
     for (const QString &root : languageRoots()) {
@@ -120,6 +153,9 @@ QStringList loadCatalogLanguages()
                 languages << code;
         }
     }
+    const QString customCode = customLanguageCode();
+    if (customCode != QStringLiteral("en") && !languages.contains(customCode))
+        languages << customCode;
     return languages;
 }
 
@@ -153,8 +189,11 @@ void I18n::removeTranslators()
 void I18n::setLanguage(const QString &langCode)
 {
     const QString normalized = normalizeLanguage(langCode);
-    if (m_language == normalized && (normalized == QStringLiteral("en") || m_appTranslator))
+    const QString customPath = customLanguageFilePath();
+    if (m_language == normalized && m_customLanguageFile == customPath
+        && (normalized == QStringLiteral("en") || m_appTranslator)) {
         return;
+    }
 
     removeTranslators();
 
@@ -178,6 +217,7 @@ void I18n::setLanguage(const QString &langCode)
     }
 
     m_language = normalized;
+    m_customLanguageFile = customPath;
     emit languageChanged();
 }
 
