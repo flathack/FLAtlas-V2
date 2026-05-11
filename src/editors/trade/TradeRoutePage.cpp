@@ -108,6 +108,43 @@ QString htmlSection(const QString &title, const QStringList &items)
         .arg(htmlEscape(title), htmlList(items));
 }
 
+bool writeCommodityIds(QWidget *parent, const QString &dataPath, TradeCommodityRecord *commodity)
+{
+    const auto dataset = flatlas::infrastructure::IdsDataService::loadFromGameRoot(gameRootForDataPath(dataPath));
+    const QString targetDll = flatlas::infrastructure::IdsDataService::defaultCreationDllName(dataset);
+    QString idsError;
+    int idsName = commodity->idsName;
+    if (!flatlas::infrastructure::IdsDataService::writeStringEntry(
+            dataset, targetDll, commodity->idsName, commodity->displayName.trimmed(), &idsName, &idsError)) {
+        QMessageBox::warning(parent,
+                             QObject::tr("Commodity"),
+                             QObject::tr("The commodity name could not be written to the IDS data.\n%1").arg(idsError));
+        return false;
+    }
+
+    const QString infoText = commodity->idsInfoText.trimmed().isEmpty()
+        ? commodity->displayName.trimmed()
+        : commodity->idsInfoText.trimmed();
+    int idsInfo = commodity->idsInfo;
+    if (!flatlas::infrastructure::IdsDataService::writeInfocardEntry(
+            dataset,
+            targetDll,
+            commodity->idsInfo,
+            flatlas::infrastructure::XmlInfocard::wrapAsInfocard(infoText),
+            &idsInfo,
+            &idsError)) {
+        QMessageBox::warning(parent,
+                             QObject::tr("Commodity"),
+                             QObject::tr("The commodity infocard could not be written to the IDS data.\n%1").arg(idsError));
+        return false;
+    }
+
+    commodity->idsName = idsName;
+    commodity->idsInfo = idsInfo;
+    commodity->idsInfoText = infoText;
+    return true;
+}
+
 QString formatSeconds(int seconds)
 {
     const int minutes = seconds / 60;
@@ -119,11 +156,14 @@ QString formatSeconds(int seconds)
 
 class AddCommodityDialog final : public QDialog {
 public:
-    AddCommodityDialog(const QVector<TradeCommodityRecord> &existingCommodities, QWidget *parent = nullptr)
+    AddCommodityDialog(const QVector<TradeCommodityRecord> &existingCommodities,
+                       QWidget *parent = nullptr,
+                       const TradeCommodityRecord *initialCommodity = nullptr)
         : QDialog(parent)
         , m_existingCommodities(existingCommodities)
+        , m_editMode(initialCommodity != nullptr)
     {
-        setWindowTitle(tr("Add Commodity"));
+        setWindowTitle(m_editMode ? tr("Edit Commodity") : tr("Add Commodity"));
         resize(680, 720);
 
         auto *layout = new QVBoxLayout(this);
@@ -132,6 +172,8 @@ public:
 
         for (const auto &commodity : m_existingCommodities)
             m_existingNicknames.insert(commodity.nickname.trimmed().toLower());
+        if (initialCommodity)
+            m_originalNickname = initialCommodity->nickname.trimmed();
 
         m_nicknameEdit = new QLineEdit(this);
         m_nicknameEdit->setPlaceholderText(QStringLiteral("commodity_new_item"));
@@ -143,7 +185,7 @@ public:
         form->addRow(tr("Ingame Name"), m_ingameNameEdit);
 
         m_idsInfoEdit = new QPlainTextEdit(this);
-        m_idsInfoEdit->setPlainText(defaultIdsInfoText());
+        m_idsInfoEdit->setPlainText(initialCommodity ? initialCommodity->idsInfoText : defaultIdsInfoText());
         m_idsInfoEdit->setPlaceholderText(tr("Commodity infocard text"));
         m_idsInfoEdit->setMinimumHeight(96);
         form->addRow(tr("ids_info text"), m_idsInfoEdit);
@@ -209,7 +251,7 @@ public:
         layout->addWidget(note);
 
         auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
-        buttons->button(QDialogButtonBox::Ok)->setText(tr("Create"));
+        buttons->button(QDialogButtonBox::Ok)->setText(m_editMode ? tr("Save") : tr("Create"));
         layout->addWidget(buttons);
 
         connect(m_nicknameEdit, &QLineEdit::textChanged, this, [this](const QString &value) {
@@ -225,7 +267,30 @@ public:
         connect(buttons, &QDialogButtonBox::accepted, this, &AddCommodityDialog::accept);
         connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
-        m_nicknameEdit->setText(QStringLiteral("commodity_new_item"));
+        if (initialCommodity) {
+            m_nicknameEdit->setText(initialCommodity->nickname);
+            m_ingameNameEdit->setText(initialCommodity->displayName);
+            m_basePriceSpin->setValue(initialCommodity->basePrice);
+            m_volumeSpin->setValue(qMax(1, initialCommodity->volume));
+            m_msgIdPrefixEdit->setText(initialCommodity->msgIdPrefix);
+            m_equipmentEdit->setText(initialCommodity->equipment.trimmed().isEmpty()
+                                         ? initialCommodity->nickname
+                                         : initialCommodity->equipment.trimmed());
+            m_combinableCheck->setChecked(initialCommodity->combinable);
+            m_goodSellSpin->setValue(initialCommodity->goodSellPrice);
+            m_badBuySpin->setValue(initialCommodity->badBuyPrice);
+            m_badSellSpin->setValue(initialCommodity->badSellPrice);
+            m_goodBuySpin->setValue(initialCommodity->goodBuyPrice);
+            m_shopArchetypeEdit->setText(initialCommodity->shopArchetype);
+            m_itemIconEdit->setText(initialCommodity->itemIcon);
+            m_jumpDistSpin->setValue(initialCommodity->jumpDist);
+            m_hitPtsSpin->setValue(qMax(1, initialCommodity->hitPts));
+            m_decayPerSecondSpin->setValue(initialCommodity->decayPerSecond);
+            m_msgIdPrefixTouched = true;
+            m_ingameNameTouched = true;
+        } else {
+            m_nicknameEdit->setText(QStringLiteral("commodity_new_item"));
+        }
     }
 
     TradeCommodityRecord commodity() const
@@ -240,6 +305,21 @@ public:
         commodity.basePrice = m_basePriceSpin->value();
         commodity.volume = m_volumeSpin->value();
         commodity.idsInfoText = m_idsInfoEdit->toPlainText().trimmed();
+        if (m_editMode) {
+            const auto existingIt = std::find_if(m_existingCommodities.begin(),
+                                                 m_existingCommodities.end(),
+                                                 [this](const TradeCommodityRecord &existing) {
+                                                     return existing.nickname.compare(m_originalNickname, Qt::CaseInsensitive) == 0;
+                                                 });
+            if (existingIt != m_existingCommodities.end()) {
+                commodity.idsName = existingIt->idsName;
+                commodity.idsInfo = existingIt->idsInfo;
+                commodity.sourceFilePath = existingIt->sourceFilePath;
+                commodity.unitsPerContainer = existingIt->unitsPerContainer;
+                commodity.podAppearance = existingIt->podAppearance;
+                commodity.lootAppearance = existingIt->lootAppearance;
+            }
+        }
         commodity.combinable = m_combinableCheck->isChecked();
         commodity.goodSellPrice = m_goodSellSpin->value();
         commodity.badBuyPrice = m_badBuySpin->value();
@@ -255,21 +335,23 @@ public:
 
     void accept() override
     {
+        const QString dialogTitle = m_editMode ? tr("Edit Commodity") : tr("Add Commodity");
         const QString nickname = m_nicknameEdit->text().trimmed();
         if (nickname.isEmpty()) {
-            QMessageBox::warning(this, tr("Add Commodity"), tr("Please enter a commodity nickname."));
+            QMessageBox::warning(this, dialogTitle, tr("Please enter a commodity nickname."));
             return;
         }
         if (!nickname.startsWith(QStringLiteral("commodity_"), Qt::CaseInsensitive)) {
-            QMessageBox::warning(this, tr("Add Commodity"), tr("Commodity nicknames must start with commodity_."));
+            QMessageBox::warning(this, dialogTitle, tr("Commodity nicknames must start with commodity_."));
             return;
         }
-        if (m_existingNicknames.contains(nickname.toLower())) {
-            QMessageBox::warning(this, tr("Add Commodity"), tr("A commodity with this nickname already exists."));
+        if (m_existingNicknames.contains(nickname.toLower())
+            && nickname.compare(m_originalNickname, Qt::CaseInsensitive) != 0) {
+            QMessageBox::warning(this, dialogTitle, tr("A commodity with this nickname already exists."));
             return;
         }
         if (m_basePriceSpin->value() <= 0) {
-            QMessageBox::warning(this, tr("Add Commodity"), tr("Please enter a base price greater than zero."));
+            QMessageBox::warning(this, dialogTitle, tr("Please enter a base price greater than zero."));
             return;
         }
         QDialog::accept();
@@ -288,6 +370,8 @@ private:
 
     QSet<QString> m_existingNicknames;
     QVector<TradeCommodityRecord> m_existingCommodities;
+    QString m_originalNickname;
+    bool m_editMode = false;
     QLineEdit *m_nicknameEdit = nullptr;
     QLineEdit *m_ingameNameEdit = nullptr;
     QPlainTextEdit *m_idsInfoEdit = nullptr;
@@ -593,6 +677,9 @@ void TradeRoutePage::setupUi()
     layout->addWidget(m_statusLabel);
 
     connect(m_commodityTable, &QTableWidget::itemSelectionChanged, this, &TradeRoutePage::populatePriceTable);
+    connect(m_commodityTable, &QTableWidget::cellDoubleClicked, this, [this](int, int) {
+        editCommodity();
+    });
     connect(m_commodityTable, &QTableWidget::cellChanged, this, [this](int row, int column) {
         if (m_updatingTables || row < 0 || row >= m_workspace.commodities.size())
             return;
@@ -667,6 +754,7 @@ void TradeRoutePage::setupToolBar()
     m_toolBar->addAction(tr("Recalculate"), this, &TradeRoutePage::scanAndCalculate);
     m_toolBar->addSeparator();
     m_toolBar->addAction(tr("Add Commodity"), this, &TradeRoutePage::addCommodity);
+    m_toolBar->addAction(tr("Edit Commodity"), this, &TradeRoutePage::editCommodity);
     m_toolBar->addAction(tr("Remove Commodity"), this, &TradeRoutePage::removeCommodity);
     m_toolBar->addAction(tr("Add Price"), this, &TradeRoutePage::addPriceEntry);
     m_toolBar->addAction(tr("Remove Price"), this, &TradeRoutePage::removePriceEntry);
@@ -1014,42 +1102,52 @@ void TradeRoutePage::addCommodity()
         return;
 
     TradeCommodityRecord commodity = dialog.commodity();
-    const auto dataset = flatlas::infrastructure::IdsDataService::loadFromGameRoot(gameRootForDataPath(m_dataPath));
-    const QString targetDll = flatlas::infrastructure::IdsDataService::defaultCreationDllName(dataset);
-    QString idsError;
-    int idsName = 0;
-    if (!flatlas::infrastructure::IdsDataService::writeStringEntry(
-            dataset, targetDll, 0, commodity.displayName.trimmed(), &idsName, &idsError)) {
-        QMessageBox::warning(this,
-                             tr("Add Commodity"),
-                             tr("The commodity name could not be written to the IDS data.\n%1").arg(idsError));
+    if (!writeCommodityIds(this, m_dataPath, &commodity))
         return;
-    }
-
-    const QString infoText = commodity.idsInfoText.trimmed().isEmpty()
-        ? commodity.displayName.trimmed()
-        : commodity.idsInfoText.trimmed();
-    int idsInfo = 0;
-    if (!flatlas::infrastructure::IdsDataService::writeInfocardEntry(
-            dataset,
-            targetDll,
-            0,
-            flatlas::infrastructure::XmlInfocard::wrapAsInfocard(infoText),
-            &idsInfo,
-            &idsError)) {
-        QMessageBox::warning(this,
-                             tr("Add Commodity"),
-                             tr("The commodity infocard could not be written to the IDS data.\n%1").arg(idsError));
-        return;
-    }
-
-    commodity.idsName = idsName;
-    commodity.idsInfo = idsInfo;
-    commodity.idsInfoText = infoText;
     commodity.sourceFilePath = m_workspace.goodsFilePath;
     m_workspace.commodities.append(commodity);
     populateCommodityFilter();
     populateCommodityTable();
+    markDirty();
+    scheduleRecalculation();
+}
+
+void TradeRoutePage::editCommodity()
+{
+    const int row = m_commodityTable->currentRow();
+    if (row < 0 || row >= m_workspace.commodities.size())
+        return;
+
+    const TradeCommodityRecord originalCommodity = m_workspace.commodities.at(row);
+    AddCommodityDialog dialog(m_workspace.commodities, this, &originalCommodity);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    TradeCommodityRecord editedCommodity = dialog.commodity();
+    if (!writeCommodityIds(this, m_dataPath, &editedCommodity))
+        return;
+
+    editedCommodity.sourceFilePath = originalCommodity.sourceFilePath.isEmpty()
+        ? m_workspace.goodsFilePath
+        : originalCommodity.sourceFilePath;
+
+    const QString oldNickname = originalCommodity.nickname;
+    const QString newNickname = editedCommodity.nickname;
+    m_workspace.commodities[row] = editedCommodity;
+    for (auto &price : m_workspace.prices) {
+        if (price.commodityNickname.compare(oldNickname, Qt::CaseInsensitive) != 0)
+            continue;
+        price.commodityNickname = newNickname;
+        if (price.implicit) {
+            price.price = editedCommodity.basePrice;
+            price.multiplier = 1.0;
+        }
+    }
+
+    populateCommodityFilter();
+    populateCommodityTable();
+    m_commodityTable->selectRow(row);
+    populatePriceTable();
     markDirty();
     scheduleRecalculation();
 }

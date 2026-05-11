@@ -72,7 +72,10 @@ QString createDataTree(QTemporaryDir &tempDir)
                                  "loot_appearance = lootcrate_grey\n"
                                  "decay_per_second = 0\n"
                                  "volume = 1\n"
-                                 "hit_pts = 250\n"));
+                                 "hit_pts = 250\n\n"
+                                 "[Munition]\n"
+                                 "nickname = li_gun01_mark01_ammo\n"
+                                 "hp_type = hp_gun\n"));
 
     writeTextFile(tempDir.filePath(QStringLiteral("DATA/EQUIPMENT/market_commodities.ini")),
                   QStringLiteral("[BaseGood]\n"
@@ -176,6 +179,7 @@ void TestTradeRouteDataService::testSaveWorkspace()
 
     QString errorMessage;
     QVERIFY2(TradeRouteDataService::saveWorkspace(workspace, &errorMessage), qPrintable(errorMessage));
+    QVERIFY2(TradeRouteDataService::saveWorkspace(workspace, &errorMessage), qPrintable(errorMessage));
 
     const TradeRouteWorkspaceData reloaded = TradeRouteDataService::loadFromDataPath(dataPath);
     const auto goldIt = std::find_if(reloaded.commodities.begin(), reloaded.commodities.end(), [](const TradeCommodityRecord &commodity) {
@@ -208,6 +212,9 @@ void TestTradeRouteDataService::testSaveWorkspace()
     QVERIFY(selectText.contains(QStringLiteral("nickname = commodity_gold")));
     QVERIFY(selectText.contains(QStringLiteral("ids_name = 261900")));
     QVERIFY(selectText.contains(QStringLiteral("nickname = commodity_platinum")));
+    QVERIFY(selectText.indexOf(QStringLiteral("nickname = commodity_platinum"))
+            < selectText.indexOf(QStringLiteral("[Munition]")));
+    QVERIFY(!selectText.contains(QStringLiteral("\n\n\n")));
 
     const auto priceIt = std::find_if(reloaded.prices.begin(), reloaded.prices.end(), [](const TradePriceRecord &price) {
         return !price.implicit

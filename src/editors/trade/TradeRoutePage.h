@@ -70,6 +70,7 @@ private:
     QString selectedCommodityNickname() const;
     int selectedRouteIndex() const;
     void addCommodity();
+    void editCommodity();
     void removeCommodity();
     void addPriceEntry();
     void removePriceEntry();

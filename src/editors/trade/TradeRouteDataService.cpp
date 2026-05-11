@@ -511,7 +511,7 @@ QString updateSelectCommodityBlock(const QStringList &lines, int headerIndex, in
         if (!writtenKeys.contains(entry.first.toLower()))
             out.append(entry.first + QStringLiteral(" = ") + entry.second);
     }
-    return out.join(QLatin1Char('\n')) + QLatin1Char('\n');
+    return out.join(QLatin1Char('\n'));
 }
 
 bool writeSelectEquipPreservingComments(const QString &selectEquipPath,
@@ -527,9 +527,12 @@ bool writeSelectEquipPreservingComments(const QString &selectEquipPath,
 
     QSet<QString> writtenSelectCommoditySections;
     QString out;
+    int lastCommodityInsertPosition = 0;
     if (QFile::exists(selectEquipPath)) {
         const QString text = iniTextForFile(selectEquipPath);
-        const QStringList lines = text.split(QLatin1Char('\n'));
+        QStringList lines = text.split(QLatin1Char('\n'));
+        if (text.endsWith(QLatin1Char('\n')) && !lines.isEmpty())
+            lines.removeLast();
         int sectionStart = -1;
         int i = 0;
         while (i < lines.size()) {
@@ -564,19 +567,41 @@ bool writeSelectEquipPreservingComments(const QString &selectEquipPath,
             const auto it = commoditiesBySelectNickname.constFind(nickname);
             if (it != commoditiesBySelectNickname.constEnd()) {
                 out += updateSelectCommodityBlock(lines, sectionStart, sectionEnd, it.value());
+                if (sectionEnd < lines.size())
+                    out += QLatin1Char('\n');
+                lastCommodityInsertPosition = out.size();
                 writtenSelectCommoditySections.insert(nickname);
             }
             i = sectionEnd;
         }
     }
 
+    if (!out.isEmpty() && !out.endsWith(QLatin1Char('\n')))
+        out += QLatin1Char('\n');
+
+    QString newCommoditySections;
     for (const auto &commodity : commodities) {
         const QString nickname = normalizedNickname(selectNicknameForCommodity(commodity));
         if (nickname.isEmpty() || writtenSelectCommoditySections.contains(nickname))
             continue;
-        if (!out.isEmpty() && !out.endsWith(QStringLiteral("\n\n")))
-            out += QLatin1Char('\n');
-        out += serializeNewSelectCommoditySection(commodity);
+        if (!newCommoditySections.isEmpty() && !newCommoditySections.endsWith(QStringLiteral("\n\n")))
+            newCommoditySections += QLatin1Char('\n');
+        newCommoditySections += serializeNewSelectCommoditySection(commodity);
+    }
+
+    if (!newCommoditySections.isEmpty()) {
+        if (!newCommoditySections.endsWith(QLatin1Char('\n')))
+            newCommoditySections += QLatin1Char('\n');
+        if (!newCommoditySections.endsWith(QStringLiteral("\n\n")))
+            newCommoditySections += QLatin1Char('\n');
+
+        if (out.isEmpty()) {
+            out = newCommoditySections;
+        } else if (lastCommodityInsertPosition <= 0) {
+            out.insert(0, newCommoditySections);
+        } else {
+            out.insert(lastCommodityInsertPosition, newCommoditySections);
+        }
     }
 
     QFile selectFile(selectEquipPath);
