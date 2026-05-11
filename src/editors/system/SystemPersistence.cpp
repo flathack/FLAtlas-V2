@@ -564,13 +564,13 @@ static QString rebuildRawTextWithStandardOrder(const QVector<RawSectionBlock> &b
         if (it == blockIndicesByKey.end() || it->isEmpty())
             continue;
         const QString chunk = blocks[it->takeFirst()].text;
-        if (!rebuilt.isEmpty() && !rebuilt.endsWith(QLatin1Char('\n')) && !chunk.startsWith(QLatin1Char('\n')))
+        if (!rebuilt.isEmpty() && !chunk.startsWith(QLatin1Char('\n')))
             rebuilt.append(QLatin1Char('\n'));
         rebuilt.append(chunk);
     }
 
     if (!trailingText.isEmpty()) {
-        if (!rebuilt.isEmpty() && !rebuilt.endsWith(QLatin1Char('\n')) && !trailingText.startsWith(QLatin1Char('\n')))
+        if (!rebuilt.isEmpty() && !trailingText.startsWith(QLatin1Char('\n')))
             rebuilt.append(QLatin1Char('\n'));
         rebuilt.append(trailingText);
     }

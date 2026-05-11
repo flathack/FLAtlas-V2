@@ -832,7 +832,9 @@ private slots:
             "pos = 10, 0, -20\n"
             "comment = keep object comment\n"
             "\n"
+            "\n"
             "; Zone comment should stay a raw comment line\n"
+            "\n"
             "[Zone]\n"
             "nickname = zone_a\n"
             "pos = 0, 0, 0\n"
@@ -864,6 +866,7 @@ private slots:
         QVERIFY(written.contains(QStringLiteral("; Zone comment should stay a raw comment line")));
         QVERIFY(written.contains(QStringLiteral("space_color = 10, 40, 80")));
         QVERIFY(written.contains(QStringLiteral("local_faction = li_p_grp")));
+        QVERIFY(written.contains(QStringLiteral("comment = keep object comment\n\n\n; Zone comment should stay a raw comment line\n\n[Zone]")));
 
         QCOMPARE(sectionHeaders(path),
                  QStringList({QStringLiteral("SystemInfo"),
