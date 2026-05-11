@@ -53,6 +53,7 @@ flatlas_add_test(test_IniEditorPage test_IniEditorPage.cpp flatlas_editors Qt6::
 
 # Phase 7 3D view tests
 flatlas_add_test(test_SceneView3D test_SceneView3D.cpp flatlas_rendering Qt6::Widgets)
+flatlas_add_test(test_SystemMapView test_SystemMapView.cpp flatlas_rendering Qt6::Widgets)
 
 # Phase 8 CMP/3DB/Texture tests
 flatlas_add_test(test_VmeshDecoder    test_VmeshDecoder.cpp    flatlas_infrastructure)

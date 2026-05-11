@@ -37,6 +37,8 @@ namespace {
 // end up glued to the viewport edge. The NavMapScale math itself is already
 // correct — only the fitted target rect has to be expanded by the same ratio.
 constexpr double kNavMapFitPaddingFactor = 1000.0 / 880.0; // ≈ 1.1364
+constexpr double kContentFitPaddingFactor = 1.12;
+constexpr double kMinimumContentFitSceneFraction = 0.35;
 
 QRectF withNavMapPadding(const QRectF &gridRect)
 {
@@ -46,6 +48,66 @@ QRectF withNavMapPadding(const QRectF &gridRect)
     const qreal w = gridRect.width()  * kNavMapFitPaddingFactor;
     const qreal h = gridRect.height() * kNavMapFitPaddingFactor;
     return QRectF(c.x() - w / 2.0, c.y() - h / 2.0, w, h);
+}
+
+QRectF expandedAroundCenter(const QRectF &rect, double factor)
+{
+    if (rect.isNull() || rect.width() <= 0.0 || rect.height() <= 0.0)
+        return rect;
+
+    const QPointF c = rect.center();
+    const qreal w = rect.width() * factor;
+    const qreal h = rect.height() * factor;
+    return QRectF(c.x() - w / 2.0, c.y() - h / 2.0, w, h);
+}
+
+QRectF expandedToMinimumSize(const QRectF &rect, const QSizeF &minimumSize)
+{
+    if (rect.isNull() || rect.width() <= 0.0 || rect.height() <= 0.0)
+        return rect;
+
+    const QPointF c = rect.center();
+    const qreal w = std::max(rect.width(), minimumSize.width());
+    const qreal h = std::max(rect.height(), minimumSize.height());
+    return QRectF(c.x() - w / 2.0, c.y() - h / 2.0, w, h);
+}
+
+bool isUsableRect(const QRectF &rect)
+{
+    return !rect.isNull() && rect.width() > 0.0 && rect.height() > 0.0;
+}
+
+QRectF navMapFitRect(const QGraphicsScene *scene)
+{
+    if (!scene)
+        return {};
+
+    QRectF targetRect = scene->sceneRect();
+    if (!isUsableRect(targetRect))
+        targetRect = scene->itemsBoundingRect();
+    if (!isUsableRect(targetRect))
+        return {};
+
+    return withNavMapPadding(targetRect);
+}
+
+QRectF contentFitRect(const QGraphicsScene *scene)
+{
+    if (!scene)
+        return {};
+
+    const QRectF sceneRect = scene->sceneRect();
+    const QRectF contentRect = scene->itemsBoundingRect();
+    if (!isUsableRect(contentRect))
+        return navMapFitRect(scene);
+
+    QRectF targetRect = expandedAroundCenter(contentRect, kContentFitPaddingFactor);
+    if (isUsableRect(sceneRect)) {
+        const QSizeF minimumSize(sceneRect.width() * kMinimumContentFitSceneFraction,
+                                 sceneRect.height() * kMinimumContentFitSceneFraction);
+        targetRect = expandedToMinimumSize(targetRect, minimumSize);
+    }
+    return targetRect;
 }
 
 double fitScaleForView(const QGraphicsView *view, const QRectF &targetRect)
@@ -237,16 +299,10 @@ void SystemMapView::zoomToFit()
 {
     if (!scene())
         return;
-    QRectF targetRect = scene()->sceneRect();
-    if (targetRect.isNull() || targetRect.width() <= 0.0 || targetRect.height() <= 0.0)
-        targetRect = scene()->itemsBoundingRect();
-    if (targetRect.isNull() || targetRect.width() <= 0.0 || targetRect.height() <= 0.0)
-        return;
 
-    // Fit the NavMap grid with the same breathing space as the reference
-    // universe-viewer so objects at the NavMap edge do not cling to the
-    // viewport border.
-    const QRectF paddedRect = withNavMapPadding(targetRect);
+    const QRectF targetRect = contentFitRect(scene());
+    if (!isUsableRect(targetRect))
+        return;
 
     const auto previousAnchor = transformationAnchor();
     const auto previousResizeAnchor = resizeAnchor();
@@ -254,12 +310,12 @@ void SystemMapView::zoomToFit()
     setResizeAnchor(QGraphicsView::AnchorViewCenter);
 
     resetTransform();
-    fitInView(paddedRect, Qt::KeepAspectRatio);
-    centerOn(paddedRect.center());
+    fitInView(targetRect, Qt::KeepAspectRatio);
+    centerOn(targetRect.center());
 
     setTransformationAnchor(previousAnchor);
     setResizeAnchor(previousResizeAnchor);
-    m_minZoomScale = fitScaleForView(this, paddedRect);
+    m_minZoomScale = fitScaleForView(this, navMapFitRect(scene()));
     updateItemDetailForScale();
     if (--m_pendingInitialFitPasses <= 0) {
         m_pendingInitialFit = false;
@@ -1116,11 +1172,9 @@ void SystemMapView::resizeEvent(QResizeEvent *event)
 {
     QGraphicsView::resizeEvent(event);
     if (scene()) {
-        QRectF targetRect = scene()->sceneRect();
-        if (targetRect.isNull() || targetRect.width() <= 0.0 || targetRect.height() <= 0.0)
-            targetRect = scene()->itemsBoundingRect();
-        if (!targetRect.isNull() && targetRect.width() > 0.0 && targetRect.height() > 0.0)
-            m_minZoomScale = fitScaleForView(this, withNavMapPadding(targetRect));
+        const QRectF targetRect = navMapFitRect(scene());
+        if (isUsableRect(targetRect))
+            m_minZoomScale = fitScaleForView(this, targetRect);
     }
     applyInitialFitIfNeeded();
     rebuildLabelClusters();
