@@ -47,6 +47,9 @@
 
 #include <QtConcurrent/QtConcurrent>
 
+#include <algorithm>
+#include <functional>
+
 using namespace flatlas::domain;
 
 namespace flatlas::editors {
@@ -210,6 +213,57 @@ bool hasExplicitPriceFor(const QVector<TradePriceRecord> &prices,
             return true;
     }
     return false;
+}
+
+bool hasExplicitPriceFor(const QVector<TradePriceRecord> &prices,
+                         const QString &commodityNickname,
+                         const QString &baseNickname,
+                         const QSet<int> &exceptIndexes)
+{
+    for (int index = 0; index < prices.size(); ++index) {
+        if (exceptIndexes.contains(index) || prices.at(index).implicit)
+            continue;
+        if (prices.at(index).commodityNickname.compare(commodityNickname, Qt::CaseInsensitive) == 0
+            && prices.at(index).baseNickname.compare(baseNickname, Qt::CaseInsensitive) == 0)
+            return true;
+    }
+    return false;
+}
+
+int explicitPriceIndexFor(const QVector<TradePriceRecord> &prices,
+                          const QString &commodityNickname,
+                          const QString &baseNickname,
+                          bool isSource)
+{
+    for (int index = 0; index < prices.size(); ++index) {
+        const auto &price = prices.at(index);
+        if (price.implicit)
+            continue;
+        if (price.isSource == isSource
+            && price.commodityNickname.compare(commodityNickname, Qt::CaseInsensitive) == 0
+            && price.baseNickname.compare(baseNickname, Qt::CaseInsensitive) == 0) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+int commodityIndexFor(const QVector<TradeCommodityRecord> &commodities, const QString &nickname)
+{
+    for (int index = 0; index < commodities.size(); ++index) {
+        if (commodities.at(index).nickname.compare(nickname, Qt::CaseInsensitive) == 0)
+            return index;
+    }
+    return -1;
+}
+
+int baseIndexFor(const QVector<TradeBaseRecord> &bases, const QString &nickname)
+{
+    for (int index = 0; index < bases.size(); ++index) {
+        if (bases.at(index).nickname.compare(nickname, Qt::CaseInsensitive) == 0)
+            return index;
+    }
+    return -1;
 }
 
 void removeImplicitPriceFor(QVector<TradePriceRecord> *prices,
@@ -728,6 +782,175 @@ private:
     bool m_syncing = false;
 };
 
+class RouteEntryDialog final : public QDialog {
+public:
+    RouteEntryDialog(const QVector<TradeCommodityRecord> &commodities,
+                     const QVector<TradeBaseRecord> &bases,
+                     bool useIdsName,
+                     QWidget *parent = nullptr,
+                     int initialCommodityIndex = -1,
+                     int initialBuyBaseIndex = -1,
+                     int initialSellBaseIndex = -1,
+                     int initialBuyPrice = 0,
+                     int initialSellPrice = 0)
+        : QDialog(parent)
+        , m_commodities(commodities)
+    {
+        setWindowTitle(initialBuyBaseIndex >= 0 || initialSellBaseIndex >= 0 ? tr("Edit Route") : tr("Add Route"));
+        resize(560, 340);
+
+        auto *layout = new QVBoxLayout(this);
+        auto *form = new QFormLayout;
+
+        m_commodityCombo = new QComboBox(this);
+        for (int index = 0; index < commodities.size(); ++index)
+            m_commodityCombo->addItem(commodityDisplayLabel(commodities.at(index), useIdsName), index);
+        form->addRow(tr("Commodity"), m_commodityCombo);
+
+        m_buyBaseCombo = new QComboBox(this);
+        m_sellBaseCombo = new QComboBox(this);
+        for (int index = 0; index < bases.size(); ++index) {
+            const QString label = baseDisplayLabel(bases.at(index), useIdsName);
+            m_buyBaseCombo->addItem(label, index);
+            m_sellBaseCombo->addItem(label, index);
+        }
+        form->addRow(tr("Buy Base"), m_buyBaseCombo);
+        form->addRow(tr("Sell Base"), m_sellBaseCombo);
+
+        m_buyFactorSpin = new QDoubleSpinBox(this);
+        m_buyFactorSpin->setRange(0.000001, 9999.0);
+        m_buyFactorSpin->setDecimals(6);
+        m_buyFactorSpin->setSingleStep(0.1);
+        form->addRow(tr("Buy Factor"), m_buyFactorSpin);
+
+        m_buyPriceSpin = new QSpinBox(this);
+        m_buyPriceSpin->setRange(1, 100000000);
+        form->addRow(tr("Buy Price"), m_buyPriceSpin);
+
+        m_sellFactorSpin = new QDoubleSpinBox(this);
+        m_sellFactorSpin->setRange(0.000001, 9999.0);
+        m_sellFactorSpin->setDecimals(6);
+        m_sellFactorSpin->setSingleStep(0.1);
+        form->addRow(tr("Sell Factor"), m_sellFactorSpin);
+
+        m_sellPriceSpin = new QSpinBox(this);
+        m_sellPriceSpin->setRange(1, 100000000);
+        form->addRow(tr("Sell Price"), m_sellPriceSpin);
+
+        layout->addLayout(form);
+
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
+        layout->addWidget(buttons);
+
+        connect(m_commodityCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this]() {
+            syncPricesFromFactors();
+        });
+        connect(m_buyFactorSpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this]() {
+            if (!m_syncing)
+                syncBuyPriceFromFactor();
+        });
+        connect(m_buyPriceSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this]() {
+            if (!m_syncing)
+                syncBuyFactorFromPrice();
+        });
+        connect(m_sellFactorSpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this]() {
+            if (!m_syncing)
+                syncSellPriceFromFactor();
+        });
+        connect(m_sellPriceSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this]() {
+            if (!m_syncing)
+                syncSellFactorFromPrice();
+        });
+        connect(buttons, &QDialogButtonBox::accepted, this, [this]() {
+            if (selectedBuyBaseIndex() == selectedSellBaseIndex()) {
+                QMessageBox::warning(this, tr("Route"), tr("Buy base and sell base must be different."));
+                return;
+            }
+            accept();
+        });
+        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+        if (initialCommodityIndex >= 0 && initialCommodityIndex < commodities.size())
+            m_commodityCombo->setCurrentIndex(initialCommodityIndex);
+        if (initialBuyBaseIndex >= 0 && initialBuyBaseIndex < bases.size())
+            m_buyBaseCombo->setCurrentIndex(initialBuyBaseIndex);
+        if (initialSellBaseIndex >= 0 && initialSellBaseIndex < bases.size())
+            m_sellBaseCombo->setCurrentIndex(initialSellBaseIndex);
+
+        const int basePrice = qMax(1, currentCommodity().basePrice);
+        m_buyFactorSpin->setValue(initialBuyPrice > 0 ? static_cast<double>(initialBuyPrice) / basePrice : 1.0);
+        m_buyPriceSpin->setValue(initialBuyPrice > 0 ? initialBuyPrice : basePrice);
+        m_sellFactorSpin->setValue(initialSellPrice > 0 ? static_cast<double>(initialSellPrice) / basePrice : 1.0);
+        m_sellPriceSpin->setValue(initialSellPrice > 0 ? initialSellPrice : basePrice);
+    }
+
+    int selectedCommodityIndex() const { return m_commodityCombo->currentData().toInt(); }
+    int selectedBuyBaseIndex() const { return m_buyBaseCombo->currentData().toInt(); }
+    int selectedSellBaseIndex() const { return m_sellBaseCombo->currentData().toInt(); }
+    int buyPrice() const { return m_buyPriceSpin->value(); }
+    int sellPrice() const { return m_sellPriceSpin->value(); }
+    double buyMultiplier() const { return m_buyFactorSpin->value(); }
+    double sellMultiplier() const { return m_sellFactorSpin->value(); }
+
+private:
+    TradeCommodityRecord currentCommodity() const
+    {
+        const int index = selectedCommodityIndex();
+        if (index >= 0 && index < m_commodities.size())
+            return m_commodities.at(index);
+        return {};
+    }
+
+    void syncPricesFromFactors()
+    {
+        if (m_syncing)
+            return;
+        m_syncing = true;
+        const int basePrice = qMax(1, currentCommodity().basePrice);
+        m_buyPriceSpin->setValue(qMax(1, qRound(static_cast<double>(basePrice) * m_buyFactorSpin->value())));
+        m_sellPriceSpin->setValue(qMax(1, qRound(static_cast<double>(basePrice) * m_sellFactorSpin->value())));
+        m_syncing = false;
+    }
+
+    void syncBuyPriceFromFactor()
+    {
+        m_syncing = true;
+        m_buyPriceSpin->setValue(qMax(1, qRound(static_cast<double>(qMax(1, currentCommodity().basePrice)) * m_buyFactorSpin->value())));
+        m_syncing = false;
+    }
+
+    void syncBuyFactorFromPrice()
+    {
+        m_syncing = true;
+        m_buyFactorSpin->setValue(static_cast<double>(m_buyPriceSpin->value()) / static_cast<double>(qMax(1, currentCommodity().basePrice)));
+        m_syncing = false;
+    }
+
+    void syncSellPriceFromFactor()
+    {
+        m_syncing = true;
+        m_sellPriceSpin->setValue(qMax(1, qRound(static_cast<double>(qMax(1, currentCommodity().basePrice)) * m_sellFactorSpin->value())));
+        m_syncing = false;
+    }
+
+    void syncSellFactorFromPrice()
+    {
+        m_syncing = true;
+        m_sellFactorSpin->setValue(static_cast<double>(m_sellPriceSpin->value()) / static_cast<double>(qMax(1, currentCommodity().basePrice)));
+        m_syncing = false;
+    }
+
+    QVector<TradeCommodityRecord> m_commodities;
+    QComboBox *m_commodityCombo = nullptr;
+    QComboBox *m_buyBaseCombo = nullptr;
+    QComboBox *m_sellBaseCombo = nullptr;
+    QDoubleSpinBox *m_buyFactorSpin = nullptr;
+    QSpinBox *m_buyPriceSpin = nullptr;
+    QDoubleSpinBox *m_sellFactorSpin = nullptr;
+    QSpinBox *m_sellPriceSpin = nullptr;
+    bool m_syncing = false;
+};
+
 } // namespace
 
 TradeRoutePage::TradeRoutePage(QWidget *parent)
@@ -829,6 +1052,15 @@ void TradeRoutePage::setupUi()
 
     auto *routeBox = new QGroupBox(tr("Routes"), mainSplitter);
     auto *routeLayout = new QVBoxLayout(routeBox);
+    auto *routeButtonRow = new QHBoxLayout;
+    auto *addRouteButton = new QPushButton(tr("Add Route"), routeBox);
+    auto *editRouteButton = new QPushButton(tr("Edit Route"), routeBox);
+    auto *removeRouteButton = new QPushButton(tr("Remove Route"), routeBox);
+    routeButtonRow->addWidget(addRouteButton);
+    routeButtonRow->addWidget(editRouteButton);
+    routeButtonRow->addWidget(removeRouteButton);
+    routeButtonRow->addStretch(1);
+    routeLayout->addLayout(routeButtonRow);
     m_routeModel = new QStandardItemModel(this);
     m_routeModel->setHorizontalHeaderLabels({
         tr("Commodity"), tr("Buy"), tr("Sell"), tr("Unit Profit"), tr("Total Profit"),
@@ -901,6 +1133,9 @@ void TradeRoutePage::setupUi()
     connect(addPriceButton, &QPushButton::clicked, this, &TradeRoutePage::addPriceEntry);
     connect(editPriceButton, &QPushButton::clicked, this, &TradeRoutePage::editPriceEntry);
     connect(removePriceButton, &QPushButton::clicked, this, &TradeRoutePage::removePriceEntry);
+    connect(addRouteButton, &QPushButton::clicked, this, &TradeRoutePage::addRouteEntry);
+    connect(editRouteButton, &QPushButton::clicked, this, &TradeRoutePage::editRouteEntry);
+    connect(removeRouteButton, &QPushButton::clicked, this, &TradeRoutePage::removeRouteEntry);
     connect(m_commodityTable, &QTableWidget::itemSelectionChanged, this, &TradeRoutePage::populatePriceTable);
     connect(m_commodityTable, &QTableWidget::cellDoubleClicked, this, [this](int, int) {
         editCommodity();
@@ -977,7 +1212,11 @@ void TradeRoutePage::setupUi()
         editPriceEntry();
     });
     connect(m_routeView->selectionModel(), &QItemSelectionModel::currentRowChanged, this, [this](const QModelIndex &current) {
-        updateRouteDetails(current.row());
+        Q_UNUSED(current);
+        updateRouteDetails(selectedRouteIndex());
+    });
+    connect(m_routeView, &QTableView::doubleClicked, this, [this](const QModelIndex &) {
+        editRouteEntry();
     });
 }
 
@@ -1558,6 +1797,213 @@ void TradeRoutePage::removePriceEntry()
     });
     if (commodityIt != m_workspace.commodities.end() && baseIt != m_workspace.bases.end())
         ensureImplicitPriceFor(&m_workspace.prices, *commodityIt, *baseIt);
+    populatePriceTable();
+    markDirty();
+    scheduleRecalculation();
+}
+
+void TradeRoutePage::addRouteEntry()
+{
+    if (m_workspace.commodities.isEmpty() || m_workspace.bases.size() < 2)
+        return;
+
+    const int initialCommodityIndex = commodityIndexFor(m_workspace.commodities, selectedCommodityNickname());
+    RouteEntryDialog dialog(m_workspace.commodities,
+                            m_workspace.bases,
+                            m_useIdsNameCheck->isChecked(),
+                            this,
+                            initialCommodityIndex);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const int commodityIndex = dialog.selectedCommodityIndex();
+    const int buyBaseIndex = dialog.selectedBuyBaseIndex();
+    const int sellBaseIndex = dialog.selectedSellBaseIndex();
+    if (commodityIndex < 0 || commodityIndex >= m_workspace.commodities.size()
+        || buyBaseIndex < 0 || buyBaseIndex >= m_workspace.bases.size()
+        || sellBaseIndex < 0 || sellBaseIndex >= m_workspace.bases.size()) {
+        return;
+    }
+
+    const auto &commodity = m_workspace.commodities.at(commodityIndex);
+    const auto &buyBase = m_workspace.bases.at(buyBaseIndex);
+    const auto &sellBase = m_workspace.bases.at(sellBaseIndex);
+    if (hasExplicitPriceFor(m_workspace.prices, commodity.nickname, buyBase.nickname)
+        || hasExplicitPriceFor(m_workspace.prices, commodity.nickname, sellBase.nickname)) {
+        QMessageBox::warning(this,
+                             tr("Add Route"),
+                             tr("A price entry for this commodity and base already exists."));
+        return;
+    }
+
+    TradePriceRecord source;
+    source.baseNickname = buyBase.nickname;
+    source.baseDisplayName = buyBase.displayName;
+    source.systemNickname = buyBase.systemNickname;
+    source.commodityNickname = commodity.nickname;
+    source.price = dialog.buyPrice();
+    source.multiplier = dialog.buyMultiplier();
+    source.isSource = true;
+    source.implicit = false;
+    source.sourceFilePath = m_workspace.preferredMarketFilePath;
+
+    TradePriceRecord sink;
+    sink.baseNickname = sellBase.nickname;
+    sink.baseDisplayName = sellBase.displayName;
+    sink.systemNickname = sellBase.systemNickname;
+    sink.commodityNickname = commodity.nickname;
+    sink.price = dialog.sellPrice();
+    sink.multiplier = dialog.sellMultiplier();
+    sink.isSource = false;
+    sink.implicit = false;
+    sink.sourceFilePath = m_workspace.preferredMarketFilePath;
+
+    removeImplicitPriceFor(&m_workspace.prices, commodity.nickname, buyBase.nickname);
+    removeImplicitPriceFor(&m_workspace.prices, commodity.nickname, sellBase.nickname);
+    m_workspace.prices.append(source);
+    m_workspace.prices.append(sink);
+    populatePriceTable();
+    markDirty();
+    scheduleRecalculation();
+}
+
+void TradeRoutePage::editRouteEntry()
+{
+    const int routeIndex = selectedRouteIndex();
+    if (routeIndex < 0 || routeIndex >= m_routes.size())
+        return;
+
+    const TradeRouteCandidate route = m_routes.at(routeIndex);
+    const int commodityIndex = commodityIndexFor(m_workspace.commodities, route.commodity);
+    const int buyBaseIndex = baseIndexFor(m_workspace.bases, route.fromBaseNickname);
+    const int sellBaseIndex = baseIndexFor(m_workspace.bases, route.toBaseNickname);
+    if (commodityIndex < 0 || buyBaseIndex < 0 || sellBaseIndex < 0)
+        return;
+
+    const int sourceIndex = explicitPriceIndexFor(m_workspace.prices, route.commodity, route.fromBaseNickname, true);
+    const int sinkIndex = explicitPriceIndexFor(m_workspace.prices, route.commodity, route.toBaseNickname, false);
+    RouteEntryDialog dialog(m_workspace.commodities,
+                            m_workspace.bases,
+                            m_useIdsNameCheck->isChecked(),
+                            this,
+                            commodityIndex,
+                            buyBaseIndex,
+                            sellBaseIndex,
+                            route.buyPrice,
+                            route.sellPrice);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const int newCommodityIndex = dialog.selectedCommodityIndex();
+    const int newBuyBaseIndex = dialog.selectedBuyBaseIndex();
+    const int newSellBaseIndex = dialog.selectedSellBaseIndex();
+    if (newCommodityIndex < 0 || newCommodityIndex >= m_workspace.commodities.size()
+        || newBuyBaseIndex < 0 || newBuyBaseIndex >= m_workspace.bases.size()
+        || newSellBaseIndex < 0 || newSellBaseIndex >= m_workspace.bases.size()) {
+        return;
+    }
+
+    const auto &commodity = m_workspace.commodities.at(newCommodityIndex);
+    const auto &buyBase = m_workspace.bases.at(newBuyBaseIndex);
+    const auto &sellBase = m_workspace.bases.at(newSellBaseIndex);
+    QSet<int> ignoredIndexes;
+    if (sourceIndex >= 0)
+        ignoredIndexes.insert(sourceIndex);
+    if (sinkIndex >= 0)
+        ignoredIndexes.insert(sinkIndex);
+    if (hasExplicitPriceFor(m_workspace.prices, commodity.nickname, buyBase.nickname, ignoredIndexes)
+        || hasExplicitPriceFor(m_workspace.prices, commodity.nickname, sellBase.nickname, ignoredIndexes)) {
+        QMessageBox::warning(this,
+                             tr("Edit Route"),
+                             tr("A price entry for this commodity and base already exists."));
+        return;
+    }
+
+    const QString oldCommodityNickname = route.commodity;
+    const QString oldBuyBaseNickname = route.fromBaseNickname;
+    const QString oldSellBaseNickname = route.toBaseNickname;
+    QVector<int> removeIndexes;
+    if (sourceIndex >= 0)
+        removeIndexes.append(sourceIndex);
+    if (sinkIndex >= 0)
+        removeIndexes.append(sinkIndex);
+    std::sort(removeIndexes.begin(), removeIndexes.end(), std::greater<int>());
+    for (const int index : removeIndexes)
+        m_workspace.prices.removeAt(index);
+
+    TradePriceRecord source;
+    source.baseNickname = buyBase.nickname;
+    source.baseDisplayName = buyBase.displayName;
+    source.systemNickname = buyBase.systemNickname;
+    source.commodityNickname = commodity.nickname;
+    source.price = dialog.buyPrice();
+    source.multiplier = dialog.buyMultiplier();
+    source.isSource = true;
+    source.implicit = false;
+    source.sourceFilePath = m_workspace.preferredMarketFilePath;
+
+    TradePriceRecord sink;
+    sink.baseNickname = sellBase.nickname;
+    sink.baseDisplayName = sellBase.displayName;
+    sink.systemNickname = sellBase.systemNickname;
+    sink.commodityNickname = commodity.nickname;
+    sink.price = dialog.sellPrice();
+    sink.multiplier = dialog.sellMultiplier();
+    sink.isSource = false;
+    sink.implicit = false;
+    sink.sourceFilePath = m_workspace.preferredMarketFilePath;
+
+    const auto oldCommodityIt = std::find_if(m_workspace.commodities.begin(), m_workspace.commodities.end(), [&oldCommodityNickname](const TradeCommodityRecord &candidate) {
+        return candidate.nickname.compare(oldCommodityNickname, Qt::CaseInsensitive) == 0;
+    });
+    const int oldBuyIndex = baseIndexFor(m_workspace.bases, oldBuyBaseNickname);
+    const int oldSellIndex = baseIndexFor(m_workspace.bases, oldSellBaseNickname);
+    if (oldCommodityIt != m_workspace.commodities.end() && oldBuyIndex >= 0)
+        ensureImplicitPriceFor(&m_workspace.prices, *oldCommodityIt, m_workspace.bases.at(oldBuyIndex));
+    if (oldCommodityIt != m_workspace.commodities.end() && oldSellIndex >= 0)
+        ensureImplicitPriceFor(&m_workspace.prices, *oldCommodityIt, m_workspace.bases.at(oldSellIndex));
+    removeImplicitPriceFor(&m_workspace.prices, commodity.nickname, buyBase.nickname);
+    removeImplicitPriceFor(&m_workspace.prices, commodity.nickname, sellBase.nickname);
+    m_workspace.prices.append(source);
+    m_workspace.prices.append(sink);
+    populatePriceTable();
+    markDirty();
+    scheduleRecalculation();
+}
+
+void TradeRoutePage::removeRouteEntry()
+{
+    const int routeIndex = selectedRouteIndex();
+    if (routeIndex < 0 || routeIndex >= m_routes.size())
+        return;
+
+    const TradeRouteCandidate route = m_routes.at(routeIndex);
+    const int sourceIndex = explicitPriceIndexFor(m_workspace.prices, route.commodity, route.fromBaseNickname, true);
+    const int sinkIndex = explicitPriceIndexFor(m_workspace.prices, route.commodity, route.toBaseNickname, false);
+    if (sourceIndex < 0 && sinkIndex < 0)
+        return;
+
+    const QString message = tr("Remove the source price at %1 and the sink price at %2 for %3?")
+        .arg(route.fromBase, route.toBase, route.commodityDisplayName.isEmpty() ? route.commodity : route.commodityDisplayName);
+    if (QMessageBox::question(this, tr("Remove Route"), message) != QMessageBox::Yes)
+        return;
+
+    QVector<int> removeIndexes;
+    if (sourceIndex >= 0)
+        removeIndexes.append(sourceIndex);
+    if (sinkIndex >= 0)
+        removeIndexes.append(sinkIndex);
+    std::sort(removeIndexes.begin(), removeIndexes.end(), std::greater<int>());
+    for (const int index : removeIndexes)
+        m_workspace.prices.removeAt(index);
+
+    const int commodityIndex = commodityIndexFor(m_workspace.commodities, route.commodity);
+    const int buyBaseIndex = baseIndexFor(m_workspace.bases, route.fromBaseNickname);
+    const int sellBaseIndex = baseIndexFor(m_workspace.bases, route.toBaseNickname);
+    if (commodityIndex >= 0 && buyBaseIndex >= 0)
+        ensureImplicitPriceFor(&m_workspace.prices, m_workspace.commodities.at(commodityIndex), m_workspace.bases.at(buyBaseIndex));
+    if (commodityIndex >= 0 && sellBaseIndex >= 0)
+        ensureImplicitPriceFor(&m_workspace.prices, m_workspace.commodities.at(commodityIndex), m_workspace.bases.at(sellBaseIndex));
     populatePriceTable();
     markDirty();
     scheduleRecalculation();

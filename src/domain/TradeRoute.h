@@ -44,6 +44,8 @@ struct TradeRouteEntry {
 };
 
 struct TradeRouteCandidate {
+    QString fromBaseNickname;
+    QString toBaseNickname;
     QString fromBase;
     QString toBase;
     QString commodity;

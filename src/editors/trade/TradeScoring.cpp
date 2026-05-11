@@ -475,6 +475,8 @@ QVector<TradeRouteCandidate> TradeScoring::calculateRoutes(const TradeRouteFilte
                 TradeRouteCandidate candidate;
                 candidate.commodity = commodity.nickname;
                 candidate.commodityDisplayName = commodity.displayName;
+                candidate.fromBaseNickname = buyBase.nickname;
+                candidate.toBaseNickname = sellBase.nickname;
                 candidate.fromBase = buyBase.displayName;
                 candidate.toBase = sellBase.displayName;
                 candidate.fromSystem = buyBase.systemNickname;

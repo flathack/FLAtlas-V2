@@ -77,6 +77,9 @@ private:
     void addPriceEntry();
     void editPriceEntry();
     void removePriceEntry();
+    void addRouteEntry();
+    void editRouteEntry();
+    void removeRouteEntry();
     TradeRouteWorkspaceData workspaceForCurrentNameMode() const;
 
     QString m_dataPath;
