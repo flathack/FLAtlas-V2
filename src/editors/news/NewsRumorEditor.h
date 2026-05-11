@@ -79,7 +79,7 @@ signals:
     void loadingProgressChanged(int percent, const QString &message);
 
 private:
-    enum NewsColumn { NewsHeadlineColumn = 0, NewsIconColumn, NewsRankColumn, NewsIssueColumn, NewsColumnCount };
+    enum NewsColumn { NewsHeadlineColumn = 0, NewsIconColumn, NewsRankColumn, NewsColumnCount };
     enum BaseColumn { BaseNameColumn = 0, BaseNicknameColumn, BaseSystemColumn, BaseNewsCountColumn, BaseColumnCount };
 
     void setupUi();

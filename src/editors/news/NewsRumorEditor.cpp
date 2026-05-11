@@ -405,7 +405,7 @@ void NewsRumorEditor::setupUi()
     filterRow->addWidget(m_newsSearchEdit, 1);
     newsLayout->addLayout(filterRow);
     m_newsTable = new QTableWidget(0, NewsColumnCount, newsPane);
-    m_newsTable->setHorizontalHeaderLabels({tr("Headline"), tr("Icon"), tr("Rank"), tr("Status")});
+    m_newsTable->setHorizontalHeaderLabels({tr("Headline"), tr("Icon"), tr("Rank")});
     m_newsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_newsTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_newsTable->setAlternatingRowColors(true);
@@ -416,7 +416,6 @@ void NewsRumorEditor::setupUi()
     m_newsTable->setColumnWidth(NewsHeadlineColumn, 360);
     m_newsTable->setColumnWidth(NewsIconColumn, 110);
     m_newsTable->setColumnWidth(NewsRankColumn, 160);
-    m_newsTable->setColumnWidth(NewsIssueColumn, 120);
     newsLayout->addWidget(m_newsTable, 1);
     splitter->addWidget(newsPane);
 
@@ -826,17 +825,6 @@ void NewsRumorEditor::populateNewsTable()
         iconItem->setToolTip(entry.icon);
         m_newsTable->setItem(row, NewsIconColumn, iconItem);
         m_newsTable->setItem(row, NewsRankColumn, readOnlyItem(entry.rank));
-        const bool missingIds = entry.headlineText.isEmpty() || entry.bodyText.isEmpty();
-        const QStringList invalid = invalidBases(entry.bases);
-        QStringList issues;
-        if (missingIds)
-            issues.append(tr("IDS missing"));
-        if (!invalid.isEmpty())
-            issues.append(tr("Base missing"));
-        auto *issueItem = readOnlyItem(issues.join(QStringLiteral(", ")));
-        if (!invalid.isEmpty())
-            issueItem->setToolTip(tr("Missing bases:\n%1").arg(invalid.join(QLatin1Char('\n'))));
-        m_newsTable->setItem(row, NewsIssueColumn, issueItem);
     }
     refreshFilters();
 }
