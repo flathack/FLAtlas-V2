@@ -167,6 +167,17 @@ void TestTradeRouteDataService::testSaveWorkspace()
     const QString dataPath = createDataTree(tempDir);
     QVERIFY(!dataPath.isEmpty());
 
+    const QString selectEquipPath = tempDir.filePath(QStringLiteral("DATA/EQUIPMENT/select_equip.ini"));
+    QFile pollutedSelectFile(selectEquipPath);
+    QVERIFY(pollutedSelectFile.open(QIODevice::ReadOnly));
+    QByteArray pollutedSelectText = pollutedSelectFile.readAll();
+    pollutedSelectFile.close();
+    pollutedSelectText.replace("\r\n", "\n");
+    pollutedSelectText.replace("\n", "\r\r\n");
+    QVERIFY(pollutedSelectFile.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    QCOMPARE(pollutedSelectFile.write(pollutedSelectText), pollutedSelectText.size());
+    pollutedSelectFile.close();
+
     TradeRouteWorkspaceData workspace = TradeRouteDataService::loadFromDataPath(dataPath);
     QVERIFY(!workspace.commodities.isEmpty());
     workspace.commodities[0].basePrice = 175;
@@ -226,6 +237,11 @@ void TestTradeRouteDataService::testSaveWorkspace()
     QVERIFY(selectText.indexOf(QStringLiteral("nickname = commodity_platinum"))
             < selectText.indexOf(QStringLiteral("[Munition]")));
     QVERIFY(!selectText.contains(QStringLiteral("\n\n\n")));
+
+    selectFile.close();
+    QVERIFY(selectFile.open(QIODevice::ReadOnly));
+    const QByteArray rawSelectText = selectFile.readAll();
+    QVERIFY(!rawSelectText.contains("\r\r\n"));
 
     const auto priceIt = std::find_if(reloaded.prices.begin(), reloaded.prices.end(), [](const TradePriceRecord &price) {
         return !price.implicit

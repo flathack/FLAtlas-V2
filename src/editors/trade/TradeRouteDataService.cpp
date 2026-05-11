@@ -516,6 +516,8 @@ QString updateSelectCommodityBlock(const QStringList &lines, int headerIndex, in
         if (!writtenKeys.contains(entry.first.toLower()))
             out.append(entry.first + QStringLiteral(" = ") + entry.second);
     }
+    while (!out.isEmpty() && out.last().trimmed().isEmpty())
+        out.removeLast();
     return out.join(QLatin1Char('\n'));
 }
 
@@ -538,6 +540,10 @@ bool writeSelectEquipPreservingComments(const QString &selectEquipPath,
         QStringList lines = text.split(QLatin1Char('\n'));
         if (text.endsWith(QLatin1Char('\n')) && !lines.isEmpty())
             lines.removeLast();
+        for (QString &line : lines) {
+            while (line.endsWith(QLatin1Char('\r')))
+                line.chop(1);
+        }
         int sectionStart = -1;
         int i = 0;
         while (i < lines.size()) {
@@ -573,7 +579,7 @@ bool writeSelectEquipPreservingComments(const QString &selectEquipPath,
             if (it != commoditiesBySelectNickname.constEnd()) {
                 out += updateSelectCommodityBlock(lines, sectionStart, sectionEnd, it.value());
                 if (sectionEnd < lines.size())
-                    out += QLatin1Char('\n');
+                    out += QStringLiteral("\n\n");
                 lastCommodityInsertPosition = out.size();
                 writtenSelectCommoditySections.insert(nickname);
             }
