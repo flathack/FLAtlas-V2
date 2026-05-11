@@ -421,8 +421,115 @@ private slots:
         QVERIFY(written.contains(QStringLiteral("// slash comment before zone\n[Zone]")));
         QVERIFY(!written.contains(QStringLiteral("// slash comment before zone\n\n[Zone]")));
         QVERIFY(written.contains(QStringLiteral("; zone size comment")));
-        QVERIFY(written.contains(QStringLiteral("size = 2000.000000, 3000.000000, 4000.000000 ; inline size comment")));
+        QVERIFY(written.contains(QStringLiteral("size = 2000.000000 ; inline size comment")));
         QVERIFY(written.contains(QStringLiteral("; trailing file comment")));
+    }
+
+    void savePreservesSingleValueSphereSizeRoundtrip()
+    {
+        const QString ini = QStringLiteral(
+            "[SystemInfo]\n"
+            "nickname = Li01\n"
+            "\n"
+            "; zone header\n"
+            "[Zone]\n"
+            "nickname = zone_sphere\n"
+            "; size comment\n"
+            "shape = SPHERE\n"
+            "size = 1000 ; inline size comment\n");
+
+        const QString path = writeTemp(ini);
+        auto doc = SystemPersistence::load(path);
+        QVERIFY(doc);
+
+        QTemporaryDir dir;
+        const QString savedPath = dir.path() + QStringLiteral("/sphere_single.ini");
+        QVERIFY(SystemPersistence::save(*doc, savedPath));
+
+        QFile file(savedPath);
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString written = QString::fromUtf8(file.readAll());
+        QVERIFY(written.contains(QStringLiteral("; zone header\n[Zone]")));
+        QVERIFY(written.contains(QStringLiteral("; size comment")));
+        QVERIFY(written.contains(QStringLiteral("size = 1000 ; inline size comment")));
+        QVERIFY(!written.contains(QStringLiteral("size = 1000, 1000, 1000")));
+    }
+
+    void saveWritesSingleValueSphereSizeWhenChanged()
+    {
+        const QString ini = QStringLiteral(
+            "[SystemInfo]\n"
+            "nickname = Li01\n"
+            "\n"
+            "[Zone]\n"
+            "nickname = zone_sphere\n"
+            "; size comment\n"
+            "shape = SPHERE\n"
+            "size = 1000 ; inline size comment\n");
+
+        const QString path = writeTemp(ini);
+        auto doc = SystemPersistence::load(path);
+        QVERIFY(doc);
+        QCOMPARE(doc->zones().size(), 1);
+        doc->zones()[0]->setSize(QVector3D(2000, 0, 0));
+
+        QTemporaryDir dir;
+        const QString savedPath = dir.path() + QStringLiteral("/sphere_changed.ini");
+        QVERIFY(SystemPersistence::save(*doc, savedPath));
+
+        QFile file(savedPath);
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString written = QString::fromUtf8(file.readAll());
+        QVERIFY(written.contains(QStringLiteral("; size comment")));
+        QVERIFY(written.contains(QStringLiteral("size = 2000.000000 ; inline size comment")));
+        QVERIFY(!written.contains(QStringLiteral("size = 2000.000000, 0.000000, 0.000000")));
+        QVERIFY(!written.contains(QStringLiteral("size = 2000.000000, 2000.000000, 2000.000000")));
+    }
+
+    void savePreservesThreeValueSphereSizeWhenUnchanged()
+    {
+        const QString ini = QStringLiteral(
+            "[SystemInfo]\n"
+            "nickname = Li01\n"
+            "\n"
+            "[Zone]\n"
+            "nickname = zone_sphere\n"
+            "shape = SPHERE\n"
+            "size = 50000, 50000, 50000\n");
+
+        const QString path = writeTemp(ini);
+        auto doc = SystemPersistence::load(path);
+        QVERIFY(doc);
+
+        QTemporaryDir dir;
+        const QString savedPath = dir.path() + QStringLiteral("/sphere_three_values.ini");
+        QVERIFY(SystemPersistence::save(*doc, savedPath));
+
+        QFile file(savedPath);
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString written = QString::fromUtf8(file.readAll());
+        QVERIFY(written.contains(QStringLiteral("size = 50000, 50000, 50000")));
+    }
+
+    void serializeZoneWritesShapeSpecificSizeValues()
+    {
+        ZoneItem sphere;
+        sphere.setShape(ZoneItem::Sphere);
+        sphere.setSize(QVector3D(19100.171875f, 0, 0));
+        IniSection sphereSection = SystemPersistence::serializeZoneSection(sphere);
+        QCOMPARE(sphereSection.value(QStringLiteral("size")), QStringLiteral("19100.171875"));
+
+        ZoneItem cylinder;
+        cylinder.setShape(ZoneItem::Cylinder);
+        cylinder.setSize(QVector3D(5000, 12000, 5000));
+        IniSection cylinderSection = SystemPersistence::serializeZoneSection(cylinder);
+        QCOMPARE(cylinderSection.value(QStringLiteral("size")), QStringLiteral("5000.000000, 12000.000000"));
+
+        ZoneItem ellipsoid;
+        ellipsoid.setShape(ZoneItem::Ellipsoid);
+        ellipsoid.setSize(QVector3D(1000, 2000, 3000));
+        IniSection ellipsoidSection = SystemPersistence::serializeZoneSection(ellipsoid);
+        QCOMPARE(ellipsoidSection.value(QStringLiteral("size")), QStringLiteral("1000.000000, 2000.000000, 3000.000000"));
     }
 
     void saveZoneCommentAsIniComment()

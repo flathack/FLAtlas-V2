@@ -189,6 +189,23 @@ static QString vec3ToString(const QVector3D &v)
         .arg(static_cast<double>(v.z()), 0, 'f', -1);
 }
 
+static QString numberToString(float value)
+{
+    return QStringLiteral("%1").arg(static_cast<double>(value), 0, 'f', -1);
+}
+
+static bool vec3Equals(const QVector3D &lhs, const QVector3D &rhs)
+{
+    return qFuzzyCompare(lhs.x() + 1.0f, rhs.x() + 1.0f)
+           && qFuzzyCompare(lhs.y() + 1.0f, rhs.y() + 1.0f)
+           && qFuzzyCompare(lhs.z() + 1.0f, rhs.z() + 1.0f);
+}
+
+static bool scalarEquals(float lhs, float rhs)
+{
+    return qFuzzyCompare(lhs + 1.0f, rhs + 1.0f);
+}
+
 static SolarObject::Type detectObjectType(const IniSection &sec)
 {
     const QString archetype = sec.value(QStringLiteral("archetype")).toLower();
@@ -259,6 +276,39 @@ static QString shapeToString(ZoneItem::Shape s)
     return QStringLiteral("SPHERE");
 }
 
+static QString zoneSizeToString(ZoneItem::Shape shape, const QVector3D &size)
+{
+    switch (shape) {
+    case ZoneItem::Sphere:
+        return numberToString(size.x());
+    case ZoneItem::Cylinder:
+        return QStringLiteral("%1, %2")
+            .arg(static_cast<double>(size.x()), 0, 'f', -1)
+            .arg(static_cast<double>(size.y()), 0, 'f', -1);
+    case ZoneItem::Ellipsoid:
+    case ZoneItem::Box:
+    case ZoneItem::Ring:
+        return vec3ToString(size);
+    }
+    return vec3ToString(size);
+}
+
+static bool zoneSizeEquals(ZoneItem::Shape shape, const QVector3D &lhs, const QVector3D &rhs)
+{
+    switch (shape) {
+    case ZoneItem::Sphere:
+        return scalarEquals(lhs.x(), rhs.x());
+    case ZoneItem::Cylinder:
+        return scalarEquals(lhs.x(), rhs.x())
+               && scalarEquals(lhs.y(), rhs.y());
+    case ZoneItem::Ellipsoid:
+    case ZoneItem::Box:
+    case ZoneItem::Ring:
+        return vec3Equals(lhs, rhs);
+    }
+    return vec3Equals(lhs, rhs);
+}
+
 static void upsertEntry(QVector<IniEntry> &entries, const QString &key, const QString &value)
 {
     for (auto &entry : entries) {
@@ -294,13 +344,6 @@ static void setOptionalEntry(QVector<IniEntry> &entries, const QString &key, con
         return;
     }
     upsertEntry(entries, key, value);
-}
-
-static bool vec3Equals(const QVector3D &lhs, const QVector3D &rhs)
-{
-    return qFuzzyCompare(lhs.x() + 1.0f, rhs.x() + 1.0f)
-           && qFuzzyCompare(lhs.y() + 1.0f, rhs.y() + 1.0f)
-           && qFuzzyCompare(lhs.z() + 1.0f, rhs.z() + 1.0f);
 }
 
 static void appendSerializedSection(QString &out,
@@ -1138,10 +1181,10 @@ IniSection SystemPersistence::serializeZoneSection(const ZoneItem &zone)
         const int sizeIndex = findEntryIndex(sec.entries, QStringLiteral("size"));
         if (sizeIndex >= 0) {
             const QVector3D parsed = parseZoneSize(sec.entries[sizeIndex].second);
-            if (!vec3Equals(parsed, zone.size()))
-                upsertEntry(sec.entries, QStringLiteral("size"), vec3ToString(zone.size()));
+            if (!zoneSizeEquals(zone.shape(), parsed, zone.size()))
+                upsertEntry(sec.entries, QStringLiteral("size"), zoneSizeToString(zone.shape(), zone.size()));
         } else {
-            upsertEntry(sec.entries, QStringLiteral("size"), vec3ToString(zone.size()));
+            upsertEntry(sec.entries, QStringLiteral("size"), zoneSizeToString(zone.shape(), zone.size()));
         }
     } else {
         removeEntry(sec.entries, QStringLiteral("size"));
