@@ -86,6 +86,15 @@ QJsonObject readJsonObject(const QString &path)
     return doc.object();
 }
 
+void mergeTranslations(QHash<QString, QString> &translations, const QJsonObject &translationObject)
+{
+    for (auto it = translationObject.constBegin(); it != translationObject.constEnd(); ++it) {
+        const QString value = it.value().toString();
+        if (!it.key().isEmpty() && !value.isEmpty())
+            translations.insert(it.key(), value);
+    }
+}
+
 QString customLanguageFilePath()
 {
     const QString path = Config::instance().getString(QStringLiteral("customLanguageFile")).trimmed();
@@ -105,40 +114,26 @@ QHash<QString, QString> loadTranslations(const QString &language)
     if (language == QStringLiteral("en"))
         return {};
 
-    const QString customPath = customLanguageFilePath();
-    if (!customPath.isEmpty()) {
-        const QJsonObject object = readJsonObject(customPath);
-        if (normalizeLanguage(object.value(QStringLiteral("code")).toString()) == language) {
-            const QJsonObject translationObject = object.value(QStringLiteral("translations")).toObject();
-            QHash<QString, QString> translations;
-            for (auto it = translationObject.constBegin(); it != translationObject.constEnd(); ++it) {
-                const QString value = it.value().toString();
-                if (!it.key().isEmpty() && !value.isEmpty())
-                    translations.insert(it.key(), value);
-            }
-            if (!translations.isEmpty())
-                return translations;
-        }
-    }
-
+    QHash<QString, QString> translations;
     const QString fileName = language + QStringLiteral(".json");
-    for (const QString &root : languageRoots()) {
+    const QStringList roots = languageRoots();
+    for (auto it = roots.crbegin(); it != roots.crend(); ++it) {
+        const QString &root = *it;
         const QJsonObject object = readJsonObject(root + QLatin1Char('/') + fileName);
         if (object.value(QStringLiteral("code")).toString().toLower() != language)
             continue;
 
-        const QJsonObject translationObject = object.value(QStringLiteral("translations")).toObject();
-        QHash<QString, QString> translations;
-        for (auto it = translationObject.constBegin(); it != translationObject.constEnd(); ++it) {
-            const QString value = it.value().toString();
-            if (!it.key().isEmpty() && !value.isEmpty())
-                translations.insert(it.key(), value);
-        }
-        if (!translations.isEmpty())
-            return translations;
+        mergeTranslations(translations, object.value(QStringLiteral("translations")).toObject());
     }
 
-    return {};
+    const QString customPath = customLanguageFilePath();
+    if (!customPath.isEmpty()) {
+        const QJsonObject object = readJsonObject(customPath);
+        if (normalizeLanguage(object.value(QStringLiteral("code")).toString()) == language)
+            mergeTranslations(translations, object.value(QStringLiteral("translations")).toObject());
+    }
+
+    return translations;
 }
 
 QStringList loadCatalogLanguages()
