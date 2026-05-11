@@ -303,6 +303,7 @@ private:
                        double verticalOffsetMeters);
     void showObjectProperties(flatlas::domain::SolarObject *obj);
     void showZoneProperties(flatlas::domain::ZoneItem *zone);
+    void selectNicknamesAndRefreshUi(const QStringList &nicknames);
     void syncTreeSelectionFromNicknames(const QStringList &nicknames);
     void syncSceneSelectionFromNicknames(const QStringList &nicknames);
     QString primarySelectedNickname() const;

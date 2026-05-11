@@ -5452,6 +5452,16 @@ void SystemEditorPage::deleteContextTarget(const QString &nickname)
     onDeleteSelected();
 }
 
+void SystemEditorPage::selectNicknamesAndRefreshUi(const QStringList &nicknames)
+{
+    m_selectedNicknames = normalizeSelectionNicknames(nicknames);
+    syncTreeSelectionFromNicknames(m_selectedNicknames);
+    syncSceneSelectionFromNicknames(m_selectedNicknames);
+    updateSelectionSummary();
+    updateIniEditorForSelection();
+    updateSidebarButtons();
+}
+
 QString SystemEditorPage::zoneContextLabel(const ZoneItem &zone) const
 {
     const QString nickname = zone.nickname().trimmed().isEmpty() ? tr("Unnamed zone") : zone.nickname().trimmed();
@@ -9272,10 +9282,7 @@ void SystemEditorPage::finalizeFieldZonePlacement(const QPointF &edgeScenePos)
     m_document->addZone(zone);
     logSystemChange(QStringLiteral("Created field zone: %1").arg(zone->nickname()));
     refreshObjectList();
-    m_selectedNicknames = {zone->nickname()};
-    syncTreeSelectionFromNicknames(m_selectedNicknames);
-    syncSceneSelectionFromNicknames(m_selectedNicknames);
-    updateIniEditorForSelection();
+    selectNicknamesAndRefreshUi({zone->nickname()});
     cancelFieldZonePlacement();
 }
 
@@ -9420,10 +9427,7 @@ void SystemEditorPage::finalizeExclusionZonePlacement(const QPointF &edgeScenePo
     m_document->addZone(zone);
     logSystemChange(QStringLiteral("Created exclusion zone: %1").arg(zone->nickname()));
     refreshObjectList();
-    m_selectedNicknames = {zone->nickname()};
-    syncTreeSelectionFromNicknames(m_selectedNicknames);
-    syncSceneSelectionFromNicknames(m_selectedNicknames);
-    updateIniEditorForSelection();
+    selectNicknamesAndRefreshUi({zone->nickname()});
     cancelExclusionZonePlacement();
 }
 
@@ -9534,10 +9538,7 @@ void SystemEditorPage::finalizeSimpleZonePlacement(const QPointF &edgeScenePos)
     flatlas::core::UndoManager::instance().push(cmd);
     logSystemChange(QStringLiteral("Created zone: %1").arg(zone->nickname()));
     refreshObjectList();
-    m_selectedNicknames = {zone->nickname()};
-    syncTreeSelectionFromNicknames(m_selectedNicknames);
-    syncSceneSelectionFromNicknames(m_selectedNicknames);
-    updateIniEditorForSelection();
+    selectNicknamesAndRefreshUi({zone->nickname()});
     cancelSimpleZonePlacement();
 }
 
@@ -9650,10 +9651,7 @@ void SystemEditorPage::finalizePatrolZonePlacement(const QPointF &endScenePos)
     flatlas::core::UndoManager::instance().push(cmd);
     logSystemChange(QStringLiteral("Created patrol zone: %1").arg(zone->nickname()));
     refreshObjectList();
-    m_selectedNicknames = {zone->nickname()};
-    syncTreeSelectionFromNicknames(m_selectedNicknames);
-    syncSceneSelectionFromNicknames(m_selectedNicknames);
-    updateIniEditorForSelection();
+    selectNicknamesAndRefreshUi({zone->nickname()});
     cancelPatrolZonePlacement();
 }
 
