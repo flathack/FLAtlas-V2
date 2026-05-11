@@ -18,6 +18,7 @@ struct TradeCommodityRecord {
     int volume = 1;
     int idsName = 0;
     int idsInfo = 0;
+    QString idsInfoText;
     QString sourceFilePath;
     QString msgIdPrefix;
     QString equipment;
@@ -29,6 +30,11 @@ struct TradeCommodityRecord {
     QString shopArchetype;
     QString itemIcon;
     int jumpDist = 0;
+    int unitsPerContainer = 30;
+    QString podAppearance = QStringLiteral("cargopod_grey");
+    QString lootAppearance = QStringLiteral("lootcrate_grey");
+    double decayPerSecond = 0.0;
+    int hitPts = 250;
 };
 
 struct TradeBaseRecord {
@@ -63,6 +69,7 @@ struct TradePriceRecord {
 struct TradeRouteWorkspaceData {
     QString dataPath;
     QString goodsFilePath;
+    QString selectEquipFilePath;
     QString preferredMarketFilePath;
     std::shared_ptr<flatlas::domain::UniverseData> universe;
     QVector<TradeCommodityRecord> commodities;

@@ -44,12 +44,41 @@ QString createDataTree(QTemporaryDir &tempDir)
                                  "nickname = commodity_silver\n"
                                  "category = commodity\n"
                                  "price = 50\n"
-                                 "volume = 1\n"));
+                                 "volume = 1\n\n"
+                                 "[Good]\n"
+                                 "nickname = li_gun01_mark01\n"
+                                 "category = equipment\n"
+                                 "price = 500\n"));
+
+    writeTextFile(tempDir.filePath(QStringLiteral("DATA/EQUIPMENT/select_equip.ini")),
+                  QStringLiteral("; gold commodity comment\n"
+                                 "[Commodity]\n"
+                                 "nickname = commodity_gold\n"
+                                 "ids_name = 261900\n"
+                                 "; keep this comment inside commodity_gold\n"
+                                 "ids_info = 65900\n"
+                                 "units_per_container = 30\n"
+                                 "pod_appearance = cargopod_grey\n"
+                                 "loot_appearance = lootcrate_grey\n"
+                                 "decay_per_second = 0\n"
+                                 "volume = 2\n"
+                                 "hit_pts = 250\n\n"
+                                 "[Commodity]\n"
+                                 "nickname = commodity_silver\n"
+                                 "ids_name = 261901\n"
+                                 "ids_info = 65901\n"
+                                 "units_per_container = 30\n"
+                                 "pod_appearance = cargopod_grey\n"
+                                 "loot_appearance = lootcrate_grey\n"
+                                 "decay_per_second = 0\n"
+                                 "volume = 1\n"
+                                 "hit_pts = 250\n"));
 
     writeTextFile(tempDir.filePath(QStringLiteral("DATA/EQUIPMENT/market_commodities.ini")),
                   QStringLiteral("[BaseGood]\n"
                                  "base = base_a\n"
-                                 "MarketGood = commodity_gold, 0, 0, 0, 0, 0, 1.0\n\n"
+                                 "MarketGood = commodity_gold, 0, 0, 0, 0, 0, 1.0\n"
+                                 "MarketGood = commodity_silver, 0, 0, 0, 0, 1, 1.0\n\n"
                                  "[BaseGood]\n"
                                  "base = base_b\n"
                                  "MarketGood = commodity_gold, 0, 0, 0, 0, 1, 2.5\n"));
@@ -108,11 +137,13 @@ void TestTradeRouteDataService::testLoadWorkspace()
     });
     QVERIFY(goldIt != workspace.commodities.end());
     QCOMPARE(goldIt->basePrice, 100);
+    QCOMPARE(goldIt->idsName, 261900);
+    QCOMPARE(goldIt->idsInfo, 65900);
 
     const auto explicitPriceCount = std::count_if(workspace.prices.begin(), workspace.prices.end(), [](const TradePriceRecord &price) {
         return !price.implicit;
     });
-    QCOMPARE(explicitPriceCount, 2);
+    QCOMPARE(explicitPriceCount, 3);
 }
 
 void TestTradeRouteDataService::testSaveWorkspace()
@@ -125,6 +156,16 @@ void TestTradeRouteDataService::testSaveWorkspace()
     TradeRouteWorkspaceData workspace = TradeRouteDataService::loadFromDataPath(dataPath);
     QVERIFY(!workspace.commodities.isEmpty());
     workspace.commodities[0].basePrice = 175;
+    TradeCommodityRecord newCommodity;
+    newCommodity.nickname = QStringLiteral("commodity_platinum");
+    newCommodity.displayName = QStringLiteral("Platinum");
+    newCommodity.basePrice = 250;
+    newCommodity.volume = 1;
+    newCommodity.idsName = 261902;
+    newCommodity.idsInfo = 65902;
+    newCommodity.equipment = QStringLiteral("commodity_platinum");
+    newCommodity.msgIdPrefix = QStringLiteral("gcs_gen_commodity_platinum");
+    workspace.commodities.append(newCommodity);
     for (auto &price : workspace.prices) {
         if (!price.implicit && price.commodityNickname == QStringLiteral("commodity_gold")
             && price.baseNickname == QStringLiteral("base_b")) {
@@ -142,6 +183,31 @@ void TestTradeRouteDataService::testSaveWorkspace()
     });
     QVERIFY(goldIt != reloaded.commodities.end());
     QCOMPARE(goldIt->basePrice, 175);
+    QCOMPARE(goldIt->idsName, 261900);
+
+    QFile goodsFile(tempDir.filePath(QStringLiteral("DATA/EQUIPMENT/goods.ini")));
+    QVERIFY(goodsFile.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString goodsText = QString::fromUtf8(goodsFile.readAll());
+    QVERIFY(!goodsText.contains(QStringLiteral("ids_name = 261900")));
+    QVERIFY(goodsText.indexOf(QStringLiteral("nickname = commodity_platinum"))
+            < goodsText.indexOf(QStringLiteral("nickname = li_gun01_mark01")));
+
+    QFile marketFile(tempDir.filePath(QStringLiteral("DATA/EQUIPMENT/market_commodities.ini")));
+    QVERIFY(marketFile.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString marketText = QString::fromUtf8(marketFile.readAll());
+    QVERIFY(marketText.contains(QStringLiteral("MarketGood = commodity_gold, 0, 0, 0, 0, 0, 1.000000")));
+    QVERIFY(marketText.contains(QStringLiteral("MarketGood = commodity_gold, 0, 0, 0, 0, 1, 4.000000")));
+    QVERIFY(!marketText.contains(QStringLiteral("MarketGood = commodity_silver")));
+
+    QFile selectFile(tempDir.filePath(QStringLiteral("DATA/EQUIPMENT/select_equip.ini")));
+    QVERIFY(selectFile.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString selectText = QString::fromUtf8(selectFile.readAll());
+    QVERIFY(selectText.contains(QStringLiteral("[Commodity]")));
+    QVERIFY(selectText.contains(QStringLiteral("; gold commodity comment")));
+    QVERIFY(selectText.contains(QStringLiteral("; keep this comment inside commodity_gold")));
+    QVERIFY(selectText.contains(QStringLiteral("nickname = commodity_gold")));
+    QVERIFY(selectText.contains(QStringLiteral("ids_name = 261900")));
+    QVERIFY(selectText.contains(QStringLiteral("nickname = commodity_platinum")));
 
     const auto priceIt = std::find_if(reloaded.prices.begin(), reloaded.prices.end(), [](const TradePriceRecord &price) {
         return !price.implicit

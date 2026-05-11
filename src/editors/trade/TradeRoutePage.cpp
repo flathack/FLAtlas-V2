@@ -3,11 +3,16 @@
 #include "TradeRoutePage.h"
 #include "TradeScoring.h"
 
+#include "infrastructure/freelancer/IdsDataService.h"
+#include "infrastructure/parser/XmlInfocard.h"
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QDoubleSpinBox>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QFutureWatcher>
 #include <QGraphicsEllipseItem>
@@ -23,6 +28,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRegularExpressionValidator>
 #include <QRegularExpression>
@@ -32,6 +38,7 @@
 #include <QTableView>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QTextBrowser>
 #include <QToolBar>
 #include <QTableWidget>
 #include <QSpinBox>
@@ -70,6 +77,37 @@ QString defaultMsgIdPrefix(const QString &nickname)
     return QStringLiteral("gcs_gen_%1").arg(nickname.trimmed());
 }
 
+QString gameRootForDataPath(const QString &dataPath)
+{
+    const QFileInfo dataInfo(dataPath);
+    if (dataInfo.fileName().compare(QStringLiteral("DATA"), Qt::CaseInsensitive) == 0)
+        return dataInfo.absolutePath();
+    return QDir(dataPath).absolutePath();
+}
+
+QString htmlEscape(const QString &text)
+{
+    return text.toHtmlEscaped();
+}
+
+QString htmlList(const QStringList &items)
+{
+    if (items.isEmpty())
+        return QStringLiteral("<p><i>%1</i></p>").arg(htmlEscape(QObject::tr("None")));
+
+    QString html = QStringLiteral("<ul>");
+    for (const QString &item : items)
+        html += QStringLiteral("<li>%1</li>").arg(htmlEscape(item));
+    html += QStringLiteral("</ul>");
+    return html;
+}
+
+QString htmlSection(const QString &title, const QStringList &items)
+{
+    return QStringLiteral("<h3 style=\"margin-bottom:4px;\">%1</h3>%2")
+        .arg(htmlEscape(title), htmlList(items));
+}
+
 QString formatSeconds(int seconds)
 {
     const int minutes = seconds / 60;
@@ -81,16 +119,19 @@ QString formatSeconds(int seconds)
 
 class AddCommodityDialog final : public QDialog {
 public:
-    AddCommodityDialog(const QSet<QString> &existingNicknames, QWidget *parent = nullptr)
+    AddCommodityDialog(const QVector<TradeCommodityRecord> &existingCommodities, QWidget *parent = nullptr)
         : QDialog(parent)
-        , m_existingNicknames(existingNicknames)
+        , m_existingCommodities(existingCommodities)
     {
         setWindowTitle(tr("Add Commodity"));
-        resize(620, 520);
+        resize(680, 660);
 
         auto *layout = new QVBoxLayout(this);
         auto *form = new QFormLayout;
         form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+
+        for (const auto &commodity : m_existingCommodities)
+            m_existingNicknames.insert(commodity.nickname.trimmed().toLower());
 
         m_nicknameEdit = new QLineEdit(this);
         m_nicknameEdit->setPlaceholderText(QStringLiteral("commodity_new_item"));
@@ -101,13 +142,11 @@ public:
         m_ingameNameEdit->setPlaceholderText(tr("Visible commodity name"));
         form->addRow(tr("Ingame Name"), m_ingameNameEdit);
 
-        m_idsNameSpin = new QSpinBox(this);
-        m_idsNameSpin->setRange(0, 999999999);
-        form->addRow(tr("ids_name"), m_idsNameSpin);
-
-        m_idsInfoSpin = new QSpinBox(this);
-        m_idsInfoSpin->setRange(0, 999999999);
-        form->addRow(tr("ids_info"), m_idsInfoSpin);
+        m_idsInfoEdit = new QPlainTextEdit(this);
+        m_idsInfoEdit->setPlainText(defaultIdsInfoText());
+        m_idsInfoEdit->setPlaceholderText(tr("Commodity infocard text"));
+        m_idsInfoEdit->setMinimumHeight(96);
+        form->addRow(tr("ids_info text"), m_idsInfoEdit);
 
         m_basePriceSpin = new QSpinBox(this);
         m_basePriceSpin->setRange(0, 100000000);
@@ -139,11 +178,11 @@ public:
         form->addRow(tr("good_buy_price"), m_goodBuySpin);
 
         m_shopArchetypeEdit = new QLineEdit(this);
-        m_shopArchetypeEdit->setPlaceholderText(QStringLiteral("Equipment\\models\\commodities\\nn_icons\\cwire_rawmats_2.3db"));
+        m_shopArchetypeEdit->setText(QStringLiteral("Equipment\\models\\commodities\\nn_icons\\cwire_rawmats_2.3db"));
         form->addRow(tr("shop_archetype"), m_shopArchetypeEdit);
 
         m_itemIconEdit = new QLineEdit(this);
-        m_itemIconEdit->setPlaceholderText(QStringLiteral("Equipment\\models\\commodities\\nn_icons\\COMMOD_metals.3db"));
+        m_itemIconEdit->setText(QStringLiteral("Equipment\\models\\commodities\\nn_icons\\COMMOD_chemicals.3db"));
         form->addRow(tr("item_icon"), m_itemIconEdit);
 
         m_jumpDistSpin = new QSpinBox(this);
@@ -163,14 +202,12 @@ public:
 
         connect(m_nicknameEdit, &QLineEdit::textChanged, this, [this](const QString &value) {
             const QString nickname = value.trimmed();
-            if (!m_equipmentTouched)
-                m_equipmentEdit->setText(nickname);
+            m_equipmentEdit->setText(nickname);
             if (!m_msgIdPrefixTouched)
                 m_msgIdPrefixEdit->setText(defaultMsgIdPrefix(nickname));
             if (!m_ingameNameTouched)
                 m_ingameNameEdit->setText(TradeRouteDataService::fallbackCommodityDisplayName(nickname));
         });
-        connect(m_equipmentEdit, &QLineEdit::textEdited, this, [this]() { m_equipmentTouched = true; });
         connect(m_msgIdPrefixEdit, &QLineEdit::textEdited, this, [this]() { m_msgIdPrefixTouched = true; });
         connect(m_ingameNameEdit, &QLineEdit::textEdited, this, [this]() { m_ingameNameTouched = true; });
         connect(buttons, &QDialogButtonBox::accepted, this, &AddCommodityDialog::accept);
@@ -190,8 +227,7 @@ public:
         commodity.equipment = m_equipmentEdit->text().trimmed();
         commodity.basePrice = m_basePriceSpin->value();
         commodity.volume = m_volumeSpin->value();
-        commodity.idsName = m_idsNameSpin->value();
-        commodity.idsInfo = m_idsInfoSpin->value();
+        commodity.idsInfoText = m_idsInfoEdit->toPlainText().trimmed();
         commodity.combinable = m_combinableCheck->isChecked();
         commodity.goodSellPrice = m_goodSellSpin->value();
         commodity.badBuyPrice = m_badBuySpin->value();
@@ -237,10 +273,10 @@ private:
     }
 
     QSet<QString> m_existingNicknames;
+    QVector<TradeCommodityRecord> m_existingCommodities;
     QLineEdit *m_nicknameEdit = nullptr;
     QLineEdit *m_ingameNameEdit = nullptr;
-    QSpinBox *m_idsNameSpin = nullptr;
-    QSpinBox *m_idsInfoSpin = nullptr;
+    QPlainTextEdit *m_idsInfoEdit = nullptr;
     QSpinBox *m_basePriceSpin = nullptr;
     QSpinBox *m_volumeSpin = nullptr;
     QLineEdit *m_msgIdPrefixEdit = nullptr;
@@ -254,8 +290,142 @@ private:
     QLineEdit *m_itemIconEdit = nullptr;
     QSpinBox *m_jumpDistSpin = nullptr;
     bool m_msgIdPrefixTouched = false;
-    bool m_equipmentTouched = false;
     bool m_ingameNameTouched = false;
+
+    QString defaultIdsInfoText() const
+    {
+        for (const auto &commodity : m_existingCommodities) {
+            const QString text = commodity.idsInfoText.trimmed();
+            if (!text.isEmpty())
+                return text;
+        }
+        return {};
+    }
+};
+
+class DeleteCommodityDialog final : public QDialog {
+public:
+    DeleteCommodityDialog(const TradeRouteWorkspaceData &workspace,
+                          const QVector<TradeRouteCandidate> &routes,
+                          const TradeCommodityRecord &commodity,
+                          QWidget *parent = nullptr)
+        : QDialog(parent)
+        , m_workspace(workspace)
+        , m_routes(routes)
+        , m_commodity(commodity)
+    {
+        setWindowTitle(tr("Delete Commodity: %1").arg(m_commodity.nickname));
+        resize(820, 620);
+
+        auto *layout = new QVBoxLayout(this);
+        auto *intro = new QLabel(
+            tr("Delete is blocked until Scan completes. The scan lists goods.ini, select_equip.ini, market entries, generated price rows and current route usage."),
+            this);
+        intro->setWordWrap(true);
+        layout->addWidget(intro);
+
+        m_reportView = new QTextBrowser(this);
+        m_reportView->setOpenExternalLinks(false);
+        layout->addWidget(m_reportView, 1);
+
+        auto *buttons = new QDialogButtonBox(this);
+        m_scanButton = buttons->addButton(tr("Scan"), QDialogButtonBox::ActionRole);
+        m_deleteButton = buttons->addButton(tr("Delete Commodity"), QDialogButtonBox::DestructiveRole);
+        buttons->addButton(QDialogButtonBox::Cancel);
+        m_deleteButton->setEnabled(false);
+        layout->addWidget(buttons);
+
+        connect(m_scanButton, &QPushButton::clicked, this, &DeleteCommodityDialog::runScan);
+        connect(m_deleteButton, &QPushButton::clicked, this, [this]() {
+            runScan();
+            if (m_canDelete)
+                accept();
+        });
+        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+        m_reportView->setHtml(QStringLiteral("<p><i>%1</i></p>").arg(htmlEscape(tr("No scan executed yet."))));
+    }
+
+private:
+    void runScan()
+    {
+        m_scanCompleted = true;
+        m_canDelete = !m_commodity.nickname.trimmed().isEmpty();
+        m_reportView->setHtml(formatReportHtml());
+        m_deleteButton->setEnabled(m_scanCompleted && m_canDelete);
+    }
+
+    QString formatReportHtml() const
+    {
+        QString html;
+        html += QStringLiteral("<html><body style=\"font-family:'Segoe UI';\">");
+        html += QStringLiteral("<h2>%1</h2>")
+                    .arg(htmlEscape(commodityDisplayLabel(m_commodity, true)));
+        html += QStringLiteral("<p><b>%1</b>: %2</p>")
+                    .arg(htmlEscape(tr("Nickname")), htmlEscape(m_commodity.nickname));
+
+        const QString equipmentNickname = m_commodity.equipment.trimmed().isEmpty() ? m_commodity.nickname : m_commodity.equipment.trimmed();
+
+        QStringList goodEntries;
+        goodEntries.append(QStringLiteral("%1 | [Good] %2")
+                               .arg(m_workspace.goodsFilePath, m_commodity.nickname));
+        html += htmlSection(tr("goods.ini Entries To Remove"), goodEntries);
+
+        QStringList selectEntries;
+        selectEntries.append(QStringLiteral("%1 | [Commodity] %2")
+                                 .arg(m_workspace.selectEquipFilePath, equipmentNickname));
+        if (m_commodity.idsName > 0)
+            selectEntries.append(QStringLiteral("ids_name %1").arg(m_commodity.idsName));
+        if (m_commodity.idsInfo > 0)
+            selectEntries.append(QStringLiteral("ids_info %1").arg(m_commodity.idsInfo));
+        html += htmlSection(tr("select_equip.ini Entries To Remove"), selectEntries);
+
+        QStringList explicitPrices;
+        QStringList implicitPrices;
+        for (const auto &price : m_workspace.prices) {
+            if (price.commodityNickname.compare(m_commodity.nickname, Qt::CaseInsensitive) != 0)
+                continue;
+            const QString line = QStringLiteral("%1 | %2 | %3 | %4")
+                                     .arg(price.sourceFilePath.isEmpty() ? m_workspace.preferredMarketFilePath : price.sourceFilePath,
+                                          price.baseNickname,
+                                          price.isSource ? tr("Source") : tr("Sink"),
+                                          QString::number(price.price));
+            if (price.implicit)
+                implicitPrices.append(line);
+            else
+                explicitPrices.append(line);
+        }
+        html += htmlSection(tr("MarketGood Entries To Remove"), explicitPrices);
+        html += htmlSection(tr("Generated Price Rows To Drop"), implicitPrices);
+
+        QStringList routeLines;
+        for (const auto &route : m_routes) {
+            if (route.commodity.compare(m_commodity.nickname, Qt::CaseInsensitive) != 0)
+                continue;
+            routeLines.append(QStringLiteral("%1 -> %2 | %3 total profit")
+                                  .arg(route.fromBase, route.toBase)
+                                  .arg(route.totalProfit));
+        }
+        html += htmlSection(tr("Current Routes Affected"), routeLines);
+
+        QStringList result;
+        result.append(m_canDelete
+                          ? tr("Scan successful. Delete is enabled.")
+                          : tr("Scan blocked. Delete stays disabled."));
+        result.append(tr("Save All writes the removal to goods.ini, select_equip.ini and market files."));
+        html += htmlSection(tr("Result"), result);
+        html += QStringLiteral("</body></html>");
+        return html;
+    }
+
+    TradeRouteWorkspaceData m_workspace;
+    QVector<TradeRouteCandidate> m_routes;
+    TradeCommodityRecord m_commodity;
+    QTextBrowser *m_reportView = nullptr;
+    QPushButton *m_scanButton = nullptr;
+    QPushButton *m_deleteButton = nullptr;
+    bool m_scanCompleted = false;
+    bool m_canDelete = false;
 };
 
 } // namespace
@@ -589,7 +759,7 @@ void TradeRoutePage::saveWorkspace()
     }
 
     m_dirty = false;
-    m_statusLabel->setText(tr("Trade data saved to goods.ini and market_commodities.ini."));
+    m_statusLabel->setText(tr("Trade data saved to goods.ini, select_equip.ini and market_commodities.ini."));
     reloadWorkspace();
 }
 
@@ -823,15 +993,43 @@ int TradeRoutePage::selectedRouteIndex() const
 
 void TradeRoutePage::addCommodity()
 {
-    QSet<QString> existingNicknames;
-    for (const auto &commodity : m_workspace.commodities)
-        existingNicknames.insert(commodity.nickname.trimmed().toLower());
-
-    AddCommodityDialog dialog(existingNicknames, this);
+    AddCommodityDialog dialog(m_workspace.commodities, this);
     if (dialog.exec() != QDialog::Accepted)
         return;
 
     TradeCommodityRecord commodity = dialog.commodity();
+    const auto dataset = flatlas::infrastructure::IdsDataService::loadFromGameRoot(gameRootForDataPath(m_dataPath));
+    const QString targetDll = flatlas::infrastructure::IdsDataService::defaultCreationDllName(dataset);
+    QString idsError;
+    int idsName = 0;
+    if (!flatlas::infrastructure::IdsDataService::writeStringEntry(
+            dataset, targetDll, 0, commodity.displayName.trimmed(), &idsName, &idsError)) {
+        QMessageBox::warning(this,
+                             tr("Add Commodity"),
+                             tr("The commodity name could not be written to the IDS data.\n%1").arg(idsError));
+        return;
+    }
+
+    const QString infoText = commodity.idsInfoText.trimmed().isEmpty()
+        ? commodity.displayName.trimmed()
+        : commodity.idsInfoText.trimmed();
+    int idsInfo = 0;
+    if (!flatlas::infrastructure::IdsDataService::writeInfocardEntry(
+            dataset,
+            targetDll,
+            0,
+            flatlas::infrastructure::XmlInfocard::wrapAsInfocard(infoText),
+            &idsInfo,
+            &idsError)) {
+        QMessageBox::warning(this,
+                             tr("Add Commodity"),
+                             tr("The commodity infocard could not be written to the IDS data.\n%1").arg(idsError));
+        return;
+    }
+
+    commodity.idsName = idsName;
+    commodity.idsInfo = idsInfo;
+    commodity.idsInfoText = infoText;
     commodity.sourceFilePath = m_workspace.goodsFilePath;
     m_workspace.commodities.append(commodity);
     populateCommodityFilter();
@@ -845,7 +1043,13 @@ void TradeRoutePage::removeCommodity()
     const int row = m_commodityTable->currentRow();
     if (row < 0 || row >= m_workspace.commodities.size())
         return;
-    const QString commodityNickname = m_workspace.commodities.at(row).nickname;
+    const TradeCommodityRecord commodity = m_workspace.commodities.at(row);
+    const QString commodityNickname = commodity.nickname;
+
+    DeleteCommodityDialog dialog(m_workspace, m_routes, commodity, this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
     m_workspace.commodities.removeAt(row);
     m_workspace.prices.erase(std::remove_if(m_workspace.prices.begin(), m_workspace.prices.end(), [&commodityNickname](const TradePriceRecord &price) {
         return price.commodityNickname.compare(commodityNickname, Qt::CaseInsensitive) == 0;

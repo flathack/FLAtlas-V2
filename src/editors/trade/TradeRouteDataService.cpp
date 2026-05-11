@@ -11,6 +11,7 @@
 #include <QFileInfo>
 #include <QObject>
 #include <QRegularExpression>
+#include <QStringDecoder>
 
 using namespace flatlas::domain;
 using namespace flatlas::infrastructure;
@@ -46,6 +47,11 @@ QString resolveUniverseIni(const QString &dataPath)
 QString resolveGoodsIni(const QString &dataPath)
 {
     return flatlas::core::PathUtils::ciResolvePath(dataPath, QStringLiteral("EQUIPMENT/goods.ini"));
+}
+
+QString resolveSelectEquipIni(const QString &dataPath)
+{
+    return flatlas::core::PathUtils::ciResolvePath(dataPath, QStringLiteral("EQUIPMENT/select_equip.ini"));
 }
 
 QString preferredMarketFile(const QString &dataPath)
@@ -92,6 +98,8 @@ void applyUniverseDisplayNames(UniverseData *universe, const IdsStringTable &ids
             system.displayName = system.nickname;
     }
 }
+
+QHash<QString, IniSection> selectCommoditySections(const QString &selectEquipPath);
 
 QStringList marketFiles(const QString &dataPath)
 {
@@ -178,7 +186,9 @@ void scanSystemObjects(const QString &dataPath,
     }
 }
 
-QVector<TradeCommodityRecord> loadCommodities(const QString &goodsFilePath, const IdsStringTable &ids)
+QVector<TradeCommodityRecord> loadCommodities(const QString &goodsFilePath,
+                                              const QHash<QString, IniSection> &selectCommodities,
+                                              const IdsStringTable &ids)
 {
     QVector<TradeCommodityRecord> commodities;
     if (goodsFilePath.isEmpty() || !QFile::exists(goodsFilePath))
@@ -197,10 +207,13 @@ QVector<TradeCommodityRecord> loadCommodities(const QString &goodsFilePath, cons
         commodity.nickname = nickname;
         commodity.msgIdPrefix = section.value(QStringLiteral("msg_id_prefix")).trimmed();
         commodity.equipment = section.value(QStringLiteral("equipment")).trimmed();
+        const QString equipmentNickname = commodity.equipment.trimmed().isEmpty() ? commodity.nickname : commodity.equipment.trimmed();
+        const IniSection selectSection = selectCommodities.value(normalizedNickname(equipmentNickname));
         commodity.basePrice = section.value(QStringLiteral("price")).toInt();
         commodity.volume = qMax(1, section.value(QStringLiteral("volume"), QStringLiteral("1")).toInt());
-        commodity.idsName = section.value(QStringLiteral("ids_name")).toInt();
-        commodity.idsInfo = section.value(QStringLiteral("ids_info")).toInt();
+        commodity.idsName = selectSection.value(QStringLiteral("ids_name")).toInt();
+        commodity.idsInfo = selectSection.value(QStringLiteral("ids_info")).toInt();
+        commodity.idsInfoText = commodity.idsInfo > 0 ? ids.getString(commodity.idsInfo).trimmed() : QString();
         commodity.combinable = section.value(QStringLiteral("combinable"), QStringLiteral("true")).trimmed()
                                    .compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0;
         commodity.goodSellPrice = section.value(QStringLiteral("good_sell_price")).toDouble();
@@ -210,6 +223,11 @@ QVector<TradeCommodityRecord> loadCommodities(const QString &goodsFilePath, cons
         commodity.shopArchetype = section.value(QStringLiteral("shop_archetype")).trimmed();
         commodity.itemIcon = section.value(QStringLiteral("item_icon")).trimmed();
         commodity.jumpDist = section.value(QStringLiteral("jump_dist")).toInt();
+        commodity.unitsPerContainer = qMax(1, selectSection.value(QStringLiteral("units_per_container"), QStringLiteral("30")).toInt());
+        commodity.podAppearance = selectSection.value(QStringLiteral("pod_appearance"), QStringLiteral("cargopod_grey")).trimmed();
+        commodity.lootAppearance = selectSection.value(QStringLiteral("loot_appearance"), QStringLiteral("lootcrate_grey")).trimmed();
+        commodity.decayPerSecond = selectSection.value(QStringLiteral("decay_per_second")).toDouble();
+        commodity.hitPts = qMax(1, selectSection.value(QStringLiteral("hit_pts"), QStringLiteral("250")).toInt());
         commodity.displayName = resolvedIdsDisplayName(
             ids, commodity.idsName, TradeRouteDataService::fallbackCommodityDisplayName(nickname));
         commodity.sourceFilePath = goodsFilePath;
@@ -228,6 +246,15 @@ QHash<QString, TradeCommodityRecord> commodityMap(const QVector<TradeCommodityRe
     for (const auto &commodity : commodities)
         byNickname.insert(normalizedNickname(commodity.nickname), commodity);
     return byNickname;
+}
+
+bool shouldPersistMarketPrice(const TradePriceRecord &price)
+{
+    if (price.implicit)
+        return false;
+    if (price.isSource)
+        return true;
+    return !qFuzzyCompare(price.multiplier, 1.0);
 }
 
 QVector<TradePriceRecord> loadPrices(const QString &dataPath,
@@ -321,6 +348,247 @@ void updateOrAppendEntry(QVector<IniEntry> *entries, const QString &key, const Q
     entries->append({key, value});
 }
 
+QString selectNicknameForCommodity(const TradeCommodityRecord &commodity)
+{
+    const QString equipment = commodity.equipment.trimmed();
+    return equipment.isEmpty() ? commodity.nickname.trimmed() : equipment;
+}
+
+QVector<IniEntry> selectCommodityEntries(const TradeCommodityRecord &commodity)
+{
+    QVector<IniEntry> entries;
+    entries.append({QStringLiteral("nickname"), selectNicknameForCommodity(commodity)});
+    if (commodity.idsName > 0)
+        entries.append({QStringLiteral("ids_name"), QString::number(commodity.idsName)});
+    if (commodity.idsInfo > 0)
+        entries.append({QStringLiteral("ids_info"), QString::number(commodity.idsInfo)});
+    entries.append({QStringLiteral("units_per_container"), QString::number(qMax(1, commodity.unitsPerContainer))});
+    entries.append({QStringLiteral("pod_appearance"),
+                    commodity.podAppearance.trimmed().isEmpty() ? QStringLiteral("cargopod_grey") : commodity.podAppearance.trimmed()});
+    entries.append({QStringLiteral("loot_appearance"),
+                    commodity.lootAppearance.trimmed().isEmpty() ? QStringLiteral("lootcrate_grey") : commodity.lootAppearance.trimmed()});
+    entries.append({QStringLiteral("decay_per_second"), QString::number(commodity.decayPerSecond, 'f', 6)});
+    entries.append({QStringLiteral("volume"), QString::number(qMax(1, commodity.volume))});
+    entries.append({QStringLiteral("hit_pts"), QString::number(qMax(1, commodity.hitPts))});
+    return entries;
+}
+
+void removeEntries(QVector<IniEntry> *entries, const QStringList &keys)
+{
+    entries->erase(std::remove_if(entries->begin(), entries->end(), [&keys](const IniEntry &entry) {
+        for (const QString &key : keys) {
+            if (entry.first.compare(key, Qt::CaseInsensitive) == 0)
+                return true;
+        }
+        return false;
+    }), entries->end());
+}
+
+QHash<QString, IniSection> selectCommoditySections(const QString &selectEquipPath)
+{
+    QHash<QString, IniSection> sections;
+    if (selectEquipPath.isEmpty() || !QFile::exists(selectEquipPath))
+        return sections;
+
+    const IniDocument doc = IniParser::parseFile(selectEquipPath);
+    for (const auto &section : doc) {
+        if (section.name.compare(QStringLiteral("Commodity"), Qt::CaseInsensitive) != 0)
+            continue;
+        const QString nickname = normalizedNickname(section.value(QStringLiteral("nickname")));
+        if (!nickname.isEmpty())
+            sections.insert(nickname, section);
+    }
+    return sections;
+}
+
+QString iniTextForFile(const QString &filePath)
+{
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+
+    const QByteArray raw = file.readAll();
+    QStringDecoder utf8(QStringDecoder::Utf8, QStringDecoder::Flag::Stateless);
+    const QString text = utf8(raw);
+    if (!utf8.hasError())
+        return text;
+    return QString::fromLatin1(raw);
+}
+
+QString sectionNameForHeader(const QString &line)
+{
+    const QString trimmed = line.trimmed();
+    if (!trimmed.startsWith(QLatin1Char('[')) || !trimmed.endsWith(QLatin1Char(']')))
+        return {};
+    return trimmed.mid(1, trimmed.length() - 2).trimmed();
+}
+
+QString entryKeyForLine(const QString &line)
+{
+    const QString trimmed = line.trimmed();
+    if (trimmed.isEmpty() || trimmed.startsWith(QLatin1Char(';')) || trimmed.startsWith(QLatin1String("//")))
+        return {};
+
+    const int eqPos = line.indexOf(QLatin1Char('='));
+    if (eqPos <= 0)
+        return {};
+    return line.left(eqPos).trimmed();
+}
+
+QString entryValueForLine(const QString &line)
+{
+    const int eqPos = line.indexOf(QLatin1Char('='));
+    if (eqPos <= 0)
+        return {};
+
+    QString value = line.mid(eqPos + 1).trimmed();
+    const int semicolon = value.indexOf(QLatin1Char(';'));
+    if (semicolon >= 0)
+        value = value.left(semicolon).trimmed();
+    return value;
+}
+
+QString sectionNicknameFromLines(const QStringList &lines, int headerIndex, int endIndex)
+{
+    for (int i = headerIndex + 1; i < endIndex; ++i) {
+        if (entryKeyForLine(lines.at(i)).compare(QStringLiteral("nickname"), Qt::CaseInsensitive) == 0)
+            return entryValueForLine(lines.at(i));
+    }
+    return {};
+}
+
+QString updatedEntryLine(const QString &line, const QString &key, const QString &value)
+{
+    const int keyStart = line.indexOf(key, 0, Qt::CaseInsensitive);
+    const QString indent = keyStart > 0 ? line.left(keyStart) : QString();
+    QString suffix;
+    const int eqPos = line.indexOf(QLatin1Char('='));
+    const int semicolon = eqPos >= 0 ? line.indexOf(QLatin1Char(';'), eqPos + 1) : -1;
+    if (semicolon >= 0)
+        suffix = QLatin1Char(' ') + line.mid(semicolon).trimmed();
+    return indent + key + QStringLiteral(" = ") + value + suffix;
+}
+
+QString serializeNewSelectCommoditySection(const TradeCommodityRecord &commodity)
+{
+    QString text = QStringLiteral("[Commodity]\n");
+    for (const auto &entry : selectCommodityEntries(commodity))
+        text += entry.first + QStringLiteral(" = ") + entry.second + QLatin1Char('\n');
+    return text;
+}
+
+QString updateSelectCommodityBlock(const QStringList &lines, int headerIndex, int endIndex, const TradeCommodityRecord &commodity)
+{
+    const QVector<IniEntry> entries = selectCommodityEntries(commodity);
+    QSet<QString> writtenKeys;
+    QStringList out;
+    out.reserve(endIndex - headerIndex + entries.size());
+    out.append(lines.at(headerIndex));
+
+    for (int i = headerIndex + 1; i < endIndex; ++i) {
+        const QString line = lines.at(i);
+        const QString key = entryKeyForLine(line);
+        if (key.isEmpty()) {
+            out.append(line);
+            continue;
+        }
+
+        const auto it = std::find_if(entries.begin(), entries.end(), [&key](const IniEntry &entry) {
+            return entry.first.compare(key, Qt::CaseInsensitive) == 0;
+        });
+        if (it == entries.end()) {
+            out.append(line);
+            continue;
+        }
+        if (writtenKeys.contains(key.toLower()))
+            continue;
+
+        out.append(updatedEntryLine(line, it->first, it->second));
+        writtenKeys.insert(key.toLower());
+    }
+
+    for (const auto &entry : entries) {
+        if (!writtenKeys.contains(entry.first.toLower()))
+            out.append(entry.first + QStringLiteral(" = ") + entry.second);
+    }
+    return out.join(QLatin1Char('\n')) + QLatin1Char('\n');
+}
+
+bool writeSelectEquipPreservingComments(const QString &selectEquipPath,
+                                        const QVector<TradeCommodityRecord> &commodities,
+                                        QString *errorMessage)
+{
+    QHash<QString, TradeCommodityRecord> commoditiesBySelectNickname;
+    for (const auto &commodity : commodities) {
+        const QString nickname = normalizedNickname(selectNicknameForCommodity(commodity));
+        if (!nickname.isEmpty())
+            commoditiesBySelectNickname.insert(nickname, commodity);
+    }
+
+    QSet<QString> writtenSelectCommoditySections;
+    QString out;
+    if (QFile::exists(selectEquipPath)) {
+        const QString text = iniTextForFile(selectEquipPath);
+        const QStringList lines = text.split(QLatin1Char('\n'));
+        int sectionStart = -1;
+        int i = 0;
+        while (i < lines.size()) {
+            const QString sectionName = sectionNameForHeader(lines.at(i));
+            if (sectionName.isEmpty()) {
+                if (sectionStart < 0)
+                    out += lines.at(i) + QLatin1Char('\n');
+                ++i;
+                continue;
+            }
+
+            sectionStart = i;
+            int sectionEnd = i + 1;
+            while (sectionEnd < lines.size() && sectionNameForHeader(lines.at(sectionEnd)).isEmpty())
+                ++sectionEnd;
+
+            if (sectionName.compare(QStringLiteral("Commodity"), Qt::CaseInsensitive) != 0) {
+                for (int lineIndex = sectionStart; lineIndex < sectionEnd; ++lineIndex)
+                    out += lines.at(lineIndex) + QLatin1Char('\n');
+                i = sectionEnd;
+                continue;
+            }
+
+            const QString nickname = normalizedNickname(sectionNicknameFromLines(lines, sectionStart, sectionEnd));
+            if (!nickname.startsWith(QStringLiteral("commodity_"))) {
+                for (int lineIndex = sectionStart; lineIndex < sectionEnd; ++lineIndex)
+                    out += lines.at(lineIndex) + QLatin1Char('\n');
+                i = sectionEnd;
+                continue;
+            }
+
+            const auto it = commoditiesBySelectNickname.constFind(nickname);
+            if (it != commoditiesBySelectNickname.constEnd()) {
+                out += updateSelectCommodityBlock(lines, sectionStart, sectionEnd, it.value());
+                writtenSelectCommoditySections.insert(nickname);
+            }
+            i = sectionEnd;
+        }
+    }
+
+    for (const auto &commodity : commodities) {
+        const QString nickname = normalizedNickname(selectNicknameForCommodity(commodity));
+        if (nickname.isEmpty() || writtenSelectCommoditySections.contains(nickname))
+            continue;
+        if (!out.isEmpty() && !out.endsWith(QStringLiteral("\n\n")))
+            out += QLatin1Char('\n');
+        out += serializeNewSelectCommoditySection(commodity);
+    }
+
+    QFile selectFile(selectEquipPath);
+    if (!selectFile.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("Could not write %1").arg(selectEquipPath);
+        return false;
+    }
+    selectFile.write(out.toUtf8());
+    return true;
+}
+
 } // namespace
 
 QString TradeRouteDataService::fallbackCommodityDisplayName(const QString &nickname)
@@ -340,6 +608,7 @@ TradeRouteWorkspaceData TradeRouteDataService::loadFromDataPath(const QString &d
     TradeRouteWorkspaceData workspace;
     workspace.dataPath = dataPath;
     workspace.goodsFilePath = resolveGoodsIni(dataPath);
+    workspace.selectEquipFilePath = resolveSelectEquipIni(dataPath);
     workspace.preferredMarketFilePath = preferredMarketFile(dataPath);
 
     IdsStringTable ids;
@@ -357,7 +626,9 @@ TradeRouteWorkspaceData TradeRouteDataService::loadFromDataPath(const QString &d
     if (!workspace.universe)
         workspace.universe = std::make_shared<UniverseData>();
 
-    workspace.commodities = loadCommodities(workspace.goodsFilePath, ids);
+    workspace.commodities = loadCommodities(workspace.goodsFilePath,
+                                            selectCommoditySections(workspace.selectEquipFilePath),
+                                            ids);
 
     QHash<QString, TradeBaseRecord> bases;
     scanSystemObjects(dataPath, workspace.universe, ids, &bases, &workspace.jumps);
@@ -406,6 +677,7 @@ bool TradeRouteDataService::saveWorkspace(const TradeRouteWorkspaceData &workspa
             continue;
 
         IniSection updated = section;
+        removeEntries(&updated.entries, {QStringLiteral("ids_name"), QStringLiteral("ids_info")});
         updateOrAppendEntry(&updated.entries, QStringLiteral("nickname"), it->nickname);
         if (!it->msgIdPrefix.trimmed().isEmpty())
             updateOrAppendEntry(&updated.entries, QStringLiteral("msg_id_prefix"), it->msgIdPrefix.trimmed());
@@ -431,14 +703,11 @@ bool TradeRouteDataService::saveWorkspace(const TradeRouteWorkspaceData &workspa
         if (it->jumpDist > 0)
             updateOrAppendEntry(&updated.entries, QStringLiteral("jump_dist"), QString::number(it->jumpDist));
         updateOrAppendEntry(&updated.entries, QStringLiteral("volume"), QString::number(qMax(1, it->volume)));
-        if (it->idsName > 0)
-            updateOrAppendEntry(&updated.entries, QStringLiteral("ids_name"), QString::number(it->idsName));
-        if (it->idsInfo > 0)
-            updateOrAppendEntry(&updated.entries, QStringLiteral("ids_info"), QString::number(it->idsInfo));
         updatedGoods.append(updated);
         writtenCommoditySections.insert(nickname);
     }
 
+    IniDocument newGoodSections;
     for (const auto &commodity : workspace.commodities) {
         const QString nickname = normalizedNickname(commodity.nickname);
         if (writtenCommoditySections.contains(nickname))
@@ -469,11 +738,21 @@ bool TradeRouteDataService::saveWorkspace(const TradeRouteWorkspaceData &workspa
         if (commodity.jumpDist > 0)
             section.entries.append({QStringLiteral("jump_dist"), QString::number(commodity.jumpDist)});
         section.entries.append({QStringLiteral("volume"), QString::number(qMax(1, commodity.volume))});
-        if (commodity.idsName > 0)
-            section.entries.append({QStringLiteral("ids_name"), QString::number(commodity.idsName)});
-        if (commodity.idsInfo > 0)
-            section.entries.append({QStringLiteral("ids_info"), QString::number(commodity.idsInfo)});
-        updatedGoods.append(section);
+        newGoodSections.append(section);
+    }
+
+    if (!newGoodSections.isEmpty()) {
+        int insertIndex = 0;
+        for (int i = 0; i < updatedGoods.size(); ++i) {
+            const auto &section = updatedGoods.at(i);
+            if (section.name.compare(QStringLiteral("Good"), Qt::CaseInsensitive) != 0)
+                continue;
+            if (normalizedNickname(section.value(QStringLiteral("nickname"))).startsWith(QStringLiteral("commodity_")))
+                insertIndex = i + 1;
+        }
+
+        for (int i = 0; i < newGoodSections.size(); ++i)
+            updatedGoods.insert(insertIndex + i, newGoodSections.at(i));
     }
 
     QFile goodsFile(workspace.goodsFilePath);
@@ -485,10 +764,26 @@ bool TradeRouteDataService::saveWorkspace(const TradeRouteWorkspaceData &workspa
     goodsFile.write(IniParser::serialize(updatedGoods).toUtf8());
     goodsFile.close();
 
+    QString selectEquipPath = workspace.selectEquipFilePath;
+    if (selectEquipPath.isEmpty() && !workspace.dataPath.isEmpty()) {
+        QDir equipmentDir(QDir(workspace.dataPath).filePath(QStringLiteral("EQUIPMENT")));
+        if (!equipmentDir.exists())
+            QDir().mkpath(equipmentDir.absolutePath());
+        selectEquipPath = equipmentDir.filePath(QStringLiteral("select_equip.ini"));
+    }
+    if (selectEquipPath.isEmpty()) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("select_equip.ini was not found for the current Freelancer data path.");
+        return false;
+    }
+
+    if (!writeSelectEquipPreservingComments(selectEquipPath, workspace.commodities, errorMessage))
+        return false;
+
     IniDocument marketDoc = IniParser::parseFile(workspace.preferredMarketFilePath);
     QHash<QString, QVector<TradePriceRecord>> explicitPricesByBase;
     for (const auto &price : workspace.prices) {
-        if (price.implicit)
+        if (!shouldPersistMarketPrice(price))
             continue;
         explicitPricesByBase[normalizedNickname(price.baseNickname)].append(price);
     }
