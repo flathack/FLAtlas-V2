@@ -601,28 +601,6 @@ static bool isRawCommentLine(const QString &trimmed)
     return trimmed.startsWith(QLatin1Char(';')) || trimmed.startsWith(QLatin1String("//"));
 }
 
-static QString dockLeadingCommentsToSection(const QString &text)
-{
-    QStringList lines = normalizeLineEndings(text).split(QLatin1Char('\n'));
-    int headerLine = findSectionHeaderLine(lines);
-    if (headerLine <= 0)
-        return lines.join(QLatin1Char('\n')).trimmed();
-
-    for (int index = headerLine - 1; index >= 0; --index) {
-        const QString trimmed = lines.at(index).trimmed();
-        if (trimmed.isEmpty()) {
-            lines.removeAt(index);
-            --headerLine;
-            continue;
-        }
-        if (isRawCommentLine(trimmed))
-            continue;
-        break;
-    }
-
-    return lines.join(QLatin1Char('\n')).trimmed();
-}
-
 static QString dockCommentsToFollowingSections(const QString &text)
 {
     QStringList lines = normalizeLineEndings(text).split(QLatin1Char('\n'));
@@ -751,7 +729,29 @@ static QString updateRawSectionBlock(const RawSectionBlock &block, const IniSect
             lines.insert(insertIndex + index, additions.at(index));
     }
 
-    return dockLeadingCommentsToSection(lines.join(QLatin1Char('\n')));
+    return lines.join(QLatin1Char('\n'));
+}
+
+static void appendSectionText(QString &text, const QString &sectionText, bool preserveExistingSpacing)
+{
+    if (sectionText.isEmpty())
+        return;
+
+    if (text.isEmpty()) {
+        text = sectionText;
+        return;
+    }
+
+    if (preserveExistingSpacing) {
+        if (!sectionText.startsWith(QLatin1Char('\n')))
+            text.append(QLatin1Char('\n'));
+    } else {
+        if (!text.endsWith(QLatin1Char('\n')))
+            text.append(QLatin1Char('\n'));
+        text.append(QLatin1Char('\n'));
+    }
+
+    text += sectionText;
 }
 
 static QString serializeWithRawBlocks(const IniDocument &orderedSections,
@@ -768,10 +768,12 @@ static QString serializeWithRawBlocks(const IniDocument &orderedSections,
         QString sectionText;
         const QString key = sectionIdentityKey(section);
         auto it = rawIndicesByKey.find(key);
+        bool preserveExistingSpacing = false;
         if (it != rawIndicesByKey.end() && !it->isEmpty()) {
             const RawSectionBlock &block = rawBlocks.at(it->takeFirst());
+            preserveExistingSpacing = true;
             sectionText = sectionEntriesEquivalent(block.section, section)
-                ? dockLeadingCommentsToSection(block.text)
+                ? block.text
                 : updateRawSectionBlock(block, section);
         } else {
             QString leadingComment;
@@ -788,11 +790,11 @@ static QString serializeWithRawBlocks(const IniDocument &orderedSections,
             sectionText = serializeSection(section, leadingComment);
         }
 
-        if (!text.isEmpty())
-            text += QLatin1String("\n\n");
-        text += sectionText;
+        appendSectionText(text, sectionText, preserveExistingSpacing);
     }
-    return dockCommentsToFollowingSections(text) + QLatin1Char('\n');
+    if (!text.endsWith(QLatin1Char('\n')))
+        text.append(QLatin1Char('\n'));
+    return text;
 }
 
 static QVector<RawSectionBlock> rawBlocksFromText(const QString &text, const IniDocument &sections)

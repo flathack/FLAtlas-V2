@@ -412,17 +412,60 @@ private slots:
         QVERIFY(written.contains(QStringLiteral("; file header comment")));
         QVERIFY(written.contains(QStringLiteral("nickname = Li01 ; inline system comment")));
         QVERIFY(written.contains(QStringLiteral("; comment before object section")));
-        QVERIFY(written.contains(QStringLiteral("; comment before object section\n[Object]")));
-        QVERIFY(!written.contains(QStringLiteral("; comment before object section\n\n[Object]")));
+        QVERIFY(written.contains(QStringLiteral("; comment before object section\n\n[Object]")));
         QVERIFY(written.contains(QStringLiteral("; object nickname comment")));
         QVERIFY(written.contains(QStringLiteral("nickname = station1 ; inline object comment")));
         QVERIFY(written.contains(QStringLiteral("pos = 10.000000, 20.000000, 30.000000 ; inline pos comment")));
         QVERIFY(written.contains(QStringLiteral("// slash comment before zone")));
-        QVERIFY(written.contains(QStringLiteral("// slash comment before zone\n[Zone]")));
-        QVERIFY(!written.contains(QStringLiteral("// slash comment before zone\n\n[Zone]")));
+        QVERIFY(written.contains(QStringLiteral("// slash comment before zone\n\n[Zone]")));
         QVERIFY(written.contains(QStringLiteral("; zone size comment")));
         QVERIFY(written.contains(QStringLiteral("size = 2000.000000 ; inline size comment")));
         QVERIFY(written.contains(QStringLiteral("; trailing file comment")));
+    }
+
+    void savePreservesFreestandingCommentsAndSpacing()
+    {
+        const QString ini = QStringLiteral(
+            "[SystemInfo]\n"
+            "nickname = Li01\n"
+            "\n"
+            "[Object]\n"
+            "nickname = station1\n"
+            "; comment inside object before changed key\n"
+            "pos = 1000, 2000, -3000 ; inline pos comment\n"
+            "archetype = space_station\n"
+            "\n"
+            "; freestanding comment between topics\n"
+            "\n"
+            "[Zone]\n"
+            "nickname = zone1\n"
+            "; comment inside zone before changed key\n"
+            "size = 1000, 1000, 1000 ; inline size comment\n"
+            "shape = SPHERE\n"
+            "\n"
+            "; freestanding comment at file end\n");
+
+        const QString path = writeTemp(ini);
+        auto doc = SystemPersistence::load(path);
+        QVERIFY(doc);
+        QCOMPARE(doc->objects().size(), 1);
+        QCOMPARE(doc->zones().size(), 1);
+
+        doc->objects()[0]->setPosition(QVector3D(10, 20, 30));
+        doc->zones()[0]->setSize(QVector3D(2000, 0, 0));
+
+        QTemporaryDir dir;
+        const QString savedPath = dir.path() + QStringLiteral("/freestanding_comments.ini");
+        QVERIFY(SystemPersistence::save(*doc, savedPath));
+
+        QFile file(savedPath);
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString written = QString::fromUtf8(file.readAll());
+
+        QVERIFY(written.contains(QStringLiteral("; comment inside object before changed key\npos = 10.000000, 20.000000, 30.000000 ; inline pos comment")));
+        QVERIFY(written.contains(QStringLiteral("; freestanding comment between topics\n\n[Zone]")));
+        QVERIFY(written.contains(QStringLiteral("; comment inside zone before changed key\nsize = 2000.000000 ; inline size comment")));
+        QVERIFY(written.contains(QStringLiteral("shape = SPHERE\n\n; freestanding comment at file end\n")));
     }
 
     void savePreservesSingleValueSphereSizeRoundtrip()
