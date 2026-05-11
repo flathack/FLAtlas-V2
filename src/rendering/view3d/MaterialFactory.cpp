@@ -95,8 +95,8 @@ Qt3DExtras::QPhongMaterial *MaterialFactory::createDefault(const QColor &color,
     auto *material = new Qt3DExtras::QPhongMaterial(parent);
     material->setDiffuse(color);
     material->setAmbient(color.darker(130));
-    material->setSpecular(QColor(50, 50, 50));
-    material->setShininess(25.0f);
+    material->setSpecular(QColor(6, 6, 6));
+    material->setShininess(4.0f);
     return material;
 }
 

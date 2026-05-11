@@ -45,8 +45,8 @@ ModelPreview::ModelPreview(QWidget *parent)
     headerLayout->addWidget(lightDial);
 
     auto *intensitySlider = new QSlider(Qt::Horizontal, this);
-    intensitySlider->setRange(20, 300);
-    intensitySlider->setValue(180);
+    intensitySlider->setRange(0, 300);
+    intensitySlider->setValue(110);
     intensitySlider->setFixedWidth(90);
     intensitySlider->setToolTip(tr("Light intensity."));
     headerLayout->addWidget(new QLabel(tr("Intensity"), this));

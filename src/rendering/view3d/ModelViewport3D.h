@@ -125,7 +125,7 @@ private:
     float m_lightRadius = 1000.0f;
     float m_lightAzimuth = 45.0f;
     float m_lightElevation = 35.0f;
-    float m_lightIntensity = 1.8f;
+    float m_lightIntensity = 1.1f;
     QColor m_lightColor = Qt::white;
 #endif
 

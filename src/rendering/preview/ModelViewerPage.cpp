@@ -153,8 +153,8 @@ ModelViewerPage::ModelViewerPage(QWidget *parent)
     previewControls->addWidget(m_lightDial);
     previewControls->addWidget(new QLabel(tr("Intensity"), rightPane));
     m_lightIntensitySlider = new QSlider(Qt::Horizontal, rightPane);
-    m_lightIntensitySlider->setRange(20, 300);
-    m_lightIntensitySlider->setValue(180);
+    m_lightIntensitySlider->setRange(0, 300);
+    m_lightIntensitySlider->setValue(100);
     m_lightIntensitySlider->setFixedWidth(88);
     m_lightIntensitySlider->setToolTip(tr("Light intensity."));
     previewControls->addWidget(m_lightIntensitySlider);

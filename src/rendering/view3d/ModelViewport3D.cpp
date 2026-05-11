@@ -54,10 +54,10 @@ QColor colorForNodeIndex(int nodeIndex, bool brightBackground)
     // 12 evenly-spaced hues so adjacent parts stay distinguishable
     static const int hues[] = {210, 30, 120, 0, 270, 60, 190, 340, 90, 240, 155, 315};
     const int hue = hues[nodeIndex % 12];
-    const int sat = 130 + (nodeIndex % 3) * 20;   // 130 / 150 / 170
-    // Dark background → bright colours; light background → darker, more saturated
-    const int val = brightBackground ? 130 + (nodeIndex % 4) * 15   // 130…175
-                                     : 195 + (nodeIndex % 4) * 15;  // 195…240
+    const int sat = brightBackground ? 48 + (nodeIndex % 3) * 8
+                                     : 55 + (nodeIndex % 3) * 10;
+    const int val = brightBackground ? 150 + (nodeIndex % 4) * 10
+                                     : 205 + (nodeIndex % 4) * 8;
     return QColor::fromHsv(hue, sat, val);
 }
 
@@ -85,10 +85,10 @@ QColor colorForMesh(const flatlas::infrastructure::MeshData &mesh, int nodeIndex
     const uint hash = qHash(mesh.materialName.toLower());
     const int hue = static_cast<int>(hash % 360u);
     // On a bright background reduce value so faces don't wash out
-    const int sat = brightBackground ? 120 + static_cast<int>((hash / 360u) % 100u)
-                                     :  90 + static_cast<int>((hash / 360u) %  80u);
-    const int val = brightBackground ? 120 + static_cast<int>((hash / (360u * 100u)) % 80u)
-                                     : 170 + static_cast<int>((hash / (360u *  80u)) % 60u);
+    const int sat = brightBackground ? 45 + static_cast<int>((hash / 360u) % 35u)
+                                     : 52 + static_cast<int>((hash / 360u) % 42u);
+    const int val = brightBackground ? 145 + static_cast<int>((hash / (360u * 100u)) % 35u)
+                                     : 198 + static_cast<int>((hash / (360u * 80u)) % 36u);
     return QColor::fromHsv(hue, qBound(0, sat, 255), qBound(0, val, 255));
 }
 
