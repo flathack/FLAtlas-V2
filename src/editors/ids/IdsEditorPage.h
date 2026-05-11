@@ -71,6 +71,8 @@ private:
     int currentEditorTargetId() const;
     void refreshTargetDllSelection();
     void refreshCreatePreviewId();
+    void refreshCreateIdStatus();
+    bool validateCurrentCreateId(QString *errorMessage = nullptr) const;
     void selectEntryByGlobalId(int globalId);
     const flatlas::infrastructure::IdsEntryRecord *selectedEntry() const;
     flatlas::infrastructure::IdsUsageType selectedMissingUsageType() const;
@@ -100,6 +102,7 @@ private:
     QLabel *m_editorModeLabel = nullptr;
     QLabel *m_entryMetaLabel = nullptr;
     QLineEdit *m_idEdit = nullptr;
+    QLabel *m_idStatusLabel = nullptr;
     QLineEdit *m_dllEdit = nullptr;
     QComboBox *m_targetDllCombo = nullptr;
     QStackedWidget *m_editorStack = nullptr;

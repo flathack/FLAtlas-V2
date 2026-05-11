@@ -20,6 +20,7 @@ private slots:
     void testAssignFieldValue();
     void testConfiguredCreationDllOverridesFlatlasDefault();
     void testConfiguredCreationDllPredictsTargetSlot();
+    void testValidateManualCreationId();
     void testCreateEntriesPersistInFlatlasDll();
 };
 
@@ -177,6 +178,41 @@ void TestIdsDataService::testConfiguredCreationDllPredictsTargetSlot()
     QCOMPARE(IdsDataService::nextAvailableGlobalId(dataset), ResourceDllWriter::makeGlobalId(3, 2));
 
     config.setString(QStringLiteral("idsCreationTargetDll"), QString());
+}
+
+void TestIdsDataService::testValidateManualCreationId()
+{
+    IdsDataset dataset;
+    dataset.freelancerIniPath = QStringLiteral("C:/fake/EXE/freelancer.ini");
+    dataset.resourceDlls = {QStringLiteral("NameResources.dll"),
+                            ResourceDllWriter::preferredFlatlasDllName()};
+
+    IdsEntryRecord existing;
+    existing.globalId = ResourceDllWriter::makeGlobalId(2, 5);
+    existing.localId = 5;
+    existing.dllSlot = 2;
+    existing.dllName = ResourceDllWriter::preferredFlatlasDllName();
+    existing.hasStringValue = true;
+    dataset.entries.append(existing);
+
+    QString errorMessage;
+    QVERIFY(IdsDataService::validateCreationGlobalId(dataset,
+                                                     ResourceDllWriter::preferredFlatlasDllName(),
+                                                     ResourceDllWriter::makeGlobalId(2, 6),
+                                                     &errorMessage));
+    QVERIFY(errorMessage.isEmpty());
+
+    QVERIFY(!IdsDataService::validateCreationGlobalId(dataset,
+                                                      ResourceDllWriter::preferredFlatlasDllName(),
+                                                      existing.globalId,
+                                                      &errorMessage));
+    QVERIFY(errorMessage.contains(QStringLiteral("already used")));
+
+    QVERIFY(!IdsDataService::validateCreationGlobalId(dataset,
+                                                      ResourceDllWriter::preferredFlatlasDllName(),
+                                                      ResourceDllWriter::makeGlobalId(1, 6),
+                                                      &errorMessage));
+    QVERIFY(errorMessage.contains(QStringLiteral("DLL slot")));
 }
 
 void TestIdsDataService::testCreateEntriesPersistInFlatlasDll()

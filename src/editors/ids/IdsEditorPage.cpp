@@ -304,6 +304,9 @@ void IdsEditorPage::setupUi()
     m_idEdit = new QLineEdit(rightPane);
     m_idEdit->setReadOnly(true);
     form->addRow(tr("ID"), m_idEdit);
+    m_idStatusLabel = new QLabel(rightPane);
+    m_idStatusLabel->setWordWrap(true);
+    form->addRow(QString(), m_idStatusLabel);
 
     m_dllEdit = new QLineEdit(rightPane);
     m_dllEdit->setReadOnly(true);
@@ -427,6 +430,7 @@ void IdsEditorPage::setupUi()
     connect(m_createStringButton, &QPushButton::clicked, this, [this]() { beginCreateMode(IdsUsageType::IdsName); });
     connect(m_createInfocardButton, &QPushButton::clicked, this, [this]() { beginCreateMode(IdsUsageType::IdsInfo); });
     connect(m_saveButton, &QPushButton::clicked, this, [this]() { saveCurrentEntry(m_createMode); });
+    connect(m_idEdit, &QLineEdit::textChanged, this, [this]() { refreshCreateIdStatus(); });
     connect(assignButton, &QPushButton::clicked, this, &IdsEditorPage::assignSelectedEntryToMissing);
     connect(createAssignButton, &QPushButton::clicked, this, &IdsEditorPage::createAndAssignToMissing);
     connect(openUsageButton, &QPushButton::clicked, this, &IdsEditorPage::openSelectedReference);
@@ -661,6 +665,8 @@ void IdsEditorPage::populateEditorFromEntry(const IdsEntryRecord &entry)
                                        QString::number(entry.localId),
                                        entry.editable ? tr("editable") : tr("read-only")));
     m_idEdit->setText(QString::number(entry.globalId));
+    m_idEdit->setReadOnly(true);
+    m_idStatusLabel->clear();
     m_dllEdit->setText(entry.dllName);
     const int targetIndex = m_targetDllCombo->findText(entry.dllName);
     if (targetIndex >= 0)
@@ -694,7 +700,8 @@ void IdsEditorPage::beginCreateMode(IdsUsageType usageType)
     refreshCreatePreviewId();
     const QString targetDll = IdsDataService::defaultCreationDllName(m_dataset);
     m_editorModeLabel->setText(tr("Creating new %1 entry").arg(IdsDataService::usageTypeLabel(usageType)));
-    m_entryMetaLabel->setText(tr("New entries are created in %1.").arg(targetDll));
+    m_entryMetaLabel->setText(tr("New entries are created in %1. The suggested ID can be overwritten.").arg(targetDll));
+    m_idEdit->setReadOnly(false);
     m_targetDllCombo->setEnabled(false);
 
     if (usageType == IdsUsageType::IdsInfo) {
@@ -760,6 +767,37 @@ void IdsEditorPage::refreshCreatePreviewId()
     else
         m_idEdit->clear();
     m_dllEdit->setText(targetDll);
+    refreshCreateIdStatus();
+}
+
+void IdsEditorPage::refreshCreateIdStatus()
+{
+    if (!m_createMode || !m_idStatusLabel)
+        return;
+
+    QString errorMessage;
+    if (validateCurrentCreateId(&errorMessage)) {
+        m_idStatusLabel->setText(tr("ID is free."));
+        m_idStatusLabel->setStyleSheet(QStringLiteral("QLabel { color: #2e7d32; }"));
+    } else {
+        m_idStatusLabel->setText(errorMessage);
+        m_idStatusLabel->setStyleSheet(QStringLiteral("QLabel { color: #b00020; }"));
+    }
+}
+
+bool IdsEditorPage::validateCurrentCreateId(QString *errorMessage) const
+{
+    if (!m_createMode)
+        return true;
+
+    bool ok = false;
+    const int globalId = m_idEdit->text().trimmed().toInt(&ok);
+    if (!ok) {
+        if (errorMessage)
+            *errorMessage = tr("Please enter a valid IDS number.");
+        return false;
+    }
+    return IdsDataService::validateCreationGlobalId(m_dataset, currentEditorTargetDll(), globalId, errorMessage);
 }
 
 void IdsEditorPage::selectEntryByGlobalId(int globalId)
@@ -834,6 +872,14 @@ void IdsEditorPage::saveCurrentEntry(bool createNew)
     const int targetGlobalId = createNew
         ? currentEditorTargetId()
         : (entry ? entry->globalId : 0);
+    if (createNew) {
+        QString idError;
+        if (!validateCurrentCreateId(&idError)) {
+            QMessageBox::warning(this, tr("IDS Editor"), idError);
+            refreshCreateIdStatus();
+            return;
+        }
+    }
 
     int newGlobalId = 0;
     QString errorMessage;

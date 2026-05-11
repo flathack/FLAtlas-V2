@@ -13,6 +13,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QObject>
 #include <QRegularExpression>
 #include <QSet>
 
@@ -535,6 +536,57 @@ int IdsDataService::nextAvailableGlobalId(const IdsDataset &dataset, const QStri
         ++localId;
 
     return ResourceDllWriter::makeGlobalId(slot, localId);
+}
+
+bool IdsDataService::isGlobalIdInUse(const IdsDataset &dataset, int globalId)
+{
+    if (globalId <= 0)
+        return false;
+    for (const auto &entry : dataset.entries) {
+        if (entry.globalId == globalId)
+            return true;
+    }
+    return false;
+}
+
+bool IdsDataService::validateCreationGlobalId(const IdsDataset &dataset,
+                                              const QString &dllName,
+                                              int globalId,
+                                              QString *errorMessage)
+{
+    if (globalId <= 0) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("Please enter a valid IDS number.");
+        return false;
+    }
+
+    const int targetSlot = predictedSlotForDll(dataset, dllName.trimmed().isEmpty() ? defaultCreationDllName(dataset) : dllName);
+    const int idSlot = (globalId >> 16) & 0xFFFF;
+    const int localId = globalId & 0xFFFF;
+    if (targetSlot <= 0 || idSlot <= 0 || localId <= 0) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("The IDS number does not point to a valid resource DLL slot.");
+        return false;
+    }
+
+    if (idSlot != targetSlot) {
+        if (errorMessage) {
+            *errorMessage = QObject::tr("IDS number %1 belongs to DLL slot %2, but %3 is slot %4.")
+                                .arg(globalId)
+                                .arg(idSlot)
+                                .arg(dllName.trimmed().isEmpty() ? defaultCreationDllName(dataset) : dllName)
+                                .arg(targetSlot);
+        }
+        return false;
+    }
+
+    if (isGlobalIdInUse(dataset, globalId)) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("IDS number %1 is already used.").arg(globalId);
+        return false;
+    }
+
+    return true;
 }
 
 IdsDataset IdsDataService::loadFromGameRoot(const QString &gameRoot)
