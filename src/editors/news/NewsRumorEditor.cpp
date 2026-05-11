@@ -9,7 +9,10 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QColor>
+#include <QCompleter>
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QEventLoop>
 #include <QFile>
 #include <QFileDialog>
@@ -25,12 +28,15 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QPlainTextEdit>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QSet>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
+#include <QStringListModel>
 #include <QTableWidget>
+#include <QTextBrowser>
 #include <QTextStream>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -71,11 +77,69 @@ QString displayLabel(const QString &nickname, const QString &displayName)
     return cleanDisplay.isEmpty() ? nickname : cleanDisplay;
 }
 
+QStringList uniqueSortedList(QStringList values)
+{
+    QStringList result;
+    QSet<QString> seen;
+    for (const QString &value : values) {
+        const QString clean = value.trimmed();
+        if (clean.isEmpty())
+            continue;
+        const QString key = clean.toLower();
+        if (seen.contains(key))
+            continue;
+        seen.insert(key);
+        result.append(clean);
+    }
+    result.sort(Qt::CaseInsensitive);
+    return result;
+}
+
+QString rankPart(const QString &rank, int index)
+{
+    const QStringList parts = rank.split(QLatin1Char(','));
+    if (index < 0 || index >= parts.size())
+        return {};
+    return parts.at(index).trimmed();
+}
+
+QString joinedRank(const QString &from, const QString &to)
+{
+    const QString cleanFrom = from.trimmed();
+    const QString cleanTo = to.trimmed();
+    if (cleanFrom.isEmpty())
+        return cleanTo;
+    if (cleanTo.isEmpty())
+        return cleanFrom;
+    return cleanFrom + QLatin1Char(',') + cleanTo;
+}
+
 QTableWidgetItem *readOnlyItem(const QString &text)
 {
     auto *item = new QTableWidgetItem(text);
     item->setFlags(item->flags() & ~Qt::ItemIsEditable);
     return item;
+}
+
+QString htmlEscape(const QString &text)
+{
+    return text.toHtmlEscaped();
+}
+
+QString htmlList(const QStringList &items)
+{
+    if (items.isEmpty())
+        return QStringLiteral("<p><i>%1</i></p>").arg(htmlEscape(QObject::tr("None")));
+    QString html = QStringLiteral("<ul>");
+    for (const QString &item : items)
+        html += QStringLiteral("<li>%1</li>").arg(htmlEscape(item));
+    html += QStringLiteral("</ul>");
+    return html;
+}
+
+QString htmlSection(const QString &title, const QStringList &items)
+{
+    return QStringLiteral("<h3>%1</h3>%2").arg(htmlEscape(title), htmlList(items));
 }
 
 void setFirstValue(IniSection *section, const QString &key, const QString &value)
@@ -165,6 +229,102 @@ QIcon newsIconForName(const QString &iconName)
     cache.insert(key, icon);
     return icon;
 }
+
+class DeleteNewsDialog final : public QDialog {
+public:
+    DeleteNewsDialog(const NewsEntry &entry, QWidget *parent = nullptr)
+        : QDialog(parent)
+        , m_entry(entry)
+    {
+        setWindowTitle(tr("Delete News"));
+        resize(720, 520);
+
+        auto *layout = new QVBoxLayout(this);
+        auto *intro = new QLabel(
+            tr("Delete is blocked until Scan completes. The scan lists the news.ini section, base assignments and IDS references that will be removed with this news item."),
+            this);
+        intro->setWordWrap(true);
+        layout->addWidget(intro);
+
+        m_reportView = new QTextBrowser(this);
+        m_reportView->setOpenExternalLinks(false);
+        layout->addWidget(m_reportView, 1);
+
+        auto *buttons = new QDialogButtonBox(this);
+        m_scanButton = buttons->addButton(tr("Scan"), QDialogButtonBox::ActionRole);
+        m_deleteButton = buttons->addButton(tr("Delete News"), QDialogButtonBox::DestructiveRole);
+        buttons->addButton(QDialogButtonBox::Cancel);
+        m_deleteButton->setEnabled(false);
+        layout->addWidget(buttons);
+
+        connect(m_scanButton, &QPushButton::clicked, this, &DeleteNewsDialog::runScan);
+        connect(m_deleteButton, &QPushButton::clicked, this, [this]() {
+            runScan();
+            if (m_canDelete)
+                accept();
+        });
+        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+        m_reportView->setHtml(QStringLiteral("<p><i>%1</i></p>").arg(htmlEscape(tr("No scan executed yet."))));
+    }
+
+private:
+    void runScan()
+    {
+        m_scanCompleted = true;
+        m_canDelete = !m_entry.removed;
+        m_reportView->setHtml(formatReportHtml());
+        m_deleteButton->setEnabled(m_scanCompleted && m_canDelete);
+    }
+
+    QString formatReportHtml() const
+    {
+        QString html;
+        html += QStringLiteral("<html><body style=\"font-family:'Segoe UI';\">");
+        html += QStringLiteral("<h2>%1</h2>").arg(htmlEscape(m_entry.headlineText.trimmed().isEmpty()
+            ? tr("<IDS %1 missing>").arg(m_entry.headlineIds)
+            : m_entry.headlineText.trimmed()));
+
+        QStringList sectionLines;
+        sectionLines.append(m_entry.sectionIndex >= 0
+                                ? tr("%1 | [NewsItem] section %2").arg(m_entry.source, QString::number(m_entry.sectionIndex + 1))
+                                : tr("Unsaved [NewsItem] entry"));
+        sectionLines.append(tr("rank = %1").arg(m_entry.rank));
+        sectionLines.append(tr("icon = %1").arg(m_entry.icon));
+        sectionLines.append(tr("logo = %1").arg(m_entry.logo));
+        html += htmlSection(tr("News Item To Remove"), sectionLines);
+
+        QStringList baseLines;
+        for (const QString &base : m_entry.bases)
+            baseLines.append(tr("base = %1").arg(base));
+        html += htmlSection(tr("Base Assignments To Remove"), baseLines);
+
+        QStringList idsLines;
+        if (m_entry.categoryIds > 0)
+            idsLines.append(tr("category = %1").arg(m_entry.categoryIds));
+        if (m_entry.headlineIds > 0)
+            idsLines.append(tr("headline = %1").arg(m_entry.headlineIds));
+        if (m_entry.textIds > 0)
+            idsLines.append(tr("text = %1").arg(m_entry.textIds));
+        html += htmlSection(tr("IDS References In This News Item"), idsLines);
+
+        QStringList result;
+        result.append(m_canDelete
+                          ? tr("Scan successful. Delete is enabled.")
+                          : tr("Scan blocked. Delete stays disabled."));
+        result.append(tr("Save writes the removal to news.ini."));
+        html += htmlSection(tr("Result"), result);
+        html += QStringLiteral("</body></html>");
+        return html;
+    }
+
+    NewsEntry m_entry;
+    QTextBrowser *m_reportView = nullptr;
+    QPushButton *m_scanButton = nullptr;
+    QPushButton *m_deleteButton = nullptr;
+    bool m_scanCompleted = false;
+    bool m_canDelete = false;
+};
 
 } // namespace
 
@@ -302,12 +462,53 @@ void NewsRumorEditor::setupUi()
     idsRow->addWidget(new QLabel(tr("Text IDS:"), techBox));
     idsRow->addWidget(m_textSpin);
     techLayout->addLayout(idsRow);
-    m_rankEdit = new QLineEdit(techBox);
-    m_iconEdit = new QLineEdit(techBox);
-    m_logoEdit = new QLineEdit(techBox);
+    m_rankFromEdit = new QComboBox(techBox);
+    m_rankToEdit = new QComboBox(techBox);
+    m_iconEdit = new QComboBox(techBox);
+    m_logoEdit = new QComboBox(techBox);
+    for (QComboBox *combo : {m_rankFromEdit, m_rankToEdit, m_iconEdit, m_logoEdit}) {
+        combo->setEditable(true);
+        combo->setInsertPolicy(QComboBox::NoInsert);
+        combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+        if (combo->lineEdit())
+            combo->lineEdit()->setClearButtonEnabled(true);
+    }
+    m_rankFromEdit->lineEdit()->setPlaceholderText(tr("Example: base_0_rank"));
+    m_rankFromEdit->setToolTip(tr("Show this news starting at this rank."));
+    m_rankToEdit->lineEdit()->setPlaceholderText(tr("Example: mission_end"));
+    m_rankToEdit->setToolTip(tr("Show this news until this rank."));
+    m_iconEdit->lineEdit()->setPlaceholderText(tr("Example: world"));
+    m_iconEdit->setToolTip(tr("News icon name. Common values: critical, world, system, universe, faction."));
+    m_logoEdit->lineEdit()->setPlaceholderText(tr("Example: news_manhattan"));
+    m_logoEdit->setToolTip(tr("News vendor logo nickname, for example news_manhattan."));
+    m_rankFromCompletionModel = new QStringListModel(this);
+    m_rankToCompletionModel = new QStringListModel(this);
+    m_iconCompletionModel = new QStringListModel(this);
+    m_logoCompletionModel = new QStringListModel(this);
+    auto *rankFromCompleter = new QCompleter(m_rankFromCompletionModel, this);
+    auto *rankToCompleter = new QCompleter(m_rankToCompletionModel, this);
+    auto *iconCompleter = new QCompleter(m_iconCompletionModel, this);
+    auto *logoCompleter = new QCompleter(m_logoCompletionModel, this);
+    for (QCompleter *completer : {rankFromCompleter, rankToCompleter, iconCompleter, logoCompleter}) {
+        completer->setCaseSensitivity(Qt::CaseInsensitive);
+        completer->setFilterMode(Qt::MatchContains);
+    }
+    m_rankFromEdit->setModel(m_rankFromCompletionModel);
+    m_rankToEdit->setModel(m_rankToCompletionModel);
+    m_iconEdit->setModel(m_iconCompletionModel);
+    m_logoEdit->setModel(m_logoCompletionModel);
+    m_rankFromEdit->setCompleter(rankFromCompleter);
+    m_rankToEdit->setCompleter(rankToCompleter);
+    m_iconEdit->setCompleter(iconCompleter);
+    m_logoEdit->setCompleter(logoCompleter);
+    updateTechnicalFieldCompletions();
     m_autoselectCheck = new QCheckBox(tr("Autoselect"), techBox);
-    techLayout->addWidget(new QLabel(tr("Rank:"), techBox));
-    techLayout->addWidget(m_rankEdit);
+    auto *rankRow = new QHBoxLayout();
+    rankRow->addWidget(new QLabel(tr("Show From:"), techBox));
+    rankRow->addWidget(m_rankFromEdit, 1);
+    rankRow->addWidget(new QLabel(tr("Show Until:"), techBox));
+    rankRow->addWidget(m_rankToEdit, 1);
+    techLayout->addLayout(rankRow);
     techLayout->addWidget(new QLabel(tr("Icon:"), techBox));
     techLayout->addWidget(m_iconEdit);
     techLayout->addWidget(new QLabel(tr("Logo:"), techBox));
@@ -319,6 +520,12 @@ void NewsRumorEditor::setupUi()
 
     m_statusLabel = new QLabel(this);
     mainLayout->addWidget(m_statusLabel);
+    m_progressBar = new QProgressBar(this);
+    m_progressBar->setRange(0, 100);
+    m_progressBar->setValue(100);
+    m_progressBar->setTextVisible(false);
+    m_progressBar->setFixedHeight(5);
+    mainLayout->addWidget(m_progressBar);
 
     connect(reloadButton, &QPushButton::clicked, this, &NewsRumorEditor::scheduleLoadFromContext);
     connect(openButton, &QPushButton::clicked, this, [this]() {
@@ -373,9 +580,10 @@ void NewsRumorEditor::setupUi()
     connect(m_categorySpin, &QSpinBox::valueChanged, this, markDetailDirty);
     connect(m_headlineSpin, &QSpinBox::valueChanged, this, markDetailDirty);
     connect(m_textSpin, &QSpinBox::valueChanged, this, markDetailDirty);
-    connect(m_rankEdit, &QLineEdit::textEdited, this, markDetailDirty);
-    connect(m_iconEdit, &QLineEdit::textEdited, this, markDetailDirty);
-    connect(m_logoEdit, &QLineEdit::textEdited, this, markDetailDirty);
+    connect(m_rankFromEdit, &QComboBox::currentTextChanged, this, markDetailDirty);
+    connect(m_rankToEdit, &QComboBox::currentTextChanged, this, markDetailDirty);
+    connect(m_iconEdit, &QComboBox::currentTextChanged, this, markDetailDirty);
+    connect(m_logoEdit, &QComboBox::currentTextChanged, this, markDetailDirty);
     connect(m_autoselectCheck, &QCheckBox::toggled, this, markDetailDirty);
 }
 
@@ -399,7 +607,17 @@ void NewsRumorEditor::loadFromContext()
 
 void NewsRumorEditor::reportLoadingProgress(int percent, const QString &message)
 {
-    emit loadingProgressChanged(std::clamp(percent, 0, 100), message);
+    setOperationProgress(percent, message);
+}
+
+void NewsRumorEditor::setOperationProgress(int percent, const QString &message)
+{
+    const int clamped = std::clamp(percent, 0, 100);
+    emit loadingProgressChanged(clamped, message);
+    if (m_progressBar) {
+        m_progressBar->setValue(clamped);
+        m_progressBar->update();
+    }
     if (m_statusLabel)
         m_statusLabel->setText(message);
     qApp->processEvents(QEventLoop::ExcludeUserInputEvents);
@@ -520,6 +738,7 @@ void NewsRumorEditor::loadNewsFile(const QString &newsPath)
         if (m_newsDoc.at(i).name.compare(QStringLiteral("NewsItem"), Qt::CaseInsensitive) == 0)
             appendEntryFromSection(m_newsDoc.at(i), i, newsPath);
     }
+    updateTechnicalFieldCompletions();
 }
 
 void NewsRumorEditor::appendEntryFromSection(const IniSection &section, int sectionIndex, const QString &source)
@@ -681,6 +900,55 @@ void NewsRumorEditor::refreshStatus()
     m_saveButton->setEnabled(!m_newsPath.isEmpty());
 }
 
+void NewsRumorEditor::updateTechnicalFieldCompletions()
+{
+    QStringList rankFromValues{QStringLiteral("base_0_rank")};
+    QStringList rankToValues{QStringLiteral("mission_end")};
+    QStringList icons{
+        QStringLiteral("critical"),
+        QStringLiteral("world"),
+        QStringLiteral("system"),
+        QStringLiteral("universe"),
+        QStringLiteral("faction")
+    };
+    QStringList logos{
+        QStringLiteral("news_manhattan")
+    };
+
+    for (const NewsEntry &entry : m_entries) {
+        const QString from = rankPart(entry.rank, 0);
+        const QString to = rankPart(entry.rank, 1);
+        if (!from.isEmpty())
+            rankFromValues.append(from);
+        if (!to.isEmpty())
+            rankToValues.append(to);
+        icons.append(entry.icon);
+        logos.append(entry.logo);
+    }
+
+    const QString currentRankFrom = m_rankFromEdit ? m_rankFromEdit->currentText() : QString();
+    const QString currentRankTo = m_rankToEdit ? m_rankToEdit->currentText() : QString();
+    const QString currentIcon = m_iconEdit ? m_iconEdit->currentText() : QString();
+    const QString currentLogo = m_logoEdit ? m_logoEdit->currentText() : QString();
+
+    if (m_rankFromCompletionModel)
+        m_rankFromCompletionModel->setStringList(uniqueSortedList(rankFromValues));
+    if (m_rankToCompletionModel)
+        m_rankToCompletionModel->setStringList(uniqueSortedList(rankToValues));
+    if (m_iconCompletionModel)
+        m_iconCompletionModel->setStringList(uniqueSortedList(icons));
+    if (m_logoCompletionModel)
+        m_logoCompletionModel->setStringList(uniqueSortedList(logos));
+    if (m_rankFromEdit)
+        m_rankFromEdit->setCurrentText(currentRankFrom);
+    if (m_rankToEdit)
+        m_rankToEdit->setCurrentText(currentRankTo);
+    if (m_iconEdit)
+        m_iconEdit->setCurrentText(currentIcon);
+    if (m_logoEdit)
+        m_logoEdit->setCurrentText(currentLogo);
+}
+
 void NewsRumorEditor::onBaseSelectionChanged()
 {
     refreshFilters();
@@ -729,9 +997,10 @@ void NewsRumorEditor::showEntryInDetail(int entryIndex)
         m_categorySpin->setValue(0);
         m_headlineSpin->setValue(0);
         m_textSpin->setValue(0);
-        m_rankEdit->clear();
-        m_iconEdit->clear();
-        m_logoEdit->clear();
+        m_rankFromEdit->setCurrentText(QString());
+        m_rankToEdit->setCurrentText(QString());
+        m_iconEdit->setCurrentText(QString());
+        m_logoEdit->setCurrentText(QString());
         m_autoselectCheck->setChecked(false);
         m_detailHintLabel->setText(tr("Select a news item."));
         m_populating = false;
@@ -745,9 +1014,10 @@ void NewsRumorEditor::showEntryInDetail(int entryIndex)
     m_categorySpin->setValue(entry.categoryIds);
     m_headlineSpin->setValue(entry.headlineIds);
     m_textSpin->setValue(entry.textIds);
-    m_rankEdit->setText(entry.rank);
-    m_iconEdit->setText(entry.icon);
-    m_logoEdit->setText(entry.logo);
+    m_rankFromEdit->setCurrentText(rankPart(entry.rank, 0));
+    m_rankToEdit->setCurrentText(rankPart(entry.rank, 1));
+    m_iconEdit->setCurrentText(entry.icon);
+    m_logoEdit->setCurrentText(entry.logo);
     m_autoselectCheck->setChecked(entry.autoselect);
     m_detailHintLabel->setText(tr("Headline IDS %1 | Text IDS %2 | %3 base assignments")
                                    .arg(entry.headlineIds)
@@ -768,18 +1038,21 @@ bool NewsRumorEditor::applyDetailToCurrentEntry()
     const QString headline = m_headlineEdit->text().trimmed();
     const QString body = m_bodyEdit->toPlainText().trimmed();
     const QStringList bases = detailBases();
+    const QString rank = joinedRank(m_rankFromEdit->currentText(), m_rankToEdit->currentText());
     const bool changed = entry.headlineText != headline ||
         entry.bodyText != body ||
         entry.bases != bases ||
         entry.categoryIds != m_categorySpin->value() ||
         entry.headlineIds != m_headlineSpin->value() ||
         entry.textIds != m_textSpin->value() ||
-        entry.rank != m_rankEdit->text().trimmed() ||
-        entry.icon != m_iconEdit->text().trimmed() ||
-        entry.logo != m_logoEdit->text().trimmed() ||
+        entry.rank != rank ||
+        entry.icon != m_iconEdit->currentText().trimmed() ||
+        entry.logo != m_logoEdit->currentText().trimmed() ||
         entry.autoselect != m_autoselectCheck->isChecked();
     if (!changed)
         return true;
+    if (!m_saving && !m_changingNewsSelection)
+        setOperationProgress(10, tr("Updating news item..."));
     const bool headlineChanged = entry.headlineText != headline;
     const bool bodyChanged = entry.bodyText != body;
     entry.headlineText = headline;
@@ -792,9 +1065,9 @@ bool NewsRumorEditor::applyDetailToCurrentEntry()
     entry.headlineIds = m_headlineSpin->value();
     entry.textIds = m_textSpin->value();
     entry.ids = entry.textIds;
-    entry.rank = m_rankEdit->text().trimmed();
-    entry.icon = m_iconEdit->text().trimmed();
-    entry.logo = m_logoEdit->text().trimmed();
+    entry.rank = rank;
+    entry.icon = m_iconEdit->currentText().trimmed();
+    entry.logo = m_logoEdit->currentText().trimmed();
     entry.autoselect = m_autoselectCheck->isChecked();
     entry.modified = true;
     entry.searchBlob = QStringLiteral("%1 %2 %3 %4 %5 %6 %7")
@@ -805,10 +1078,12 @@ bool NewsRumorEditor::applyDetailToCurrentEntry()
         m_deferredTableRefresh = true;
         setDirty(true);
     } else if (!m_saving) {
+        setOperationProgress(55, tr("Refreshing news list..."));
         rebuildBaseCounts();
         populateBaseTable();
         populateNewsTable();
         setDirty(true);
+        setOperationProgress(100, tr("News item updated."));
     }
     return true;
 }
@@ -816,6 +1091,7 @@ bool NewsRumorEditor::applyDetailToCurrentEntry()
 bool NewsRumorEditor::save()
 {
     const int savedEntryIndex = m_currentEntryIndex;
+    setOperationProgress(0, tr("Preparing news save..."));
     m_saving = true;
     applyDetailToCurrentEntry();
     m_saving = false;
@@ -841,8 +1117,7 @@ bool NewsRumorEditor::save()
     IdsDataset idsDataset;
     QString targetDll;
     if (needsIdsDataset) {
-        m_statusLabel->setText(tr("Preparing IDS data..."));
-        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        setOperationProgress(15, tr("Preparing IDS data..."));
         idsDataset = IdsDataService::loadFromGameRoot(m_gameRoot);
         targetDll = IdsDataService::defaultCreationDllName(idsDataset);
         if (targetDll.trimmed().isEmpty()) {
@@ -851,9 +1126,16 @@ bool NewsRumorEditor::save()
         }
     }
 
+    int processedEntries = 0;
+    int modifiedEntries = 0;
+    for (const NewsEntry &entry : m_entries) {
+        if (!entry.removed && entry.modified)
+            ++modifiedEntries;
+    }
     for (NewsEntry &entry : m_entries) {
         if (entry.removed || !entry.modified)
             continue;
+        ++processedEntries;
         const QStringList invalid = invalidBases(entry.bases);
         if (!invalid.isEmpty()) {
             QMessageBox::warning(this,
@@ -868,16 +1150,16 @@ bool NewsRumorEditor::save()
         const bool needsBodyWrite = entry.sectionIndex < 0 || entry.textIds <= 0 ||
             (entry.bodyTextDirty && entry.bodyText != entry.originalBodyText);
         if (needsHeadlineWrite) {
-            m_statusLabel->setText(tr("Saving headline IDS %1...").arg(entry.headlineIds));
-            QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+            setOperationProgress(25 + (modifiedEntries > 0 ? (processedEntries - 1) * 35 / modifiedEntries : 0),
+                                 tr("Saving headline IDS %1...").arg(entry.headlineIds));
         }
         if (needsHeadlineWrite && !saveIdsText(idsDataset, targetDll, entry.headlineIds, entry.headlineText, &entry.headlineIds, &error)) {
             QMessageBox::warning(this, tr("Save News"), tr("Headline could not be saved: %1").arg(error));
             return false;
         }
         if (needsBodyWrite) {
-            m_statusLabel->setText(tr("Saving text IDS %1...").arg(entry.textIds));
-            QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+            setOperationProgress(35 + (modifiedEntries > 0 ? (processedEntries - 1) * 35 / modifiedEntries : 0),
+                                 tr("Saving text IDS %1...").arg(entry.textIds));
         }
         if (needsBodyWrite && !saveIdsText(idsDataset, targetDll, entry.textIds, entry.bodyText, &entry.textIds, &error)) {
             QMessageBox::warning(this, tr("Save News"), tr("Text could not be saved: %1").arg(error));
@@ -888,37 +1170,25 @@ bool NewsRumorEditor::save()
     }
 
     QString error;
-    m_statusLabel->setText(tr("Saving news.ini..."));
-    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    setOperationProgress(75, tr("Saving news.ini..."));
     if (!writeNewsFile(&error)) {
         QMessageBox::warning(this, tr("Save News"), error);
         return false;
     }
 
-    for (NewsEntry &entry : m_entries) {
-        if (entry.removed)
-            continue;
-        entry.modified = false;
-        entry.headlineTextDirty = false;
-        entry.bodyTextDirty = false;
-        entry.originalHeadlineText = entry.headlineText;
-        entry.originalBodyText = entry.bodyText;
-        entry.categoryText = resolvedIdsText(entry.categoryIds);
-        entry.text = entry.bodyText;
-        entry.ids = entry.textIds;
-        entry.searchBlob = QStringLiteral("%1 %2 %3 %4 %5 %6 %7")
-            .arg(entry.headlineText, entry.bodyText, QString::number(entry.headlineIds), QString::number(entry.textIds),
-                 csvList(entry.bases), entry.rank, entry.icon)
-            .toLower();
-    }
-    for (int i = m_entries.size() - 1; i >= 0; --i) {
-        if (m_entries.at(i).removed)
-            m_entries.removeAt(i);
-    }
+    setOperationProgress(88, tr("Reloading news list..."));
+    loadNewsFile(m_newsPath);
     rebuildBaseCounts();
     m_currentEntryIndex = savedEntryIndex >= 0 && savedEntryIndex < m_entries.size() ? savedEntryIndex : -1;
+    populateBaseTable();
+    populateNewsTable();
+    if (m_currentEntryIndex >= 0) {
+        QSignalBlocker blocker(m_newsTable);
+        m_newsTable->setCurrentCell(m_currentEntryIndex, NewsHeadlineColumn);
+    }
+    showEntryInDetail(m_currentEntryIndex);
     setDirty(false);
-    m_statusLabel->setText(tr("Saved: %1").arg(m_newsPath));
+    setOperationProgress(100, tr("Saved: %1").arg(m_newsPath));
     return true;
 }
 
@@ -1032,12 +1302,14 @@ bool NewsRumorEditor::writeNewsFile(QString *errorMessage)
 
 void NewsRumorEditor::addNews()
 {
+    setOperationProgress(0, tr("Creating news item..."));
     applyDetailToCurrentEntry();
+    setOperationProgress(35, tr("Preparing default news fields..."));
     NewsEntry entry;
     entry.type = NewsEntry::News;
     entry.source = m_newsPath;
     entry.sectionIndex = -1;
-    entry.rank = QStringLiteral("freetime, freetime");
+    entry.rank = QStringLiteral("base_0_rank,mission_end");
     entry.icon = QStringLiteral("world");
     entry.logo = QStringLiteral("news_manhattan");
     entry.headlineText = tr("New News");
@@ -1055,28 +1327,36 @@ void NewsRumorEditor::addNews()
     }
     entry.modified = true;
     m_entries.append(entry);
+    updateTechnicalFieldCompletions();
+    setOperationProgress(70, tr("Refreshing news list..."));
     rebuildBaseCounts();
     populateBaseTable();
     populateNewsTable();
     m_newsTable->setCurrentCell(m_entries.size() - 1, 0);
     setDirty(true);
+    setOperationProgress(100, tr("News item created."));
 }
 
 void NewsRumorEditor::removeSelectedNews()
 {
+    applyDetailToCurrentEntry();
     const int idx = selectedEntryIndex();
     if (idx < 0 || idx >= m_entries.size())
         return;
-    if (QMessageBox::question(this, tr("Really delete this news item?"), tr("Really delete this news item?")) != QMessageBox::Yes)
+    DeleteNewsDialog dialog(m_entries.at(idx), this);
+    if (dialog.exec() != QDialog::Accepted)
         return;
+    setOperationProgress(0, tr("Deleting news item..."));
     m_entries[idx].removed = true;
     m_entries[idx].modified = true;
     m_currentEntryIndex = -1;
+    setOperationProgress(60, tr("Refreshing news list..."));
     rebuildBaseCounts();
     populateBaseTable();
     populateNewsTable();
     showEntryInDetail(-1);
     setDirty(true);
+    setOperationProgress(100, tr("News item deleted."));
 }
 
 void NewsRumorEditor::parseIniContent(const QString &content, const QString &source)
@@ -1162,6 +1442,7 @@ void NewsRumorEditor::setEntries(const QVector<NewsEntry> &entries)
             .arg(entry.source, entry.text, entry.headlineText, entry.bodyText)
             .toLower();
     }
+    updateTechnicalFieldCompletions();
     populateBaseTable();
     populateNewsTable();
     refreshStatus();

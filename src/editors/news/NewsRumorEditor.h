@@ -9,13 +9,16 @@
 #include <QWidget>
 
 class QCheckBox;
+class QCompleter;
 class QComboBox;
 class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
+class QProgressBar;
 class QPushButton;
 class QSpinBox;
 class QSplitter;
+class QStringListModel;
 class QTableWidget;
 class QTableWidgetItem;
 
@@ -93,6 +96,8 @@ private:
     void populateNewsTable();
     void refreshFilters();
     void refreshStatus();
+    void setOperationProgress(int percent, const QString &message);
+    void updateTechnicalFieldCompletions();
     void onBaseSelectionChanged();
     void onNewsSelectionChanged();
     void showEntryInDetail(int entryIndex);
@@ -131,13 +136,19 @@ private:
     QSpinBox *m_categorySpin = nullptr;
     QSpinBox *m_headlineSpin = nullptr;
     QSpinBox *m_textSpin = nullptr;
-    QLineEdit *m_rankEdit = nullptr;
-    QLineEdit *m_iconEdit = nullptr;
-    QLineEdit *m_logoEdit = nullptr;
+    QComboBox *m_rankFromEdit = nullptr;
+    QComboBox *m_rankToEdit = nullptr;
+    QComboBox *m_iconEdit = nullptr;
+    QComboBox *m_logoEdit = nullptr;
     QCheckBox *m_autoselectCheck = nullptr;
     QLabel *m_detailHintLabel = nullptr;
     QLabel *m_statusLabel = nullptr;
+    QProgressBar *m_progressBar = nullptr;
     QPushButton *m_saveButton = nullptr;
+    QStringListModel *m_rankFromCompletionModel = nullptr;
+    QStringListModel *m_rankToCompletionModel = nullptr;
+    QStringListModel *m_iconCompletionModel = nullptr;
+    QStringListModel *m_logoCompletionModel = nullptr;
 
     flatlas::infrastructure::IniDocument m_newsDoc;
     QVector<NewsEntry> m_entries;
