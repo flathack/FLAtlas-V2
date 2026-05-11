@@ -787,8 +787,7 @@ void SceneView3D::rebuildDocumentScene(bool resetCamera)
     if (resetCamera)
         updateSceneCamera();
     scheduleModelLoading();
-    if (m_modelTexturesVisible)
-        schedulePlanetTextureLoading();
+    schedulePlanetTextureLoading();
     updateTransformGizmo();
     requestViewportUpdate();
 #endif
