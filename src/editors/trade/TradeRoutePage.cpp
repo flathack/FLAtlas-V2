@@ -108,6 +108,50 @@ QString htmlSection(const QString &title, const QStringList &items)
         .arg(htmlEscape(title), htmlList(items));
 }
 
+QString formatCurrency(qint64 value)
+{
+    const bool negative = value < 0;
+    QString digits = QString::number(qAbs(value));
+    for (int pos = digits.size() - 3; pos > 0; pos -= 3)
+        digits.insert(pos, QLatin1Char('.'));
+    return QStringLiteral("$ %1%2").arg(negative ? QStringLiteral("-") : QString(), digits);
+}
+
+int parseCurrencyText(const QString &text)
+{
+    QString normalized = text.trimmed();
+    normalized.remove(QLatin1Char('$'));
+    normalized.remove(QLatin1Char(' '));
+    normalized.remove(QLatin1Char('.'));
+    normalized.remove(QLatin1Char(','));
+    return normalized.toInt();
+}
+
+QTableWidgetItem *currencyTableItem(int value, bool editable = true)
+{
+    auto *item = new QTableWidgetItem(formatCurrency(value));
+    item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    item->setData(Qt::UserRole, value);
+    if (!editable)
+        item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+    return item;
+}
+
+QTableWidgetItem *rightAlignedTableItem(const QString &text)
+{
+    auto *item = new QTableWidgetItem(text);
+    item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    return item;
+}
+
+QStandardItem *currencyStandardItem(qint64 value)
+{
+    auto *item = new QStandardItem(formatCurrency(value));
+    item->setTextAlignment(Qt::AlignRight);
+    item->setData(value, Qt::UserRole + 1);
+    return item;
+}
+
 bool writeCommodityIds(QWidget *parent, const QString &dataPath, TradeCommodityRecord *commodity)
 {
     const auto dataset = flatlas::infrastructure::IdsDataService::loadFromGameRoot(gameRootForDataPath(dataPath));
@@ -688,7 +732,13 @@ void TradeRoutePage::setupUi()
         switch (column) {
         case 0: commodity.nickname = text; break;
         case 1: commodity.displayName = text; break;
-        case 2: commodity.basePrice = qMax(0, text.toInt()); break;
+        case 2:
+            commodity.basePrice = qMax(0, parseCurrencyText(text));
+            m_updatingTables = true;
+            m_commodityTable->item(row, column)->setText(formatCurrency(commodity.basePrice));
+            m_commodityTable->item(row, column)->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            m_updatingTables = false;
+            break;
         case 3: commodity.volume = qMax(1, text.toInt()); break;
         case 4: commodity.idsName = qMax(0, text.toInt()); break;
         case 5: commodity.idsInfo = qMax(0, text.toInt()); break;
@@ -722,7 +772,11 @@ void TradeRoutePage::setupUi()
                     return;
                 auto &editablePrice = m_workspace.prices[i];
                 if (column == 2) {
-                    editablePrice.price = qMax(0, m_priceTable->item(row, column)->text().toInt());
+                    editablePrice.price = qMax(0, parseCurrencyText(m_priceTable->item(row, column)->text()));
+                    m_updatingTables = true;
+                    m_priceTable->item(row, column)->setText(formatCurrency(editablePrice.price));
+                    m_priceTable->item(row, column)->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+                    m_updatingTables = false;
                     const auto commodityIt = std::find_if(m_workspace.commodities.begin(), m_workspace.commodities.end(), [commodityNickname](const TradeCommodityRecord &commodity) {
                         return commodity.nickname.compare(commodityNickname, Qt::CaseInsensitive) == 0;
                     });
@@ -904,10 +958,10 @@ void TradeRoutePage::populateCommodityTable()
         const auto &commodity = m_workspace.commodities.at(row);
         m_commodityTable->setItem(row, 0, new QTableWidgetItem(commodity.nickname));
         m_commodityTable->setItem(row, 1, new QTableWidgetItem(commodityDisplayLabel(commodity, m_useIdsNameCheck->isChecked())));
-        m_commodityTable->setItem(row, 2, new QTableWidgetItem(QString::number(commodity.basePrice)));
-        m_commodityTable->setItem(row, 3, new QTableWidgetItem(QString::number(commodity.volume)));
-        m_commodityTable->setItem(row, 4, new QTableWidgetItem(QString::number(commodity.idsName)));
-        m_commodityTable->setItem(row, 5, new QTableWidgetItem(QString::number(commodity.idsInfo)));
+        m_commodityTable->setItem(row, 2, currencyTableItem(commodity.basePrice));
+        m_commodityTable->setItem(row, 3, rightAlignedTableItem(QString::number(commodity.volume)));
+        m_commodityTable->setItem(row, 4, rightAlignedTableItem(QString::number(commodity.idsName)));
+        m_commodityTable->setItem(row, 5, rightAlignedTableItem(QString::number(commodity.idsInfo)));
     }
     m_commodityTable->resizeColumnsToContents();
     m_updatingTables = false;
@@ -946,9 +1000,7 @@ void TradeRoutePage::populatePriceTable()
         systemItem->setFlags(systemItem->flags() & ~Qt::ItemIsEditable);
         m_priceTable->setItem(row, 1, systemItem);
 
-        auto *priceItem = new QTableWidgetItem(QString::number(price.price));
-        if (price.implicit)
-            priceItem->setFlags(priceItem->flags() & ~Qt::ItemIsEditable);
+        auto *priceItem = currencyTableItem(price.price, !price.implicit);
         m_priceTable->setItem(row, 2, priceItem);
 
         auto *roleItem = new QTableWidgetItem(price.isSource ? tr("Source") : tr("Sink"));
@@ -973,15 +1025,18 @@ void TradeRoutePage::populateRouteTable()
         row.append(new QStandardItem(route.commodityDisplayName.isEmpty() ? route.commodity : route.commodityDisplayName));
         row.append(new QStandardItem(route.fromBase));
         row.append(new QStandardItem(route.toBase));
-        row.append(new QStandardItem(QString::number(route.profit)));
-        row.append(new QStandardItem(QString::number(route.totalProfit)));
+        row.append(currencyStandardItem(route.profit));
+        row.append(currencyStandardItem(route.totalProfit));
         row.append(new QStandardItem(QString::number(route.jumps)));
         row.append(new QStandardItem(formatSeconds(route.travelTimeSeconds)));
         row.append(new QStandardItem(QString::number(route.totalDistance, 'f', 0)));
-        row.append(new QStandardItem(QString::number(route.profitPerMinute, 'f', 1)));
+        row.append(currencyStandardItem(qRound(route.profitPerMinute)));
         row.append(new QStandardItem(QString::number(route.score, 'f', 1)));
         for (auto *item : row)
             item->setData(index, Qt::UserRole);
+        row.at(5)->setTextAlignment(Qt::AlignRight);
+        row.at(7)->setTextAlignment(Qt::AlignRight);
+        row.at(9)->setTextAlignment(Qt::AlignRight);
         m_routeModel->appendRow(row);
     }
     m_routeView->resizeColumnsToContents();
