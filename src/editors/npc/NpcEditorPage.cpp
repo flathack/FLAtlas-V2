@@ -160,6 +160,7 @@ bool npcEditableFieldsEqual(const NpcRecord &left, const NpcRecord &right)
     return left.nickname == right.nickname
         && left.room == right.room
         && left.baseFaction == right.baseFaction
+        && left.baseFactionWeight == right.baseFactionWeight
         && left.affiliation == right.affiliation
         && left.npcType == right.npcType
         && left.body == right.body
@@ -385,12 +386,21 @@ const NpcRecord *findNpcByKey(const NpcBaseRecord &base, const QString &npcKey)
     return nullptr;
 }
 
-QHash<QString, QStringList> npcNamesByFaction(const NpcBaseRecord &base)
+struct BaseFactionGroup {
+    QStringList npcNames;
+    int weight = 10;
+};
+
+QHash<QString, BaseFactionGroup> npcGroupsByFaction(const NpcBaseRecord &base)
 {
-    QHash<QString, QStringList> result;
+    QHash<QString, BaseFactionGroup> result;
     for (const NpcRecord &npc : base.npcs) {
-        if (!npc.baseFaction.trimmed().isEmpty())
-            appendUnique(&result[npc.baseFaction.trimmed()], npc.nickname);
+        if (npc.baseFaction.trimmed().isEmpty())
+            continue;
+        BaseFactionGroup &group = result[npc.baseFaction.trimmed()];
+        if (group.npcNames.isEmpty())
+            group.weight = npc.baseFactionWeight;
+        appendUnique(&group.npcNames, npc.nickname);
     }
     return result;
 }
@@ -427,12 +437,12 @@ QString defaultBaseFactionWeight(const IniDocument &doc, const QVector<int> &old
 
 IniSection newBaseFactionSection(const QString &factionName,
                                   const QStringList &npcNames,
-                                  const QString &weight)
+                                  int weight)
 {
     IniSection faction;
     faction.name = QStringLiteral("BaseFaction");
     faction.entries.append({QStringLiteral("faction"), factionName});
-    faction.entries.append({QStringLiteral("weight"), weight.trimmed().isEmpty() ? QStringLiteral("10") : weight.trimmed()});
+    faction.entries.append({QStringLiteral("weight"), QString::number(weight)});
     for (const QString &npcName : npcNames)
         faction.entries.append({QStringLiteral("npc"), npcName});
     return faction;
@@ -440,7 +450,7 @@ IniSection newBaseFactionSection(const QString &factionName,
 
 IniSection updateBaseFactionSectionPreservingOrder(const IniSection &section,
                                                    const QStringList &desiredNpcs,
-                                                   const QString &defaultWeight)
+                                                   int desiredWeight)
 {
     IniSection updated = section;
     updated.entries.clear();
@@ -454,10 +464,14 @@ IniSection updateBaseFactionSectionPreservingOrder(const IniSection &section,
         }
     }
     for (const auto &entry : section.entries) {
+        if (entry.first.compare(QStringLiteral("weight"), Qt::CaseInsensitive) == 0) {
+            updated.entries.append({entry.first, QString::number(desiredWeight)});
+            continue;
+        }
         if (entry.first.compare(QStringLiteral("npc"), Qt::CaseInsensitive) != 0) {
             updated.entries.append(entry);
             if (entry.first.compare(QStringLiteral("faction"), Qt::CaseInsensitive) == 0 && !hasWeight)
-                updated.entries.append({QStringLiteral("weight"), defaultWeight});
+                updated.entries.append({QStringLiteral("weight"), QString::number(desiredWeight)});
             continue;
         }
         for (const QString &npcName : desiredNpcs) {
@@ -482,8 +496,12 @@ IniDocument rebuildMbaseBlockPreservingOrder(const IniDocument &doc,
                                              int bribePrice)
 {
     IniDocument block;
-    const QHash<QString, QStringList> npcsByFaction = npcNamesByFaction(base);
-    const QString baseFactionWeight = defaultBaseFactionWeight(doc, oldIndexes);
+    QHash<QString, BaseFactionGroup> npcsByFaction = npcGroupsByFaction(base);
+    const int baseFactionWeight = toInt(defaultBaseFactionWeight(doc, oldIndexes), 10);
+    for (auto it = npcsByFaction.begin(); it != npcsByFaction.end(); ++it) {
+        if (it.value().weight <= 0)
+            it.value().weight = baseFactionWeight;
+    }
     QSet<QString> writtenFactionKeys;
     QSet<QString> writtenNpcKeys;
     int insertNewFactionsAfter = -1;
@@ -496,7 +514,8 @@ IniDocument rebuildMbaseBlockPreservingOrder(const IniDocument &doc,
         if (label == QStringLiteral("basefaction")) {
             const QString faction = sectionValue(section, QStringLiteral("faction"));
             writtenFactionKeys.insert(keyOf(faction));
-            block.append(updateBaseFactionSectionPreservingOrder(section, npcsByFaction.value(faction), baseFactionWeight));
+            const BaseFactionGroup group = npcsByFaction.value(faction, BaseFactionGroup{{}, baseFactionWeight});
+            block.append(updateBaseFactionSectionPreservingOrder(section, group.npcNames, group.weight));
             insertNewFactionsAfter = block.size() - 1;
             continue;
         }
@@ -520,7 +539,7 @@ IniDocument rebuildMbaseBlockPreservingOrder(const IniDocument &doc,
     for (auto it = npcsByFaction.constBegin(); it != npcsByFaction.constEnd(); ++it) {
         if (writtenFactionKeys.contains(keyOf(it.key())))
             continue;
-        newFactionSections.append(newBaseFactionSection(it.key(), it.value(), baseFactionWeight));
+        newFactionSections.append(newBaseFactionSection(it.key(), it.value().npcNames, it.value().weight));
     }
     if (!newFactionSections.isEmpty()) {
         const int insertAt = insertNewFactionsAfter >= 0 ? insertNewFactionsAfter + 1 : qMin(1, block.size());
@@ -653,6 +672,7 @@ void NpcEditorPage::setupUi()
     m_nicknameEdit = new QLineEdit(generalTab);
     m_roomCombo = new QComboBox(generalTab);
     m_baseFactionCombo = new QComboBox(generalTab);
+    m_baseFactionWeightSpin = new QSpinBox(generalTab);
     m_affiliationCombo = new QComboBox(generalTab);
     m_bodyCombo = new QComboBox(generalTab);
     m_headCombo = new QComboBox(generalTab);
@@ -664,6 +684,8 @@ void NpcEditorPage::setupUi()
     m_individualNameSpin = new QSpinBox(generalTab);
     m_individualNameTextEdit = new QLineEdit(generalTab);
     m_infoSpin = new QSpinBox(generalTab);
+    m_baseFactionWeightSpin->setRange(0, 999999);
+    m_baseFactionWeightSpin->setValue(10);
     m_individualNameSpin->setRange(0, 999999999);
     m_infoSpin->setRange(0, 999999999);
     m_namePreviewLabel = new QLabel(generalTab);
@@ -673,6 +695,7 @@ void NpcEditorPage::setupUi()
     generalLayout->addRow(tr("Nickname:"), m_nicknameEdit);
     generalLayout->addRow(tr("Room:"), m_roomCombo);
     generalLayout->addRow(tr("Base Faction:"), m_baseFactionCombo);
+    generalLayout->addRow(tr("Base Faction Weight:"), m_baseFactionWeightSpin);
     generalLayout->addRow(tr("Affiliation:"), m_affiliationCombo);
     generalLayout->addRow(tr("Body:"), m_bodyCombo);
     generalLayout->addRow(tr("Head:"), m_headCombo);
@@ -1032,17 +1055,22 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
     QHash<int, int> bribePriceCounts;
     NpcBaseRecord *currentBase = nullptr;
     QHash<QString, QString> baseFactionByNpc;
+    QHash<QString, int> baseFactionWeightByNpc;
     for (int i = 0; i < m_mbasesDoc.size(); ++i) {
         const IniSection &section = m_mbasesDoc.at(i);
         if (section.name.compare(QStringLiteral("MBase"), Qt::CaseInsensitive) == 0) {
             const QString baseNickname = sectionValue(section, QStringLiteral("nickname"));
             currentBase = baseIndexByNickname.contains(keyOf(baseNickname)) ? &m_bases[baseIndexByNickname.value(keyOf(baseNickname))] : nullptr;
             baseFactionByNpc.clear();
+            baseFactionWeightByNpc.clear();
         } else if (currentBase && section.name.compare(QStringLiteral("BaseFaction"), Qt::CaseInsensitive) == 0) {
             const QString faction = sectionValue(section, QStringLiteral("faction"));
+            const int weight = toInt(sectionValue(section, QStringLiteral("weight")), 10);
             appendUnique(&m_factionChoices, faction);
-            for (const QString &npcName : section.values(QStringLiteral("npc")))
+            for (const QString &npcName : section.values(QStringLiteral("npc"))) {
                 baseFactionByNpc.insert(keyOf(npcName), faction);
+                baseFactionWeightByNpc.insert(keyOf(npcName), weight);
+            }
         } else if (currentBase && section.name.compare(QStringLiteral("MRoom"), Qt::CaseInsensitive) == 0) {
             const QString roomName = sectionValue(section, QStringLiteral("nickname"));
             if (roomName.isEmpty())
@@ -1070,6 +1098,7 @@ bool NpcEditorPage::loadGameRoot(const QString &gameRoot, QString *errorMessage)
             npc.nickname = sectionValue(section, QStringLiteral("nickname"));
             npc.room = sectionValue(section, QStringLiteral("room"));
             npc.baseFaction = baseFactionByNpc.value(keyOf(npc.nickname));
+            npc.baseFactionWeight = baseFactionWeightByNpc.value(keyOf(npc.nickname), 10);
             for (const auto &entry : section.entries) {
                 const QString k = keyOf(entry.first);
                 if (k == QStringLiteral("body")) npc.body = entry.second.trimmed();
@@ -1232,13 +1261,13 @@ bool NpcEditorPage::saveCurrentFile(QString *errorMessage)
         if (!oldIndexes.isEmpty()) {
             block = rebuildMbaseBlockPreservingOrder(newDoc, oldIndexes, base, m_modBribePrice);
         } else if (!base.npcs.isEmpty()) {
-            const QHash<QString, QStringList> npcsByFaction = npcNamesByFaction(base);
             IniSection mbase;
             mbase.name = QStringLiteral("MBase");
             mbase.entries.append({QStringLiteral("nickname"), base.nickname});
             block.append(mbase);
-            for (auto it = npcsByFaction.constBegin(); it != npcsByFaction.constEnd(); ++it) {
-                block.append(newBaseFactionSection(it.key(), it.value(), QStringLiteral("10")));
+            const QHash<QString, BaseFactionGroup> npcGroups = npcGroupsByFaction(base);
+            for (auto it = npcGroups.constBegin(); it != npcGroups.constEnd(); ++it) {
+                block.append(newBaseFactionSection(it.key(), it.value().npcNames, it.value().weight));
             }
             for (const NpcRecord &npc : base.npcs)
                 block.append(npcToSection(npc, m_modBribePrice));
@@ -1362,6 +1391,7 @@ void NpcEditorPage::populateEditor()
     m_nicknameEdit->setText(npc->nickname);
     setComboText(m_roomCombo, npc->room);
     setFactionComboNickname(m_baseFactionCombo, npc->baseFaction);
+    m_baseFactionWeightSpin->setValue(npc->baseFactionWeight);
     setFactionComboNickname(m_affiliationCombo, npc->affiliation);
     setComboText(m_bodyCombo, npc->body);
     setComboText(m_headCombo, npc->head);
@@ -1500,6 +1530,7 @@ void NpcEditorPage::clearEditor()
     m_nicknameEdit->clear();
     for (QComboBox *combo : {m_roomCombo, m_baseFactionCombo, m_affiliationCombo, m_bodyCombo, m_headCombo, m_leftHandCombo, m_rightHandCombo, m_voiceCombo})
         combo->setCurrentText(QString());
+    m_baseFactionWeightSpin->setValue(10);
     m_individualNameSpin->setValue(0);
     m_individualNameTextEdit->clear();
     m_infoSpin->setValue(0);
@@ -1516,7 +1547,7 @@ void NpcEditorPage::clearEditor()
 void NpcEditorPage::setEditorEnabled(bool enabled)
 {
     const QVector<QWidget *> widgets = {
-        m_nicknameEdit,      m_roomCombo,    m_baseFactionCombo, m_affiliationCombo,
+        m_nicknameEdit,      m_roomCombo,    m_baseFactionCombo, m_baseFactionWeightSpin, m_affiliationCombo,
         m_bodyCombo,         m_headCombo,    m_leftHandCombo,    m_rightHandCombo,
         m_voiceCombo,        m_individualNameSpin, m_individualNameTextEdit, m_infoSpin,
         m_bribeTable,       m_rumorTable,   m_rumorKindCombo
@@ -1555,6 +1586,7 @@ void NpcEditorPage::saveEditorToCurrentNpc()
         }
     }
     updated.baseFaction = currentFactionComboNickname(m_baseFactionCombo);
+    updated.baseFactionWeight = m_baseFactionWeightSpin->value();
     updated.affiliation = currentFactionComboNickname(m_affiliationCombo);
     updated.body = m_bodyCombo->currentText().trimmed();
     updated.head = m_headCombo->currentText().trimmed();
@@ -1840,6 +1872,7 @@ void NpcEditorPage::onNewNpc()
         npc.room.clear();
     npc.room = canonicalRoomName(*base, npc.room);
     npc.baseFaction = m_factionChoices.isEmpty() ? QString() : m_factionChoices.first();
+    npc.baseFactionWeight = toInt(defaultBaseFactionWeight(m_mbasesDoc, sectionIndexesForMbase(m_mbasesDoc, base->nickname)), 10);
     npc.affiliation = npc.baseFaction;
     npc.newlyCreated = true;
     npc.dirty = true;

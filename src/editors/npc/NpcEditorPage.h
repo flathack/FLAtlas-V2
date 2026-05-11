@@ -40,6 +40,7 @@ struct NpcRecord {
     QString baseNickname;
     QString room;
     QString baseFaction;
+    int baseFactionWeight = 10;
     QString affiliation;
     QString npcType;
     QString body;
@@ -187,6 +188,7 @@ private:
     QLineEdit *m_nicknameEdit = nullptr;
     QComboBox *m_roomCombo = nullptr;
     QComboBox *m_baseFactionCombo = nullptr;
+    QSpinBox *m_baseFactionWeightSpin = nullptr;
     QComboBox *m_affiliationCombo = nullptr;
     QComboBox *m_bodyCombo = nullptr;
     QComboBox *m_headCombo = nullptr;
