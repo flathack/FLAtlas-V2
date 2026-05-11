@@ -3,8 +3,8 @@
 #include "UniverseSerializer.h"
 #include "core/EditingContext.h"
 #include "core/PathUtils.h"
+#include "infrastructure/freelancer/IdsDataService.h"
 #include "infrastructure/freelancer/IdsStringTable.h"
-#include "infrastructure/freelancer/ResourceDllWriter.h"
 #include "infrastructure/parser/IniParser.h"
 
 #include <QDir>
@@ -340,14 +340,17 @@ bool NewSystemService::createSystem(const QString &universeFilePath,
     systemFile.write(systemIniText(nickname, request).toUtf8());
     systemFile.close();
 
-    const QString freelancerIniPath = contextFreelancerIniPath(universeFilePath);
+    IdsDataset idsDataset = IdsDataService::loadFromGameRoot(gameDirForUniverseFile(universeFilePath));
+    if (idsDataset.freelancerIniPath.trimmed().isEmpty())
+        idsDataset.freelancerIniPath = contextFreelancerIniPath(universeFilePath);
+    const QString targetDll = IdsDataService::defaultCreationDllName(idsDataset);
     int stridName = 0;
-    if (!ResourceDllWriter::ensureStringResource(freelancerIniPath,
-                                                 QString(),
-                                                 0,
-                                                 request.systemName.trimmed(),
-                                                 &stridName,
-                                                 errorMessage)) {
+    if (!IdsDataService::writeStringEntry(idsDataset,
+                                          targetDll,
+                                          0,
+                                          request.systemName.trimmed(),
+                                          &stridName,
+                                          errorMessage)) {
         QFile::remove(absoluteSystemFilePath);
         QDir().rmdir(absoluteSystemDir);
         return false;

@@ -11,6 +11,7 @@
 #include "core/Theme.h"
 #include "core/ThemeColors.h"
 #include "domain/UniverseData.h"
+#include "infrastructure/freelancer/IdsDataService.h"
 #include "infrastructure/freelancer/IdsStringTable.h"
 #include "infrastructure/freelancer/ResourceDllWriter.h"
 
@@ -1001,8 +1002,11 @@ void UniverseEditorPage::onEditSystem(const QString &nickname)
         return;
     }
 
-    const QString freelancerIniPath = freelancerIniPathForUniverseFile(m_filePath);
-    if (freelancerIniPath.trimmed().isEmpty()) {
+    flatlas::infrastructure::IdsDataset idsDataset =
+        flatlas::infrastructure::IdsDataService::loadFromGameRoot(gameDirForUniverseFile(m_filePath));
+    if (idsDataset.freelancerIniPath.trimmed().isEmpty())
+        idsDataset.freelancerIniPath = freelancerIniPathForUniverseFile(m_filePath);
+    if (idsDataset.freelancerIniPath.trimmed().isEmpty()) {
         QMessageBox::warning(this, tr("Edit System"),
                              tr("freelancer.ini could not be found for the current context."));
         return;
@@ -1011,9 +1015,10 @@ void UniverseEditorPage::onEditSystem(const QString &nickname)
     const bool preferIdsName = sys->idsName > 0;
     int updatedNameId = preferIdsName ? sys->idsName : sys->stridName;
     QString errorMessage;
-    if (!flatlas::infrastructure::ResourceDllWriter::ensureStringResource(
-            freelancerIniPath,
-            QString(),
+    const QString targetDll = flatlas::infrastructure::IdsDataService::defaultCreationDllName(idsDataset);
+    if (!flatlas::infrastructure::IdsDataService::writeStringEntry(
+            idsDataset,
+            targetDll,
             updatedNameId,
             request.name.trimmed(),
             &updatedNameId,
@@ -1024,9 +1029,9 @@ void UniverseEditorPage::onEditSystem(const QString &nickname)
 
     int newIdsInfo = 0;
     if (!request.infocardXml.trimmed().isEmpty()) {
-        if (!flatlas::infrastructure::ResourceDllWriter::ensureHtmlResource(
-                freelancerIniPath,
-                QString(),
+        if (!flatlas::infrastructure::IdsDataService::writeInfocardEntry(
+                idsDataset,
+                targetDll,
                 sys->idsInfo,
                 request.infocardXml.trimmed(),
                 &newIdsInfo,
