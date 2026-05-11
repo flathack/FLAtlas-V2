@@ -19,6 +19,16 @@ struct TradeCommodityRecord {
     int idsName = 0;
     int idsInfo = 0;
     QString sourceFilePath;
+    QString msgIdPrefix;
+    QString equipment;
+    bool combinable = true;
+    double goodSellPrice = 0.0;
+    double badBuyPrice = 0.0;
+    double badSellPrice = 0.0;
+    double goodBuyPrice = 0.0;
+    QString shopArchetype;
+    QString itemIcon;
+    int jumpDist = 0;
 };
 
 struct TradeBaseRecord {
@@ -35,6 +45,7 @@ struct TradeJumpRecord {
     QString targetSystemNickname;
     QString kind;
     QVector3D position;
+    QString objectDisplayName = {};
 };
 
 struct TradePriceRecord {

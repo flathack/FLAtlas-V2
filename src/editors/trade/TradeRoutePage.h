@@ -73,6 +73,7 @@ private:
     void removeCommodity();
     void addPriceEntry();
     void removePriceEntry();
+    TradeRouteWorkspaceData workspaceForCurrentNameMode() const;
 
     QString m_dataPath;
     const flatlas::domain::UniverseData *m_universe = nullptr;
@@ -89,6 +90,7 @@ private:
     QSpinBox *m_maxJumpsSpin = nullptr;
     QSpinBox *m_maxResultsSpin = nullptr;
     QCheckBox *m_localOnlyCheck = nullptr;
+    QCheckBox *m_useIdsNameCheck = nullptr;
     QTableWidget *m_commodityTable = nullptr;
     QTableWidget *m_priceTable = nullptr;
     QTableWidget *m_segmentTable = nullptr;

@@ -53,6 +53,12 @@ QString displaySystemName(const UniverseData *universe, const QString &nickname)
     return nickname;
 }
 
+QString displayJumpName(const TradeJumpRecord &jump)
+{
+    const QString displayName = jump.objectDisplayName.trimmed();
+    return displayName.isEmpty() ? jump.objectNickname : displayName;
+}
+
 } // namespace
 
 void TradeScoring::setMarketData(const QVector<BaseMarketEntry> &entries)
@@ -315,7 +321,7 @@ QVector<TradeRouteCandidate> TradeScoring::calculateRoutes(const TradeRouteFilte
                 } else {
                     const TradeJumpRecord previousArrival = firstJumpFor(currentSystem, systemPath.at(i - 1));
                     fromPosition = previousArrival.position;
-                    fromLabel = previousArrival.objectNickname;
+                    fromLabel = displayJumpName(previousArrival);
                 }
 
                 bool usedFallback = false;
@@ -323,7 +329,7 @@ QVector<TradeRouteCandidate> TradeScoring::calculateRoutes(const TradeRouteFilte
                 const int travelSeconds = qRound(distance / kCruiseSpeed);
                 segments.append({QStringLiteral("open_space"), currentSystem, displaySystemName(m_universe, currentSystem),
                                  fromLabel,
-                                 departureJump.objectNickname.isEmpty() ? nextSystem : departureJump.objectNickname,
+                                 departureJump.objectNickname.isEmpty() ? nextSystem : displayJumpName(departureJump),
                                  distance,
                                  travelSeconds});
                 totalDistance += distance;
@@ -332,8 +338,8 @@ QVector<TradeRouteCandidate> TradeScoring::calculateRoutes(const TradeRouteFilte
                     warnings->append(QObject::tr("Jump approach distance was approximated in %1.").arg(displaySystemName(m_universe, currentSystem)));
 
                 segments.append({QStringLiteral("jump"), currentSystem, displaySystemName(m_universe, currentSystem),
-                                 departureJump.objectNickname.isEmpty() ? currentSystem : departureJump.objectNickname,
-                                 arrivalJump.objectNickname.isEmpty() ? nextSystem : arrivalJump.objectNickname,
+                                 departureJump.objectNickname.isEmpty() ? currentSystem : displayJumpName(departureJump),
+                                 arrivalJump.objectNickname.isEmpty() ? nextSystem : displayJumpName(arrivalJump),
                                  0.0,
                                  kGateTimeSeconds});
                 totalSeconds += kGateTimeSeconds;
@@ -344,7 +350,7 @@ QVector<TradeRouteCandidate> TradeScoring::calculateRoutes(const TradeRouteFilte
             const double distance = legDistance(arrivalJump.position, sellBase.position, &usedFallback);
             const int travelSeconds = qRound(distance / kCruiseSpeed);
             segments.append({QStringLiteral("open_space"), sellBase.systemNickname, sellBase.systemDisplayName,
-                             arrivalJump.objectNickname.isEmpty() ? sellBase.systemNickname : arrivalJump.objectNickname,
+                             arrivalJump.objectNickname.isEmpty() ? sellBase.systemNickname : displayJumpName(arrivalJump),
                              sellBase.displayName,
                              distance,
                              travelSeconds});
@@ -469,8 +475,8 @@ QVector<TradeRouteCandidate> TradeScoring::calculateRoutes(const TradeRouteFilte
                 TradeRouteCandidate candidate;
                 candidate.commodity = commodity.nickname;
                 candidate.commodityDisplayName = commodity.displayName;
-                candidate.fromBase = buyBase.nickname;
-                candidate.toBase = sellBase.nickname;
+                candidate.fromBase = buyBase.displayName;
+                candidate.toBase = sellBase.displayName;
                 candidate.fromSystem = buyBase.systemNickname;
                 candidate.toSystem = sellBase.systemNickname;
                 candidate.pathSystemNicknames = systemPath;

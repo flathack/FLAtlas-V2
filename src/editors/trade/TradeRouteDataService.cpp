@@ -2,6 +2,7 @@
 
 #include "core/PathUtils.h"
 #include "editors/universe/UniverseSerializer.h"
+#include "infrastructure/freelancer/IdsStringTable.h"
 #include "infrastructure/parser/IniParser.h"
 
 #include <QDir>
@@ -60,6 +61,38 @@ QString preferredMarketFile(const QString &dataPath)
     return it.hasNext() ? it.next() : QString();
 }
 
+QString freelancerExeDirForDataPath(const QString &dataPath)
+{
+    const QFileInfo dataInfo(dataPath);
+    const QString gameRoot = dataInfo.fileName().compare(QStringLiteral("DATA"), Qt::CaseInsensitive) == 0
+        ? dataInfo.absolutePath()
+        : dataPath;
+    const QString exeDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("EXE"));
+    return exeDir.isEmpty() ? gameRoot : exeDir;
+}
+
+QString resolvedIdsDisplayName(const IdsStringTable &ids, int idsName, const QString &fallback)
+{
+    const QString displayName = idsName > 0 ? ids.getString(idsName).trimmed() : QString();
+    return displayName.isEmpty() ? fallback.trimmed() : displayName;
+}
+
+void applyUniverseDisplayNames(UniverseData *universe, const IdsStringTable &ids)
+{
+    if (!universe)
+        return;
+
+    for (auto &system : universe->systems) {
+        QString displayName = resolvedIdsDisplayName(ids, system.idsName, QString());
+        if (displayName.isEmpty())
+            displayName = resolvedIdsDisplayName(ids, system.stridName, QString());
+        if (!displayName.isEmpty())
+            system.displayName = displayName;
+        else if (system.displayName.trimmed().isEmpty())
+            system.displayName = system.nickname;
+    }
+}
+
 QStringList marketFiles(const QString &dataPath)
 {
     QStringList files;
@@ -85,6 +118,7 @@ QString systemFileAbsolutePath(const QString &dataPath, const SystemInfo &system
 
 void scanSystemObjects(const QString &dataPath,
                        const std::shared_ptr<UniverseData> &universe,
+                       const IdsStringTable &ids,
                        QHash<QString, TradeBaseRecord> *bases,
                        QVector<TradeJumpRecord> *jumps)
 {
@@ -103,12 +137,15 @@ void scanSystemObjects(const QString &dataPath,
 
             const QString baseNickname = section.value(QStringLiteral("base")).trimmed();
             const QString objectNickname = section.value(QStringLiteral("nickname")).trimmed();
+            const int idsName = section.value(QStringLiteral("ids_name")).trimmed().toInt();
+            const QString objectDisplayName =
+                resolvedIdsDisplayName(ids, idsName, objectNickname.isEmpty() ? baseNickname : objectNickname);
             const QVector3D position = parsePos(section.value(QStringLiteral("pos")));
 
             if (!baseNickname.isEmpty()) {
                 TradeBaseRecord base;
                 base.nickname = baseNickname;
-                base.displayName = objectNickname.isEmpty() ? baseNickname : objectNickname;
+                base.displayName = objectDisplayName.isEmpty() ? baseNickname : objectDisplayName;
                 base.systemNickname = system.nickname;
                 base.systemDisplayName = system.displayName.isEmpty() ? system.nickname : system.displayName;
                 base.position = position;
@@ -135,12 +172,13 @@ void scanSystemObjects(const QString &dataPath,
                 ? QStringLiteral("hole")
                 : QStringLiteral("gate");
             jump.position = position;
+            jump.objectDisplayName = objectDisplayName;
             jumps->append(jump);
         }
     }
 }
 
-QVector<TradeCommodityRecord> loadCommodities(const QString &goodsFilePath)
+QVector<TradeCommodityRecord> loadCommodities(const QString &goodsFilePath, const IdsStringTable &ids)
 {
     QVector<TradeCommodityRecord> commodities;
     if (goodsFilePath.isEmpty() || !QFile::exists(goodsFilePath))
@@ -157,11 +195,23 @@ QVector<TradeCommodityRecord> loadCommodities(const QString &goodsFilePath)
 
         TradeCommodityRecord commodity;
         commodity.nickname = nickname;
-        commodity.displayName = TradeRouteDataService::fallbackCommodityDisplayName(nickname);
+        commodity.msgIdPrefix = section.value(QStringLiteral("msg_id_prefix")).trimmed();
+        commodity.equipment = section.value(QStringLiteral("equipment")).trimmed();
         commodity.basePrice = section.value(QStringLiteral("price")).toInt();
         commodity.volume = qMax(1, section.value(QStringLiteral("volume"), QStringLiteral("1")).toInt());
         commodity.idsName = section.value(QStringLiteral("ids_name")).toInt();
         commodity.idsInfo = section.value(QStringLiteral("ids_info")).toInt();
+        commodity.combinable = section.value(QStringLiteral("combinable"), QStringLiteral("true")).trimmed()
+                                   .compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0;
+        commodity.goodSellPrice = section.value(QStringLiteral("good_sell_price")).toDouble();
+        commodity.badBuyPrice = section.value(QStringLiteral("bad_buy_price")).toDouble();
+        commodity.badSellPrice = section.value(QStringLiteral("bad_sell_price")).toDouble();
+        commodity.goodBuyPrice = section.value(QStringLiteral("good_buy_price")).toDouble();
+        commodity.shopArchetype = section.value(QStringLiteral("shop_archetype")).trimmed();
+        commodity.itemIcon = section.value(QStringLiteral("item_icon")).trimmed();
+        commodity.jumpDist = section.value(QStringLiteral("jump_dist")).toInt();
+        commodity.displayName = resolvedIdsDisplayName(
+            ids, commodity.idsName, TradeRouteDataService::fallbackCommodityDisplayName(nickname));
         commodity.sourceFilePath = goodsFilePath;
         commodities.append(commodity);
     }
@@ -292,19 +342,25 @@ TradeRouteWorkspaceData TradeRouteDataService::loadFromDataPath(const QString &d
     workspace.goodsFilePath = resolveGoodsIni(dataPath);
     workspace.preferredMarketFilePath = preferredMarketFile(dataPath);
 
+    IdsStringTable ids;
+    if (!dataPath.isEmpty())
+        ids.loadFromFreelancerDir(freelancerExeDirForDataPath(dataPath));
+
     const QString universeIni = resolveUniverseIni(dataPath);
     if (!universeIni.isEmpty()) {
         auto loadedUniverse = UniverseSerializer::load(universeIni);
-        if (loadedUniverse)
+        if (loadedUniverse) {
+            applyUniverseDisplayNames(loadedUniverse.get(), ids);
             workspace.universe = std::shared_ptr<UniverseData>(loadedUniverse.release());
+        }
     }
     if (!workspace.universe)
         workspace.universe = std::make_shared<UniverseData>();
 
-    workspace.commodities = loadCommodities(workspace.goodsFilePath);
+    workspace.commodities = loadCommodities(workspace.goodsFilePath, ids);
 
     QHash<QString, TradeBaseRecord> bases;
-    scanSystemObjects(dataPath, workspace.universe, &bases, &workspace.jumps);
+    scanSystemObjects(dataPath, workspace.universe, ids, &bases, &workspace.jumps);
     workspace.bases = bases.values().toVector();
     std::sort(workspace.bases.begin(), workspace.bases.end(), [](const TradeBaseRecord &left, const TradeBaseRecord &right) {
         return left.nickname.toLower() < right.nickname.toLower();
@@ -351,8 +407,29 @@ bool TradeRouteDataService::saveWorkspace(const TradeRouteWorkspaceData &workspa
 
         IniSection updated = section;
         updateOrAppendEntry(&updated.entries, QStringLiteral("nickname"), it->nickname);
+        if (!it->msgIdPrefix.trimmed().isEmpty())
+            updateOrAppendEntry(&updated.entries, QStringLiteral("msg_id_prefix"), it->msgIdPrefix.trimmed());
+        if (!it->equipment.trimmed().isEmpty())
+            updateOrAppendEntry(&updated.entries, QStringLiteral("equipment"), it->equipment.trimmed());
         updateOrAppendEntry(&updated.entries, QStringLiteral("category"), QStringLiteral("commodity"));
         updateOrAppendEntry(&updated.entries, QStringLiteral("price"), QString::number(it->basePrice));
+        updateOrAppendEntry(&updated.entries,
+                            QStringLiteral("combinable"),
+                            it->combinable ? QStringLiteral("true") : QStringLiteral("false"));
+        if (it->goodSellPrice > 0.0)
+            updateOrAppendEntry(&updated.entries, QStringLiteral("good_sell_price"), QString::number(it->goodSellPrice, 'f', 6));
+        if (it->badBuyPrice > 0.0)
+            updateOrAppendEntry(&updated.entries, QStringLiteral("bad_buy_price"), QString::number(it->badBuyPrice, 'f', 6));
+        if (it->badSellPrice > 0.0)
+            updateOrAppendEntry(&updated.entries, QStringLiteral("bad_sell_price"), QString::number(it->badSellPrice, 'f', 6));
+        if (it->goodBuyPrice > 0.0)
+            updateOrAppendEntry(&updated.entries, QStringLiteral("good_buy_price"), QString::number(it->goodBuyPrice, 'f', 6));
+        if (!it->shopArchetype.trimmed().isEmpty())
+            updateOrAppendEntry(&updated.entries, QStringLiteral("shop_archetype"), it->shopArchetype.trimmed());
+        if (!it->itemIcon.trimmed().isEmpty())
+            updateOrAppendEntry(&updated.entries, QStringLiteral("item_icon"), it->itemIcon.trimmed());
+        if (it->jumpDist > 0)
+            updateOrAppendEntry(&updated.entries, QStringLiteral("jump_dist"), QString::number(it->jumpDist));
         updateOrAppendEntry(&updated.entries, QStringLiteral("volume"), QString::number(qMax(1, it->volume)));
         if (it->idsName > 0)
             updateOrAppendEntry(&updated.entries, QStringLiteral("ids_name"), QString::number(it->idsName));
@@ -371,11 +448,27 @@ bool TradeRouteDataService::saveWorkspace(const TradeRouteWorkspaceData &workspa
         section.name = QStringLiteral("Good");
         section.entries = {
             {QStringLiteral("nickname"), commodity.nickname},
+            {QStringLiteral("msg_id_prefix"), commodity.msgIdPrefix.trimmed().isEmpty()
+                 ? QStringLiteral("gcs_gen_%1").arg(commodity.nickname)
+                 : commodity.msgIdPrefix.trimmed()},
+            {QStringLiteral("equipment"), commodity.equipment.trimmed().isEmpty()
+                 ? commodity.nickname
+                 : commodity.equipment.trimmed()},
             {QStringLiteral("category"), QStringLiteral("commodity")},
             {QStringLiteral("price"), QString::number(commodity.basePrice)},
-            {QStringLiteral("combinable"), QStringLiteral("true")},
-            {QStringLiteral("volume"), QString::number(qMax(1, commodity.volume))},
+            {QStringLiteral("combinable"), commodity.combinable ? QStringLiteral("true") : QStringLiteral("false")},
+            {QStringLiteral("good_sell_price"), QString::number(commodity.goodSellPrice, 'f', 6)},
+            {QStringLiteral("bad_buy_price"), QString::number(commodity.badBuyPrice, 'f', 6)},
+            {QStringLiteral("bad_sell_price"), QString::number(commodity.badSellPrice, 'f', 6)},
+            {QStringLiteral("good_buy_price"), QString::number(commodity.goodBuyPrice, 'f', 6)},
         };
+        if (!commodity.shopArchetype.trimmed().isEmpty())
+            section.entries.append({QStringLiteral("shop_archetype"), commodity.shopArchetype.trimmed()});
+        if (!commodity.itemIcon.trimmed().isEmpty())
+            section.entries.append({QStringLiteral("item_icon"), commodity.itemIcon.trimmed()});
+        if (commodity.jumpDist > 0)
+            section.entries.append({QStringLiteral("jump_dist"), QString::number(commodity.jumpDist)});
+        section.entries.append({QStringLiteral("volume"), QString::number(qMax(1, commodity.volume))});
         if (commodity.idsName > 0)
             section.entries.append({QStringLiteral("ids_name"), QString::number(commodity.idsName)});
         if (commodity.idsInfo > 0)
