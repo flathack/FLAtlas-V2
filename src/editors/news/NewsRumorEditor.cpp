@@ -8,17 +8,22 @@
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QCheckBox>
+#include <QColor>
 #include <QComboBox>
 #include <QEventLoop>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFont>
 #include <QFrame>
 #include <QGroupBox>
 #include <QHeaderView>
+#include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QPainter>
+#include <QPixmap>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSet>
@@ -115,6 +120,52 @@ void replaceRepeatedValues(IniSection *section, const QString &key, const QStrin
     }
 }
 
+QIcon newsIconForName(const QString &iconName)
+{
+    const QString key = iconName.trimmed().toLower();
+    static QHash<QString, QIcon> cache;
+    if (cache.contains(key))
+        return cache.value(key);
+
+    QColor accent(QStringLiteral("#6b7280"));
+    QString glyph = key.left(1).toUpper();
+    if (key == QStringLiteral("critical")) {
+        accent = QColor(QStringLiteral("#d94848"));
+        glyph = QStringLiteral("!");
+    } else if (key == QStringLiteral("world")) {
+        accent = QColor(QStringLiteral("#3b82f6"));
+        glyph = QStringLiteral("W");
+    } else if (key == QStringLiteral("system")) {
+        accent = QColor(QStringLiteral("#14b8a6"));
+        glyph = QStringLiteral("S");
+    } else if (key == QStringLiteral("universe")) {
+        accent = QColor(QStringLiteral("#8b5cf6"));
+        glyph = QStringLiteral("U");
+    } else if (key == QStringLiteral("faction")) {
+        accent = QColor(QStringLiteral("#f59e0b"));
+        glyph = QStringLiteral("F");
+    }
+
+    QPixmap pixmap(24, 24);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(QPen(accent.darker(130), 1));
+    painter.setBrush(accent);
+    painter.drawRoundedRect(QRectF(2.5, 2.5, 19, 19), 4, 4);
+    painter.setPen(Qt::white);
+    QFont font = painter.font();
+    font.setBold(true);
+    font.setPointSize(10);
+    painter.setFont(font);
+    painter.drawText(pixmap.rect(), Qt::AlignCenter, glyph);
+    painter.end();
+
+    const QIcon icon(pixmap);
+    cache.insert(key, icon);
+    return icon;
+}
+
 } // namespace
 
 NewsRumorEditor::NewsRumorEditor(QWidget *parent)
@@ -198,6 +249,7 @@ void NewsRumorEditor::setupUi()
     m_newsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_newsTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_newsTable->setAlternatingRowColors(true);
+    m_newsTable->setIconSize(QSize(20, 20));
     m_newsTable->horizontalHeader()->setSectionsMovable(true);
     m_newsTable->horizontalHeader()->setStretchLastSection(false);
     m_newsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
@@ -550,7 +602,10 @@ void NewsRumorEditor::populateNewsTable()
         headline->setData(Qt::UserRole, row);
         headline->setToolTip(entry.headlineText);
         m_newsTable->setItem(row, NewsHeadlineColumn, headline);
-        m_newsTable->setItem(row, NewsIconColumn, readOnlyItem(entry.icon));
+        auto *iconItem = readOnlyItem(entry.icon);
+        iconItem->setIcon(newsIconForName(entry.icon));
+        iconItem->setToolTip(entry.icon);
+        m_newsTable->setItem(row, NewsIconColumn, iconItem);
         m_newsTable->setItem(row, NewsRankColumn, readOnlyItem(entry.rank));
         const bool missingIds = entry.headlineText.isEmpty() || entry.bodyText.isEmpty();
         const QStringList invalid = invalidBases(entry.bases);
