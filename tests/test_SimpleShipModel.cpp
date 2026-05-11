@@ -159,17 +159,17 @@ void TestSimpleShipModel::cvStarflierMaterialSignatureSnapshot()
     walk(decoded.rootNode, 0);
 
     const QStringList expectedPartSnapshot = {
-        QStringLiteral("Part_baydoor01_lod1|2|0"),
-        QStringLiteral("Part_baydoor02_lod1|2|0"),
-        QStringLiteral("Part_engine_lod1|4|0"),
+        QStringLiteral("Part_baydoor01_lod1|3|0"),
+        QStringLiteral("Part_baydoor02_lod1|3|0"),
+        QStringLiteral("Part_engine_lod1|5|0"),
         QStringLiteral("Part_glass_lod1|3|0"),
-        QStringLiteral("Part_port_wing_lod1|4|0"),
-        QStringLiteral("Part_star_wing_lod1|4|0"),
+        QStringLiteral("Part_port_wing_lod1|7|0"),
+        QStringLiteral("Part_star_wing_lod1|7|0"),
     };
 
     for (const auto &expected : expectedPartSnapshot)
         QVERIFY2(partSnapshot.contains(expected), qPrintable(expected));
-    QVERIFY(materialSnapshot.isEmpty());
+    QVERIFY(!materialSnapshot.isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestSimpleShipModel)

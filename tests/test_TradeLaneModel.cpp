@@ -56,10 +56,14 @@ private slots:
         walk(decoded.rootNode, 0);
         QVERIFY(meshCount > 0);
         const QStringList expectedSignatures = {
-            QStringLiteral("512x912"),
-            QStringLiteral("840x1680"),
-            QStringLiteral("1640x3456"),
-            QStringLiteral("2456x6336"),
+            QStringLiteral("336x624"),
+            QStringLiteral("176x288"),
+            QStringLiteral("400x720"),
+            QStringLiteral("440x960"),
+            QStringLiteral("832x1728"),
+            QStringLiteral("808x1728"),
+            QStringLiteral("1248x3360"),
+            QStringLiteral("1208x2976"),
         };
         QCOMPARE(meshSignatures, expectedSignatures);
 
@@ -84,10 +88,14 @@ void TestTradeLaneModel::tradeLaneMeshSignatureSnapshot()
         snapshot.append(QStringLiteral("%1|%2|%3").arg(mesh.vertices.size()).arg(mesh.indices.size()).arg(mesh.debugHint));
 
     const QStringList expected = {
-        QStringLiteral("512|912|direct:structured-header:data.solar.dockable.tlr_lod.lod3-112.vms/structured-mesh-headers"),
-        QStringLiteral("840|1680|direct:structured-header:data.solar.dockable.tlr_lod.lod2-112.vms/structured-mesh-headers"),
-        QStringLiteral("1640|3456|direct:structured-header:data.solar.dockable.tlr_lod.lod1-112.vms/structured-mesh-headers"),
-        QStringLiteral("2456|6336|direct:structured-header:data.solar.dockable.tlr_lod.lod0-112.vms/structured-mesh-headers"),
+        QStringLiteral("336|624|direct:structured-header:data.solar.dockable.tlr_lod.lod3-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("176|288|direct:structured-header:data.solar.dockable.tlr_lod.lod3-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("400|720|direct:structured-header:data.solar.dockable.tlr_lod.lod2-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("440|960|direct:structured-header:data.solar.dockable.tlr_lod.lod2-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("832|1728|direct:structured-header:data.solar.dockable.tlr_lod.lod1-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("808|1728|direct:structured-header:data.solar.dockable.tlr_lod.lod1-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("1248|3360|direct:structured-header:data.solar.dockable.tlr_lod.lod0-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("1208|2976|direct:structured-header:data.solar.dockable.tlr_lod.lod0-112.vms/structured-mesh-headers-split"),
     };
 
     QCOMPARE(snapshot, expected);

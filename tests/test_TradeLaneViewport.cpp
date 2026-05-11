@@ -34,6 +34,7 @@ void TestTradeLaneViewport::testLoadTradeLaneViewport()
     QString errorMessage;
     const bool loaded = viewport.loadModelFile(filePath, &errorMessage);
     QVERIFY2(loaded, qPrintable(errorMessage));
+    QTRY_VERIFY_WITH_TIMEOUT(viewport.hasModel(), 10000);
     QVERIFY(viewport.hasModel());
 
     QTest::qWait(250);

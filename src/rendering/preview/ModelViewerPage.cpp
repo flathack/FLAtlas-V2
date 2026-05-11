@@ -248,6 +248,7 @@ bool ModelViewerPage::loadModelPath(const QString &modelPath, const QString &dis
 
     if (const auto *entry = findEntryByModelPath(modelPath)) {
         setCurrentEntry(entry);
+        loadEntryIntoViewport(entry);
         return true;
     }
 

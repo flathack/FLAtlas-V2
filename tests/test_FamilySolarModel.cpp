@@ -107,16 +107,31 @@ void TestFamilySolarModel::spaceDomeRefAndMeshSnapshot()
     }
 
     const QStringList expectedRefSnapshot = {
-        QStringLiteral("\\/space_dome_lod1021003093018.3db/MultiLevel/Level2/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod2-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod2-112.vms/structured-mesh-headers"),
-        QStringLiteral("\\/space_dome_lod1021003093018.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod1-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod1-112.vms/structured-mesh-headers"),
-        QStringLiteral("\\/space_dome_lod1021003093018.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod0-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-mesh-headers"),
-        QStringLiteral("\\/dome_lod1021003093018.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod1-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod1-112.vms/structured-mesh-headers"),
-        QStringLiteral("\\/dome_lod1021003093018.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod0-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-mesh-headers"),
+        QStringLiteral("\\/space_dome_lod1021003093018.3db/MultiLevel/Level2/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod2-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod2-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("\\/space_dome_lod1021003093018.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod1-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod1-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("\\/space_dome_lod1021003093018.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod0-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("\\/dome_lod1021003093018.3db/MultiLevel/Level1/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod1-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod1-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("\\/dome_lod1021003093018.3db/MultiLevel/Level0/VMeshPart/VMeshRef|data.solar.misc.space_dome.lod0-112.vms|crc-or-fallback|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-mesh-headers-split"),
     };
     const QStringList expectedMeshSnapshot = {
-        QStringLiteral("403|594|direct:structured-header:data.solar.misc.space_dome.lod2-112.vms/structured-mesh-headers"),
-        QStringLiteral("367|540|direct:structured-header:data.solar.misc.space_dome.lod1-112.vms/structured-mesh-headers"),
-        QStringLiteral("625|1320|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-mesh-headers"),
+        QStringLiteral("78|102|direct:structured-header:data.solar.misc.space_dome.lod2-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("174|270|direct:structured-header:data.solar.misc.space_dome.lod2-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("11|30|direct:structured-header:data.solar.misc.space_dome.lod2-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("14|18|direct:structured-header:data.solar.misc.space_dome.lod2-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("16|24|direct:structured-header:data.solar.misc.space_dome.lod2-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("91|150|direct:structured-header:data.solar.misc.space_dome.lod2-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("78|102|direct:structured-header:data.solar.misc.space_dome.lod1-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("238|324|direct:structured-header:data.solar.misc.space_dome.lod1-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("23|72|direct:structured-header:data.solar.misc.space_dome.lod1-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("12|18|direct:structured-header:data.solar.misc.space_dome.lod1-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("16|24|direct:structured-header:data.solar.misc.space_dome.lod1-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("84|120|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("278|444|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("14|42|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("91|480|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("12|18|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("50|72|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-mesh-headers-split"),
+        QStringLiteral("96|144|direct:structured-header:data.solar.misc.space_dome.lod0-112.vms/structured-mesh-headers-split"),
     };
 
     QCOMPARE(refSnapshot, expectedRefSnapshot);

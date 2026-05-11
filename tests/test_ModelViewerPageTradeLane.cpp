@@ -3,6 +3,7 @@
 #include <QtTest/QtTest>
 
 #include "rendering/preview/ModelViewerPage.h"
+#include "rendering/view3d/ModelViewport3D.h"
 #include "core/EditingContext.h"
 
 #include <QDir>
@@ -47,29 +48,31 @@ void TestModelViewerPageTradeLane::testLoadTradeLaneThroughViewerPage()
     QVERIFY(tree != nullptr);
 
     QTreeWidgetItem *targetItem = nullptr;
-    QTreeWidgetItemIterator it(tree);
-    while (*it) {
-        auto *item = *it;
-        const QString modelPath = item->data(0, Qt::UserRole).toString().toLower();
-        if (modelPath.endsWith(QStringLiteral("/solar/dockable/tlr_lod.3db")) ||
-            modelPath.endsWith(QStringLiteral("\\solar\\dockable\\tlr_lod.3db")) ||
-            modelPath.endsWith(QStringLiteral("tlr_lod.3db"))) {
-            targetItem = item;
-            break;
+    auto findTradeLaneItem = [&]() {
+        QTreeWidgetItemIterator it(tree);
+        while (*it) {
+            auto *item = *it;
+            const QString modelPath = item->data(0, Qt::UserRole).toString().toLower();
+            if (modelPath.endsWith(QStringLiteral("/solar/dockable/tlr_lod.3db")) ||
+                modelPath.endsWith(QStringLiteral("\\solar\\dockable\\tlr_lod.3db")) ||
+                modelPath.endsWith(QStringLiteral("tlr_lod.3db"))) {
+                targetItem = item;
+                return true;
+            }
+            ++it;
         }
-        ++it;
-    }
+        return false;
+    };
 
+    QTRY_VERIFY_WITH_TIMEOUT(findTradeLaneItem(), 10000);
     QVERIFY2(targetItem != nullptr, "Trade lane ring model was not found in the viewer tree");
 
-    tree->setCurrentItem(targetItem);
-    tree->scrollToItem(targetItem);
-    QTest::mouseDClick(tree->viewport(),
-                       Qt::LeftButton,
-                       Qt::NoModifier,
-                       tree->visualItemRect(targetItem).center());
+    const QString modelPath = targetItem->data(0, Qt::UserRole).toString();
+    QVERIFY(page.loadModelPath(modelPath));
 
-    QTest::qWait(500);
+    auto *viewport = page.findChild<flatlas::rendering::ModelViewport3D *>();
+    QVERIFY(viewport != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(viewport->hasModel(), 10000);
 }
 
 QTEST_MAIN(TestModelViewerPageTradeLane)
