@@ -14,7 +14,7 @@ namespace flatlas::tools {
 namespace {
 constexpr const char *kRepoOwner = "flathack";
 constexpr const char *kRepoName  = "FLAtlas-V2";
-constexpr const char *kAppVersion = "0.8.0.1";
+constexpr const char *kAppVersion = "0.8.0.2";
 
 bool hasAny(const QString &name, const QStringList &tokens)
 {
