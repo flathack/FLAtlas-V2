@@ -35,6 +35,24 @@ QString normalizeMaterialKey(QString value)
     return value;
 }
 
+QStringList materialLookupKeys(QString value)
+{
+    value = value.trimmed().toLower();
+    value.replace(QLatin1Char('\\'), QLatin1Char('/'));
+
+    QStringList keys;
+    auto appendKey = [&keys](const QString &key) {
+        const QString trimmed = key.trimmed();
+        if (!trimmed.isEmpty() && !keys.contains(trimmed, Qt::CaseInsensitive))
+            keys.append(trimmed);
+    };
+
+    appendKey(value);
+    appendKey(QFileInfo(value).fileName());
+    appendKey(normalizeMaterialKey(value));
+    return keys;
+}
+
 bool isMaterialTextureNameNode(const QString &nodeName)
 {
     return nodeName.compare(QStringLiteral("Dt_name"), Qt::CaseInsensitive) == 0
@@ -75,11 +93,14 @@ void walkUtfNode(const std::shared_ptr<UtfNode> &node,
         && isMaterialTextureNameNode(node->name)) {
         const QStringList parts = currentPath.split(QLatin1Char('/'), Qt::SkipEmptyParts);
         if (parts.size() >= 3 && !node->data.isEmpty()) {
-            const QString materialName = normalizeMaterialKey(parts.at(parts.size() - 2));
+            const QStringList materialNames = materialLookupKeys(parts.at(parts.size() - 2));
             const QString value = QString::fromLatin1(node->data.split('\0').value(0)).trimmed();
-            if (!materialName.isEmpty() && !value.isEmpty())
-                (*materialMap)[materialName].append(QString::number(materialTextureNodePriority(node->name, value))
-                                                    + QLatin1Char('\t') + value);
+            if (!value.isEmpty()) {
+                for (const QString &materialName : materialNames) {
+                    (*materialMap)[materialName].append(QString::number(materialTextureNodePriority(node->name, value))
+                                                        + QLatin1Char('\t') + value);
+                }
+            }
         }
     }
 
@@ -296,7 +317,13 @@ bool materialKeyMatchesMesh(const QString &materialKey, const MeshData &mesh)
         return true;
 
     const QSet<quint32> ids = materialIdsForMesh(mesh);
-    return !ids.isEmpty() && ids.contains(CmpLoader::freelancerCrc32(normalizedKey));
+    if (ids.isEmpty())
+        return false;
+    for (const QString &key : materialLookupKeys(materialKey)) {
+        if (ids.contains(CmpLoader::freelancerCrc32(key)))
+            return true;
+    }
+    return false;
 }
 
 void walkSphereMaterialNames(const std::shared_ptr<UtfNode> &node,

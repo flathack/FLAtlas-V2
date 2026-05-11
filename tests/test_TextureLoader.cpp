@@ -352,6 +352,48 @@ private slots:
                                     .arg(unresolvedMaterials.join(QStringLiteral(", ")))));
         }
     }
+
+    void loadPrisonStationTexturesFromExternalMaterialLibrary()
+    {
+        const QString modelPath = QStringLiteral(
+            "C:/Users/steve/Github/FL-Installationen/TESTMOD1/DATA/SOLAR/DOCKABLE/prison_lod.cmp");
+        const QString matPath = QStringLiteral(
+            "C:/Users/steve/Github/FL-Installationen/TESTMOD1/DATA/SOLAR/Solar_mat_dockable01.mat");
+        if (!QFileInfo::exists(modelPath) || !QFileInfo::exists(matPath))
+            QSKIP("TESTMOD1 prison station material fixture is not available on this machine.");
+
+        const DecodedModel decoded = CmpLoader::loadModel(modelPath);
+        QVERIFY(decoded.isValid());
+
+        int meshCount = 0;
+        int texturedMeshCount = 0;
+        QStringList unresolvedMaterials;
+        std::function<void(const ModelNode &)> walk = [&](const ModelNode &node) {
+            for (const MeshData &mesh : node.meshes) {
+                ++meshCount;
+                const QImage image = FreelancerMaterialResolver::loadTextureForMesh(modelPath, mesh);
+                if (!image.isNull()) {
+                    ++texturedMeshCount;
+                } else if (!mesh.materialName.isEmpty() || !mesh.materialValue.isEmpty()) {
+                    unresolvedMaterials.append(QStringLiteral("%1:%2:%3")
+                                                   .arg(mesh.materialId)
+                                                   .arg(mesh.materialName, mesh.materialValue));
+                } else {
+                    unresolvedMaterials.append(QStringLiteral("%1:<empty>").arg(mesh.materialId));
+                }
+            }
+            for (const ModelNode &child : node.children)
+                walk(child);
+        };
+        walk(decoded.rootNode);
+
+        QVERIFY(meshCount > 0);
+        QVERIFY2(texturedMeshCount == meshCount,
+                 qPrintable(QStringLiteral("Only %1 of %2 prison station meshes resolved textures; unresolved=%3")
+                                .arg(texturedMeshCount)
+                                .arg(meshCount)
+                                .arg(unresolvedMaterials.join(QStringLiteral(", ")))));
+    }
 };
 
 QTEST_GUILESS_MAIN(TestTextureLoader)
