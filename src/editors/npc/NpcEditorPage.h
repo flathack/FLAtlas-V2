@@ -3,6 +3,7 @@
 #include "infrastructure/parser/IniParser.h"
 
 #include <QHash>
+#include <QSet>
 #include <QString>
 #include <QVector>
 #include <QWidget>
@@ -54,6 +55,7 @@ struct NpcRecord {
     QVector<NpcRumorAssignment> rumors;
     int sectionIndex = -1;
     bool newlyCreated = false;
+    bool dirty = false;
 };
 
 struct NpcRoomRecord {
@@ -162,6 +164,7 @@ private:
     QStringList m_voiceChoices;
     QStringList m_factionChoices;
     QHash<QString, QString> m_factionDisplayByNickname;
+    QSet<QString> m_dirtyBaseKeys;
     int m_modBribePrice = 10000;
     int m_currentNpcRow = -1;
     QString m_editorBaseNickname;
