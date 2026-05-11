@@ -67,12 +67,15 @@ private:
     void updateRouteDetails(int routeIndex);
     void refreshRouteScene(const flatlas::domain::TradeRouteCandidate &route);
     void markDirty();
+    void updateTitle();
     QString selectedCommodityNickname() const;
     int selectedRouteIndex() const;
+    int selectedPriceIndex() const;
     void addCommodity();
     void editCommodity();
     void removeCommodity();
     void addPriceEntry();
+    void editPriceEntry();
     void removePriceEntry();
     TradeRouteWorkspaceData workspaceForCurrentNameMode() const;
 

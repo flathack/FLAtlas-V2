@@ -22,7 +22,6 @@
 #include <QGraphicsView>
 #include <QGroupBox>
 #include <QHeaderView>
-#include <QInputDialog>
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
@@ -196,6 +195,56 @@ QString formatSeconds(int seconds)
     return QStringLiteral("%1:%2")
         .arg(minutes, 2, 10, QLatin1Char('0'))
         .arg(remainingSeconds, 2, 10, QLatin1Char('0'));
+}
+
+bool hasExplicitPriceFor(const QVector<TradePriceRecord> &prices,
+                         const QString &commodityNickname,
+                         const QString &baseNickname,
+                         int exceptIndex = -1)
+{
+    for (int index = 0; index < prices.size(); ++index) {
+        if (index == exceptIndex || prices.at(index).implicit)
+            continue;
+        if (prices.at(index).commodityNickname.compare(commodityNickname, Qt::CaseInsensitive) == 0
+            && prices.at(index).baseNickname.compare(baseNickname, Qt::CaseInsensitive) == 0)
+            return true;
+    }
+    return false;
+}
+
+void removeImplicitPriceFor(QVector<TradePriceRecord> *prices,
+                            const QString &commodityNickname,
+                            const QString &baseNickname)
+{
+    prices->erase(std::remove_if(prices->begin(), prices->end(), [&](const TradePriceRecord &price) {
+        return price.implicit
+            && price.commodityNickname.compare(commodityNickname, Qt::CaseInsensitive) == 0
+            && price.baseNickname.compare(baseNickname, Qt::CaseInsensitive) == 0;
+    }), prices->end());
+}
+
+void ensureImplicitPriceFor(QVector<TradePriceRecord> *prices,
+                            const TradeCommodityRecord &commodity,
+                            const TradeBaseRecord &base)
+{
+    if (commodity.basePrice <= 0)
+        return;
+    for (const auto &price : *prices) {
+        if (price.commodityNickname.compare(commodity.nickname, Qt::CaseInsensitive) == 0
+            && price.baseNickname.compare(base.nickname, Qt::CaseInsensitive) == 0)
+            return;
+    }
+
+    TradePriceRecord implicitPrice;
+    implicitPrice.baseNickname = base.nickname;
+    implicitPrice.baseDisplayName = base.displayName;
+    implicitPrice.systemNickname = base.systemNickname;
+    implicitPrice.commodityNickname = commodity.nickname;
+    implicitPrice.price = commodity.basePrice;
+    implicitPrice.multiplier = 1.0;
+    implicitPrice.isSource = false;
+    implicitPrice.implicit = true;
+    prices->append(implicitPrice);
 }
 
 class AddCommodityDialog final : public QDialog {
@@ -572,6 +621,113 @@ private:
     bool m_canDelete = false;
 };
 
+class PriceEntryDialog final : public QDialog {
+public:
+    PriceEntryDialog(const TradeCommodityRecord &commodity,
+                     const QVector<TradeBaseRecord> &bases,
+                     bool useIdsName,
+                     QWidget *parent = nullptr,
+                     const TradePriceRecord *initialPrice = nullptr)
+        : QDialog(parent)
+        , m_commodity(commodity)
+    {
+        setWindowTitle(initialPrice ? tr("Edit Price") : tr("Add Price"));
+        resize(520, 260);
+
+        auto *layout = new QVBoxLayout(this);
+        auto *form = new QFormLayout;
+
+        auto *commodityLabel = new QLabel(commodityDisplayLabel(commodity, useIdsName), this);
+        form->addRow(tr("Commodity"), commodityLabel);
+
+        m_baseCombo = new QComboBox(this);
+        for (int index = 0; index < bases.size(); ++index) {
+            const auto &base = bases.at(index);
+            m_baseCombo->addItem(baseDisplayLabel(base, useIdsName), index);
+        }
+        form->addRow(tr("Base"), m_baseCombo);
+
+        m_roleCombo = new QComboBox(this);
+        m_roleCombo->addItem(tr("Source"), true);
+        m_roleCombo->addItem(tr("Sink"), false);
+        form->addRow(tr("Role"), m_roleCombo);
+
+        m_factorSpin = new QDoubleSpinBox(this);
+        m_factorSpin->setRange(0.000001, 9999.0);
+        m_factorSpin->setDecimals(6);
+        m_factorSpin->setSingleStep(0.1);
+        form->addRow(tr("Factor"), m_factorSpin);
+
+        m_priceSpin = new QSpinBox(this);
+        m_priceSpin->setRange(1, 100000000);
+        form->addRow(tr("Price"), m_priceSpin);
+
+        layout->addLayout(form);
+
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
+        layout->addWidget(buttons);
+
+        connect(m_factorSpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double value) {
+            if (m_syncing)
+                return;
+            m_syncing = true;
+            m_priceSpin->setValue(qMax(1, qRound(static_cast<double>(qMax(1, m_commodity.basePrice)) * value)));
+            m_syncing = false;
+        });
+        connect(m_priceSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
+            if (m_syncing)
+                return;
+            m_syncing = true;
+            m_factorSpin->setValue(static_cast<double>(value) / static_cast<double>(qMax(1, m_commodity.basePrice)));
+            m_syncing = false;
+        });
+        connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+        if (initialPrice) {
+            const int baseIndex = std::find_if(bases.begin(), bases.end(), [initialPrice](const TradeBaseRecord &base) {
+                return base.nickname.compare(initialPrice->baseNickname, Qt::CaseInsensitive) == 0;
+            }) - bases.begin();
+            if (baseIndex >= 0 && baseIndex < bases.size())
+                m_baseCombo->setCurrentIndex(baseIndex);
+            m_roleCombo->setCurrentIndex(initialPrice->isSource ? 0 : 1);
+            m_factorSpin->setValue(initialPrice->multiplier > 0.0 ? initialPrice->multiplier : 1.0);
+            m_priceSpin->setValue(qMax(1, initialPrice->price));
+        } else {
+            m_factorSpin->setValue(1.0);
+            m_priceSpin->setValue(qMax(1, commodity.basePrice));
+        }
+    }
+
+    int selectedBaseIndex() const
+    {
+        return m_baseCombo->currentData().toInt();
+    }
+
+    double multiplier() const
+    {
+        return m_factorSpin->value();
+    }
+
+    int price() const
+    {
+        return m_priceSpin->value();
+    }
+
+    bool isSource() const
+    {
+        return m_roleCombo->currentData().toBool();
+    }
+
+private:
+    TradeCommodityRecord m_commodity;
+    QComboBox *m_baseCombo = nullptr;
+    QComboBox *m_roleCombo = nullptr;
+    QDoubleSpinBox *m_factorSpin = nullptr;
+    QSpinBox *m_priceSpin = nullptr;
+    bool m_syncing = false;
+};
+
 } // namespace
 
 TradeRoutePage::TradeRoutePage(QWidget *parent)
@@ -587,6 +743,7 @@ TradeRoutePage::TradeRoutePage(QWidget *parent)
     connect(m_recalcTimer, &QTimer::timeout, this, &TradeRoutePage::startRecalculation);
     connect(m_loadWatcher, &QFutureWatcher<TradeRouteWorkspaceData>::finished, this, [this]() {
         m_workspace = m_loadWatcher->result();
+        m_dirty = false;
         if (m_universe)
             m_workspace.universe = std::shared_ptr<UniverseData>(const_cast<UniverseData *>(m_universe), [](UniverseData *) {});
         populateCommodityFilter();
@@ -607,7 +764,7 @@ TradeRoutePage::TradeRoutePage(QWidget *parent)
                                    .arg(std::count_if(m_workspace.prices.begin(), m_workspace.prices.end(), [](const TradePriceRecord &price) {
                                        return !price.implicit;
                                    })));
-        emit titleChanged(QStringLiteral("Trade Routes (%1)").arg(m_routes.size()));
+        updateTitle();
         emit scanComplete(m_routes.size());
     });
 }
@@ -628,6 +785,15 @@ void TradeRoutePage::setupUi()
 
     auto *commodityBox = new QGroupBox(tr("Commodities"), editorSplitter);
     auto *commodityLayout = new QVBoxLayout(commodityBox);
+    auto *commodityButtonRow = new QHBoxLayout;
+    auto *addCommodityButton = new QPushButton(tr("Add Commodity"), commodityBox);
+    auto *editCommodityButton = new QPushButton(tr("Edit Commodity"), commodityBox);
+    auto *removeCommodityButton = new QPushButton(tr("Remove Commodity"), commodityBox);
+    commodityButtonRow->addWidget(addCommodityButton);
+    commodityButtonRow->addWidget(editCommodityButton);
+    commodityButtonRow->addWidget(removeCommodityButton);
+    commodityButtonRow->addStretch(1);
+    commodityLayout->addLayout(commodityButtonRow);
     m_commodityTable = new QTableWidget(commodityBox);
     m_commodityTable->setColumnCount(6);
     m_commodityTable->setHorizontalHeaderLabels({
@@ -641,6 +807,15 @@ void TradeRoutePage::setupUi()
 
     auto *priceBox = new QGroupBox(tr("Base Prices"), editorSplitter);
     auto *priceLayout = new QVBoxLayout(priceBox);
+    auto *priceButtonRow = new QHBoxLayout;
+    auto *addPriceButton = new QPushButton(tr("Add Price"), priceBox);
+    auto *editPriceButton = new QPushButton(tr("Edit Price"), priceBox);
+    auto *removePriceButton = new QPushButton(tr("Remove Price"), priceBox);
+    priceButtonRow->addWidget(addPriceButton);
+    priceButtonRow->addWidget(editPriceButton);
+    priceButtonRow->addWidget(removePriceButton);
+    priceButtonRow->addStretch(1);
+    priceLayout->addLayout(priceButtonRow);
     m_priceTable = new QTableWidget(priceBox);
     m_priceTable->setColumnCount(5);
     m_priceTable->setHorizontalHeaderLabels({
@@ -720,6 +895,12 @@ void TradeRoutePage::setupUi()
     m_statusLabel = new QLabel(tr("Ready. Load Freelancer data to build the trade workspace."), this);
     layout->addWidget(m_statusLabel);
 
+    connect(addCommodityButton, &QPushButton::clicked, this, &TradeRoutePage::addCommodity);
+    connect(editCommodityButton, &QPushButton::clicked, this, &TradeRoutePage::editCommodity);
+    connect(removeCommodityButton, &QPushButton::clicked, this, &TradeRoutePage::removeCommodity);
+    connect(addPriceButton, &QPushButton::clicked, this, &TradeRoutePage::addPriceEntry);
+    connect(editPriceButton, &QPushButton::clicked, this, &TradeRoutePage::editPriceEntry);
+    connect(removePriceButton, &QPushButton::clicked, this, &TradeRoutePage::removePriceEntry);
     connect(m_commodityTable, &QTableWidget::itemSelectionChanged, this, &TradeRoutePage::populatePriceTable);
     connect(m_commodityTable, &QTableWidget::cellDoubleClicked, this, [this](int, int) {
         editCommodity();
@@ -792,6 +973,9 @@ void TradeRoutePage::setupUi()
             ++visibleIndex;
         }
     });
+    connect(m_priceTable, &QTableWidget::cellDoubleClicked, this, [this](int, int) {
+        editPriceEntry();
+    });
     connect(m_routeView->selectionModel(), &QItemSelectionModel::currentRowChanged, this, [this](const QModelIndex &current) {
         updateRouteDetails(current.row());
     });
@@ -806,12 +990,6 @@ void TradeRoutePage::setupToolBar()
     m_toolBar->addAction(tr("Reload"), this, &TradeRoutePage::reloadWorkspace);
     m_toolBar->addAction(tr("Save All"), this, &TradeRoutePage::saveWorkspace);
     m_toolBar->addAction(tr("Recalculate"), this, &TradeRoutePage::scanAndCalculate);
-    m_toolBar->addSeparator();
-    m_toolBar->addAction(tr("Add Commodity"), this, &TradeRoutePage::addCommodity);
-    m_toolBar->addAction(tr("Edit Commodity"), this, &TradeRoutePage::editCommodity);
-    m_toolBar->addAction(tr("Remove Commodity"), this, &TradeRoutePage::removeCommodity);
-    m_toolBar->addAction(tr("Add Price"), this, &TradeRoutePage::addPriceEntry);
-    m_toolBar->addAction(tr("Remove Price"), this, &TradeRoutePage::removePriceEntry);
 
     m_toolBar->addSeparator();
     m_toolBar->addWidget(new QLabel(tr(" Search: "), m_toolBar));
@@ -860,6 +1038,7 @@ void TradeRoutePage::setupToolBar()
         populateCommodityFilter();
         populateCommodityTable();
         populatePriceTable();
+        updateTitle();
         scheduleRecalculation();
     });
 }
@@ -918,6 +1097,7 @@ void TradeRoutePage::saveWorkspace()
 
     m_dirty = false;
     m_statusLabel->setText(tr("Trade data saved to goods.ini, select_equip.ini and market_commodities.ini."));
+    updateTitle();
     reloadWorkspace();
 }
 
@@ -1132,6 +1312,13 @@ void TradeRoutePage::refreshRouteScene(const TradeRouteCandidate &route)
 void TradeRoutePage::markDirty()
 {
     m_dirty = true;
+    updateTitle();
+}
+
+void TradeRoutePage::updateTitle()
+{
+    const QString suffix = m_dirty ? QStringLiteral("*") : QString();
+    emit titleChanged(QStringLiteral("Trade Routes (%1)%2").arg(m_routes.size()).arg(suffix));
 }
 
 QString TradeRoutePage::selectedCommodityNickname() const
@@ -1148,6 +1335,28 @@ int TradeRoutePage::selectedRouteIndex() const
     if (!index.isValid())
         return -1;
     return m_routeModel->item(index.row(), 0)->data(Qt::UserRole).toInt();
+}
+
+int TradeRoutePage::selectedPriceIndex() const
+{
+    const QString commodityNickname = selectedCommodityNickname();
+    if (commodityNickname.isEmpty())
+        return -1;
+
+    const int row = m_priceTable->currentRow();
+    if (row < 0)
+        return -1;
+
+    int visibleIndex = -1;
+    for (int index = 0; index < m_workspace.prices.size(); ++index) {
+        const auto &price = m_workspace.prices.at(index);
+        if (price.commodityNickname.compare(commodityNickname, Qt::CaseInsensitive) != 0)
+            continue;
+        ++visibleIndex;
+        if (visibleIndex == row)
+            return index;
+    }
+    return -1;
 }
 
 void TradeRoutePage::addCommodity()
@@ -1236,44 +1445,97 @@ void TradeRoutePage::addPriceEntry()
     if (commodityNickname.isEmpty())
         return;
 
-    QStringList choices;
-    for (const auto &base : m_workspace.bases)
-        choices.append(baseDisplayLabel(base, m_useIdsNameCheck->isChecked()));
-    bool ok = false;
-    const QString chosen = QInputDialog::getItem(this, tr("Add Price Entry"), tr("Base"), choices, 0, false, &ok);
-    if (!ok || chosen.isEmpty())
-        return;
-
-    const int selectedIndex = choices.indexOf(chosen);
-    if (selectedIndex < 0 || selectedIndex >= m_workspace.bases.size())
-        return;
-
-    const auto &base = m_workspace.bases.at(selectedIndex);
-    const int price = QInputDialog::getInt(this, tr("Add Price Entry"), tr("Actual price"), 100, 1, 100000000, 1, &ok);
-    if (!ok)
-        return;
-
     const auto commodityIt = std::find_if(m_workspace.commodities.begin(), m_workspace.commodities.end(), [commodityNickname](const TradeCommodityRecord &commodity) {
         return commodity.nickname.compare(commodityNickname, Qt::CaseInsensitive) == 0;
     });
     if (commodityIt == m_workspace.commodities.end())
         return;
 
+    PriceEntryDialog dialog(*commodityIt, m_workspace.bases, m_useIdsNameCheck->isChecked(), this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const int selectedIndex = dialog.selectedBaseIndex();
+    if (selectedIndex < 0 || selectedIndex >= m_workspace.bases.size())
+        return;
+
+    const auto &base = m_workspace.bases.at(selectedIndex);
+    if (hasExplicitPriceFor(m_workspace.prices, commodityNickname, base.nickname)) {
+        QMessageBox::warning(this,
+                             tr("Add Price"),
+                             tr("A price entry for this commodity and base already exists."));
+        return;
+    }
+
     TradePriceRecord record;
     record.baseNickname = base.nickname;
     record.baseDisplayName = base.displayName;
     record.systemNickname = base.systemNickname;
     record.commodityNickname = commodityNickname;
-    record.price = price;
-    record.multiplier = commodityIt->basePrice > 0 ? static_cast<double>(price) / static_cast<double>(commodityIt->basePrice) : 1.0;
-    record.isSource = QMessageBox::question(this,
-                                            tr("Price Role"),
-                                            tr("Should this base be treated as a source (seller) for the commodity?"),
-                                            QMessageBox::Yes | QMessageBox::No,
-                                            QMessageBox::Yes) == QMessageBox::Yes;
+    record.price = dialog.price();
+    record.multiplier = dialog.multiplier();
+    record.isSource = dialog.isSource();
     record.implicit = false;
     record.sourceFilePath = m_workspace.preferredMarketFilePath;
+    removeImplicitPriceFor(&m_workspace.prices, commodityNickname, base.nickname);
     m_workspace.prices.append(record);
+    populatePriceTable();
+    markDirty();
+    scheduleRecalculation();
+}
+
+void TradeRoutePage::editPriceEntry()
+{
+    const int priceIndex = selectedPriceIndex();
+    if (priceIndex < 0 || priceIndex >= m_workspace.prices.size())
+        return;
+    if (m_workspace.prices.at(priceIndex).implicit) {
+        QMessageBox::information(this, tr("Edit Price"), tr("Implicit base price entries cannot be edited. Add an explicit price entry instead."));
+        return;
+    }
+
+    const QString commodityNickname = selectedCommodityNickname();
+    const auto commodityIt = std::find_if(m_workspace.commodities.begin(), m_workspace.commodities.end(), [commodityNickname](const TradeCommodityRecord &commodity) {
+        return commodity.nickname.compare(commodityNickname, Qt::CaseInsensitive) == 0;
+    });
+    if (commodityIt == m_workspace.commodities.end())
+        return;
+
+    const TradePriceRecord originalPrice = m_workspace.prices.at(priceIndex);
+    PriceEntryDialog dialog(*commodityIt, m_workspace.bases, m_useIdsNameCheck->isChecked(), this, &originalPrice);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const int selectedIndex = dialog.selectedBaseIndex();
+    if (selectedIndex < 0 || selectedIndex >= m_workspace.bases.size())
+        return;
+
+    const auto &base = m_workspace.bases.at(selectedIndex);
+    if (hasExplicitPriceFor(m_workspace.prices, commodityNickname, base.nickname, priceIndex)) {
+        QMessageBox::warning(this,
+                             tr("Edit Price"),
+                             tr("A price entry for this commodity and base already exists."));
+        return;
+    }
+
+    const QString oldBaseNickname = originalPrice.baseNickname;
+    auto &record = m_workspace.prices[priceIndex];
+    record.baseNickname = base.nickname;
+    record.baseDisplayName = base.displayName;
+    record.systemNickname = base.systemNickname;
+    record.price = dialog.price();
+    record.multiplier = dialog.multiplier();
+    record.isSource = dialog.isSource();
+    record.implicit = false;
+    record.sourceFilePath = m_workspace.preferredMarketFilePath;
+    removeImplicitPriceFor(&m_workspace.prices, commodityNickname, base.nickname);
+    if (oldBaseNickname.compare(base.nickname, Qt::CaseInsensitive) != 0) {
+        const auto oldBaseIt = std::find_if(m_workspace.bases.begin(), m_workspace.bases.end(), [&oldBaseNickname](const TradeBaseRecord &candidate) {
+            return candidate.nickname.compare(oldBaseNickname, Qt::CaseInsensitive) == 0;
+        });
+        if (oldBaseIt != m_workspace.bases.end())
+            ensureImplicitPriceFor(&m_workspace.prices, *commodityIt, *oldBaseIt);
+    }
     populatePriceTable();
     markDirty();
     scheduleRecalculation();
@@ -1281,26 +1543,24 @@ void TradeRoutePage::addPriceEntry()
 
 void TradeRoutePage::removePriceEntry()
 {
-    const QString commodityNickname = selectedCommodityNickname();
-    const int row = m_priceTable->currentRow();
-    if (commodityNickname.isEmpty() || row < 0)
+    const int priceIndex = selectedPriceIndex();
+    if (priceIndex < 0 || priceIndex >= m_workspace.prices.size())
         return;
-
-    int visibleIndex = -1;
-    for (int i = 0; i < m_workspace.prices.size(); ++i) {
-        if (m_workspace.prices.at(i).commodityNickname.compare(commodityNickname, Qt::CaseInsensitive) != 0)
-            continue;
-        ++visibleIndex;
-        if (visibleIndex == row) {
-            if (m_workspace.prices.at(i).implicit)
-                return;
-            m_workspace.prices.removeAt(i);
-            populatePriceTable();
-            markDirty();
-            scheduleRecalculation();
-            return;
-        }
-    }
+    if (m_workspace.prices.at(priceIndex).implicit)
+        return;
+    const TradePriceRecord removedPrice = m_workspace.prices.at(priceIndex);
+    m_workspace.prices.removeAt(priceIndex);
+    const auto commodityIt = std::find_if(m_workspace.commodities.begin(), m_workspace.commodities.end(), [&removedPrice](const TradeCommodityRecord &commodity) {
+        return commodity.nickname.compare(removedPrice.commodityNickname, Qt::CaseInsensitive) == 0;
+    });
+    const auto baseIt = std::find_if(m_workspace.bases.begin(), m_workspace.bases.end(), [&removedPrice](const TradeBaseRecord &base) {
+        return base.nickname.compare(removedPrice.baseNickname, Qt::CaseInsensitive) == 0;
+    });
+    if (commodityIt != m_workspace.commodities.end() && baseIt != m_workspace.bases.end())
+        ensureImplicitPriceFor(&m_workspace.prices, *commodityIt, *baseIt);
+    populatePriceTable();
+    markDirty();
+    scheduleRecalculation();
 }
 
 TradeRouteWorkspaceData TradeRoutePage::workspaceForCurrentNameMode() const
