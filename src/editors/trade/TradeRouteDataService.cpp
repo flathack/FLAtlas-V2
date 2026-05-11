@@ -145,6 +145,8 @@ void scanSystemObjects(const QString &dataPath,
 
             const QString baseNickname = section.value(QStringLiteral("base")).trimmed();
             const QString objectNickname = section.value(QStringLiteral("nickname")).trimmed();
+            const QString archetype = section.value(QStringLiteral("archetype")).trimmed();
+            const bool isDockingFixture = archetype.compare(QStringLiteral("docking_fixture"), Qt::CaseInsensitive) == 0;
             const int idsName = section.value(QStringLiteral("ids_name")).trimmed().toInt();
             const QString objectDisplayName =
                 resolvedIdsDisplayName(ids, idsName, objectNickname.isEmpty() ? baseNickname : objectNickname);
@@ -157,7 +159,10 @@ void scanSystemObjects(const QString &dataPath,
                 base.systemNickname = system.nickname;
                 base.systemDisplayName = system.displayName.isEmpty() ? system.nickname : system.displayName;
                 base.position = position;
-                bases->insert(normalizedNickname(base.nickname), base);
+                const QString baseKey = normalizedNickname(base.nickname);
+                const bool hasExistingBase = bases->contains(baseKey);
+                if (!hasExistingBase || !isDockingFixture)
+                    bases->insert(baseKey, base);
             }
 
             const QString gotoValue = section.value(QStringLiteral("goto")).trimmed();

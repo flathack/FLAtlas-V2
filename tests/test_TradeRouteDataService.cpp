@@ -102,6 +102,11 @@ QString createDataTree(QTemporaryDir &tempDir)
                                  "base = base_a\n"
                                  "pos = 0, 0, 0\n\n"
                                  "[Object]\n"
+                                 "nickname = sys_a_docking_fixture_1\n"
+                                 "archetype = docking_fixture\n"
+                                 "base = base_a\n"
+                                 "pos = 20, 0, 0\n\n"
+                                 "[Object]\n"
                                  "nickname = sys_a_to_sys_b_gate\n"
                                  "goto = sys_b, sys_b_to_sys_a_gate, tunnel\n"
                                  "archetype = jumpgate\n"
@@ -134,6 +139,12 @@ void TestTradeRouteDataService::testLoadWorkspace()
     QCOMPARE(workspace.bases.size(), 2);
     QVERIFY(workspace.universe);
     QCOMPARE(workspace.universe->connections.size(), 1);
+
+    const auto baseAIt = std::find_if(workspace.bases.begin(), workspace.bases.end(), [](const TradeBaseRecord &base) {
+        return base.nickname == QStringLiteral("base_a");
+    });
+    QVERIFY(baseAIt != workspace.bases.end());
+    QCOMPARE(baseAIt->displayName, QStringLiteral("base_a_obj"));
 
     const auto goldIt = std::find_if(workspace.commodities.begin(), workspace.commodities.end(), [](const TradeCommodityRecord &commodity) {
         return commodity.nickname == QStringLiteral("commodity_gold");
