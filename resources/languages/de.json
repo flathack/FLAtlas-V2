@@ -122,6 +122,8 @@
     "shop_archetype": "shop_archetype",
     "item_icon": "item_icon",
     "jump_dist": "jump_dist",
+    "hit_pts": "hit_pts",
+    "decay_per_second": "decay_per_second",
     "This creates a [Good] commodity entry. Add base buy/sell prices afterwards with Add Price.": "Erstellt einen [Good]-Wareneintrag. Base-Kauf-/Verkaufspreise danach mit Preis hinzufügen eintragen.",
     "Please enter a commodity nickname.": "Bitte einen Waren-Nickname eingeben.",
     "Commodity nicknames must start with commodity_.": "Waren-Nicknames müssen mit commodity_ beginnen.",

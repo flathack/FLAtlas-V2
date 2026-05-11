@@ -124,7 +124,7 @@ public:
         , m_existingCommodities(existingCommodities)
     {
         setWindowTitle(tr("Add Commodity"));
-        resize(680, 660);
+        resize(680, 720);
 
         auto *layout = new QVBoxLayout(this);
         auto *form = new QFormLayout;
@@ -190,6 +190,18 @@ public:
         m_jumpDistSpin->setValue(7);
         form->addRow(tr("jump_dist"), m_jumpDistSpin);
 
+        m_hitPtsSpin = new QSpinBox(this);
+        m_hitPtsSpin->setRange(1, 100000000);
+        m_hitPtsSpin->setValue(250);
+        form->addRow(tr("hit_pts"), m_hitPtsSpin);
+
+        m_decayPerSecondSpin = new QDoubleSpinBox(this);
+        m_decayPerSecondSpin->setRange(0.0, 1000000.0);
+        m_decayPerSecondSpin->setDecimals(6);
+        m_decayPerSecondSpin->setSingleStep(0.01);
+        m_decayPerSecondSpin->setValue(0.0);
+        form->addRow(tr("decay_per_second"), m_decayPerSecondSpin);
+
         layout->addLayout(form);
 
         auto *note = new QLabel(tr("This creates a [Good] commodity entry. Add base buy/sell prices afterwards with Add Price."), this);
@@ -236,6 +248,8 @@ public:
         commodity.shopArchetype = m_shopArchetypeEdit->text().trimmed();
         commodity.itemIcon = m_itemIconEdit->text().trimmed();
         commodity.jumpDist = m_jumpDistSpin->value();
+        commodity.hitPts = m_hitPtsSpin->value();
+        commodity.decayPerSecond = m_decayPerSecondSpin->value();
         return commodity;
     }
 
@@ -289,6 +303,8 @@ private:
     QLineEdit *m_shopArchetypeEdit = nullptr;
     QLineEdit *m_itemIconEdit = nullptr;
     QSpinBox *m_jumpDistSpin = nullptr;
+    QSpinBox *m_hitPtsSpin = nullptr;
+    QDoubleSpinBox *m_decayPerSecondSpin = nullptr;
     bool m_msgIdPrefixTouched = false;
     bool m_ingameNameTouched = false;
 
