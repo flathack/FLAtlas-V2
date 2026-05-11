@@ -597,7 +597,7 @@ void SettingsDialog::chooseConfigPath()
 void SettingsDialog::importConfig()
 {
     const QString path = QFileDialog::getOpenFileName(this,
-                                                      tr("Config importieren"),
+                                                      tr("Import Config"),
                                                       {},
                                                       tr("JSON Files (*.json);;All Files (*)"));
     if (path.isEmpty())
@@ -607,13 +607,13 @@ void SettingsDialog::importConfig()
         return;
     }
     loadSettings();
-    m_configStatusLabel->setText(tr("Config importiert."));
+    m_configStatusLabel->setText(tr("Config imported."));
 }
 
 void SettingsDialog::exportConfig()
 {
     const QString path = QFileDialog::getSaveFileName(this,
-                                                      tr("Config exportieren"),
+                                                      tr("Export Config"),
                                                       flatlas::core::Config::instance().filePath(),
                                                       tr("JSON Files (*.json);;All Files (*)"));
     if (path.isEmpty())
@@ -622,7 +622,7 @@ void SettingsDialog::exportConfig()
         QMessageBox::warning(this, tr("Config"), tr("The config could not be exported."));
         return;
     }
-    m_configStatusLabel->setText(tr("Config exportiert."));
+    m_configStatusLabel->setText(tr("Config exported."));
 }
 
 void SettingsDialog::createConfigBackup()
@@ -632,7 +632,7 @@ void SettingsDialog::createConfigBackup()
         QMessageBox::warning(this, tr("Config"), tr("Could not create a backup."));
         return;
     }
-    m_configStatusLabel->setText(tr("Backup angelegt: %1").arg(backupPath));
+    m_configStatusLabel->setText(tr("Backup created: %1").arg(backupPath));
 }
 
 void SettingsDialog::applyConfigJson()
@@ -650,7 +650,7 @@ void SettingsDialog::applyConfigJson()
         return;
     }
     loadSettings();
-    m_configStatusLabel->setText(tr("JSON uebernommen."));
+    m_configStatusLabel->setText(tr("JSON applied."));
 }
 
 void SettingsDialog::refreshIdsTargetDllSettings()
@@ -1131,7 +1131,7 @@ void SettingsDialog::downloadReleaseAsset(const QString &name, const QUrl &url)
             };
             const int exitCode = QProcess::execute(QStringLiteral("powershell"), args);
             if (exitCode != 0) {
-                m_suiteStatusLabel->setText(tr("Entpacken fehlgeschlagen: %1").arg(targetPath));
+                m_suiteStatusLabel->setText(tr("Extraction failed: %1").arg(targetPath));
                 return;
             }
             exePath = firstExeInDirectory(installDir);
@@ -1144,7 +1144,7 @@ void SettingsDialog::downloadReleaseAsset(const QString &name, const QUrl &url)
         }
         registerInstalledTool(name, displayName, installDir, exePath);
         updateSuiteButtons();
-        m_suiteStatusLabel->setText(tr("%1 installiert: %2").arg(displayName, installDir));
+        m_suiteStatusLabel->setText(tr("%1 installed: %2").arg(displayName, installDir));
     });
 }
 

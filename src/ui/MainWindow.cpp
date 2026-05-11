@@ -612,7 +612,7 @@ QWidget *createSystem3DPage(flatlas::domain::SystemDocument *document,
                 }
                 const QString tooltip = displayVisible
                     ? QString()
-                    : QObject::tr("Durch den Sichtbarkeitsfilter aktuell ausgeblendet");
+                    : QObject::tr("Currently hidden by the visibility filter");
                 child->setToolTip(0, tooltip);
                 child->setToolTip(1, tooltip);
             }
