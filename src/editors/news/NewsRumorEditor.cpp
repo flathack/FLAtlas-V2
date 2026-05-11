@@ -194,16 +194,17 @@ void NewsRumorEditor::setupUi()
     filterRow->addWidget(m_newsSearchEdit, 1);
     newsLayout->addLayout(filterRow);
     m_newsTable = new QTableWidget(0, NewsColumnCount, newsPane);
-    m_newsTable->setHorizontalHeaderLabels({tr("Headline"), tr("Preview"), tr("Bases"), tr("Icon"), tr("Rank"), tr("Status")});
+    m_newsTable->setHorizontalHeaderLabels({tr("Headline"), tr("Icon"), tr("Rank"), tr("Status")});
     m_newsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_newsTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_newsTable->setAlternatingRowColors(true);
-    m_newsTable->horizontalHeader()->setSectionResizeMode(NewsHeadlineColumn, QHeaderView::Stretch);
-    m_newsTable->horizontalHeader()->setSectionResizeMode(NewsPreviewColumn, QHeaderView::Stretch);
-    m_newsTable->horizontalHeader()->setSectionResizeMode(NewsBasesColumn, QHeaderView::ResizeToContents);
-    m_newsTable->horizontalHeader()->setSectionResizeMode(NewsIconColumn, QHeaderView::ResizeToContents);
-    m_newsTable->horizontalHeader()->setSectionResizeMode(NewsRankColumn, QHeaderView::ResizeToContents);
-    m_newsTable->horizontalHeader()->setSectionResizeMode(NewsIssueColumn, QHeaderView::ResizeToContents);
+    m_newsTable->horizontalHeader()->setSectionsMovable(true);
+    m_newsTable->horizontalHeader()->setStretchLastSection(false);
+    m_newsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    m_newsTable->setColumnWidth(NewsHeadlineColumn, 360);
+    m_newsTable->setColumnWidth(NewsIconColumn, 110);
+    m_newsTable->setColumnWidth(NewsRankColumn, 160);
+    m_newsTable->setColumnWidth(NewsIssueColumn, 120);
     newsLayout->addWidget(m_newsTable, 1);
     splitter->addWidget(newsPane);
 
@@ -549,10 +550,6 @@ void NewsRumorEditor::populateNewsTable()
         headline->setData(Qt::UserRole, row);
         headline->setToolTip(entry.headlineText);
         m_newsTable->setItem(row, NewsHeadlineColumn, headline);
-        m_newsTable->setItem(row, NewsPreviewColumn, readOnlyItem(newsPreview(entry)));
-        auto *basesItem = readOnlyItem(basesDisplay(entry));
-        basesItem->setToolTip(basesDisplay(entry));
-        m_newsTable->setItem(row, NewsBasesColumn, basesItem);
         m_newsTable->setItem(row, NewsIconColumn, readOnlyItem(entry.icon));
         m_newsTable->setItem(row, NewsRankColumn, readOnlyItem(entry.rank));
         const bool missingIds = entry.headlineText.isEmpty() || entry.bodyText.isEmpty();
@@ -638,9 +635,32 @@ void NewsRumorEditor::onNewsSelectionChanged()
 {
     if (m_populating)
         return;
-    applyDetailToCurrentEntry();
     const int idx = selectedEntryIndex();
+    m_changingNewsSelection = true;
+    applyDetailToCurrentEntry();
+    m_changingNewsSelection = false;
     showEntryInDetail(idx);
+    if (m_deferredTableRefresh) {
+        m_deferredTableRefresh = false;
+        QTimer::singleShot(0, this, [this]() {
+            if (m_populating)
+                return;
+            const int entryIndex = m_currentEntryIndex;
+            rebuildBaseCounts();
+            populateBaseTable();
+            populateNewsTable();
+            if (entryIndex >= 0 && entryIndex < m_entries.size()) {
+                QSignalBlocker blocker(m_newsTable);
+                for (int row = 0; row < m_newsTable->rowCount(); ++row) {
+                    auto *item = m_newsTable->item(row, NewsHeadlineColumn);
+                    if (item && item->data(Qt::UserRole).toInt() == entryIndex) {
+                        m_newsTable->setCurrentCell(row, NewsHeadlineColumn);
+                        break;
+                    }
+                }
+            }
+        });
+    }
 }
 
 void NewsRumorEditor::showEntryInDetail(int entryIndex)
@@ -726,7 +746,10 @@ bool NewsRumorEditor::applyDetailToCurrentEntry()
         .arg(entry.headlineText, entry.bodyText, QString::number(entry.headlineIds), QString::number(entry.textIds),
              csvList(entry.bases), entry.rank, entry.icon)
         .toLower();
-    if (!m_saving) {
+    if (m_changingNewsSelection) {
+        m_deferredTableRefresh = true;
+        setDirty(true);
+    } else if (!m_saving) {
         rebuildBaseCounts();
         populateBaseTable();
         populateNewsTable();

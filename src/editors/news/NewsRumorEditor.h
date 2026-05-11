@@ -76,7 +76,7 @@ signals:
     void loadingProgressChanged(int percent, const QString &message);
 
 private:
-    enum NewsColumn { NewsHeadlineColumn = 0, NewsPreviewColumn, NewsBasesColumn, NewsIconColumn, NewsRankColumn, NewsIssueColumn, NewsColumnCount };
+    enum NewsColumn { NewsHeadlineColumn = 0, NewsIconColumn, NewsRankColumn, NewsIssueColumn, NewsColumnCount };
     enum BaseColumn { BaseNameColumn = 0, BaseNicknameColumn, BaseSystemColumn, BaseNewsCountColumn, BaseColumnCount };
 
     void setupUi();
@@ -150,6 +150,8 @@ private:
     bool m_dirty = false;
     bool m_populating = false;
     bool m_saving = false;
+    bool m_changingNewsSelection = false;
+    bool m_deferredTableRefresh = false;
 };
 
 } // namespace flatlas::editors
