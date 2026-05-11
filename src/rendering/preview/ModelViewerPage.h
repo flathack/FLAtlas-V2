@@ -3,6 +3,7 @@
 
 #include "infrastructure/freelancer/ModelAssetScanner.h"
 
+#include <QColor>
 #include <QWidget>
 
 class QLabel;
@@ -11,6 +12,8 @@ class QTreeWidget;
 class QTreeWidgetItem;
 class QPushButton;
 class QCheckBox;
+class QDial;
+class QSlider;
 class QVBoxLayout;
 class QTimer;
 
@@ -67,6 +70,10 @@ private:
     QCheckBox *m_boundsCheck = nullptr;
     QCheckBox *m_whiteBgCheck = nullptr;
     QCheckBox *m_texturesCheck = nullptr;
+    QDial *m_lightDial = nullptr;
+    QSlider *m_lightIntensitySlider = nullptr;
+    QPushButton *m_lightColorButton = nullptr;
+    QColor m_lightColor = Qt::white;
     QTimer *m_loadTimer = nullptr;
     QString m_pendingModelPath;
     bool m_pendingLoadRequiresCurrentEntryMatch = false;

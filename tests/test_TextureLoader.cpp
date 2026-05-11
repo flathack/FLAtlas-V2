@@ -353,6 +353,48 @@ private slots:
         }
     }
 
+    void loadBountyHunterVeryHeavyFighterTexturesFromReferencedShipMaterialLibrary()
+    {
+        const QString modelPath = QStringLiteral(
+            "C:/Users/steve/Github/FL-Installationen/TESTMOD1/DATA/SHIPS/BOUNTY_HUNTER/BH_VHEAVY_FIGHTER/bh_vheavy_fighter.cmp");
+        const QString matPath = QStringLiteral(
+            "C:/Users/steve/Github/FL-Installationen/TESTMOD1/DATA/SHIPS/LIBERTY/li_playerships.mat");
+        if (!QFileInfo::exists(modelPath) || !QFileInfo::exists(matPath))
+            QSKIP("TESTMOD1 bounty hunter fighter material fixture is not available on this machine.");
+
+        const DecodedModel decoded = CmpLoader::loadModel(modelPath);
+        QVERIFY(decoded.isValid());
+
+        int meshCount = 0;
+        int texturedMeshCount = 0;
+        QStringList unresolvedMaterials;
+        std::function<void(const ModelNode &)> walk = [&](const ModelNode &node) {
+            for (const MeshData &mesh : node.meshes) {
+                ++meshCount;
+                const QImage image = FreelancerMaterialResolver::loadTextureForMesh(modelPath, mesh);
+                if (!image.isNull()) {
+                    ++texturedMeshCount;
+                } else if (!mesh.materialName.isEmpty() || !mesh.materialValue.isEmpty()) {
+                    unresolvedMaterials.append(QStringLiteral("%1:%2:%3")
+                                                   .arg(mesh.materialId)
+                                                   .arg(mesh.materialName, mesh.materialValue));
+                } else {
+                    unresolvedMaterials.append(QStringLiteral("%1:<empty>").arg(mesh.materialId));
+                }
+            }
+            for (const ModelNode &child : node.children)
+                walk(child);
+        };
+        walk(decoded.rootNode);
+
+        QVERIFY(meshCount > 0);
+        QVERIFY2(texturedMeshCount == meshCount,
+                 qPrintable(QStringLiteral("Only %1 of %2 bounty hunter fighter meshes resolved textures; unresolved=%3")
+                                .arg(texturedMeshCount)
+                                .arg(meshCount)
+                                .arg(unresolvedMaterials.join(QStringLiteral(", ")))));
+    }
+
     void loadPrisonStationTexturesFromExternalMaterialLibrary()
     {
         const QString modelPath = QStringLiteral(

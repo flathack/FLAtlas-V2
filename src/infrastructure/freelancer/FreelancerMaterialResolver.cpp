@@ -285,6 +285,25 @@ void appendMatFilesFromDir(QStringList *paths, const QString &dirPath)
         appendUniquePath(paths, mat.absoluteFilePath());
 }
 
+void appendMatFilesRecursively(QStringList *paths, const QString &dirPath)
+{
+    const QDir dir(dirPath);
+    if (!dir.exists())
+        return;
+
+    QStringList found;
+    QDirIterator it(dir.absolutePath(),
+                    QStringList{QStringLiteral("*.mat")},
+                    QDir::Files,
+                    QDirIterator::Subdirectories);
+    while (it.hasNext())
+        found.append(QFileInfo(it.next()).absoluteFilePath());
+    found.sort(Qt::CaseInsensitive);
+
+    for (const QString &matPath : std::as_const(found))
+        appendUniquePath(paths, matPath);
+}
+
 QSet<quint32> materialIdsForMesh(const MeshData &mesh)
 {
     QSet<quint32> ids;
@@ -821,12 +840,16 @@ QStringList FreelancerMaterialResolver::candidateMaterialLibraryPaths(const QStr
             const QString top = parts.first().toLower();
             if (top == QStringLiteral("ships") && parts.size() >= 2) {
                 appendMatFilesFromDir(&paths, dataDir.filePath(QStringLiteral("SHIPS/%1").arg(parts.at(1))));
+                appendMatFilesRecursively(&paths, dataDir.filePath(QStringLiteral("SHIPS")));
             } else if (top == QStringLiteral("solar")) {
                 appendMatFilesFromDir(&paths, dataDir.filePath(QStringLiteral("SOLAR")));
+                appendMatFilesRecursively(&paths, dataDir.filePath(QStringLiteral("SOLAR")));
             } else if (top == QStringLiteral("equipment")) {
                 appendMatFilesFromDir(&paths, dataDir.filePath(QStringLiteral("EQUIPMENT")));
+                appendMatFilesRecursively(&paths, dataDir.filePath(QStringLiteral("EQUIPMENT")));
             }
         }
+        appendMatFilesRecursively(&paths, dataDir.filePath(QStringLiteral("FX")));
     }
 
     QMutexLocker locker(&s_cacheMutex);

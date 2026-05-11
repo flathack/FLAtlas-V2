@@ -17,7 +17,9 @@
 #include <QWheelEvent>
 
 #include <QtConcurrent/QtConcurrent>
+#include <QtMath>
 
+#include <cmath>
 #include <limits>
 
 #ifdef FLATLAS_HAS_QT3D
@@ -89,6 +91,11 @@ QColor colorForMesh(const flatlas::infrastructure::MeshData &mesh, int nodeIndex
                                      : 170 + static_cast<int>((hash / (360u *  80u)) % 60u);
     return QColor::fromHsv(hue, qBound(0, sat, 255), qBound(0, val, 255));
 }
+
+struct TextureLoadResult {
+    int targetIndex = -1;
+    QImage image;
+};
 
 } // namespace
 
@@ -171,19 +178,28 @@ void ModelViewport3D::setupScene()
     m_orbitCamera->setPanButton(Qt::RightButton);
     m_orbitCamera->setResetState(QVector3D(0.0f, 0.0f, 0.0f), 500.0f, 45.0f, 22.0f);
     m_orbitCamera->resetView();
+    connect(m_orbitCamera, &OrbitCamera::cameraChanged, this, &ModelViewport3D::updateCameraDependentScene);
 
     auto *renderer = m_window->defaultFrameGraph();
-    renderer->setClearColor(QColor(40, 40, 40));
-    renderer->setFrustumCullingEnabled(true);
+    renderer->setClearColor(QColor(6, 10, 18));
+    renderer->setFrustumCullingEnabled(false);
 
     m_lightEntity = new Qt3DCore::QEntity(m_rootEntity);
     m_light = new Qt3DRender::QPointLight(m_lightEntity);
-    m_light->setColor(Qt::white);
-    m_light->setIntensity(1.5f);
+    m_light->setColor(m_lightColor);
+    m_light->setIntensity(m_lightIntensity);
     m_lightTransform = new Qt3DCore::QTransform(m_lightEntity);
-    m_lightTransform->setTranslation(QVector3D(900.0f, 1200.0f, 900.0f));
     m_lightEntity->addComponent(m_light);
     m_lightEntity->addComponent(m_lightTransform);
+    updateCameraDependentScene();
+
+    m_fillLightEntity = new Qt3DCore::QEntity(m_rootEntity);
+    m_fillLight = new Qt3DRender::QPointLight(m_fillLightEntity);
+    m_fillLight->setColor(m_lightColor);
+    m_fillLight->setIntensity(m_lightIntensity * 0.25f);
+    m_fillLightTransform = new Qt3DCore::QTransform(m_fillLightEntity);
+    m_fillLightEntity->addComponent(m_fillLight);
+    m_fillLightEntity->addComponent(m_fillLightTransform);
 
     m_window->setRootEntity(m_rootEntity);
 }
@@ -192,6 +208,9 @@ void ModelViewport3D::clearSceneEntities()
 {
     if (!m_sceneRoot || !m_rootEntity)
         return;
+
+    ++m_textureGeneration;
+    m_textureTargets.clear();
 
     delete m_sceneRoot;
     m_sceneRoot = new Qt3DCore::QEntity(m_rootEntity);
@@ -204,6 +223,7 @@ void ModelViewport3D::clearSceneEntities()
 void ModelViewport3D::addNodeRecursive(const flatlas::infrastructure::ModelNode &node,
                                        Qt3DCore::QEntity *meshParentEntity,
                                        Qt3DCore::QEntity *wireParentEntity,
+                                       QVector<TextureLoadJob> *textureJobs,
                                        int nodeIndex,
                                        int depth)
 {
@@ -247,18 +267,15 @@ void ModelViewport3D::addNodeRecursive(const flatlas::infrastructure::ModelNode 
         if (meshNodeEntity) {
             auto *meshEntity = new Qt3DCore::QEntity(meshNodeEntity);
             if (auto *renderer = ModelGeometryBuilder::buildTriangleRenderer(mesh, meshEntity)) {
-                Qt3DRender::QMaterial *material = nullptr;
-                if (m_texturesVisible) {
-                    const QImage texture =
-                        flatlas::infrastructure::FreelancerMaterialResolver::loadTextureForMesh(m_filePath, mesh);
-                    if (!texture.isNull())
-                        material = MaterialFactory::createFromImage(texture, meshEntity);
-                }
-                if (!material)
-                    material = MaterialFactory::createDefault(
-                        colorForMesh(mesh, nodeIndex, m_whiteBackground), meshEntity);
+                auto *material = MaterialFactory::createDefault(
+                    colorForMesh(mesh, nodeIndex, m_whiteBackground), meshEntity);
                 meshEntity->addComponent(renderer);
                 meshEntity->addComponent(material);
+                if (m_texturesVisible && textureJobs) {
+                    const int targetIndex = m_textureTargets.size();
+                    m_textureTargets.append(TextureTarget{meshEntity, material});
+                    textureJobs->append(TextureLoadJob{targetIndex, m_filePath, mesh});
+                }
             } else {
                 meshEntity->deleteLater();
             }
@@ -282,9 +299,78 @@ void ModelViewport3D::addNodeRecursive(const flatlas::infrastructure::ModelNode 
         // Each child gets a unique index derived from the parent's index and its
         // own position so siblings have different colours across the whole tree.
         const int childNodeIndex = nodeIndex * 7 + depth * 3 + childIndex + 1;
-        addNodeRecursive(child, meshNodeEntity, wireNodeEntity, childNodeIndex, depth + 1);
+        addNodeRecursive(child, meshNodeEntity, wireNodeEntity, textureJobs, childNodeIndex, depth + 1);
         ++childIndex;
     }
+}
+
+void ModelViewport3D::startTextureJobs(const QVector<TextureLoadJob> &jobs, int generation)
+{
+    if (jobs.isEmpty())
+        return;
+
+    auto *watcher = new QFutureWatcher<QVector<TextureLoadResult>>(this);
+    connect(watcher, &QFutureWatcher<QVector<TextureLoadResult>>::finished,
+            this, [this, watcher, generation]() {
+        watcher->deleteLater();
+
+        if (generation != m_textureGeneration)
+            return;
+
+        const QVector<TextureLoadResult> results = watcher->result();
+        for (const TextureLoadResult &result : results) {
+            if (result.targetIndex < 0 || result.targetIndex >= m_textureTargets.size() || result.image.isNull())
+                continue;
+
+            TextureTarget &target = m_textureTargets[result.targetIndex];
+            if (!target.entity)
+                continue;
+
+            if (target.material) {
+                target.entity->removeComponent(target.material);
+                target.material->deleteLater();
+            }
+            auto *material = MaterialFactory::createFromImage(result.image, target.entity);
+            target.entity->addComponent(material);
+            target.material = material;
+        }
+    });
+
+    watcher->setFuture(QtConcurrent::run([jobs]() {
+        QVector<TextureLoadResult> results;
+        results.reserve(jobs.size());
+        for (const TextureLoadJob &job : jobs) {
+            const QImage image =
+                flatlas::infrastructure::FreelancerMaterialResolver::loadTextureForMesh(job.modelPath, job.mesh);
+            if (!image.isNull())
+                results.append(TextureLoadResult{job.targetIndex, image});
+        }
+        return results;
+    }));
+}
+
+void ModelViewport3D::updateCameraDependentScene()
+{
+    if (!m_camera)
+        return;
+
+    updateLightPosition();
+}
+
+void ModelViewport3D::updateLightPosition()
+{
+    if (!m_lightTransform)
+        return;
+
+    const float azimuthRad = qDegreesToRadians(m_lightAzimuth);
+    const float elevationRad = qDegreesToRadians(m_lightElevation);
+    const float horizontal = std::cos(elevationRad) * m_lightRadius;
+    const QVector3D offset(horizontal * std::sin(azimuthRad),
+                           std::sin(elevationRad) * m_lightRadius,
+                           horizontal * std::cos(azimuthRad));
+    m_lightTransform->setTranslation(m_lightTarget + offset);
+    if (m_fillLightTransform)
+        m_fillLightTransform->setTranslation(m_lightTarget - offset * 0.65f + QVector3D(0.0f, m_lightRadius * 0.2f, 0.0f));
 }
 
 void ModelViewport3D::updateVisibilityState()
@@ -307,7 +393,14 @@ void ModelViewport3D::fitCameraToBounds(const ModelBounds &bounds)
     const float distance = qMax(radius * 2.8f, 10.0f);
     const float minDistance = qMax(radius * 0.12f, 0.25f);
     const float maxDistance = qMax(distance * 200.0f, 500000.0f);
+    const float farPlane = qMin(qMax(maxDistance * 2.0f, 5000000.0f), 100000000.0f);
 
+    m_lightTarget = center;
+    m_lightRadius = qMax(radius * 3.5f, 1000.0f);
+    updateLightPosition();
+
+    if (m_camera && m_camera->lens())
+        m_camera->lens()->setFarPlane(farPlane);
     m_orbitCamera->setDistanceLimits(minDistance, maxDistance);
     m_orbitCamera->setResetState(center, distance, 45.0f, 22.0f);
     m_orbitCamera->resetView();
@@ -427,7 +520,9 @@ void ModelViewport3D::rebuildScene(const flatlas::infrastructure::ModelNode &mod
 {
 #ifdef FLATLAS_HAS_QT3D
     clearSceneEntities();
-    addNodeRecursive(model, m_modelRoot, m_wireframeRoot);
+    const int textureGeneration = m_textureGeneration;
+    QVector<TextureLoadJob> textureJobs;
+    addNodeRecursive(model, m_modelRoot, m_wireframeRoot, &textureJobs);
 
     const ModelBounds bounds = ModelGeometryBuilder::boundsForNode(model);
     if (m_overlayRoot && bounds.valid) {
@@ -440,7 +535,9 @@ void ModelViewport3D::rebuildScene(const flatlas::infrastructure::ModelNode &mod
     }
 
     fitCameraToBounds(bounds);
+    updateCameraDependentScene();
     updateVisibilityState();
+    startTextureJobs(textureJobs, textureGeneration);
 #else
     Q_UNUSED(model);
 #endif
@@ -525,7 +622,7 @@ void ModelViewport3D::setWhiteBackground(bool enabled)
     m_whiteBackground = enabled;
 #ifdef FLATLAS_HAS_QT3D
     if (m_window && m_window->defaultFrameGraph())
-        m_window->defaultFrameGraph()->setClearColor(enabled ? QColor(230, 230, 230) : QColor(40, 40, 40));
+        m_window->defaultFrameGraph()->setClearColor(enabled ? QColor(230, 230, 230) : QColor(6, 10, 18));
     // Material colours are baked at scene build time, so rebuild when a model is loaded.
     if (m_hasModel && m_currentModel)
         rebuildScene(*m_currentModel);
@@ -542,6 +639,44 @@ void ModelViewport3D::setTexturesVisible(bool visible)
 #ifdef FLATLAS_HAS_QT3D
     if (m_hasModel && m_currentModel)
         rebuildScene(*m_currentModel);
+#endif
+}
+
+void ModelViewport3D::setLightAzimuth(float degrees)
+{
+#ifdef FLATLAS_HAS_QT3D
+    m_lightAzimuth = degrees;
+    updateLightPosition();
+#else
+    Q_UNUSED(degrees);
+#endif
+}
+
+void ModelViewport3D::setLightIntensity(float intensity)
+{
+#ifdef FLATLAS_HAS_QT3D
+    m_lightIntensity = qBound(0.0f, intensity, 5.0f);
+    if (m_light)
+        m_light->setIntensity(m_lightIntensity);
+    if (m_fillLight)
+        m_fillLight->setIntensity(m_lightIntensity * 0.25f);
+#else
+    Q_UNUSED(intensity);
+#endif
+}
+
+void ModelViewport3D::setLightColor(const QColor &color)
+{
+#ifdef FLATLAS_HAS_QT3D
+    if (!color.isValid())
+        return;
+    m_lightColor = color;
+    if (m_light)
+        m_light->setColor(m_lightColor);
+    if (m_fillLight)
+        m_fillLight->setColor(m_lightColor);
+#else
+    Q_UNUSED(color);
 #endif
 }
 

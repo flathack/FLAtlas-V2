@@ -4,14 +4,18 @@
 #include <QWidget>
 #include <QString>
 #include <QVector3D>
+#include <QPointer>
+#include <QColor>
 #include <memory>
+
+#include "infrastructure/io/CmpLoader.h"
 
 class QLabel;
 
 #ifdef FLATLAS_HAS_QT3D
 namespace Qt3DExtras { class Qt3DWindow; class QPhongMaterial; }
 namespace Qt3DCore { class QEntity; class QTransform; }
-namespace Qt3DRender { class QCamera; class QPointLight; }
+namespace Qt3DRender { class QCamera; class QMaterial; class QPointLight; }
 #endif
 
 namespace flatlas::infrastructure { struct ModelNode; }
@@ -57,6 +61,9 @@ public:
     bool whiteBackground() const { return m_whiteBackground; }
     void setTexturesVisible(bool visible);
     bool texturesVisible() const { return m_texturesVisible; }
+    void setLightAzimuth(float degrees);
+    void setLightIntensity(float intensity);
+    void setLightColor(const QColor &color);
 
 signals:
     void modelLoaded(const QString &filePath, bool success, const QString &message);
@@ -72,14 +79,29 @@ private:
     void rebuildScene(const flatlas::infrastructure::ModelNode &model);
 
 #ifdef FLATLAS_HAS_QT3D
+    struct TextureLoadJob {
+        int targetIndex = -1;
+        QString modelPath;
+        flatlas::infrastructure::MeshData mesh;
+    };
+
     void clearSceneEntities();
     void addNodeRecursive(const flatlas::infrastructure::ModelNode &node,
                           Qt3DCore::QEntity *meshParentEntity,
                           Qt3DCore::QEntity *wireParentEntity,
+                          QVector<TextureLoadJob> *textureJobs,
                           int nodeIndex = 0,
                           int depth = 0);
+    void startTextureJobs(const QVector<TextureLoadJob> &jobs, int generation);
+    void updateCameraDependentScene();
+    void updateLightPosition();
     void updateVisibilityState();
     void fitCameraToBounds(const ModelBounds &bounds);
+
+    struct TextureTarget {
+        QPointer<Qt3DCore::QEntity> entity;
+        QPointer<Qt3DRender::QMaterial> material;
+    };
 
     Qt3DExtras::Qt3DWindow *m_window = nullptr;
     QWidget *m_container = nullptr;
@@ -87,6 +109,9 @@ private:
     Qt3DCore::QEntity *m_lightEntity = nullptr;
     Qt3DRender::QPointLight *m_light = nullptr;
     Qt3DCore::QTransform *m_lightTransform = nullptr;
+    Qt3DCore::QEntity *m_fillLightEntity = nullptr;
+    Qt3DRender::QPointLight *m_fillLight = nullptr;
+    Qt3DCore::QTransform *m_fillLightTransform = nullptr;
     Qt3DCore::QEntity *m_sceneRoot = nullptr;
     Qt3DCore::QEntity *m_modelRoot = nullptr;
     Qt3DCore::QEntity *m_wireframeRoot = nullptr;
@@ -94,6 +119,14 @@ private:
     Qt3DCore::QEntity *m_boundingBoxEntity = nullptr;
     Qt3DRender::QCamera *m_camera = nullptr;
     OrbitCamera *m_orbitCamera = nullptr;
+    QVector<TextureTarget> m_textureTargets;
+    int m_textureGeneration = 0;
+    QVector3D m_lightTarget{0.0f, 0.0f, 0.0f};
+    float m_lightRadius = 1000.0f;
+    float m_lightAzimuth = 45.0f;
+    float m_lightElevation = 35.0f;
+    float m_lightIntensity = 1.8f;
+    QColor m_lightColor = Qt::white;
 #endif
 
     QWidget *m_statusOverlay = nullptr;

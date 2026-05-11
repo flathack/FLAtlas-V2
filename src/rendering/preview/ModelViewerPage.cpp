@@ -9,7 +9,9 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QColorDialog>
 #include <QDesktopServices>
+#include <QDial>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QEventLoop>
@@ -19,6 +21,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QSlider>
 #include <QSplitter>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
@@ -139,6 +142,39 @@ ModelViewerPage::ModelViewerPage(QWidget *parent)
     previewControls->addWidget(m_texturesCheck);
     m_whiteBgCheck = new QCheckBox(tr("White BG"), rightPane);
     previewControls->addWidget(m_whiteBgCheck);
+    previewControls->addWidget(new QLabel(tr("Light"), rightPane));
+    m_lightDial = new QDial(rightPane);
+    m_lightDial->setRange(0, 359);
+    m_lightDial->setValue(45);
+    m_lightDial->setWrapping(true);
+    m_lightDial->setNotchesVisible(true);
+    m_lightDial->setFixedSize(42, 42);
+    m_lightDial->setToolTip(tr("Rotate light source."));
+    previewControls->addWidget(m_lightDial);
+    previewControls->addWidget(new QLabel(tr("Intensity"), rightPane));
+    m_lightIntensitySlider = new QSlider(Qt::Horizontal, rightPane);
+    m_lightIntensitySlider->setRange(20, 300);
+    m_lightIntensitySlider->setValue(180);
+    m_lightIntensitySlider->setFixedWidth(88);
+    m_lightIntensitySlider->setToolTip(tr("Light intensity."));
+    previewControls->addWidget(m_lightIntensitySlider);
+    m_lightColorButton = new QPushButton(tr("Color"), rightPane);
+    m_lightColorButton->setToolTip(tr("Light color."));
+    auto updateLightColorButton = [this]() {
+        if (m_lightColorButton)
+            m_lightColorButton->setStyleSheet(QStringLiteral("QPushButton { background:%1; }").arg(m_lightColor.name()));
+    };
+    updateLightColorButton();
+    connect(m_lightColorButton, &QPushButton::clicked, this, [this, updateLightColorButton]() {
+        const QColor chosen = QColorDialog::getColor(m_lightColor, this, tr("Light Color"));
+        if (!chosen.isValid())
+            return;
+        m_lightColor = chosen;
+        updateLightColorButton();
+        if (m_viewport)
+            m_viewport->setLightColor(m_lightColor);
+    });
+    previewControls->addWidget(m_lightColorButton);
     previewControls->addStretch(1);
     rightLayout->addLayout(previewControls);
 
@@ -271,6 +307,14 @@ bool ModelViewerPage::ensureViewport()
     connect(m_meshCheck, &QCheckBox::toggled, m_viewport, &ModelViewport3D::setMeshVisible);
     connect(m_texturesCheck, &QCheckBox::toggled, m_viewport, &ModelViewport3D::setTexturesVisible);
     connect(m_whiteBgCheck, &QCheckBox::toggled, m_viewport, &ModelViewport3D::setWhiteBackground);
+    connect(m_lightDial, &QDial::valueChanged, m_viewport, [this](int value) {
+        if (m_viewport)
+            m_viewport->setLightAzimuth(static_cast<float>(value));
+    });
+    connect(m_lightIntensitySlider, &QSlider::valueChanged, m_viewport, [this](int value) {
+        if (m_viewport)
+            m_viewport->setLightIntensity(static_cast<float>(value) / 100.0f);
+    });
     connect(m_viewport, &ModelViewport3D::modelLoaded, this,
             [this](const QString &filePath, bool success, const QString &message) {
         if (success)
@@ -285,6 +329,9 @@ bool ModelViewerPage::ensureViewport()
     m_viewport->setMeshVisible(m_meshCheck->isChecked());
     m_viewport->setTexturesVisible(m_texturesCheck->isChecked());
     m_viewport->setWhiteBackground(m_whiteBgCheck->isChecked());
+    m_viewport->setLightAzimuth(static_cast<float>(m_lightDial->value()));
+    m_viewport->setLightIntensity(static_cast<float>(m_lightIntensitySlider->value()) / 100.0f);
+    m_viewport->setLightColor(m_lightColor);
     return true;
 }
 
