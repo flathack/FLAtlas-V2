@@ -4660,8 +4660,10 @@ void SystemEditorPage::showMapContextMenu(const QPoint &globalPos,
     QHash<QAction *, QString> editTargets;
     QHash<QAction *, QString> deleteTargets;
     QHash<QAction *, QString> rotateTargets;
+    QStringList contextTargetNicknames;
     const QString cleanObjectNickname = objectNickname.trimmed();
     if (!cleanObjectNickname.isEmpty() && findObjectByNickname(cleanObjectNickname)) {
+        contextTargetNicknames.append(cleanObjectNickname);
         QAction *objectHeader = menu.addAction(cleanObjectNickname);
         objectHeader->setEnabled(false);
         editTargets.insert(menu.addAction(tr("Edit Object")), cleanObjectNickname);
@@ -4670,28 +4672,40 @@ void SystemEditorPage::showMapContextMenu(const QPoint &globalPos,
     }
     if (!zoneEntries.isEmpty()) {
         if (zoneEntries.size() == 1) {
+            contextTargetNicknames.append(zoneEntries.first().nickname);
             QAction *zoneHeader = menu.addAction(zoneEntries.first().label);
             zoneHeader->setEnabled(false);
             rotateTargets.insert(menu.addAction(tr("Rotate Zone")), zoneEntries.first().nickname);
-            editTargets.insert(menu.addAction(tr("Edit Object")), zoneEntries.first().nickname);
-            deleteTargets.insert(menu.addAction(tr("Delete Object")), zoneEntries.first().nickname);
+            editTargets.insert(menu.addAction(tr("Edit Zone")), zoneEntries.first().nickname);
+            deleteTargets.insert(menu.addAction(tr("Delete Zone")), zoneEntries.first().nickname);
         } else {
             QMenu *zonesMenu = menu.addMenu(tr("Zones under cursor"));
             for (const ZoneMenuEntry &entry : std::as_const(zoneEntries)) {
+                contextTargetNicknames.append(entry.nickname);
                 QMenu *zoneMenu = zonesMenu->addMenu(entry.label);
                 rotateTargets.insert(zoneMenu->addAction(tr("Rotate Zone")), entry.nickname);
-                editTargets.insert(zoneMenu->addAction(tr("Edit Object")), entry.nickname);
-                deleteTargets.insert(zoneMenu->addAction(tr("Delete Object")), entry.nickname);
+                editTargets.insert(zoneMenu->addAction(tr("Edit Zone")), entry.nickname);
+                deleteTargets.insert(zoneMenu->addAction(tr("Delete Zone")), entry.nickname);
             }
         }
         menu.addSeparator();
     }
 
     QAction *addObjectAction = menu.addAction(tr("Add Object..."));
-    QAction *deleteSelectionAction = menu.addAction(tr("Delete"));
-    QAction *propertiesAction = menu.addAction(tr("Edit Object"));
-    deleteSelectionAction->setEnabled(!m_selectedNicknames.isEmpty());
-    propertiesAction->setEnabled(m_selectedNicknames.size() == 1);
+    QAction *deleteSelectionAction = nullptr;
+    QAction *propertiesAction = nullptr;
+    const bool singleSelection = m_selectedNicknames.size() == 1;
+    const QString selectedNickname = singleSelection ? m_selectedNicknames.first().trimmed() : QString();
+    const bool selectionAlreadyTargeted =
+        singleSelection && contextTargetNicknames.contains(selectedNickname, Qt::CaseInsensitive);
+    if (!selectionAlreadyTargeted) {
+        deleteSelectionAction = menu.addAction(tr("Delete"));
+        deleteSelectionAction->setEnabled(!m_selectedNicknames.isEmpty());
+
+        const bool selectedZone = singleSelection && findZoneByNickname(selectedNickname);
+        propertiesAction = menu.addAction(selectedZone ? tr("Edit Zone") : tr("Edit Object"));
+        propertiesAction->setEnabled(singleSelection);
+    }
 
     QAction *selectedAction = menu.exec(globalPos);
     if (!selectedAction)
@@ -4713,11 +4727,11 @@ void SystemEditorPage::showMapContextMenu(const QPoint &globalPos,
         onAddObject();
         return;
     }
-    if (selectedAction == deleteSelectionAction) {
+    if (deleteSelectionAction && selectedAction == deleteSelectionAction) {
         onDeleteSelected();
         return;
     }
-    if (selectedAction == propertiesAction) {
+    if (propertiesAction && selectedAction == propertiesAction) {
         if (!m_selectedNicknames.isEmpty())
             editContextTarget(m_selectedNicknames.first());
         return;
