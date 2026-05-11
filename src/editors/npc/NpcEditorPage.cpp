@@ -395,16 +395,69 @@ QHash<QString, QStringList> npcNamesByFaction(const NpcBaseRecord &base)
     return result;
 }
 
+QString defaultBaseFactionWeight(const IniDocument &doc, const QVector<int> &oldIndexes)
+{
+    QHash<QString, int> simpleCounts;
+    QHash<QString, int> allCounts;
+    for (int idx : oldIndexes) {
+        const IniSection &section = doc.at(idx);
+        if (section.name.compare(QStringLiteral("BaseFaction"), Qt::CaseInsensitive) != 0)
+            continue;
+        const QString weight = sectionValue(section, QStringLiteral("weight"));
+        if (weight.isEmpty())
+            continue;
+        allCounts[weight] += 1;
+        if (!section.values(QStringLiteral("npc")).isEmpty()
+            && section.values(QStringLiteral("mission_type")).isEmpty()) {
+            simpleCounts[weight] += 1;
+        }
+    }
+
+    const QHash<QString, int> &counts = simpleCounts.isEmpty() ? allCounts : simpleCounts;
+    QString best = QStringLiteral("10");
+    int bestCount = -1;
+    for (auto it = counts.constBegin(); it != counts.constEnd(); ++it) {
+        if (it.value() > bestCount) {
+            best = it.key();
+            bestCount = it.value();
+        }
+    }
+    return best;
+}
+
+IniSection newBaseFactionSection(const QString &factionName,
+                                  const QStringList &npcNames,
+                                  const QString &weight)
+{
+    IniSection faction;
+    faction.name = QStringLiteral("BaseFaction");
+    faction.entries.append({QStringLiteral("faction"), factionName});
+    faction.entries.append({QStringLiteral("weight"), weight.trimmed().isEmpty() ? QStringLiteral("10") : weight.trimmed()});
+    for (const QString &npcName : npcNames)
+        faction.entries.append({QStringLiteral("npc"), npcName});
+    return faction;
+}
+
 IniSection updateBaseFactionSectionPreservingOrder(const IniSection &section,
-                                                   const QStringList &desiredNpcs)
+                                                   const QStringList &desiredNpcs,
+                                                   const QString &defaultWeight)
 {
     IniSection updated = section;
     updated.entries.clear();
 
     QStringList written;
+    bool hasWeight = false;
+    for (const auto &entry : section.entries) {
+        if (entry.first.compare(QStringLiteral("weight"), Qt::CaseInsensitive) == 0) {
+            hasWeight = true;
+            break;
+        }
+    }
     for (const auto &entry : section.entries) {
         if (entry.first.compare(QStringLiteral("npc"), Qt::CaseInsensitive) != 0) {
             updated.entries.append(entry);
+            if (entry.first.compare(QStringLiteral("faction"), Qt::CaseInsensitive) == 0 && !hasWeight)
+                updated.entries.append({QStringLiteral("weight"), defaultWeight});
             continue;
         }
         for (const QString &npcName : desiredNpcs) {
@@ -430,6 +483,7 @@ IniDocument rebuildMbaseBlockPreservingOrder(const IniDocument &doc,
 {
     IniDocument block;
     const QHash<QString, QStringList> npcsByFaction = npcNamesByFaction(base);
+    const QString baseFactionWeight = defaultBaseFactionWeight(doc, oldIndexes);
     QSet<QString> writtenFactionKeys;
     QSet<QString> writtenNpcKeys;
     int insertNewFactionsAfter = -1;
@@ -442,7 +496,7 @@ IniDocument rebuildMbaseBlockPreservingOrder(const IniDocument &doc,
         if (label == QStringLiteral("basefaction")) {
             const QString faction = sectionValue(section, QStringLiteral("faction"));
             writtenFactionKeys.insert(keyOf(faction));
-            block.append(updateBaseFactionSectionPreservingOrder(section, npcsByFaction.value(faction)));
+            block.append(updateBaseFactionSectionPreservingOrder(section, npcsByFaction.value(faction), baseFactionWeight));
             insertNewFactionsAfter = block.size() - 1;
             continue;
         }
@@ -466,12 +520,7 @@ IniDocument rebuildMbaseBlockPreservingOrder(const IniDocument &doc,
     for (auto it = npcsByFaction.constBegin(); it != npcsByFaction.constEnd(); ++it) {
         if (writtenFactionKeys.contains(keyOf(it.key())))
             continue;
-        IniSection faction;
-        faction.name = QStringLiteral("BaseFaction");
-        faction.entries.append({QStringLiteral("faction"), it.key()});
-        for (const QString &npcName : it.value())
-            faction.entries.append({QStringLiteral("npc"), npcName});
-        newFactionSections.append(faction);
+        newFactionSections.append(newBaseFactionSection(it.key(), it.value(), baseFactionWeight));
     }
     if (!newFactionSections.isEmpty()) {
         const int insertAt = insertNewFactionsAfter >= 0 ? insertNewFactionsAfter + 1 : qMin(1, block.size());
@@ -1189,12 +1238,7 @@ bool NpcEditorPage::saveCurrentFile(QString *errorMessage)
             mbase.entries.append({QStringLiteral("nickname"), base.nickname});
             block.append(mbase);
             for (auto it = npcsByFaction.constBegin(); it != npcsByFaction.constEnd(); ++it) {
-                IniSection faction;
-                faction.name = QStringLiteral("BaseFaction");
-                faction.entries.append({QStringLiteral("faction"), it.key()});
-                for (const QString &npcName : it.value())
-                    faction.entries.append({QStringLiteral("npc"), npcName});
-                block.append(faction);
+                block.append(newBaseFactionSection(it.key(), it.value(), QStringLiteral("10")));
             }
             for (const NpcRecord &npc : base.npcs)
                 block.append(npcToSection(npc, m_modBribePrice));
