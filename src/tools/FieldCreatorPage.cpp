@@ -30,6 +30,7 @@
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPolygonF>
 #include <QPushButton>
 #include <QSaveFile>
@@ -68,6 +69,58 @@ constexpr double kPi = 3.14159265358979323846;
 using flatlas::infrastructure::IniDocument;
 using flatlas::infrastructure::IniParser;
 using flatlas::infrastructure::IniSection;
+
+class RulerWidget : public QWidget
+{
+public:
+    explicit RulerWidget(Qt::Orientation orientation, QWidget *parent = nullptr)
+        : QWidget(parent)
+        , m_orientation(orientation)
+    {
+        if (m_orientation == Qt::Vertical)
+            setFixedWidth(42);
+        else
+            setFixedHeight(28);
+    }
+
+    void setLengthMeters(double meters)
+    {
+        m_lengthMeters = qMax(1.0, meters);
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.fillRect(rect(), QColor(10, 14, 20));
+        painter.setPen(QColor(130, 160, 190));
+
+        const int majorTicks = 4;
+        for (int i = 0; i <= majorTicks; ++i) {
+            const double ratio = static_cast<double>(i) / majorTicks;
+            const int labelValue = qRound(m_lengthMeters * ratio);
+            if (m_orientation == Qt::Vertical) {
+                const int y = height() - qRound(ratio * (height() - 8)) - 4;
+                painter.drawLine(width() - 12, y, width() - 2, y);
+                painter.drawText(QRect(2, y - 8, width() - 16, 16), Qt::AlignRight | Qt::AlignVCenter,
+                                 QString::number(labelValue));
+            } else {
+                const int x = qRound(ratio * (width() - 8)) + 4;
+                painter.drawLine(x, 0, x, 10);
+                painter.drawText(QRect(x - 28, 11, 56, 14), Qt::AlignCenter, QString::number(labelValue));
+            }
+        }
+        painter.setPen(QColor(190, 210, 230));
+        painter.drawText(rect().adjusted(2, 2, -2, -2), m_orientation == Qt::Vertical ? Qt::AlignTop : Qt::AlignRight,
+                         QStringLiteral("m"));
+    }
+
+private:
+    Qt::Orientation m_orientation = Qt::Horizontal;
+    double m_lengthMeters = 1.0;
+};
 
 QColor parseColorText(const QString &value, const QColor &fallback)
 {
@@ -108,6 +161,44 @@ void addUniqueAsset(QVector<FieldAsset> &assets, const FieldAsset &asset)
             return;
     }
     assets.append(asset);
+}
+
+void includePoint(flatlas::infrastructure::ModelBounds &bounds, const QVector3D &point)
+{
+    if (!bounds.valid) {
+        bounds.minCorner = point;
+        bounds.maxCorner = point;
+        bounds.valid = true;
+        return;
+    }
+    bounds.minCorner.setX(qMin(bounds.minCorner.x(), point.x()));
+    bounds.minCorner.setY(qMin(bounds.minCorner.y(), point.y()));
+    bounds.minCorner.setZ(qMin(bounds.minCorner.z(), point.z()));
+    bounds.maxCorner.setX(qMax(bounds.maxCorner.x(), point.x()));
+    bounds.maxCorner.setY(qMax(bounds.maxCorner.y(), point.y()));
+    bounds.maxCorner.setZ(qMax(bounds.maxCorner.z(), point.z()));
+}
+
+void collectModelBounds(const flatlas::infrastructure::ModelNode &node,
+                        const QVector3D &parentOffset,
+                        flatlas::infrastructure::ModelBounds &bounds)
+{
+    const QVector3D nodeOffset = parentOffset + node.origin;
+    for (const auto &mesh : node.meshes) {
+        for (const auto &vertex : mesh.vertices)
+            includePoint(bounds, nodeOffset + node.rotation.rotatedVector(vertex.position));
+    }
+    for (const auto &child : node.children)
+        collectModelBounds(child, nodeOffset, bounds);
+}
+
+flatlas::infrastructure::ModelBounds modelBounds(const flatlas::infrastructure::ModelNode &node)
+{
+    flatlas::infrastructure::ModelBounds bounds;
+    collectModelBounds(node, QVector3D(), bounds);
+    if (bounds.valid)
+        bounds.radius = (bounds.maxCorner - bounds.minCorner).length() * 0.5f;
+    return bounds;
 }
 
 QVector<FieldAsset> fallbackAssets(FieldTemplateKind kind)
@@ -350,7 +441,9 @@ private:
 #ifdef FLATLAS_HAS_QT3D
     void setupQt3D()
     {
-        auto *layout = new QVBoxLayout(this);
+        auto *layout = m_compact
+            ? static_cast<QLayout *>(new QGridLayout(this))
+            : static_cast<QLayout *>(new QVBoxLayout(this));
         layout->setContentsMargins(0, 0, 0, 0);
         layout->setSpacing(0);
 
@@ -363,7 +456,18 @@ private:
                                     : tr("Click the preview, then use W/A/S/D, Space/Ctrl and mouse drag to fly through the field."));
         m_container->installEventFilter(this);
         m_window->installEventFilter(this);
-        layout->addWidget(m_container, 1);
+        if (m_compact) {
+            auto *grid = qobject_cast<QGridLayout *>(layout);
+            m_verticalRuler = new RulerWidget(Qt::Vertical, this);
+            m_horizontalRuler = new RulerWidget(Qt::Horizontal, this);
+            grid->addWidget(m_verticalRuler, 0, 0);
+            grid->addWidget(m_container, 0, 1);
+            grid->addWidget(m_horizontalRuler, 1, 1);
+            grid->setColumnStretch(1, 1);
+            grid->setRowStretch(0, 1);
+        } else {
+            qobject_cast<QVBoxLayout *>(layout)->addWidget(m_container, 1);
+        }
 
         m_rootEntity = new Qt3DCore::QEntity();
         m_sceneRoot = new Qt3DCore::QEntity(m_rootEntity);
@@ -447,6 +551,10 @@ private:
 
         QVector<FieldPlacedObject> objects = m_field.placedObjects;
         if (objects.isEmpty()) {
+            if (m_compact) {
+                updateRulers(QVector3D());
+                return;
+            }
             QVector<FieldAsset> assets;
             for (const QString &shape : m_field.cubeShapeFallbacks)
                 assets.append({shape, {}, QStringLiteral("preset")});
@@ -474,12 +582,31 @@ private:
         if (!modelPath.isEmpty()) {
             try {
                 const auto decoded = flatlas::rendering::ModelCache::instance().load(modelPath);
-                if (addModelNode(decoded.rootNode, host, modelPath, 0) > 0)
+                Qt3DCore::QEntity *modelParent = host;
+                if (m_compact) {
+                    const flatlas::infrastructure::ModelBounds bounds = modelBounds(decoded.rootNode);
+                    if (bounds.valid) {
+                        modelParent = new Qt3DCore::QEntity(host);
+                        auto *fitTransform = new Qt3DCore::QTransform(modelParent);
+                        const QVector3D size = bounds.maxCorner - bounds.minCorner;
+                        const float largestAxis = qMax(size.x(), qMax(size.y(), size.z()));
+                        const float targetSize = static_cast<float>(previewCubeScale() * 1.35);
+                        const float fitScale = largestAxis > 0.001f ? targetSize / largestAxis : 1.0f;
+                        const QVector3D center = (bounds.minCorner + bounds.maxCorner) * 0.5f;
+                        fitTransform->setScale(fitScale);
+                        fitTransform->setTranslation(-center * fitScale);
+                        modelParent->addComponent(fitTransform);
+                        updateRulers(size * fitScale);
+                    }
+                }
+                if (addModelNode(decoded.rootNode, modelParent, modelPath, 0) > 0)
                     return;
             } catch (...) {
             }
         }
 
+        if (m_compact)
+            updateRulers(QVector3D(previewCubeScale(), previewCubeScale(), previewCubeScale()));
         addFallbackMesh(object, host);
     }
 
@@ -561,6 +688,18 @@ private:
             m_skyRenderer->setCenter(m_camera->position());
     }
 
+    void updateRulers(const QVector3D &size)
+    {
+        if (!m_compact)
+            return;
+        const double widthMeters = qMax(1.0, static_cast<double>(qMax(size.x(), size.z())));
+        const double heightMeters = qMax(1.0, static_cast<double>(size.y()));
+        if (m_horizontalRuler)
+            m_horizontalRuler->setLengthMeters(widthMeters);
+        if (m_verticalRuler)
+            m_verticalRuler->setLengthMeters(heightMeters);
+    }
+
     Qt3DExtras::Qt3DWindow *m_window = nullptr;
     QWidget *m_container = nullptr;
     Qt3DCore::QEntity *m_rootEntity = nullptr;
@@ -570,6 +709,8 @@ private:
     flatlas::rendering::SkyRenderer *m_skyRenderer = nullptr;
 #endif
 
+    RulerWidget *m_horizontalRuler = nullptr;
+    RulerWidget *m_verticalRuler = nullptr;
     bool m_compact = false;
     FieldTemplate m_field;
 };
@@ -724,7 +865,7 @@ void FieldCreatorPage::buildUi()
     for (QSpinBox *spin : {m_rotateXSpin, m_rotateYSpin, m_rotateZSpin})
         spin->setRange(-360, 360);
     m_mineRoleCheck = new QCheckBox(tr("Mine role"), placementBox);
-    auto *addButton = new QPushButton(tr("Add One"), placementBox);
+    auto *addButton = new QPushButton(tr("Add Selected"), placementBox);
     auto *autoButton = new QPushButton(tr("Auto Fill"), placementBox);
     m_autoCountSpin = new QSpinBox(placementBox);
     m_autoCountSpin->setRange(1, 500);
@@ -1010,28 +1151,53 @@ void FieldCreatorPage::refreshPlacementTable()
 
 void FieldCreatorPage::addManualObject()
 {
-    FieldPlacedObject object;
-    object.assetNickname = m_manualAssetEdit->text().trimmed();
-    if (object.assetNickname.isEmpty()) {
+    const QVector<FieldAsset> assets = selectedAssets();
+    QStringList nicknames;
+    for (const FieldAsset &asset : assets)
+        nicknames.append(asset.nickname);
+    if (nicknames.isEmpty())
+        nicknames.append(m_manualAssetEdit->text().trimmed());
+    nicknames.removeAll(QString());
+
+    if (nicknames.isEmpty()) {
         QMessageBox::warning(this, tr("Field Creator"), tr("Please select or enter an asset first."));
         return;
     }
-    object.x = m_xSpin->value();
-    object.y = m_ySpin->value();
-    object.z = m_zSpin->value();
-    object.rotateX = m_rotateXSpin->value();
-    object.rotateY = m_rotateYSpin->value();
-    object.rotateZ = m_rotateZSpin->value();
-    object.mineRole = m_mineRoleCheck->isChecked();
-    m_template.placedObjects.append(object);
+
+    const double spacing = nicknames.size() > 1 ? 1.6 / static_cast<double>(qMax(1, nicknames.size() - 1)) : 0.0;
+    for (int index = 0; index < nicknames.size(); ++index) {
+        FieldPlacedObject object;
+        object.assetNickname = nicknames.at(index);
+        object.x = m_xSpin->value() + (nicknames.size() > 1 ? -0.8 + spacing * index : 0.0);
+        object.y = m_ySpin->value();
+        object.z = m_zSpin->value();
+        object.rotateX = m_rotateXSpin->value();
+        object.rotateY = m_rotateYSpin->value();
+        object.rotateZ = m_rotateZSpin->value();
+        object.mineRole = m_mineRoleCheck->isChecked()
+            || object.assetNickname.contains(QStringLiteral("mine"), Qt::CaseInsensitive)
+            || currentKind() == FieldTemplateKind::Mine
+            || currentKind() == FieldTemplateKind::Gas;
+        m_template.placedObjects.append(object);
+    }
     refreshPreviews();
 }
 
 void FieldCreatorPage::autoDistributeObjects()
 {
-    const QVector<FieldAsset> assets = selectedAssets().isEmpty() ? m_assets : selectedAssets();
+    QVector<FieldAsset> assets;
+    int count = m_autoCountSpin->value();
+    if (!m_template.placedObjects.isEmpty()) {
+        count = m_template.placedObjects.size();
+        for (const FieldPlacedObject &object : std::as_const(m_template.placedObjects)) {
+            if (!object.assetNickname.trimmed().isEmpty())
+                assets.append({object.assetNickname, {}, QStringLiteral("placed")});
+        }
+    }
+    if (assets.isEmpty())
+        assets = selectedAssets().isEmpty() ? m_assets : selectedAssets();
     m_template.placedObjects = FieldTemplateGenerator::autoDistribute(
-        assets, currentKind(), m_autoCountSpin->value(), static_cast<quint32>(m_seedSpin->value()), m_spreadCombo->currentText());
+        assets, currentKind(), count, static_cast<quint32>(m_seedSpin->value()), m_spreadCombo->currentText());
     refreshPreviews();
 }
 

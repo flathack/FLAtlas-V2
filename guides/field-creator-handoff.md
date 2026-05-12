@@ -81,7 +81,9 @@ Aktuelle Qt3D-Steuerung:
 
 Asteroid-/Mine-Assets werden aus `DATA\SOLAR\asteroidarch.ini` über `nickname` -> `DA_archetype` aufgelöst. Die Modelle werden über `ModelCache`/`CmpLoader` geladen und mit `ModelGeometryBuilder` gerendert. Falls kein Modell gefunden wird, wird ein einfacher Fallback-Körper angezeigt.
 
-Modelltexturen werden in der Field-Preview und in der kleinen Asset-Preview unter der Asset-Palette über `FreelancerMaterialResolver::loadTextureForMesh` und `MaterialFactory::createFromImage` geladen. Beide Qt3D-Previews nutzen außerdem `SkyRenderer`, damit derselbe 360-Grad-Star-Hintergrund wie in der 3D-Systemansicht sichtbar ist.
+Modelltexturen werden in der Field-Preview und in der kleinen Asset-Preview unter der Asset-Palette über `FreelancerMaterialResolver::loadTextureForMesh` und `MaterialFactory::createFromImage` geladen. Beide Qt3D-Previews nutzen außerdem `SkyRenderer`, damit derselbe 360-Grad-Star-Hintergrund wie in der 3D-Systemansicht sichtbar ist. Die Asset-Preview ist ein eigener kompakter Fit-Modus mit horizontalem/vertikalem Meter-Lineal, damit die sichtbare Objektgröße besser einschätzbar ist.
+
+Mehrfachauswahl in der Asset-Palette ist bewusst unterstützt: `Add Selected` fügt alle selektierten Assets als einzelne platzierte Objekte hinzu. `Auto Fill` nutzt bevorzugt die bereits in der Platzierungsliste enthaltenen Objekte und verteilt genau diese Anzahl neu; nur wenn die Liste leer ist, fällt es auf die aktuelle Auswahl bzw. die ganze Asset-Palette zurück.
 
 ## Bekannte Einschränkungen
 
@@ -107,7 +109,7 @@ Modelltexturen werden in der Field-Preview und in der kleinen Asset-Preview unte
 
 3. Echte Materialien/Texturen:
    - vorhandene `ModelViewport3D`/`MaterialFactory`-Texturpfade wiederverwenden
-   - Asset-Preview nicht nur farbig, sondern mit Freelancer-Materialien darstellen
+   - Asset-Preview-Scale/Lineal visuell gegen echte Freelancer-Modelle prüfen und bei Bedarf feinjustieren
 
 4. Nebula-Preview:
    - TexturePanel-Shapes als Billboard-/Cloud-Planes rendern
