@@ -7,6 +7,7 @@ class QComboBox;
 class QLabel;
 class QPushButton;
 class QTextEdit;
+class QTableWidget;
 
 namespace flatlas::domain { class UniverseData; }
 
@@ -32,15 +33,19 @@ signals:
 private:
     void buildUi();
     void populateSystems();
+    void populateObjectCombo(QComboBox *combo, const QString &systemNickname);
     void onFindPath();
 
     const flatlas::domain::UniverseData *m_universe = nullptr;
     QString m_universeFilePath;
     QComboBox *m_fromCombo = nullptr;
+    QComboBox *m_fromObjectCombo = nullptr;
     QComboBox *m_toCombo = nullptr;
+    QComboBox *m_toObjectCombo = nullptr;
     QPushButton *m_findButton = nullptr;
     QLabel *m_resultLabel = nullptr;
     QTextEdit *m_pathDisplay = nullptr;
+    QTableWidget *m_segmentTable = nullptr;
     QStringList m_lastPath;
 };
 
