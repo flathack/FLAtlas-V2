@@ -2471,10 +2471,12 @@ void MainWindow::openModelViewer()
 void MainWindow::openShortestPathDialog()
 {
     const flatlas::domain::UniverseData *udata = nullptr;
+    QString universeFilePath;
     if (m_centerTabs) {
         for (int i = 0; i < m_centerTabs->count(); ++i) {
             if (auto *uep = qobject_cast<flatlas::editors::UniverseEditorPage *>(m_centerTabs->widget(i))) {
                 udata = uep->data();
+                universeFilePath = uep->filePath();
                 break;
             }
         }
@@ -2484,7 +2486,7 @@ void MainWindow::openShortestPathDialog()
             tr("Please open a Universe file first."));
         return;
     }
-    auto *dlg = new flatlas::tools::PathFinderDialog(udata, this);
+    auto *dlg = new flatlas::tools::PathFinderDialog(udata, universeFilePath, this);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->show();
 }

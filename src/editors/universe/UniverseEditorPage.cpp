@@ -1138,7 +1138,7 @@ void UniverseEditorPage::onFindShortestPath()
 {
     if (!m_data) return;
 
-    auto *dialog = new flatlas::tools::PathFinderDialog(m_data.get(), this);
+    auto *dialog = new flatlas::tools::PathFinderDialog(m_data.get(), m_filePath, this);
     connect(dialog, &flatlas::tools::PathFinderDialog::pathFound,
             this, &UniverseEditorPage::highlightPath);
     dialog->setAttribute(Qt::WA_DeleteOnClose);

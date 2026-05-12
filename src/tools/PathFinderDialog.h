@@ -19,6 +19,7 @@ class PathFinderDialog : public QDialog
 
 public:
     explicit PathFinderDialog(const flatlas::domain::UniverseData *universe,
+                              const QString &universeFilePath = QString(),
                               QWidget *parent = nullptr);
 
     /// Gibt den zuletzt berechneten Pfad zurück (System-Nicknames).
@@ -34,6 +35,7 @@ private:
     void onFindPath();
 
     const flatlas::domain::UniverseData *m_universe = nullptr;
+    QString m_universeFilePath;
     QComboBox *m_fromCombo = nullptr;
     QComboBox *m_toCombo = nullptr;
     QPushButton *m_findButton = nullptr;
