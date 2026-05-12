@@ -73,6 +73,83 @@ private slots:
         QVERIFY(FieldTemplateGenerator::generateSystemLinkPreview(asteroid).startsWith(QStringLiteral("[Asteroids]\n")));
         QVERIFY(FieldTemplateGenerator::generateSystemLinkPreview(nebula).startsWith(QStringLiteral("[Nebula]\n")));
     }
+
+    void parsesAsteroidTemplateForEditing()
+    {
+        const QString ini = QStringLiteral(
+            "[TexturePanels]\n"
+            "file = solar\\asteroids\\mine_shapes.ini\n"
+            "\n"
+            "[Field]\n"
+            "cube_size = 275\n"
+            "fill_dist = 2000\n"
+            "diffuse_color = 214, 216, 255\n"
+            "ambient_color = 96, 101, 128\n"
+            "empty_cube_frequency = 0.25\n"
+            "\n"
+            "[properties]\n"
+            "flag = MINE_DANGER_OBJECTS\n"
+            "\n"
+            "[Cube]\n"
+            "asteroid = mine_spike1, -0.90, 0.00, 0.05, 110, 0, 10, mine\n"
+            "\n"
+            "[AsteroidBillboards]\n"
+            "count = 120\n"
+            "shape = spike_mine_tri\n"
+            "\n"
+            "[DynamicAsteroids]\n"
+            "count = 0\n");
+
+        const FieldTemplate field = FieldTemplateGenerator::parseFieldIni(QStringLiteral("loaded_mine.ini"), ini);
+
+        QCOMPARE(field.kind, FieldTemplateKind::Mine);
+        QCOMPARE(field.fileName, QStringLiteral("loaded_mine.ini"));
+        QCOMPARE(field.texturePanelsFile, QStringLiteral("solar\\asteroids\\mine_shapes.ini"));
+        QCOMPARE(field.cubeSize, 275);
+        QCOMPARE(field.fillDistance, 2000);
+        QCOMPARE(field.billboardCount, 120);
+        QCOMPARE(field.dynamicCount, 0);
+        QCOMPARE(field.placedObjects.size(), 1);
+        QCOMPARE(field.placedObjects.first().assetNickname, QStringLiteral("mine_spike1"));
+        QVERIFY(field.placedObjects.first().mineRole);
+    }
+
+    void parsesNebulaTemplateForEditing()
+    {
+        const QString ini = QStringLiteral(
+            "[TexturePanels]\n"
+            "file = solar\\nebula\\crow_shapes.ini\n"
+            "\n"
+            "[Fog]\n"
+            "distance = 1800\n"
+            "color = 24, 56, 92\n"
+            "\n"
+            "[Exterior]\n"
+            "fill_shape = nebula_circle2\n"
+            "color = 53, 105, 157\n"
+            "\n"
+            "[NebulaLight]\n"
+            "ambient = 41, 77, 104\n"
+            "\n"
+            "[Clouds]\n"
+            "puff_count = 64\n"
+            "puff_shape = crow_cloud1\n"
+            "puff_shape = crow_cloud2\n"
+            "\n"
+            "[BackgroundLightning]\n"
+            "duration = 0.50\n"
+            "gap = 2.25\n");
+
+        const FieldTemplate field = FieldTemplateGenerator::parseFieldIni(QStringLiteral("loaded_nebula.ini"), ini);
+
+        QCOMPARE(field.kind, FieldTemplateKind::Nebula);
+        QCOMPARE(field.fileName, QStringLiteral("loaded_nebula.ini"));
+        QCOMPARE(field.texturePanelsFile, QStringLiteral("solar\\nebula\\crow_shapes.ini"));
+        QCOMPARE(field.fogDistance, 1800);
+        QCOMPARE(field.puffCount, 64);
+        QCOMPARE(field.cubeShapeFallbacks, QStringList({QStringLiteral("crow_cloud1"), QStringLiteral("crow_cloud2")}));
+        QCOMPARE(field.lightningGap, 2.25);
+    }
 };
 
 QTEST_MAIN(FieldTemplateGeneratorTest)

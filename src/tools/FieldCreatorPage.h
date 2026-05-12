@@ -31,12 +31,15 @@ private:
     void buildUi();
     void loadAssetsForKind();
     void applyCurrentPreset();
+    void applyTemplateToUi(const FieldTemplate &field);
     void updateTemplateFromUi();
     void refreshPreviews();
     void refreshPlacementTable();
     void addManualObject();
     void autoDistributeObjects();
+    void loadTemplate();
     void saveTemplate();
+    void updateAssetPreview();
     QVector<FieldAsset> selectedAssets() const;
     FieldTemplateKind currentKind() const;
 
@@ -47,7 +50,6 @@ private:
     QComboBox *m_kindCombo = nullptr;
     QComboBox *m_presetCombo = nullptr;
     QLineEdit *m_fileNameEdit = nullptr;
-    QLineEdit *m_zoneNicknameEdit = nullptr;
     QLineEdit *m_texturePanelsEdit = nullptr;
     QLineEdit *m_billboardShapeEdit = nullptr;
     QLineEdit *m_spacedustEdit = nullptr;
@@ -78,6 +80,7 @@ private:
     QSpinBox *m_autoCountSpin = nullptr;
     QSpinBox *m_seedSpin = nullptr;
     QComboBox *m_spreadCombo = nullptr;
+    FieldPreviewWidget *m_assetPreview = nullptr;
     FieldPreviewWidget *m_preview = nullptr;
     QTextEdit *m_linkPreview = nullptr;
     QTextEdit *m_iniPreview = nullptr;

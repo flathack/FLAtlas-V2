@@ -74,6 +74,7 @@ public:
     static QString defaultZoneNickname(FieldTemplateKind kind);
     static QVector<FieldTemplate> presets();
     static FieldTemplate preset(FieldTemplateKind kind);
+    static FieldTemplate parseFieldIni(const QString &fileName, const QString &iniText, QString *errorMessage = nullptr);
     static QString generateFieldIni(const FieldTemplate &field);
     static QString generateSystemLinkPreview(const FieldTemplate &field);
     static QString normalizedFileName(QString fileName, FieldTemplateKind kind);

@@ -1,5 +1,7 @@
 #include "FieldTemplateGenerator.h"
 
+#include "infrastructure/parser/IniParser.h"
+
 #include <QFileInfo>
 #include <QRandomGenerator>
 #include <QtMath>
@@ -10,9 +12,122 @@ namespace flatlas::tools {
 
 namespace {
 
+using flatlas::infrastructure::IniDocument;
+using flatlas::infrastructure::IniParser;
+using flatlas::infrastructure::IniSection;
+
 QString number(double value, int precision = 2)
 {
     return QString::number(value, 'f', precision);
+}
+
+const IniSection *findSection(const IniDocument &doc, const QString &name)
+{
+    for (const IniSection &section : doc) {
+        if (section.name.compare(name, Qt::CaseInsensitive) == 0)
+            return &section;
+    }
+    return nullptr;
+}
+
+QVector<const IniSection *> findSections(const IniDocument &doc, const QString &name)
+{
+    QVector<const IniSection *> sections;
+    for (const IniSection &section : doc) {
+        if (section.name.compare(name, Qt::CaseInsensitive) == 0)
+            sections.append(&section);
+    }
+    return sections;
+}
+
+int intValue(const IniSection *section, const QString &key, int fallback)
+{
+    if (!section)
+        return fallback;
+    bool ok = false;
+    const int value = section->value(key).trimmed().toInt(&ok);
+    return ok ? value : fallback;
+}
+
+double doubleValue(const IniSection *section, const QString &key, double fallback)
+{
+    if (!section)
+        return fallback;
+    bool ok = false;
+    const double value = section->value(key).trimmed().toDouble(&ok);
+    return ok ? value : fallback;
+}
+
+QColor colorValue(const IniSection *section, const QString &key, const QColor &fallback)
+{
+    if (!section)
+        return fallback;
+    const QStringList parts = section->value(key).split(QLatin1Char(','), Qt::SkipEmptyParts);
+    if (parts.size() < 3)
+        return fallback;
+    bool okR = false;
+    bool okG = false;
+    bool okB = false;
+    const int r = parts.at(0).trimmed().toInt(&okR);
+    const int g = parts.at(1).trimmed().toInt(&okG);
+    const int b = parts.at(2).trimmed().toInt(&okB);
+    if (!okR || !okG || !okB)
+        return fallback;
+    return QColor(std::clamp(r, 0, 255), std::clamp(g, 0, 255), std::clamp(b, 0, 255));
+}
+
+FieldTemplateKind inferAsteroidKind(const IniDocument &doc, const FieldTemplate &field)
+{
+    QStringList flags;
+    for (const IniSection *section : findSections(doc, QStringLiteral("properties")))
+        flags.append(section->values(QStringLiteral("flag")));
+    const QString joined = flags.join(QLatin1Char(' ')).toLower();
+    const QString details = QStringList{field.fileName, field.texturePanelsFile, field.billboardShape,
+                                        field.cubeShapeFallbacks.join(QLatin1Char(' '))}
+                                .join(QLatin1Char(' '))
+                                .toLower();
+    if (joined.contains(QStringLiteral("mine")) || details.contains(QStringLiteral("mine")))
+        return FieldTemplateKind::Mine;
+    if (joined.contains(QStringLiteral("debris")) || details.contains(QStringLiteral("debris")))
+        return FieldTemplateKind::Debris;
+    if (joined.contains(QStringLiteral("ice")) || details.contains(QStringLiteral("ice")))
+        return FieldTemplateKind::Ice;
+    if (joined.contains(QStringLiteral("gas")) || details.contains(QStringLiteral("gas"))
+        || details.contains(QStringLiteral("oxygen")))
+        return FieldTemplateKind::Gas;
+    return FieldTemplateKind::Asteroid;
+}
+
+QVector<FieldPlacedObject> parseCubeObjects(const IniDocument &doc)
+{
+    QVector<FieldPlacedObject> objects;
+    for (const IniSection *section : findSections(doc, QStringLiteral("Cube"))) {
+        for (const auto &entry : section->entries) {
+            if (entry.first.compare(QStringLiteral("asteroid"), Qt::CaseInsensitive) != 0)
+                continue;
+            const QStringList parts = entry.second.split(QLatin1Char(','), Qt::SkipEmptyParts);
+            if (parts.size() < 7)
+                continue;
+            bool okX = false;
+            bool okY = false;
+            bool okZ = false;
+            bool okRx = false;
+            bool okRy = false;
+            bool okRz = false;
+            FieldPlacedObject object;
+            object.assetNickname = parts.at(0).trimmed();
+            object.x = parts.at(1).trimmed().toDouble(&okX);
+            object.y = parts.at(2).trimmed().toDouble(&okY);
+            object.z = parts.at(3).trimmed().toDouble(&okZ);
+            object.rotateX = parts.at(4).trimmed().toInt(&okRx);
+            object.rotateY = parts.at(5).trimmed().toInt(&okRy);
+            object.rotateZ = parts.at(6).trimmed().toInt(&okRz);
+            object.mineRole = parts.size() > 7 && parts.at(7).trimmed().compare(QStringLiteral("mine"), Qt::CaseInsensitive) == 0;
+            if (okX && okY && okZ && okRx && okRy && okRz && !object.assetNickname.isEmpty())
+                objects.append(object);
+        }
+    }
+    return objects;
 }
 
 QStringList asteroidFlags(FieldTemplateKind kind)
@@ -241,6 +356,76 @@ FieldTemplate FieldTemplateGenerator::preset(FieldTemplateKind kind)
             return field;
     }
     return all.isEmpty() ? FieldTemplate{} : all.first();
+}
+
+FieldTemplate FieldTemplateGenerator::parseFieldIni(const QString &fileName, const QString &iniText, QString *errorMessage)
+{
+    if (errorMessage)
+        errorMessage->clear();
+
+    const IniDocument doc = IniParser::parseText(iniText);
+    const bool isNebula = findSection(doc, QStringLiteral("Fog")) || findSection(doc, QStringLiteral("Clouds"))
+        || findSection(doc, QStringLiteral("Exterior"));
+    FieldTemplate field = preset(isNebula ? FieldTemplateKind::Nebula : FieldTemplateKind::Asteroid);
+    field.fileName = normalizedFileName(fileName, field.kind);
+    field.zoneNickname = defaultZoneNickname(field.kind);
+    field.placedObjects.clear();
+
+    const IniSection *texturePanels = findSection(doc, QStringLiteral("TexturePanels"));
+    if (texturePanels)
+        field.texturePanelsFile = texturePanels->value(QStringLiteral("file"), field.texturePanelsFile).trimmed();
+
+    if (isNebula) {
+        const IniSection *fog = findSection(doc, QStringLiteral("Fog"));
+        const IniSection *exterior = findSection(doc, QStringLiteral("Exterior"));
+        const IniSection *light = findSection(doc, QStringLiteral("NebulaLight"));
+        const IniSection *clouds = findSection(doc, QStringLiteral("Clouds"));
+        const IniSection *lightning = findSection(doc, QStringLiteral("BackgroundLightning"));
+        field.fogDistance = intValue(fog, QStringLiteral("distance"), field.fogDistance);
+        field.fogColor = colorValue(fog, QStringLiteral("color"), field.fogColor);
+        field.fillShape = exterior ? exterior->value(QStringLiteral("fill_shape"), field.fillShape).trimmed() : field.fillShape;
+        field.billboardShape = field.fillShape;
+        field.primaryColor = colorValue(exterior, QStringLiteral("color"), field.primaryColor);
+        field.ambientColor = colorValue(light, QStringLiteral("ambient"), field.ambientColor);
+        field.puffCount = intValue(clouds, QStringLiteral("puff_count"), field.puffCount);
+        field.lightningDuration = doubleValue(lightning, QStringLiteral("duration"), field.lightningDuration);
+        field.lightningGap = doubleValue(lightning, QStringLiteral("gap"), field.lightningGap);
+        if (clouds) {
+            const QStringList shapes = clouds->values(QStringLiteral("puff_shape"));
+            if (!shapes.isEmpty()) {
+                field.cubeShapeFallbacks.clear();
+                for (const QString &shape : shapes) {
+                    const QString trimmed = shape.trimmed();
+                    if (!trimmed.isEmpty())
+                        field.cubeShapeFallbacks.append(trimmed);
+                }
+            }
+        }
+        return field;
+    }
+
+    const IniSection *fieldSection = findSection(doc, QStringLiteral("Field"));
+    const IniSection *billboards = findSection(doc, QStringLiteral("AsteroidBillboards"));
+    const IniSection *dynamic = findSection(doc, QStringLiteral("DynamicAsteroids"));
+    field.cubeSize = intValue(fieldSection, QStringLiteral("cube_size"), field.cubeSize);
+    field.fillDistance = intValue(fieldSection, QStringLiteral("fill_dist"), field.fillDistance);
+    field.emptyCubeFrequency = doubleValue(fieldSection, QStringLiteral("empty_cube_frequency"), field.emptyCubeFrequency);
+    field.primaryColor = colorValue(fieldSection, QStringLiteral("diffuse_color"), field.primaryColor);
+    field.ambientColor = colorValue(fieldSection, QStringLiteral("ambient_color"), field.ambientColor);
+    field.billboardCount = intValue(billboards, QStringLiteral("count"), field.billboardCount);
+    field.billboardShape = billboards ? billboards->value(QStringLiteral("shape"), field.billboardShape).trimmed() : field.billboardShape;
+    field.dynamicCount = intValue(dynamic, QStringLiteral("count"), field.dynamicCount);
+    field.placedObjects = parseCubeObjects(doc);
+    if (!field.placedObjects.isEmpty()) {
+        field.cubeShapeFallbacks.clear();
+        for (const FieldPlacedObject &object : std::as_const(field.placedObjects)) {
+            if (!field.cubeShapeFallbacks.contains(object.assetNickname, Qt::CaseInsensitive))
+                field.cubeShapeFallbacks.append(object.assetNickname);
+        }
+    }
+    field.kind = inferAsteroidKind(doc, field);
+    field.zoneNickname = defaultZoneNickname(field.kind);
+    return field;
 }
 
 QString FieldTemplateGenerator::generateFieldIni(const FieldTemplate &field)

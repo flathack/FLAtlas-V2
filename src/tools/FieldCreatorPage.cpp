@@ -2,11 +2,13 @@
 
 #include "core/EditingContext.h"
 #include "core/PathUtils.h"
+#include "infrastructure/freelancer/FreelancerMaterialResolver.h"
 #include "infrastructure/parser/IniParser.h"
 #include "rendering/preview/ModelCache.h"
 #include "rendering/view3d/FreeCameraController.h"
 #include "rendering/view3d/MaterialFactory.h"
 #include "rendering/view3d/ModelGeometryBuilder.h"
+#include "rendering/view3d/SkyRenderer.h"
 
 #include <QCheckBox>
 #include <QColor>
@@ -14,6 +16,8 @@
 #include <QDir>
 #include <QDoubleSpinBox>
 #include <QFileInfo>
+#include <QFile>
+#include <QFileDialog>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -33,6 +37,7 @@
 #include <QSplitter>
 #include <QSpinBox>
 #include <QTableWidget>
+#include <QTabWidget>
 #include <QTextEdit>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -43,7 +48,6 @@
 #include <Qt3DCore/QTransform>
 #include <Qt3DExtras/QCuboidMesh>
 #include <Qt3DExtras/QForwardRenderer>
-#include <Qt3DExtras/QPhongMaterial>
 #include <Qt3DExtras/QSphereMesh>
 #include <Qt3DExtras/Qt3DWindow>
 #include <Qt3DRender/QCamera>
@@ -52,6 +56,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace flatlas::tools {
@@ -179,19 +184,22 @@ QVector<FieldAsset> scanAssets(const QString &gameRoot, FieldTemplateKind kind)
 class FieldPreviewWidget : public QWidget
 {
 public:
-    explicit FieldPreviewWidget(QWidget *parent = nullptr)
+    explicit FieldPreviewWidget(QWidget *parent = nullptr, bool compact = false)
         : QWidget(parent)
+        , m_compact(compact)
     {
+        setMinimumHeight(m_compact ? 180 : 520);
 #ifdef FLATLAS_HAS_QT3D
         setupQt3D();
 #else
-        setMinimumHeight(260);
 #endif
         auto *timer = new QTimer(this);
         connect(timer, &QTimer::timeout, this, [this]() {
 #ifdef FLATLAS_HAS_QT3D
             if (m_freeCamera)
                 m_freeCamera->update(0.033f);
+            if (m_skyRenderer && m_camera)
+                m_skyRenderer->setCenter(m_camera->position());
 #else
             update();
 #endif
@@ -201,9 +209,14 @@ public:
 
     void setField(const FieldTemplate &field)
     {
+        const bool shouldFrameCamera = m_field.kind != field.kind
+            || m_field.cubeSize != field.cubeSize
+            || m_field.placedObjects.size() != field.placedObjects.size();
         m_field = field;
 #ifdef FLATLAS_HAS_QT3D
         rebuildQt3DScene();
+        if (shouldFrameCamera)
+            frameCameraForField();
 #endif
         update();
     }
@@ -216,6 +229,8 @@ protected:
             if (auto *mouseEvent = dynamic_cast<QMouseEvent *>(event)) {
                 switch (event->type()) {
                 case QEvent::MouseButtonPress:
+                    if (m_container)
+                        m_container->setFocus(Qt::MouseFocusReason);
                     if (m_freeCamera)
                         m_freeCamera->handleMousePress(mouseEvent);
                     break;
@@ -343,7 +358,9 @@ private:
         m_container = QWidget::createWindowContainer(m_window, this);
         m_container->setFocusPolicy(Qt::StrongFocus);
         m_container->setMouseTracking(true);
-        m_container->setToolTip(tr("Click the preview, then use W/A/S/D, Space/Ctrl and mouse drag to fly through the field."));
+        m_container->setToolTip(m_compact
+                                    ? tr("Selected asset preview")
+                                    : tr("Click the preview, then use W/A/S/D, Space/Ctrl and mouse drag to fly through the field."));
         m_container->installEventFilter(this);
         m_window->installEventFilter(this);
         layout->addWidget(m_container, 1);
@@ -352,13 +369,17 @@ private:
         m_sceneRoot = new Qt3DCore::QEntity(m_rootEntity);
         m_camera = m_window->camera();
         m_camera->lens()->setPerspectiveProjection(65.0f, 16.0f / 9.0f, 1.0f, 5000000.0f);
-        m_camera->setPosition(QVector3D(0.0f, 800.0f, -9000.0f));
+        m_camera->setPosition(QVector3D(0.0f, 220.0f, -1600.0f));
         m_camera->setViewCenter(QVector3D(0.0f, 0.0f, 0.0f));
 
         m_freeCamera = new flatlas::rendering::FreeCameraController(m_camera, this);
-        m_freeCamera->setSpeed(6000.0f);
-        m_freeCamera->setEnabled(true);
-        m_freeCamera->setPose(QVector3D(0.0f, 800.0f, -9000.0f), QVector3D(0.0f, -0.08f, 1.0f));
+        m_freeCamera->setSpeed(900.0f);
+        m_freeCamera->setEnabled(!m_compact);
+        m_freeCamera->setPose(QVector3D(0.0f, 220.0f, -1600.0f), QVector3D(0.0f, -0.08f, 1.0f));
+        connect(m_freeCamera, &flatlas::rendering::FreeCameraController::cameraChanged, this, [this]() {
+            if (m_skyRenderer && m_camera)
+                m_skyRenderer->setCenter(m_camera->position());
+        });
 
         auto *renderer = m_window->defaultFrameGraph();
         renderer->setClearColor(QColor(6, 10, 18));
@@ -381,6 +402,10 @@ private:
         fillLightTransform->setTranslation(QVector3D(-9000.0f, -5000.0f, 9000.0f));
         fillLightEntity->addComponent(fillLight);
         fillLightEntity->addComponent(fillLightTransform);
+
+        m_skyRenderer = new flatlas::rendering::SkyRenderer(m_rootEntity);
+        m_skyRenderer->setRadius(m_compact ? 35000.0f : 250000.0f);
+        m_skyRenderer->setCenter(m_camera->position());
 
         m_window->setRootEntity(m_rootEntity);
     }
@@ -414,9 +439,11 @@ private:
         if (!m_rootEntity)
             return;
 
-        delete m_sceneRoot;
+        if (m_sceneRoot) {
+            m_sceneRoot->setEnabled(false);
+            m_sceneRoot->deleteLater();
+        }
         m_sceneRoot = new Qt3DCore::QEntity(m_rootEntity);
-        addFieldVolume();
 
         QVector<FieldPlacedObject> objects = m_field.placedObjects;
         if (objects.isEmpty()) {
@@ -430,30 +457,15 @@ private:
             addPlacedObject(object);
     }
 
-    void addFieldVolume()
-    {
-        auto *volume = new Qt3DCore::QEntity(m_sceneRoot);
-        auto *mesh = new Qt3DExtras::QSphereMesh(volume);
-        mesh->setRadius(6500.0f);
-        mesh->setRings(24);
-        mesh->setSlices(48);
-        auto *material = new Qt3DExtras::QPhongMaterial(volume);
-        material->setDiffuse(QColor(60, 110, 160, 25));
-        auto *transform = new Qt3DCore::QTransform(volume);
-        transform->setScale3D(QVector3D(1.25f, 0.65f, 1.25f));
-        volume->addComponent(mesh);
-        volume->addComponent(material);
-        volume->addComponent(transform);
-    }
-
     void addPlacedObject(const FieldPlacedObject &object)
     {
         const QString modelPath = absoluteModelPathForAsset(object.assetNickname);
         auto *host = new Qt3DCore::QEntity(m_sceneRoot);
         auto *hostTransform = new Qt3DCore::QTransform(host);
-        hostTransform->setTranslation(QVector3D(static_cast<float>(object.x * 5200.0),
-                                                static_cast<float>(object.y * 4200.0),
-                                                static_cast<float>(object.z * 5200.0)));
+        const double cubeScale = previewCubeScale();
+        hostTransform->setTranslation(QVector3D(static_cast<float>(object.x * cubeScale),
+                                                static_cast<float>(object.y * cubeScale),
+                                                static_cast<float>(object.z * cubeScale)));
         hostTransform->setRotation(QQuaternion::fromEulerAngles(static_cast<float>(object.rotateX),
                                                                 static_cast<float>(object.rotateY),
                                                                 static_cast<float>(object.rotateZ)));
@@ -462,8 +474,8 @@ private:
         if (!modelPath.isEmpty()) {
             try {
                 const auto decoded = flatlas::rendering::ModelCache::instance().load(modelPath);
-                addModelNode(decoded.rootNode, host, 0);
-                return;
+                if (addModelNode(decoded.rootNode, host, modelPath, 0) > 0)
+                    return;
             } catch (...) {
             }
         }
@@ -471,7 +483,10 @@ private:
         addFallbackMesh(object, host);
     }
 
-    void addModelNode(const flatlas::infrastructure::ModelNode &node, Qt3DCore::QEntity *parent, int depth)
+    int addModelNode(const flatlas::infrastructure::ModelNode &node,
+                     Qt3DCore::QEntity *parent,
+                     const QString &modelPath,
+                     int depth)
     {
         auto *nodeEntity = new Qt3DCore::QEntity(parent);
         auto *transform = new Qt3DCore::QTransform(nodeEntity);
@@ -479,6 +494,7 @@ private:
         transform->setRotation(node.rotation);
         nodeEntity->addComponent(transform);
 
+        int visibleMeshCount = 0;
         for (int meshIndex = 0; meshIndex < node.meshes.size(); ++meshIndex) {
             const auto &mesh = node.meshes.at(meshIndex);
             auto *meshEntity = new Qt3DCore::QEntity(nodeEntity);
@@ -488,34 +504,61 @@ private:
                 continue;
             }
             const QColor color = QColor::fromHsv((depth * 47 + meshIndex * 31) % 360, 90, 205);
-            auto *material = flatlas::rendering::MaterialFactory::createDefault(color, meshEntity);
+            Qt3DRender::QMaterial *material = nullptr;
+            if (!modelPath.isEmpty()) {
+                const QImage texture = flatlas::infrastructure::FreelancerMaterialResolver::loadTextureForMesh(modelPath, mesh);
+                if (!texture.isNull())
+                    material = flatlas::rendering::MaterialFactory::createFromImage(texture, meshEntity);
+            }
+            if (!material)
+                material = flatlas::rendering::MaterialFactory::createDefault(color, meshEntity);
             meshEntity->addComponent(renderer);
             meshEntity->addComponent(material);
+            ++visibleMeshCount;
         }
 
         for (const auto &child : node.children)
-            addModelNode(child, nodeEntity, depth + 1);
+            visibleMeshCount += addModelNode(child, nodeEntity, modelPath, depth + 1);
+        return visibleMeshCount;
     }
 
     void addFallbackMesh(const FieldPlacedObject &object, Qt3DCore::QEntity *parent)
     {
+        const float fallbackRadius = qBound(35.0f, static_cast<float>(previewCubeScale() * 0.18), 180.0f);
         auto *mesh = object.mineRole
             ? static_cast<Qt3DRender::QGeometryRenderer *>(new Qt3DExtras::QCuboidMesh(parent))
             : static_cast<Qt3DRender::QGeometryRenderer *>(new Qt3DExtras::QSphereMesh(parent));
         if (auto *sphere = qobject_cast<Qt3DExtras::QSphereMesh *>(mesh)) {
-            sphere->setRadius(260.0f);
+            sphere->setRadius(fallbackRadius);
             sphere->setRings(12);
             sphere->setSlices(18);
         }
         if (auto *cube = qobject_cast<Qt3DExtras::QCuboidMesh *>(mesh)) {
-            cube->setXExtent(220.0f);
-            cube->setYExtent(220.0f);
-            cube->setZExtent(520.0f);
+            cube->setXExtent(fallbackRadius * 0.85f);
+            cube->setYExtent(fallbackRadius * 0.85f);
+            cube->setZExtent(fallbackRadius * 2.0f);
         }
         auto *material = flatlas::rendering::MaterialFactory::createDefault(
             object.mineRole ? QColor(240, 100, 70) : m_field.primaryColor, parent);
         parent->addComponent(mesh);
         parent->addComponent(material);
+    }
+
+    double previewCubeScale() const
+    {
+        return qBound(180.0, static_cast<double>(m_field.cubeSize > 0 ? m_field.cubeSize : 400), 2200.0);
+    }
+
+    void frameCameraForField()
+    {
+        if (!m_freeCamera)
+            return;
+        const float scale = static_cast<float>(previewCubeScale());
+        const QVector3D position(0.0f, scale * 0.55f, -scale * (m_compact ? 2.2f : 3.2f));
+        m_freeCamera->setPose(position, QVector3D(0.0f, -0.12f, 1.0f));
+        m_freeCamera->setSpeed(qBound(180.0f, scale * 1.8f, 4200.0f));
+        if (m_skyRenderer && m_camera)
+            m_skyRenderer->setCenter(m_camera->position());
     }
 
     Qt3DExtras::Qt3DWindow *m_window = nullptr;
@@ -524,8 +567,10 @@ private:
     Qt3DCore::QEntity *m_sceneRoot = nullptr;
     Qt3DRender::QCamera *m_camera = nullptr;
     flatlas::rendering::FreeCameraController *m_freeCamera = nullptr;
+    flatlas::rendering::SkyRenderer *m_skyRenderer = nullptr;
 #endif
 
+    bool m_compact = false;
     FieldTemplate m_field;
 };
 
@@ -544,8 +589,19 @@ void FieldCreatorPage::buildUi()
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(10, 10, 10, 10);
 
-    auto *splitter = new QSplitter(this);
-    root->addWidget(splitter, 1);
+    auto *tabs = new QTabWidget(this);
+    root->addWidget(tabs, 1);
+
+    auto *editorPage = new QWidget(tabs);
+    auto *editorLayout = new QVBoxLayout(editorPage);
+    editorLayout->setContentsMargins(0, 0, 0, 0);
+
+    auto *previewPage = new QWidget(tabs);
+    auto *previewLayout = new QVBoxLayout(previewPage);
+    previewLayout->setContentsMargins(0, 0, 0, 0);
+
+    auto *splitter = new QSplitter(editorPage);
+    editorLayout->addWidget(splitter, 1);
 
     auto *left = new QWidget(splitter);
     auto *leftLayout = new QVBoxLayout(left);
@@ -566,8 +622,6 @@ void FieldCreatorPage::buildUi()
     templateForm->addRow(tr("Preset:"), m_presetCombo);
     m_fileNameEdit = new QLineEdit(templateBox);
     templateForm->addRow(tr("File name:"), m_fileNameEdit);
-    m_zoneNicknameEdit = new QLineEdit(templateBox);
-    templateForm->addRow(tr("Zone nickname:"), m_zoneNicknameEdit);
     leftLayout->addWidget(templateBox);
 
     auto *zoneBox = new QGroupBox(tr("Zone defaults"), left);
@@ -591,6 +645,9 @@ void FieldCreatorPage::buildUi()
     m_assetList = new QListWidget(assetBox);
     m_assetList->setSelectionMode(QAbstractItemView::ExtendedSelection);
     assetLayout->addWidget(m_assetList);
+    assetLayout->addWidget(new QLabel(tr("Selected asset"), assetBox));
+    m_assetPreview = new FieldPreviewWidget(assetBox, true);
+    assetLayout->addWidget(m_assetPreview);
     leftLayout->addWidget(assetBox, 1);
 
     auto *middle = new QWidget(splitter);
@@ -711,8 +768,6 @@ void FieldCreatorPage::buildUi()
     auto *right = new QWidget(splitter);
     auto *rightLayout = new QVBoxLayout(right);
     rightLayout->setContentsMargins(8, 0, 0, 0);
-    m_preview = new FieldPreviewWidget(right);
-    rightLayout->addWidget(m_preview, 1);
     m_linkPreview = new QTextEdit(right);
     m_linkPreview->setReadOnly(true);
     m_linkPreview->setMaximumHeight(150);
@@ -730,10 +785,18 @@ void FieldCreatorPage::buildUi()
     splitter->setStretchFactor(1, 1);
     splitter->setStretchFactor(2, 1);
 
+    m_preview = new FieldPreviewWidget(previewPage);
+    previewLayout->addWidget(m_preview, 1);
+
+    tabs->addTab(editorPage, tr("Template"));
+    tabs->addTab(previewPage, tr("3D Preview"));
+
     auto *bottom = new QHBoxLayout();
     m_statusLabel = new QLabel(tr("Ready"), this);
+    auto *loadButton = new QPushButton(tr("Load Template"), this);
     auto *saveButton = new QPushButton(tr("Save Template"), this);
     bottom->addWidget(m_statusLabel, 1);
+    bottom->addWidget(loadButton);
     bottom->addWidget(saveButton);
     root->addLayout(bottom);
 
@@ -741,7 +804,7 @@ void FieldCreatorPage::buildUi()
         updateTemplateFromUi();
         refreshPreviews();
     };
-    for (QLineEdit *edit : {m_fileNameEdit, m_zoneNicknameEdit, m_texturePanelsEdit, m_billboardShapeEdit,
+    for (QLineEdit *edit : {m_fileNameEdit, m_texturePanelsEdit, m_billboardShapeEdit,
                             m_spacedustEdit, m_musicEdit, m_primaryColorEdit, m_ambientColorEdit, m_fogColorEdit}) {
         connect(edit, &QLineEdit::textChanged, this, changed);
     }
@@ -783,9 +846,11 @@ void FieldCreatorPage::buildUi()
                                         || currentKind() == FieldTemplateKind::Mine
                                         || currentKind() == FieldTemplateKind::Gas);
         }
+        updateAssetPreview();
     });
     connect(addButton, &QPushButton::clicked, this, &FieldCreatorPage::addManualObject);
     connect(autoButton, &QPushButton::clicked, this, &FieldCreatorPage::autoDistributeObjects);
+    connect(loadButton, &QPushButton::clicked, this, &FieldCreatorPage::loadTemplate);
     connect(saveButton, &QPushButton::clicked, this, &FieldCreatorPage::saveTemplate);
 }
 
@@ -801,8 +866,8 @@ void FieldCreatorPage::loadAssetsForKind()
         item->setData(Qt::UserRole, asset.nickname);
         item->setToolTip(asset.modelPath);
     }
-    if (m_assetList->count() > 0)
-        m_assetList->setCurrentRow(0);
+    m_assetList->clearSelection();
+    updateAssetPreview();
 }
 
 void FieldCreatorPage::applyCurrentPreset()
@@ -812,7 +877,12 @@ void FieldCreatorPage::applyCurrentPreset()
     if (presetIndex >= 0) {
         const auto presetKind = static_cast<FieldTemplateKind>(m_presetCombo->itemData(presetIndex).toInt());
         if (presetKind == kind) {
-            m_template = m_presets.at(presetIndex);
+            for (const FieldTemplate &preset : std::as_const(m_presets)) {
+                if (preset.kind == kind) {
+                    m_template = preset;
+                    break;
+                }
+            }
         } else {
             m_template = FieldTemplateGenerator::preset(kind);
         }
@@ -820,8 +890,45 @@ void FieldCreatorPage::applyCurrentPreset()
         m_template = FieldTemplateGenerator::preset(kind);
     }
 
+    applyTemplateToUi(m_template);
+}
+
+void FieldCreatorPage::applyTemplateToUi(const FieldTemplate &field)
+{
+    m_template = field;
+    const int kindIndex = m_kindCombo->findData(static_cast<int>(m_template.kind));
+    const int presetIndex = m_presetCombo->findData(static_cast<int>(m_template.kind));
+
+    const std::array<QSignalBlocker, 20> blockers = {
+        QSignalBlocker(m_kindCombo),
+        QSignalBlocker(m_presetCombo),
+        QSignalBlocker(m_fileNameEdit),
+        QSignalBlocker(m_texturePanelsEdit),
+        QSignalBlocker(m_billboardShapeEdit),
+        QSignalBlocker(m_spacedustEdit),
+        QSignalBlocker(m_musicEdit),
+        QSignalBlocker(m_propertyFlagsSpin),
+        QSignalBlocker(m_visitSpin),
+        QSignalBlocker(m_damageSpin),
+        QSignalBlocker(m_cubeSizeSpin),
+        QSignalBlocker(m_fillDistanceSpin),
+        QSignalBlocker(m_emptyCubeSpin),
+        QSignalBlocker(m_billboardCountSpin),
+        QSignalBlocker(m_dynamicCountSpin),
+        QSignalBlocker(m_fogDistanceSpin),
+        QSignalBlocker(m_puffCountSpin),
+        QSignalBlocker(m_primaryColorEdit),
+        QSignalBlocker(m_ambientColorEdit),
+        QSignalBlocker(m_fogColorEdit),
+    };
+    Q_UNUSED(blockers);
+
+    if (kindIndex >= 0)
+        m_kindCombo->setCurrentIndex(kindIndex);
+    if (presetIndex >= 0)
+        m_presetCombo->setCurrentIndex(presetIndex);
+
     m_fileNameEdit->setText(m_template.fileName);
-    m_zoneNicknameEdit->setText(m_template.zoneNickname);
     m_texturePanelsEdit->setText(m_template.texturePanelsFile);
     m_billboardShapeEdit->setText(m_template.billboardShape.isEmpty() ? m_template.fillShape : m_template.billboardShape);
     m_spacedustEdit->setText(m_template.spacedust);
@@ -839,6 +946,7 @@ void FieldCreatorPage::applyCurrentPreset()
     m_primaryColorEdit->setText(colorText(m_template.primaryColor));
     m_ambientColorEdit->setText(colorText(m_template.ambientColor));
     m_fogColorEdit->setText(colorText(m_template.fogColor));
+    loadAssetsForKind();
     refreshPreviews();
 }
 
@@ -846,17 +954,15 @@ void FieldCreatorPage::updateTemplateFromUi()
 {
     m_template.kind = currentKind();
     m_template.fileName = FieldTemplateGenerator::normalizedFileName(m_fileNameEdit->text(), m_template.kind);
-    m_template.zoneNickname = m_zoneNicknameEdit->text().trimmed().isEmpty()
-        ? FieldTemplateGenerator::defaultZoneNickname(m_template.kind)
-        : m_zoneNicknameEdit->text().trimmed();
+    m_template.zoneNickname = FieldTemplateGenerator::defaultZoneNickname(m_template.kind);
     m_template.texturePanelsFile = m_texturePanelsEdit->text().trimmed();
     m_template.billboardShape = m_billboardShapeEdit->text().trimmed();
     if (m_template.kind == FieldTemplateKind::Nebula) {
         m_template.fillShape = m_template.billboardShape;
-        m_template.cubeShapeFallbacks = selectedAssets().isEmpty()
-            ? FieldTemplateGenerator::preset(FieldTemplateKind::Nebula).cubeShapeFallbacks
-            : QStringList{};
-        for (const FieldAsset &asset : selectedAssets())
+        const QVector<FieldAsset> assets = selectedAssets();
+        if (!assets.isEmpty())
+            m_template.cubeShapeFallbacks.clear();
+        for (const FieldAsset &asset : assets)
             m_template.cubeShapeFallbacks.append(asset.nickname);
     }
     m_template.spacedust = m_spacedustEdit->text().trimmed();
@@ -880,6 +986,7 @@ void FieldCreatorPage::refreshPreviews()
 {
     updateTemplateFromUi();
     m_preview->setField(m_template);
+    updateAssetPreview();
     m_linkPreview->setPlainText(FieldTemplateGenerator::generateSystemLinkPreview(m_template));
     m_iniPreview->setPlainText(FieldTemplateGenerator::generateFieldIni(m_template));
     refreshPlacementTable();
@@ -926,6 +1033,72 @@ void FieldCreatorPage::autoDistributeObjects()
     m_template.placedObjects = FieldTemplateGenerator::autoDistribute(
         assets, currentKind(), m_autoCountSpin->value(), static_cast<quint32>(m_seedSpin->value()), m_spreadCombo->currentText());
     refreshPreviews();
+}
+
+void FieldCreatorPage::loadTemplate()
+{
+    QString startDir;
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    const QString dataDir = flatlas::core::PathUtils::ciResolvePath(gameRoot, QStringLiteral("DATA"));
+    if (!dataDir.isEmpty()) {
+        startDir = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("SOLAR/ASTEROIDS"));
+        if (startDir.isEmpty())
+            startDir = flatlas::core::PathUtils::ciResolvePath(dataDir, QStringLiteral("SOLAR/NEBULA"));
+        if (startDir.isEmpty())
+            startDir = dataDir;
+    }
+
+    const QString path = QFileDialog::getOpenFileName(this,
+                                                      tr("Load Field Template"),
+                                                      startDir,
+                                                      tr("INI files (*.ini);;All files (*.*)"));
+    if (path.isEmpty())
+        return;
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, tr("Field Creator"), tr("The template could not be loaded:\n%1").arg(path));
+        return;
+    }
+
+    QString errorMessage;
+    FieldTemplate loaded = FieldTemplateGenerator::parseFieldIni(QFileInfo(path).fileName(),
+                                                                 QString::fromUtf8(file.readAll()),
+                                                                 &errorMessage);
+    if (!errorMessage.isEmpty()) {
+        QMessageBox::warning(this, tr("Field Creator"), errorMessage);
+        return;
+    }
+
+    applyTemplateToUi(loaded);
+    m_statusLabel->setText(tr("Loaded: %1").arg(path));
+}
+
+void FieldCreatorPage::updateAssetPreview()
+{
+    if (!m_assetPreview)
+        return;
+
+    FieldTemplate preview = FieldTemplateGenerator::preset(currentKind());
+    preview.cubeSize = qMax(420, m_template.cubeSize);
+    preview.placedObjects.clear();
+
+    QString nickname;
+    const auto items = m_assetList ? m_assetList->selectedItems() : QList<QListWidgetItem *>();
+    if (!items.isEmpty())
+        nickname = items.first()->data(Qt::UserRole).toString().trimmed();
+    if (nickname.isEmpty())
+        nickname = m_manualAssetEdit ? m_manualAssetEdit->text().trimmed() : QString();
+    if (!nickname.isEmpty()) {
+        FieldPlacedObject object;
+        object.assetNickname = nickname;
+        object.mineRole = nickname.contains(QStringLiteral("mine"), Qt::CaseInsensitive)
+            || currentKind() == FieldTemplateKind::Mine
+            || currentKind() == FieldTemplateKind::Gas;
+        preview.placedObjects.append(object);
+    }
+
+    m_assetPreview->setField(preview);
 }
 
 void FieldCreatorPage::saveTemplate()
