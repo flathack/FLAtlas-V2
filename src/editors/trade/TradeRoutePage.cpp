@@ -29,11 +29,15 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QPainter>
 #include <QRegularExpressionValidator>
 #include <QRegularExpression>
 #include <QSet>
+#include <QSortFilterProxyModel>
 #include <QStandardItem>
 #include <QStandardItemModel>
+#include <QStyle>
+#include <QStyleOptionHeader>
 #include <QTableView>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -153,6 +157,151 @@ QStandardItem *currencyStandardItem(qint64 value)
     item->setData(value, Qt::UserRole + 1);
     return item;
 }
+
+class RouteColumnFilterProxy final : public QSortFilterProxyModel {
+public:
+    explicit RouteColumnFilterProxy(QObject *parent = nullptr)
+        : QSortFilterProxyModel(parent)
+    {
+        setFilterCaseSensitivity(Qt::CaseInsensitive);
+    }
+
+    void setColumnFilter(int column, const QString &text)
+    {
+        const QString filter = text.trimmed();
+        if (filter.isEmpty())
+            m_filters.remove(column);
+        else
+            m_filters.insert(column, filter);
+        invalidateRowsFilter();
+    }
+
+protected:
+    bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const override
+    {
+        const auto *source = sourceModel();
+        if (!source)
+            return true;
+
+        for (auto it = m_filters.constBegin(); it != m_filters.constEnd(); ++it) {
+            const QModelIndex index = source->index(sourceRow, it.key(), sourceParent);
+            const QString value = source->data(index, Qt::DisplayRole).toString();
+            if (!value.contains(it.value(), Qt::CaseInsensitive))
+                return false;
+        }
+        return true;
+    }
+
+    bool lessThan(const QModelIndex &left, const QModelIndex &right) const override
+    {
+        const QVariant leftValue = sourceModel()->data(left, Qt::UserRole + 1);
+        const QVariant rightValue = sourceModel()->data(right, Qt::UserRole + 1);
+        if (leftValue.isValid() && rightValue.isValid())
+            return leftValue.toLongLong() < rightValue.toLongLong();
+        return QSortFilterProxyModel::lessThan(left, right);
+    }
+
+private:
+    QHash<int, QString> m_filters;
+};
+
+class RouteFilterHeader final : public QHeaderView {
+public:
+    explicit RouteFilterHeader(Qt::Orientation orientation, QWidget *parent = nullptr)
+        : QHeaderView(orientation, parent)
+    {
+        setSectionsClickable(true);
+        connect(this, &QHeaderView::sectionResized, this, [this]() {
+            updateFilterGeometries();
+        });
+        connect(this, &QHeaderView::sectionMoved, this, [this]() {
+            updateFilterGeometries();
+        });
+        connect(this, &QHeaderView::geometriesChanged, this, [this]() {
+            updateFilterGeometries();
+        });
+    }
+
+    void setFilterCount(int count)
+    {
+        while (m_filters.size() < count) {
+            const int column = m_filters.size();
+            auto *edit = new QLineEdit(this);
+            edit->setClearButtonEnabled(true);
+            edit->setPlaceholderText(tr("Search"));
+            edit->setFrame(false);
+            edit->setProperty("routeFilterColumn", column);
+            m_filters.append(edit);
+        }
+        while (m_filters.size() > count)
+            delete m_filters.takeLast();
+        updateFilterGeometries();
+    }
+
+    QLineEdit *filterEdit(int column) const
+    {
+        if (column < 0 || column >= m_filters.size())
+            return nullptr;
+        return m_filters.at(column);
+    }
+
+    QSize sizeHint() const override
+    {
+        QSize size = QHeaderView::sizeHint();
+        size.setHeight(size.height() + filterHeight() + 4);
+        return size;
+    }
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QHeaderView::resizeEvent(event);
+        updateFilterGeometries();
+    }
+
+    void showEvent(QShowEvent *event) override
+    {
+        QHeaderView::showEvent(event);
+        updateFilterGeometries();
+    }
+
+    void paintSection(QPainter *painter, const QRect &rect, int logicalIndex) const override
+    {
+        if (!painter || !rect.isValid())
+            return;
+
+        QStyleOptionHeader option;
+        initStyleOption(&option);
+        option.rect = rect.adjusted(0, filterHeight() + 4, 0, 0);
+        option.text = model()
+            ? model()->headerData(logicalIndex, orientation(), Qt::DisplayRole).toString()
+            : QString();
+        style()->drawControl(QStyle::CE_Header, &option, painter, this);
+    }
+
+private:
+    int filterHeight() const
+    {
+        return 22;
+    }
+
+    void updateFilterGeometries()
+    {
+        for (int logical = 0; logical < m_filters.size(); ++logical) {
+            auto *edit = m_filters.at(logical);
+            if (isSectionHidden(logical)) {
+                edit->hide();
+                continue;
+            }
+            const int x = sectionViewportPosition(logical);
+            const int width = sectionSize(logical);
+            edit->setGeometry(x + 2, 2, qMax(12, width - 4), filterHeight());
+            edit->show();
+        }
+    }
+
+    QVector<QLineEdit *> m_filters;
+};
 
 bool writeCommodityIds(QWidget *parent, const QString &dataPath, TradeCommodityRecord *commodity)
 {
@@ -977,10 +1126,7 @@ TradeRoutePage::TradeRoutePage(QWidget *parent)
     connect(m_calcWatcher, &QFutureWatcher<QVector<TradeRouteCandidate>>::finished, this, [this]() {
         m_routes = m_calcWatcher->result();
         populateRouteTable();
-        if (!m_routes.isEmpty())
-            updateRouteDetails(0);
-        else
-            updateRouteDetails(-1);
+        updateRouteDetails(selectedRouteIndex());
         m_statusLabel->setText(tr("%1 routes ready. %2 commodities, %3 editable price points.")
                                    .arg(m_routes.size())
                                    .arg(m_workspace.commodities.size())
@@ -1066,8 +1212,14 @@ void TradeRoutePage::setupUi()
         tr("Commodity"), tr("Buy"), tr("Sell"), tr("Unit Profit"), tr("Total Profit"),
         tr("Jumps"), tr("Time"), tr("Distance"), tr("Profit/Min"), tr("Score")
     });
+    auto *routeProxy = new RouteColumnFilterProxy(this);
+    routeProxy->setSourceModel(m_routeModel);
+    m_routeProxyModel = routeProxy;
     m_routeView = new QTableView(routeBox);
-    m_routeView->setModel(m_routeModel);
+    m_routeView->setModel(m_routeProxyModel);
+    auto *routeHeader = new RouteFilterHeader(Qt::Horizontal, m_routeView);
+    routeHeader->setFilterCount(m_routeModel->columnCount());
+    m_routeView->setHorizontalHeader(routeHeader);
     m_routeView->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_routeView->setSelectionMode(QAbstractItemView::SingleSelection);
     m_routeView->setAlternatingRowColors(true);
@@ -1136,6 +1288,14 @@ void TradeRoutePage::setupUi()
     connect(addRouteButton, &QPushButton::clicked, this, &TradeRoutePage::addRouteEntry);
     connect(editRouteButton, &QPushButton::clicked, this, &TradeRoutePage::editRouteEntry);
     connect(removeRouteButton, &QPushButton::clicked, this, &TradeRoutePage::removeRouteEntry);
+    for (int column = 0; column < m_routeModel->columnCount(); ++column) {
+        auto *filterEdit = routeHeader->filterEdit(column);
+        if (!filterEdit)
+            continue;
+        connect(filterEdit, &QLineEdit::textChanged, this, [routeProxy, column](const QString &text) {
+            routeProxy->setColumnFilter(column, text);
+        });
+    }
     connect(m_commodityTable, &QTableWidget::itemSelectionChanged, this, &TradeRoutePage::populatePriceTable);
     connect(m_commodityTable, &QTableWidget::cellDoubleClicked, this, [this](int, int) {
         editCommodity();
@@ -1459,8 +1619,10 @@ void TradeRoutePage::populateRouteTable()
         m_routeModel->appendRow(row);
     }
     m_routeView->resizeColumnsToContents();
-    if (m_routeModel->rowCount() > 0)
+    if (m_routeProxyModel && m_routeProxyModel->rowCount() > 0)
         m_routeView->selectRow(0);
+    else
+        updateRouteDetails(-1);
 }
 
 void TradeRoutePage::populateCommodityFilter()
@@ -1573,7 +1735,10 @@ int TradeRoutePage::selectedRouteIndex() const
     const QModelIndex index = m_routeView->currentIndex();
     if (!index.isValid())
         return -1;
-    return m_routeModel->item(index.row(), 0)->data(Qt::UserRole).toInt();
+    const QModelIndex sourceIndex = m_routeProxyModel ? m_routeProxyModel->mapToSource(index) : index;
+    if (!sourceIndex.isValid() || sourceIndex.row() < 0 || sourceIndex.row() >= m_routeModel->rowCount())
+        return -1;
+    return m_routeModel->item(sourceIndex.row(), 0)->data(Qt::UserRole).toInt();
 }
 
 int TradeRoutePage::selectedPriceIndex() const

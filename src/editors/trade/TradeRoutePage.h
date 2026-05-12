@@ -14,6 +14,7 @@ class QGraphicsScene;
 class QGraphicsView;
 class QLineEdit;
 class QListWidget;
+class QSortFilterProxyModel;
 class QStandardItemModel;
 class QTableView;
 class QTableWidget;
@@ -103,6 +104,7 @@ private:
     QTableWidget *m_segmentTable = nullptr;
     QTableView *m_routeView = nullptr;
     QStandardItemModel *m_routeModel = nullptr;
+    QSortFilterProxyModel *m_routeProxyModel = nullptr;
     QListWidget *m_warningList = nullptr;
     QLabel *m_routeSummaryLabel = nullptr;
     QLabel *m_profitLabel = nullptr;
