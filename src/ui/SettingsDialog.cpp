@@ -74,6 +74,7 @@ QVector<ToolChoice> toolChoices()
         {QStringLiteral("factionEditor"), QObject::tr("Faction Editor"), false},
         {QStringLiteral("newsRumorEditor"), QObject::tr("News Editor"), false},
         {QStringLiteral("modelViewer"), QObject::tr("3D Model Viewer"), false},
+        {QStringLiteral("fieldCreator"), QObject::tr("Field Creator"), false},
     };
 }
 

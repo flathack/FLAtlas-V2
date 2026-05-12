@@ -209,6 +209,8 @@ QIcon toolIcon(const QString &key)
         return cachedIcon(key, QColor(110, 210, 255), QStringLiteral("activity"));
     if (key == QStringLiteral("modelViewer") || key == QStringLiteral("system3d"))
         return cachedIcon(key, QColor(95, 186, 255), QStringLiteral("model3d"));
+    if (key == QStringLiteral("fieldCreator"))
+        return cachedIcon(key, QColor(141, 196, 116), QStringLiteral("system"));
     if (key == QStringLiteral("launch"))
         return launchIcon();
     if (key == QStringLiteral("systemEditor"))

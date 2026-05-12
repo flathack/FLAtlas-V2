@@ -91,6 +91,7 @@ ToolboxPage::ToolboxPage(QWidget *parent)
         {QStringLiteral("factionEditor"), QStringLiteral("factionEditor"), tr("Faction Editor"), tr("Edit factions and relationship data.")},
         {QStringLiteral("newsRumorEditor"), QStringLiteral("newsRumorEditor"), tr("News Editor"), tr("Edit news and rumor text assignments.")},
         {QStringLiteral("modelViewer"), QStringLiteral("modelViewer"), tr("3D Model Viewer"), tr("Browse and preview Freelancer models.")},
+        {QStringLiteral("fieldCreator"), QStringLiteral("fieldCreator"), tr("Field Creator"), tr("Create asteroid and nebula field templates with placed assets.")},
         {QStringLiteral("shortestPath"), QStringLiteral("universe"), tr("Shortest Path"), tr("Find routes between systems in the current universe.")},
         {QStringLiteral("launchFreelancer"), QStringLiteral("launch"), tr("Launch Freelancer"), tr("Start Freelancer for the active editing context.")},
     };

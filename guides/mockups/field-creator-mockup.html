@@ -1,0 +1,1273 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FLAtlas Field Creator Mockup</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101318;
+      --panel: #181d24;
+      --panel-2: #202731;
+      --line: #333d49;
+      --text: #e8edf4;
+      --muted: #aab4c2;
+      --accent: #57b8ff;
+      --green: #74d68b;
+      --amber: #e1b955;
+      --red: #e56f6f;
+      --input: #11161d;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 14px;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #151a20;
+    }
+
+    .title {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 650;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    button,
+    .icon-button {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+      min-height: 32px;
+      border-radius: 5px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    button.primary {
+      background: #1c5c83;
+      border-color: #2f8ac0;
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(280px, 330px) minmax(360px, 1fr) minmax(360px, 520px);
+      min-height: 0;
+    }
+
+    aside,
+    section {
+      min-width: 0;
+      min-height: 0;
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .right {
+      border-right: 0;
+      display: grid;
+      grid-template-rows: minmax(260px, 42vh) 1fr;
+    }
+
+    .pane {
+      padding: 12px;
+      overflow: auto;
+    }
+
+    .group {
+      margin-bottom: 14px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .group:last-child {
+      border-bottom: 0;
+      margin-bottom: 0;
+    }
+
+    .group h2 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      font-weight: 650;
+      text-transform: uppercase;
+      color: #c9d4e2;
+      letter-spacing: 0;
+    }
+
+    label {
+      display: block;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+
+    .field {
+      margin-bottom: 10px;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: var(--input);
+      color: var(--text);
+      border-radius: 5px;
+      padding: 7px 8px;
+      font: inherit;
+      min-height: 32px;
+    }
+
+    input[type="range"] {
+      padding: 0;
+      accent-color: var(--accent);
+    }
+
+    input[type="color"] {
+      padding: 2px;
+      height: 34px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 84px;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .two {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .three {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .chip {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--muted);
+      border-radius: 5px;
+      padding: 5px 8px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .chip.active {
+      color: var(--text);
+      border-color: #5599c8;
+      background: #20384b;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 1px;
+      background: var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .tab {
+      flex: 1;
+      border: 0;
+      border-radius: 0;
+      background: #161b22;
+      color: var(--muted);
+      min-height: 36px;
+    }
+
+    .tab.active {
+      background: var(--panel);
+      color: var(--text);
+    }
+
+    .asset-list {
+      display: grid;
+      gap: 6px;
+    }
+
+    .asset-row {
+      display: grid;
+      grid-template-columns: 22px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--panel-2);
+      padding: 6px;
+      cursor: pointer;
+    }
+
+    .asset-row.active {
+      border-color: #5aa6d9;
+      background: #20384b;
+    }
+
+    .asset-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.28);
+    }
+
+    .asset-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text);
+    }
+
+    .asset-kind {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .placement-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .placement-table th,
+    .placement-table td {
+      border-bottom: 1px solid var(--line);
+      padding: 5px 4px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .placement-table th {
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .preview-wrap {
+      position: relative;
+      min-height: 0;
+      border-bottom: 1px solid var(--line);
+      background: #090d12;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .preview-hud {
+      position: absolute;
+      left: 10px;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .hud-pill {
+      background: rgba(10, 14, 20, 0.78);
+      border: 1px solid rgba(120, 150, 180, 0.35);
+      border-radius: 5px;
+      padding: 5px 7px;
+      color: #d8e5f2;
+      white-space: nowrap;
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #d9e6d9;
+      font: 12px/1.45 Consolas, "Cascadia Mono", monospace;
+    }
+
+    footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 12px;
+      border-top: 1px solid var(--line);
+      background: #151a20;
+      color: var(--muted);
+    }
+
+    .status strong {
+      color: var(--green);
+      font-weight: 600;
+    }
+
+    @media (max-width: 1180px) {
+      main {
+        grid-template-columns: minmax(260px, 320px) minmax(420px, 1fr);
+      }
+
+      .right {
+        grid-column: 1 / -1;
+        grid-template-rows: 320px 420px;
+        border-top: 1px solid var(--line);
+      }
+    }
+
+    @media (max-width: 760px) {
+      main {
+        display: block;
+      }
+
+      aside,
+      section {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .right {
+        display: block;
+      }
+
+      .preview-wrap {
+        height: 320px;
+      }
+
+      header,
+      footer {
+        align-items: stretch;
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="title">
+        <h1>Field Creator</h1>
+        <div class="subtitle" id="pathLabel">DATA\SOLAR\ASTEROIDS\li09_rock_field.ini</div>
+      </div>
+      <div class="toolbar">
+        <button id="resetButton" title="Reset selected preset">Reset</button>
+        <button id="openButton" title="Open generated INI in file editor">Open INI</button>
+        <button class="primary" id="saveButton" title="Save generated template">Save Template</button>
+      </div>
+    </header>
+
+    <main>
+      <aside class="pane">
+        <div class="group">
+          <h2>Template</h2>
+          <div class="field">
+            <label for="type">Field type</label>
+            <select id="type">
+              <option value="asteroid">Asteroid Field</option>
+              <option value="ice">Ice Field</option>
+              <option value="debris">Debris Field</option>
+              <option value="mine">Minefield</option>
+              <option value="gas">Gas Pocket</option>
+              <option value="nebula">Nebula</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Visual preset</label>
+            <div class="chips" id="presetChips"></div>
+          </div>
+        </div>
+
+        <div class="group">
+          <h2>Output</h2>
+          <div class="field">
+            <label for="fileName">File name</label>
+            <input id="fileName" value="li09_rock_field.ini">
+          </div>
+          <div class="field">
+            <label for="zoneName">Suggested zone name</label>
+            <input id="zoneName" value="Zone_Li09_rock_field">
+          </div>
+          <div class="two">
+            <div class="field">
+              <label for="idsName">IDS name</label>
+              <input id="idsName" value="0">
+            </div>
+            <div class="field">
+              <label for="sort">Sort</label>
+              <input id="sort" type="number" value="25">
+            </div>
+          </div>
+        </div>
+
+        <div class="group">
+          <h2>System Link Preview</h2>
+          <pre id="linkPreview"></pre>
+        </div>
+
+        <div class="group">
+          <h2>Asset Palette</h2>
+          <div class="asset-list" id="assetList"></div>
+        </div>
+      </aside>
+
+      <section class="pane">
+        <div class="tabs">
+          <button class="tab active" data-tab="field">Field</button>
+          <button class="tab" data-tab="placement">Placement</button>
+          <button class="tab" data-tab="visuals">Visuals</button>
+          <button class="tab" data-tab="effects">Effects</button>
+        </div>
+
+        <div class="pane" id="fieldTab">
+          <div class="group">
+            <h2>Density</h2>
+            <div class="row field">
+              <div>
+                <label for="density">Density</label>
+                <input id="density" type="range" min="0" max="100" value="55">
+              </div>
+              <input id="densityValue" type="number" min="0" max="100" value="55">
+            </div>
+            <div class="two">
+              <div class="field">
+                <label for="cubeSize">Cube size</label>
+                <input id="cubeSize" type="number" value="400">
+              </div>
+              <div class="field">
+                <label for="fillDist">Fill distance</label>
+                <input id="fillDist" type="number" value="3200">
+              </div>
+            </div>
+            <div class="two">
+              <div class="field">
+                <label for="emptyCube">Empty cube frequency</label>
+                <input id="emptyCube" type="number" min="0" max="1" step="0.05" value="0.6">
+              </div>
+              <div class="field">
+                <label for="dynamicCount">Dynamic count</label>
+                <input id="dynamicCount" type="number" min="0" value="12">
+              </div>
+            </div>
+          </div>
+
+          <div class="group">
+            <h2>Zone Defaults</h2>
+            <div class="three">
+              <div class="field">
+                <label for="propertyFlags">Property flags</label>
+                <input id="propertyFlags" type="number" value="66">
+              </div>
+              <div class="field">
+                <label for="visit">Visit</label>
+                <input id="visit" type="number" value="32">
+              </div>
+              <div class="field">
+                <label for="damage">Damage</label>
+                <input id="damage" type="number" value="0">
+              </div>
+            </div>
+            <div class="two">
+              <div class="field">
+                <label for="spacedust">Spacedust</label>
+                <input id="spacedust" value="asteroiddust">
+              </div>
+              <div class="field">
+                <label for="music">Music</label>
+                <input id="music" value="zone_field_asteroid_rock">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pane" id="placementTab" hidden>
+          <div class="group">
+            <h2>Placement Mode</h2>
+            <div class="chips">
+              <div class="chip active" id="manualMode">Manual</div>
+              <div class="chip" id="autoMode">Auto Distribute</div>
+              <div class="chip" id="hybridMode">Hybrid</div>
+            </div>
+          </div>
+
+          <div class="group">
+            <h2>Selected Asset</h2>
+            <div class="two">
+              <button id="addAssetButton">Add One</button>
+              <button id="autoDistributeButton">Auto Fill</button>
+            </div>
+          </div>
+
+          <div class="group">
+            <h2>Manual Transform</h2>
+            <div class="three">
+              <div class="field">
+                <label for="placeX">X</label>
+                <input id="placeX" type="number" step="0.05" value="0.60">
+              </div>
+              <div class="field">
+                <label for="placeY">Y</label>
+                <input id="placeY" type="number" step="0.05" value="0.20">
+              </div>
+              <div class="field">
+                <label for="placeZ">Z</label>
+                <input id="placeZ" type="number" step="0.05" value="-0.20">
+              </div>
+            </div>
+            <div class="three">
+              <div class="field">
+                <label for="rotX">Rot X</label>
+                <input id="rotX" type="number" value="35">
+              </div>
+              <div class="field">
+                <label for="rotY">Rot Y</label>
+                <input id="rotY" type="number" value="10">
+              </div>
+              <div class="field">
+                <label for="rotZ">Rot Z</label>
+                <input id="rotZ" type="number" value="20">
+              </div>
+            </div>
+          </div>
+
+          <div class="group">
+            <h2>Auto Distribution</h2>
+            <div class="three">
+              <div class="field">
+                <label for="autoCount">Count</label>
+                <input id="autoCount" type="number" min="1" value="24">
+              </div>
+              <div class="field">
+                <label for="seed">Seed</label>
+                <input id="seed" type="number" value="1209">
+              </div>
+              <div class="field">
+                <label for="spread">Spread</label>
+                <select id="spread">
+                  <option value="volume">Volume</option>
+                  <option value="belt">Belt</option>
+                  <option value="shell">Shell</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="group">
+            <h2>Placed Objects</h2>
+            <table class="placement-table">
+              <thead>
+                <tr>
+                  <th>Asset</th>
+                  <th>X</th>
+                  <th>Y</th>
+                  <th>Z</th>
+                  <th>Rotation</th>
+                </tr>
+              </thead>
+              <tbody id="placementRows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="pane" id="visualsTab" hidden>
+          <div class="group">
+            <h2>Palette</h2>
+            <div class="three">
+              <div class="field">
+                <label for="primaryColor">Primary</label>
+                <input id="primaryColor" type="color" value="#d8c28a">
+              </div>
+              <div class="field">
+                <label for="ambientColor">Ambient</label>
+                <input id="ambientColor" type="color" value="#787878">
+              </div>
+              <div class="field">
+                <label for="fogColor">Fog</label>
+                <input id="fogColor" type="color" value="#284878">
+              </div>
+            </div>
+          </div>
+
+          <div class="group">
+            <h2>Shapes</h2>
+            <div class="two">
+              <div class="field">
+                <label for="texturePanel">Texture panel file</label>
+                <input id="texturePanel" value="solar\\asteroids\\rock_shapes.ini">
+              </div>
+              <div class="field">
+                <label for="billboardShape">Billboard shape</label>
+                <input id="billboardShape" value="mine_rock_tri">
+              </div>
+            </div>
+            <div class="field">
+              <label for="cubeShapes">Cube shapes</label>
+              <textarea id="cubeShapes" rows="4">minedout_asteroid10
+minedout_asteroid30
+minedout_asteroid30
+minedout_asteroid10</textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="pane" id="effectsTab" hidden>
+          <div class="group">
+            <h2>Nebula Effects</h2>
+            <div class="two">
+              <div class="field">
+                <label for="fogDistance">Fog distance</label>
+                <input id="fogDistance" type="number" value="1600">
+              </div>
+              <div class="field">
+                <label for="puffCount">Puff count</label>
+                <input id="puffCount" type="number" value="20">
+              </div>
+            </div>
+            <div class="two">
+              <div class="field">
+                <label for="lightningGap">Lightning gap</label>
+                <input id="lightningGap" type="number" step="0.5" value="3">
+              </div>
+              <div class="field">
+                <label for="lightningDuration">Lightning duration</label>
+                <input id="lightningDuration" type="number" step="0.05" value="0.75">
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="right">
+        <div class="preview-wrap">
+          <canvas id="preview"></canvas>
+          <div class="preview-hud">
+            <div class="hud-pill" id="previewMode">Rock asteroid field</div>
+            <div class="hud-pill" id="previewStats">55% density</div>
+          </div>
+        </div>
+        <div class="pane">
+          <div class="group">
+            <h2>Generated INI</h2>
+            <pre id="iniPreview"></pre>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="status">Template status: <strong>Ready</strong></div>
+      <div id="footerHint">Prototype only: buttons show intended placement, no files are written.</div>
+    </footer>
+  </div>
+
+  <script>
+    const presets = {
+      asteroid: [
+        { key: "rock", label: "Rock", file: "li09_rock_field.ini", zone: "Zone_Li09_rock_field", texture: "solar\\\\asteroids\\\\rock_shapes.ini", shape: "mine_rock_tri", dust: "asteroiddust", music: "zone_field_asteroid_rock", flags: 66, visit: 32, color: "#d8c28a", ambient: "#787878", density: 55, cube: 400, fill: 3200, empty: 0.6, dynamic: 12 },
+        { key: "ice", label: "Ice", file: "li09_ice_field.ini", zone: "Zone_Li09_ice_field", texture: "solar\\\\asteroids\\\\ice_shapes.ini", shape: "asteroid_ice_4", dust: "icedust", music: "zone_field_asteroid_ice", flags: 65, visit: 32, color: "#a7d8ff", ambient: "#778a94", density: 48, cube: 400, fill: 3000, empty: 0.65, dynamic: 14 },
+        { key: "debris", label: "Debris", file: "li09_debris_field.ini", zone: "Zone_Li09_debris_field", texture: "solar\\\\asteroids\\\\debris_shapes.ini", shape: "debris_tri", dust: "debrisdust", music: "zone_field_debris", flags: 130, visit: 36, color: "#b6afa0", ambient: "#706d68", density: 42, cube: 400, fill: 3600, empty: 0.8, dynamic: 20 },
+      ],
+      ice: [],
+      debris: [],
+      mine: [
+        { key: "mine", label: "Spikes", file: "li09_minefield.ini", zone: "Zone_Li09_minefield", texture: "solar\\\\asteroids\\\\mine_shapes.ini", shape: "spike_mine_tri", dust: "debrisdust", music: "zone_field_mine", flags: 4128, visit: 32, color: "#d6d8ff", ambient: "#606580", density: 70, cube: 275, fill: 2000, empty: 0.25, dynamic: 0, damage: 250 },
+      ],
+      gas: [
+        { key: "gas", label: "Gas", file: "li09_gas_pocket.ini", zone: "Zone_Li09_gas_pocket", texture: "solar\\\\asteroids\\\\rock_shapes.ini", shape: "mine_rock_tri", dust: "radioactivedust_red", music: "zone_badlands", flags: 16466, visit: 0, color: "#ab6338", ambient: "#78351c", density: 35, cube: 400, fill: 2400, empty: 0.5, dynamic: 4, damage: 40 },
+      ],
+      nebula: [
+        { key: "generic", label: "Generic", file: "li09_generic_nebula.ini", zone: "Zone_Li09_generic_nebula", texture: "solar\\\\nebula\\\\generic_shapes.ini", shape: "generic_cloud1", dust: "radioactivedust_blue", music: "zone_nebula_crow", flags: 32768, visit: 32, color: "#35699d", ambient: "#294d68", fog: "#18385c", density: 58, cube: 0, fill: 0, empty: 0, dynamic: 0 },
+        { key: "crow", label: "Crow", file: "li09_crow_nebula.ini", zone: "Zone_Li09_crow_nebula", texture: "solar\\\\nebula\\\\crow_shapes.ini", shape: "crow_cloud1", dust: "radioactivedust_blue", music: "zone_nebula_crow", flags: 32768, visit: 32, color: "#2e82bd", ambient: "#32556a", fog: "#0064a0", density: 66, cube: 0, fill: 0, empty: 0, dynamic: 0 },
+        { key: "edge", label: "Edge", file: "li09_edge_nebula.ini", zone: "Zone_Li09_edge_nebula", texture: "solar\\\\nebula\\\\edge_shapes.ini", shape: "edge_cloud1", dust: "organismdust", music: "zone_nebula_edge", flags: 32768, visit: 32, color: "#70b8a0", ambient: "#346b58", fog: "#285546", density: 52, cube: 0, fill: 0, empty: 0, dynamic: 0 },
+      ],
+    };
+
+    presets.ice = presets.asteroid.filter(p => p.key === "ice");
+    presets.debris = presets.asteroid.filter(p => p.key === "debris");
+
+    const $ = id => document.getElementById(id);
+    let activePreset = presets.asteroid[0];
+    let particles = [];
+    let selectedAsset = "minedout_asteroid10";
+    let placedObjects = [];
+
+    const assetCatalog = {
+      asteroid: [
+        { name: "minedout_asteroid10", kind: "rock", color: "#d8c28a" },
+        { name: "minedout_asteroid30", kind: "rock", color: "#c8b274" },
+        { name: "minedout_asteroid60", kind: "rock", color: "#b1965f" },
+        { name: "DAsteroid_mineable_small1", kind: "dynamic", color: "#e0c86d" },
+      ],
+      ice: [
+        { name: "ice_ast_chunk1", kind: "ice", color: "#a7d8ff" },
+        { name: "ice_ast_chunk2", kind: "ice", color: "#c7ecff" },
+        { name: "asteroid_ice_4", kind: "billboard", color: "#8fc8ff" },
+      ],
+      debris: [
+        { name: "debris_med1", kind: "debris", color: "#b6afa0" },
+        { name: "debris_large1", kind: "debris", color: "#948e84" },
+        { name: "debris_large3", kind: "debris", color: "#817a70" },
+      ],
+      mine: [
+        { name: "mine_spike1", kind: "mine", color: "#d6d8ff" },
+        { name: "mine_oxygen2", kind: "mine", color: "#ff9b5e" },
+        { name: "spike_mine_tri", kind: "billboard", color: "#b6baff" },
+      ],
+      gas: [
+        { name: "mine_oxygen2", kind: "gas mine", color: "#e08a55" },
+        { name: "mine_gas_pocket", kind: "hazard", color: "#ab6338" },
+      ],
+      nebula: [
+        { name: "generic_cloud1", kind: "cloud", color: "#35699d" },
+        { name: "crow_cloud1", kind: "cloud", color: "#2e82bd" },
+        { name: "edge_cloud1", kind: "cloud", color: "#70b8a0" },
+        { name: "nebula_circle2", kind: "fill", color: "#9cc8ff" },
+      ],
+    };
+
+    function hexToRgb(hex) {
+      const value = hex.replace("#", "");
+      return {
+        r: parseInt(value.slice(0, 2), 16),
+        g: parseInt(value.slice(2, 4), 16),
+        b: parseInt(value.slice(4, 6), 16),
+      };
+    }
+
+    function rgbText(hex) {
+      const c = hexToRgb(hex);
+      return `${c.r}, ${c.g}, ${c.b}`;
+    }
+
+    function buildPresetChips() {
+      const type = $("type").value;
+      const list = presets[type] && presets[type].length ? presets[type] : presets.asteroid;
+      const host = $("presetChips");
+      host.innerHTML = "";
+      list.forEach((preset, index) => {
+        const chip = document.createElement("div");
+        chip.className = "chip" + (preset.key === activePreset.key ? " active" : "");
+        chip.textContent = preset.label;
+        chip.onclick = () => {
+          activePreset = preset;
+          applyPreset(preset);
+        };
+        host.appendChild(chip);
+        if (index === 0 && !list.some(p => p.key === activePreset.key)) {
+          activePreset = preset;
+          applyPreset(preset);
+        }
+      });
+    }
+
+    function currentAssets() {
+      return assetCatalog[$("type").value] || assetCatalog.asteroid;
+    }
+
+    function buildAssetList() {
+      const host = $("assetList");
+      host.innerHTML = "";
+      const assets = currentAssets();
+      if (!assets.some(asset => asset.name === selectedAsset))
+        selectedAsset = assets[0].name;
+      assets.forEach(asset => {
+        const row = document.createElement("div");
+        row.className = "asset-row" + (asset.name === selectedAsset ? " active" : "");
+        row.onclick = () => {
+          selectedAsset = asset.name;
+          buildAssetList();
+        };
+        row.innerHTML = `<div class="asset-dot" style="background:${asset.color}"></div>
+          <div class="asset-name">${asset.name}</div>
+          <div class="asset-kind">${asset.kind}</div>`;
+        host.appendChild(row);
+      });
+    }
+
+    function addPlacedObject(object) {
+      placedObjects.push(object);
+      update();
+    }
+
+    function pseudoRandom(seed) {
+      let state = seed % 2147483647;
+      if (state <= 0)
+        state += 2147483646;
+      return () => {
+        state = state * 16807 % 2147483647;
+        return (state - 1) / 2147483646;
+      };
+    }
+
+    function autoDistribute() {
+      const assets = currentAssets();
+      const count = Math.max(1, Number($("autoCount").value) || 1);
+      const random = pseudoRandom(Number($("seed").value) || 1);
+      placedObjects = [];
+      for (let i = 0; i < count; ++i) {
+        const asset = assets[i % assets.length];
+        let x = random() * 2 - 1;
+        let y = random() * 2 - 1;
+        let z = random() * 2 - 1;
+        if ($("spread").value === "belt") {
+          y *= 0.18;
+        } else if ($("spread").value === "shell") {
+          const length = Math.max(0.001, Math.hypot(x, y, z));
+          x /= length;
+          y /= length;
+          z /= length;
+        }
+        placedObjects.push({
+          asset: asset.name,
+          x,
+          y,
+          z,
+          rx: Math.round(random() * 180),
+          ry: Math.round(random() * 180),
+          rz: Math.round(random() * 180),
+          role: asset.kind.includes("mine") || $("type").value === "mine" || $("type").value === "gas" ? "mine" : "",
+        });
+      }
+      update();
+    }
+
+    function updatePlacementRows() {
+      const host = $("placementRows");
+      host.innerHTML = "";
+      placedObjects.forEach(object => {
+        const row = document.createElement("tr");
+        row.innerHTML = `<td>${object.asset}</td>
+          <td>${object.x.toFixed(2)}</td>
+          <td>${object.y.toFixed(2)}</td>
+          <td>${object.z.toFixed(2)}</td>
+          <td>${Math.round(object.rx)}, ${Math.round(object.ry)}, ${Math.round(object.rz)}</td>`;
+        host.appendChild(row);
+      });
+    }
+
+    function applyPreset(preset) {
+      $("fileName").value = preset.file;
+      $("zoneName").value = preset.zone;
+      $("texturePanel").value = preset.texture;
+      $("billboardShape").value = preset.shape;
+      $("spacedust").value = preset.dust;
+      $("music").value = preset.music;
+      $("propertyFlags").value = preset.flags;
+      $("visit").value = preset.visit;
+      $("damage").value = preset.damage || 0;
+      $("primaryColor").value = preset.color;
+      $("ambientColor").value = preset.ambient;
+      $("fogColor").value = preset.fog || "#284878";
+      $("density").value = preset.density;
+      $("densityValue").value = preset.density;
+      $("cubeSize").value = preset.cube;
+      $("fillDist").value = preset.fill;
+      $("emptyCube").value = preset.empty;
+      $("dynamicCount").value = preset.dynamic;
+      $("cubeShapes").value = $("type").value === "nebula"
+        ? `${preset.shape}\n${preset.shape.replace("1", "2")}\n${preset.shape.replace("1", "3")}\n${preset.shape.replace("1", "4")}`
+        : $("cubeShapes").value;
+      buildPresetChips();
+      buildAssetList();
+      placedObjects = [];
+      rebuildParticles();
+      update();
+    }
+
+    function targetPath() {
+      const dir = $("type").value === "nebula" ? "DATA\\\\SOLAR\\\\NEBULA" : "DATA\\\\SOLAR\\\\ASTEROIDS";
+      return `${dir}\\\\${$("fileName").value}`;
+    }
+
+    function linkSectionName() {
+      return $("type").value === "nebula" ? "Nebula" : "Asteroids";
+    }
+
+    function generatedIni() {
+      const type = $("type").value;
+      const shapes = $("cubeShapes").value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      if (type === "nebula") {
+        const cloudShapes = shapes.length ? shapes : ["generic_cloud1", "generic_cloud2", "generic_cloud3", "generic_cloud4"];
+        return `[TexturePanels]
+file = ${$("texturePanel").value}
+
+[Fog]
+fog_enabled = 1
+near = 0
+distance = ${$("fogDistance").value}
+color = ${rgbText($("fogColor").value)}
+
+[properties]
+flag = nebula
+
+[Exterior]
+shape = ${cloudShapes[0].replace("cloud", "exterior")}
+shape = ${(cloudShapes[1] || cloudShapes[0]).replace("cloud", "exterior")}
+shape = ${(cloudShapes[2] || cloudShapes[0]).replace("cloud", "exterior")}
+shape = ${(cloudShapes[3] || cloudShapes[0]).replace("cloud", "exterior")}
+shape_weights = 1, 1, 1, 1
+fill_shape = nebula_circle2
+plane_slices = 3
+bit_radius = 10000
+bit_radius_random_variation = 0.2
+min_bits = 5
+max_bits = 8
+move_bit_percent = 0.75
+equator_bias = 0.5
+color = ${rgbText($("primaryColor").value)}
+
+[NebulaLight]
+ambient = ${rgbText($("ambientColor").value)}
+sun_burnthrough_intensity = 0.5
+sun_burnthrough_scaler = 2
+
+[Clouds]
+max_distance = 300
+puff_count = ${$("puffCount").value}
+puff_radius = 100
+puff_colora = ${rgbText($("primaryColor").value)}
+puff_colorb = 255, 255, 255
+puff_max_alpha = 0.5
+puff_shape = ${cloudShapes[0]}
+puff_shape = ${cloudShapes[1] || cloudShapes[0]}
+puff_shape = ${cloudShapes[2] || cloudShapes[0]}
+puff_shape = ${cloudShapes[3] || cloudShapes[0]}
+puff_weights = 1, 1, 1, 1
+puff_drift = 1
+near_fade_distance = 125, 200
+
+[BackgroundLightning]
+duration = ${$("lightningDuration").value}
+gap = ${$("lightningGap").value}
+color = ${rgbText($("ambientColor").value)}
+`;
+      }
+
+      const cubeObjects = placedObjects.length
+        ? placedObjects
+        : shapes.slice(0, 6).map((shape, index) => {
+          const values = [
+            [0.6, 0.2, -0.2, 35, 10, 20],
+            [0.2, 0.8, 0.3, 45, 20, 0],
+            [-0.3, -0.3, 0.8, 85, 0, 185],
+            [-0.2, -0.1, -0.6, 105, 160, 25],
+            [0.2, 0.4, -0.2, 105, 160, 25],
+            [-0.7, 0.4, -0.4, 75, 30, 70],
+          ][index % 6];
+          return { asset: shape, x: values[0], y: values[1], z: values[2], rx: values[3], ry: values[4], rz: values[5], role: "" };
+        });
+      const asteroidLines = cubeObjects.map(object => {
+        const mineFlag = object.role || $("type").value === "mine" || $("type").value === "gas" ? ", mine" : "";
+        return `asteroid = ${object.asset}, ${object.x.toFixed(2)}, ${object.y.toFixed(2)}, ${object.z.toFixed(2)}, ${Math.round(object.rx)}, ${Math.round(object.ry)}, ${Math.round(object.rz)}${mineFlag}`;
+      }).join("\n");
+
+      return `[TexturePanels]
+file = ${$("texturePanel").value}
+
+[Field]
+cube_size = ${$("cubeSize").value}
+fill_dist = ${$("fillDist").value}
+diffuse_color = ${rgbText($("primaryColor").value)}
+ambient_color = ${rgbText($("ambientColor").value)}
+ambient_increase = 70, 40, 30
+empty_cube_frequency = ${$("emptyCube").value}
+
+[properties]
+flag = ${$("type").value === "mine" ? "MINE_DANGER_OBJECTS" : $("type").value === "debris" ? "debris_objects" : "rock_objects"}
+flag = Object_density_med
+
+[Cube]
+${asteroidLines}
+
+[Band]
+render_parts = 6
+shape = asteroid_belt_04
+height = 4000
+offset_dist = 2000
+fade = 1, 1.35, 15, 17
+texture_aspect = 1
+color_shift = 0.8, 0.8, 0.8
+ambient_intensity = 1
+vert_increase = 2
+
+[AsteroidBillboards]
+count = ${Math.round(Number($("density").value) * 8)}
+start_dist = 2000
+fade_dist_percent = 0.35
+shape = ${$("billboardShape").value}
+color_shift = 0.8, 0.8, 0.8
+ambient_intensity = 1
+size = 70, 90
+
+[DynamicAsteroids]
+asteroid = DAsteroid_mineable_small1
+count = ${$("dynamicCount").value}
+placement_radius = 150
+placement_offset = 90
+max_velocity = 15
+max_angular_velocity = 3
+color_shift = 1, 1, 1
+`;
+    }
+
+    function update() {
+      $("densityValue").value = $("density").value;
+      $("pathLabel").textContent = targetPath();
+      $("previewMode").textContent = $("type").selectedOptions[0].textContent;
+      $("previewStats").textContent = `${$("density").value}% density`;
+      $("linkPreview").textContent = `[${linkSectionName()}]
+file = ${targetPath().replace(/^DATA\\\\/i, "").toLowerCase()}
+zone = ${$("zoneName").value}
+
+[Zone]
+nickname = ${$("zoneName").value}
+ids_name = ${$("idsName").value}
+property_flags = ${$("propertyFlags").value}
+visit = ${$("visit").value}
+spacedust = ${$("spacedust").value}
+Music = ${$("music").value}`;
+      $("iniPreview").textContent = generatedIni();
+      updatePlacementRows();
+    }
+
+    function rebuildParticles() {
+      const density = Number($("density").value);
+      const count = Math.max(40, Math.round(density * 4.5));
+      particles = Array.from({ length: count }, (_, i) => ({
+        x: Math.random() * 2 - 1,
+        y: Math.random() * 2 - 1,
+        z: Math.random() * 2 - 1,
+        r: 1.5 + Math.random() * 5,
+        spin: Math.random() * Math.PI * 2,
+        seed: i,
+      }));
+    }
+
+    function draw() {
+      const canvas = $("preview");
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      if (canvas.width !== Math.round(rect.width * dpr) || canvas.height !== Math.round(rect.height * dpr)) {
+        canvas.width = Math.round(rect.width * dpr);
+        canvas.height = Math.round(rect.height * dpr);
+      }
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const w = rect.width;
+      const h = rect.height;
+      ctx.clearRect(0, 0, w, h);
+
+      const fog = hexToRgb($("fogColor").value);
+      const primary = hexToRgb($("primaryColor").value);
+      const ambient = hexToRgb($("ambientColor").value);
+      const isNebula = $("type").value === "nebula";
+      const time = performance.now() * 0.00025;
+
+      const gradient = ctx.createLinearGradient(0, 0, w, h);
+      gradient.addColorStop(0, `rgb(${Math.round(fog.r * 0.2)}, ${Math.round(fog.g * 0.2)}, ${Math.round(fog.b * 0.28)})`);
+      gradient.addColorStop(1, "#05070a");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.save();
+      ctx.translate(w / 2, h / 2);
+      ctx.strokeStyle = "rgba(130, 170, 205, 0.28)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([7, 6]);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, w * 0.36, h * 0.32, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const sorted = particles.slice().sort((a, b) => a.z - b.z);
+      for (const p of sorted) {
+        const angle = time + p.seed * 0.07;
+        const x = p.x * Math.cos(angle) - p.z * Math.sin(angle);
+        const z = p.x * Math.sin(angle) + p.z * Math.cos(angle);
+        const perspective = 1 / (1.8 + z);
+        const sx = x * w * 0.34 * perspective;
+        const sy = p.y * h * 0.30 * perspective;
+        const alpha = isNebula ? 0.09 + perspective * 0.18 : 0.25 + perspective * 0.45;
+        const radius = (isNebula ? p.r * 6 : p.r) * perspective;
+
+        if (isNebula) {
+          const cloud = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius * 5);
+          cloud.addColorStop(0, `rgba(${primary.r}, ${primary.g}, ${primary.b}, ${alpha})`);
+          cloud.addColorStop(1, `rgba(${primary.r}, ${primary.g}, ${primary.b}, 0)`);
+          ctx.fillStyle = cloud;
+          ctx.beginPath();
+          ctx.arc(sx, sy, radius * 5, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          ctx.fillStyle = `rgba(${primary.r}, ${primary.g}, ${primary.b}, ${alpha})`;
+          ctx.strokeStyle = `rgba(${ambient.r + 50}, ${ambient.g + 50}, ${ambient.b + 50}, ${Math.min(0.8, alpha + 0.2)})`;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          const sides = $("type").value === "mine" ? 3 : 5;
+          for (let i = 0; i < sides; i++) {
+            const a = p.spin + i * Math.PI * 2 / sides + time * 4;
+            const px = sx + Math.cos(a) * radius * (1 + (i % 2) * 0.45);
+            const py = sy + Math.sin(a) * radius * 0.75;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
+
+      const placedSorted = placedObjects.slice().sort((a, b) => a.z - b.z);
+      for (const object of placedSorted) {
+        const angle = time;
+        const x = object.x * Math.cos(angle) - object.z * Math.sin(angle);
+        const z = object.x * Math.sin(angle) + object.z * Math.cos(angle);
+        const perspective = 1 / (1.7 + z);
+        const sx = x * w * 0.36 * perspective;
+        const sy = object.y * h * 0.32 * perspective;
+        const radius = 9 * perspective;
+        const isMine = object.role === "mine" || object.asset.toLowerCase().includes("mine");
+
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate((object.rz + performance.now() * 0.02) * Math.PI / 180);
+        ctx.fillStyle = isMine ? "rgba(255, 120, 80, 0.9)" : "rgba(245, 222, 150, 0.92)";
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.75)";
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        const sides = isMine ? 4 : 6;
+        for (let i = 0; i < sides; ++i) {
+          const a = i * Math.PI * 2 / sides;
+          const r = radius * (isMine && i % 2 ? 1.8 : 1.0);
+          const px = Math.cos(a) * r;
+          const py = Math.sin(a) * r * 0.76;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = "rgba(230, 238, 248, 0.9)";
+        ctx.font = "11px Segoe UI, Arial";
+        ctx.fillText(object.asset, sx + 10, sy - 8);
+      }
+
+      if (isNebula) {
+        ctx.fillStyle = `rgba(${fog.r}, ${fog.g}, ${fog.b}, 0.12)`;
+        ctx.fillRect(-w / 2, -h / 2, w, h);
+      }
+
+      ctx.restore();
+      requestAnimationFrame(draw);
+    }
+
+    document.querySelectorAll("input, select, textarea").forEach(el => {
+      el.addEventListener("input", () => {
+        if (el.id === "type") {
+          const list = presets[$("type").value] || presets.asteroid;
+          activePreset = list[0] || presets.asteroid[0];
+          applyPreset(activePreset);
+          return;
+        }
+        if (el.id === "density" || el.id === "densityValue") {
+          const value = el.value;
+          $("density").value = value;
+          $("densityValue").value = value;
+          rebuildParticles();
+        }
+        update();
+      });
+    });
+
+    document.querySelectorAll(".tab").forEach(tab => {
+      tab.onclick = () => {
+        document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+        tab.classList.add("active");
+        $("fieldTab").hidden = tab.dataset.tab !== "field";
+        $("placementTab").hidden = tab.dataset.tab !== "placement";
+        $("visualsTab").hidden = tab.dataset.tab !== "visuals";
+        $("effectsTab").hidden = tab.dataset.tab !== "effects";
+      };
+    });
+
+    $("resetButton").onclick = () => applyPreset(activePreset);
+    $("addAssetButton").onclick = () => addPlacedObject({
+      asset: selectedAsset,
+      x: Number($("placeX").value),
+      y: Number($("placeY").value),
+      z: Number($("placeZ").value),
+      rx: Number($("rotX").value),
+      ry: Number($("rotY").value),
+      rz: Number($("rotZ").value),
+      role: $("type").value === "mine" || $("type").value === "gas" || selectedAsset.toLowerCase().includes("mine") ? "mine" : "",
+    });
+    $("autoDistributeButton").onclick = autoDistribute;
+    [$("manualMode"), $("autoMode"), $("hybridMode")].forEach(button => {
+      button.onclick = () => {
+        [$("manualMode"), $("autoMode"), $("hybridMode")].forEach(other => other.classList.remove("active"));
+        button.classList.add("active");
+      };
+    });
+    $("saveButton").onclick = () => alert("Mockup only: this would save the generated INI template.");
+    $("openButton").onclick = () => alert("Mockup only: this would open the generated INI in FLAtlas.");
+
+    buildPresetChips();
+    applyPreset(activePreset);
+    draw();
+  </script>
+</body>
+</html>

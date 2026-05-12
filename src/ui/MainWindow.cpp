@@ -32,6 +32,7 @@
 #include "tools/HelpBrowser.h"
 #include "tools/KeyboardShortcutOverviewDialog.h"
 #include "tools/PathFinderDialog.h"
+#include "tools/FieldCreatorPage.h"
 #include "rendering/preview/ModelViewerPage.h"
 #include "rendering/view2d/MapScene.h"
 #include "rendering/view2d/ZoneLegendWidget.h"
@@ -152,6 +153,8 @@ QString toolKeyForWidget(QWidget *widget)
         return QStringLiteral("newsRumorEditor");
     if (qobject_cast<flatlas::rendering::ModelViewerPage *>(widget))
         return QStringLiteral("modelViewer");
+    if (qobject_cast<flatlas::tools::FieldCreatorPage *>(widget))
+        return QStringLiteral("fieldCreator");
     return {};
 }
 
@@ -995,6 +998,7 @@ void MainWindow::createMenus()
 
     // -- Tools --
     addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("modelViewer")), tr("&3D Model Viewer"), this, [this]() { openModelViewer(); });
+    addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("fieldCreator")), tr("&Field Creator"), this, [this]() { openToolByKey(QStringLiteral("fieldCreator"), false); });
     addMenuAction(toolsMenu, flatlas::ui::toolIcon(QStringLiteral("universe")), tr("&Shortest Path..."), this, [this]() { openShortestPathDialog(); });
     addMenuAction(toolsMenu, flatlas::ui::launchIcon(), tr("&Launch Freelancer..."), this, &MainWindow::launchFreelancerFromContext);
 
@@ -1868,6 +1872,13 @@ bool MainWindow::openToolByKey(const QString &key, bool pinned)
         auto *page = new flatlas::rendering::ModelViewerPage(this);
         const int idx = addToolTab(page, tr("3D Model Viewer"));
         connectModelViewerPage(page);
+        if (!pinned)
+            m_centerTabs->setCurrentIndex(idx);
+        return true;
+    }
+    if (key == QStringLiteral("fieldCreator")) {
+        auto *page = new flatlas::tools::FieldCreatorPage(this);
+        const int idx = addToolTab(page, tr("Field Creator"));
         if (!pinned)
             m_centerTabs->setCurrentIndex(idx);
         return true;
