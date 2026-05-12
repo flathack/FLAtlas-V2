@@ -4,6 +4,8 @@
 #include <QFile>
 #include <QTemporaryDir>
 
+#include <algorithm>
+
 #include "editors/trade/TradeRouteDataService.h"
 
 using namespace flatlas::editors;
@@ -33,6 +35,10 @@ QString createDataTree(QTemporaryDir &tempDir)
         return {};
     if (!QDir().mkpath(tempDir.filePath(QStringLiteral("DATA/UNIVERSE/SYSTEMS/SYS_B"))))
         return {};
+
+    writeTextFile(tempDir.filePath(QStringLiteral("DATA/constants.ini")),
+                  QStringLiteral("[Constants]\n"
+                                 "CRUISE_SPEED = 330\n"));
 
     writeTextFile(tempDir.filePath(QStringLiteral("DATA/EQUIPMENT/goods.ini")),
                   QStringLiteral("[Good]\n"
@@ -110,7 +116,27 @@ QString createDataTree(QTemporaryDir &tempDir)
                                  "nickname = sys_a_to_sys_b_gate\n"
                                  "goto = sys_b, sys_b_to_sys_a_gate, tunnel\n"
                                  "archetype = jumpgate\n"
-                                 "pos = 100, 0, 0\n"));
+                                 "pos = 100, 0, 0\n\n"
+                                 "[Object]\n"
+                                 "nickname = sys_a_trade_lane_ring_1\n"
+                                 "archetype = trade_lane_ring\n"
+                                 "next_ring = sys_a_trade_lane_ring_2\n"
+                                 "pos = 10, 0, 0\n\n"
+                                 "[Object]\n"
+                                 "nickname = sys_a_trade_lane_ring_2\n"
+                                 "archetype = trade_lane_ring\n"
+                                 "prev_ring = sys_a_trade_lane_ring_1\n"
+                                 "pos = 100, 0, 0\n\n"
+                                 "[Object]\n"
+                                 "nickname = sys_a_local_hole_1\n"
+                                 "goto = sys_a, sys_a_local_hole_2, tunnel\n"
+                                 "archetype = jumphole\n"
+                                 "pos = 25, 0, 0\n\n"
+                                 "[Object]\n"
+                                 "nickname = sys_a_local_hole_2\n"
+                                 "goto = sys_a, sys_a_local_hole_1, tunnel\n"
+                                 "archetype = jumphole\n"
+                                 "pos = 85, 0, 0\n"));
 
     writeTextFile(tempDir.filePath(QStringLiteral("DATA/UNIVERSE/SYSTEMS/SYS_B/sys_b.ini")),
                   QStringLiteral("[Object]\n"
@@ -137,8 +163,15 @@ void TestTradeRouteDataService::testLoadWorkspace()
     const TradeRouteWorkspaceData workspace = TradeRouteDataService::loadFromDataPath(dataPath);
     QCOMPARE(workspace.commodities.size(), 2);
     QCOMPARE(workspace.bases.size(), 2);
+    QCOMPARE(workspace.cruiseSpeed, 330.0);
+    QCOMPARE(workspace.tradeLanes.size(), 1);
     QVERIFY(workspace.universe);
     QCOMPARE(workspace.universe->connections.size(), 1);
+    QVERIFY(std::any_of(workspace.jumps.begin(), workspace.jumps.end(), [](const TradeJumpRecord &jump) {
+        return jump.systemNickname == QStringLiteral("sys_a")
+            && jump.targetSystemNickname == QStringLiteral("sys_a")
+            && jump.targetObjectNickname == QStringLiteral("sys_a_local_hole_2");
+    }));
 
     const auto baseAIt = std::find_if(workspace.bases.begin(), workspace.bases.end(), [](const TradeBaseRecord &base) {
         return base.nickname == QStringLiteral("base_a");

@@ -49,9 +49,16 @@ struct TradeJumpRecord {
     QString objectNickname;
     QString systemNickname;
     QString targetSystemNickname;
+    QString targetObjectNickname;
     QString kind;
     QVector3D position;
     QString objectDisplayName = {};
+};
+
+struct TradeLaneRecord {
+    QString systemNickname;
+    QStringList ringNicknames;
+    QVector<QVector3D> ringPositions;
 };
 
 struct TradePriceRecord {
@@ -75,7 +82,9 @@ struct TradeRouteWorkspaceData {
     QVector<TradeCommodityRecord> commodities;
     QVector<TradeBaseRecord> bases;
     QVector<TradeJumpRecord> jumps;
+    QVector<TradeLaneRecord> tradeLanes;
     QVector<TradePriceRecord> prices;
+    double cruiseSpeed = 300.0;
 };
 
 class TradeRouteDataService

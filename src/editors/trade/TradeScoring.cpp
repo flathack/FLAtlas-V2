@@ -9,6 +9,7 @@
 #include <QSet>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 using namespace flatlas::domain;
 
@@ -17,6 +18,7 @@ namespace flatlas::editors {
 namespace {
 
 constexpr double kCruiseSpeed = 300.0;
+constexpr double kTradeLaneSpeed = 2500.0;
 constexpr int kGateTimeSeconds = 10;
 constexpr int kBuyAndLaunchSeconds = 15;
 constexpr int kLandAndSellSeconds = 20;
@@ -44,6 +46,13 @@ double legDistance(const QVector3D &from, const QVector3D &to, bool *usedFallbac
     return kFallbackLegDistance;
 }
 
+double distanceMeters(const QVector3D &from, const QVector3D &to)
+{
+    const double dx = static_cast<double>(to.x() - from.x());
+    const double dz = static_cast<double>(to.z() - from.z());
+    return std::hypot(dx, dz);
+}
+
 QString displaySystemName(const UniverseData *universe, const QString &nickname)
 {
     if (!universe)
@@ -58,6 +67,23 @@ QString displayJumpName(const TradeJumpRecord &jump)
     const QString displayName = jump.objectDisplayName.trimmed();
     return displayName.isEmpty() ? jump.objectNickname : displayName;
 }
+
+struct TravelBreakdown {
+    QVector<TradeRouteSegment> segments;
+    double totalDistance = 0.0;
+    double totalSeconds = 0.0;
+};
+
+struct TravelNode {
+    QString id;
+    QVector3D position;
+    QString label;
+};
+
+struct TravelStep {
+    QString previousId;
+    TravelBreakdown movement;
+};
 
 } // namespace
 
@@ -272,14 +298,209 @@ QVector<TradeRouteCandidate> TradeScoring::calculateRoutes(const TradeRouteFilte
         return QStringLiteral("other");
     };
 
+    const double cruiseSpeed = m_workspace->cruiseSpeed > 0.0 ? m_workspace->cruiseSpeed : kCruiseSpeed;
+
+    QHash<QString, QVector<TradeLaneRecord>> tradeLanesBySystem;
+    for (const auto &lane : m_workspace->tradeLanes)
+        tradeLanesBySystem[normalized(lane.systemNickname)].append(lane);
+
+    QHash<QString, TradeJumpRecord> jumpsByObject;
+    for (const auto &jump : m_workspace->jumps) {
+        if (!jump.objectNickname.trimmed().isEmpty())
+            jumpsByObject.insert(normalized(jump.objectNickname), jump);
+    }
+
     auto firstJumpFor = [this](const QString &systemNickname, const QString &targetSystemNickname) {
         for (const auto &jump : m_workspace->jumps) {
             if (jump.systemNickname.compare(systemNickname, Qt::CaseInsensitive) == 0
+                && jump.targetSystemNickname.compare(systemNickname, Qt::CaseInsensitive) != 0
                 && jump.targetSystemNickname.compare(targetSystemNickname, Qt::CaseInsensitive) == 0) {
                 return jump;
             }
         }
         return TradeJumpRecord{};
+    };
+
+    auto surfaceBreakdown = [&](const QString &systemNickname,
+                                const QString &fromLabel,
+                                const QVector3D &fromPosition,
+                                const QString &toLabel,
+                                const QVector3D &toPosition) {
+        TravelBreakdown best;
+        bool usedFallback = false;
+        const double directDistance = legDistance(fromPosition, toPosition, &usedFallback);
+        best.totalDistance = directDistance;
+        best.totalSeconds = directDistance / cruiseSpeed;
+        best.segments.append({QStringLiteral("open_space"), systemNickname, displaySystemName(m_universe, systemNickname),
+                              fromLabel, toLabel, directDistance, qRound(best.totalSeconds)});
+
+        if (usedFallback)
+            return best;
+
+        const auto lanes = tradeLanesBySystem.value(normalized(systemNickname));
+        for (const auto &lane : lanes) {
+            if (lane.ringPositions.size() < 2)
+                continue;
+
+            int nearestFromIndex = 0;
+            int nearestToIndex = 0;
+            double nearestFromDistance = std::numeric_limits<double>::max();
+            double nearestToDistance = std::numeric_limits<double>::max();
+            for (int index = 0; index < lane.ringPositions.size(); ++index) {
+                const double fromDistance = distanceMeters(fromPosition, lane.ringPositions.at(index));
+                const double toDistance = distanceMeters(toPosition, lane.ringPositions.at(index));
+                if (fromDistance < nearestFromDistance) {
+                    nearestFromDistance = fromDistance;
+                    nearestFromIndex = index;
+                }
+                if (toDistance < nearestToDistance) {
+                    nearestToDistance = toDistance;
+                    nearestToIndex = index;
+                }
+            }
+
+            double laneDistance = 0.0;
+            const int startIndex = qMin(nearestFromIndex, nearestToIndex);
+            const int endIndex = qMax(nearestFromIndex, nearestToIndex);
+            for (int index = startIndex; index < endIndex; ++index)
+                laneDistance += distanceMeters(lane.ringPositions.at(index), lane.ringPositions.at(index + 1));
+
+            const double totalSeconds = (nearestFromDistance / cruiseSpeed)
+                + (laneDistance / kTradeLaneSpeed)
+                + (nearestToDistance / cruiseSpeed);
+            if (totalSeconds >= best.totalSeconds)
+                continue;
+
+            TravelBreakdown candidate;
+            candidate.totalDistance = nearestFromDistance + laneDistance + nearestToDistance;
+            candidate.totalSeconds = totalSeconds;
+            const QString laneStartLabel = lane.ringNicknames.value(nearestFromIndex, QStringLiteral("Trade Lane"));
+            const QString laneEndLabel = lane.ringNicknames.value(nearestToIndex, QStringLiteral("Trade Lane"));
+            if (nearestFromDistance > 0.01) {
+                candidate.segments.append({QStringLiteral("open_space"), systemNickname, displaySystemName(m_universe, systemNickname),
+                                           fromLabel, laneStartLabel, nearestFromDistance, qRound(nearestFromDistance / cruiseSpeed)});
+            }
+            if (laneDistance > 0.01) {
+                candidate.segments.append({QStringLiteral("trade_lane"), systemNickname, displaySystemName(m_universe, systemNickname),
+                                           laneStartLabel, laneEndLabel, laneDistance, qRound(laneDistance / kTradeLaneSpeed)});
+            }
+            if (nearestToDistance > 0.01) {
+                candidate.segments.append({QStringLiteral("open_space"), systemNickname, displaySystemName(m_universe, systemNickname),
+                                           laneEndLabel, toLabel, nearestToDistance, qRound(nearestToDistance / cruiseSpeed)});
+            }
+            best = candidate;
+        }
+        return best;
+    };
+
+    auto intraSystemBreakdown = [&](const QString &systemNickname,
+                                    const QString &fromLabel,
+                                    const QVector3D &fromPosition,
+                                    const QString &toLabel,
+                                    const QVector3D &toPosition) {
+        QVector<TradeJumpRecord> intraJumps;
+        for (const auto &jump : m_workspace->jumps) {
+            if (jump.systemNickname.compare(systemNickname, Qt::CaseInsensitive) == 0
+                && jump.targetSystemNickname.compare(systemNickname, Qt::CaseInsensitive) == 0
+                && !jump.targetObjectNickname.trimmed().isEmpty()
+                && jumpsByObject.contains(normalized(jump.targetObjectNickname))) {
+                intraJumps.append(jump);
+            }
+        }
+        if (intraJumps.isEmpty())
+            return surfaceBreakdown(systemNickname, fromLabel, fromPosition, toLabel, toPosition);
+
+        QVector<TravelNode> nodes;
+        nodes.append({QStringLiteral("start"), fromPosition, fromLabel});
+        nodes.append({QStringLiteral("end"), toPosition, toLabel});
+        for (const auto &jump : intraJumps)
+            nodes.append({QStringLiteral("jump:%1").arg(jump.objectNickname), jump.position, displayJumpName(jump)});
+
+        QHash<QString, TravelNode> nodeById;
+        for (const auto &node : nodes)
+            nodeById.insert(node.id, node);
+
+        QHash<QString, double> distances;
+        QHash<QString, TravelStep> previous;
+        QSet<QString> visited;
+        for (const auto &node : nodes)
+            distances.insert(node.id, std::numeric_limits<double>::max());
+        distances[QStringLiteral("start")] = 0.0;
+
+        while (visited.size() < nodes.size()) {
+            QString currentId;
+            double currentDistance = std::numeric_limits<double>::max();
+            for (const auto &node : nodes) {
+                if (visited.contains(node.id))
+                    continue;
+                const double candidateDistance = distances.value(node.id, std::numeric_limits<double>::max());
+                if (candidateDistance < currentDistance) {
+                    currentDistance = candidateDistance;
+                    currentId = node.id;
+                }
+            }
+            if (currentId.isEmpty() || !std::isfinite(currentDistance) || currentId == QStringLiteral("end"))
+                break;
+            visited.insert(currentId);
+
+            for (const auto &node : nodes) {
+                if (node.id == currentId || visited.contains(node.id))
+                    continue;
+                const auto movement = surfaceBreakdown(systemNickname,
+                                                       nodeById.value(currentId).label,
+                                                       nodeById.value(currentId).position,
+                                                       node.label,
+                                                       node.position);
+                const double nextDistance = currentDistance + movement.totalSeconds;
+                if (nextDistance < distances.value(node.id, std::numeric_limits<double>::max())) {
+                    distances[node.id] = nextDistance;
+                    previous[node.id] = {currentId, movement};
+                }
+            }
+
+            const QString currentJumpNickname = currentId.startsWith(QStringLiteral("jump:"))
+                ? currentId.mid(QStringLiteral("jump:").size())
+                : QString();
+            if (currentJumpNickname.isEmpty())
+                continue;
+
+            const TradeJumpRecord currentJump = jumpsByObject.value(normalized(currentJumpNickname));
+            const QString targetId = QStringLiteral("jump:%1").arg(currentJump.targetObjectNickname);
+            if (!nodeById.contains(targetId) || visited.contains(targetId))
+                continue;
+
+            TravelBreakdown jumpBreakdown;
+            jumpBreakdown.totalSeconds = kGateTimeSeconds;
+            const auto targetJump = jumpsByObject.value(normalized(currentJump.targetObjectNickname));
+            jumpBreakdown.segments.append({QStringLiteral("intra_jump"), systemNickname, displaySystemName(m_universe, systemNickname),
+                                           displayJumpName(currentJump), displayJumpName(targetJump), 0.0, kGateTimeSeconds});
+            const double nextDistance = currentDistance + jumpBreakdown.totalSeconds;
+            if (nextDistance < distances.value(targetId, std::numeric_limits<double>::max())) {
+                distances[targetId] = nextDistance;
+                previous[targetId] = {currentId, jumpBreakdown};
+            }
+        }
+
+        if (!std::isfinite(distances.value(QStringLiteral("end"), std::numeric_limits<double>::max())))
+            return surfaceBreakdown(systemNickname, fromLabel, fromPosition, toLabel, toPosition);
+
+        QVector<TravelBreakdown> reversedSteps;
+        QString cursor = QStringLiteral("end");
+        while (cursor != QStringLiteral("start")) {
+            if (!previous.contains(cursor))
+                return surfaceBreakdown(systemNickname, fromLabel, fromPosition, toLabel, toPosition);
+            const TravelStep step = previous.value(cursor);
+            reversedSteps.prepend(step.movement);
+            cursor = step.previousId;
+        }
+
+        TravelBreakdown result;
+        result.totalSeconds = distances.value(QStringLiteral("end"));
+        for (const auto &step : reversedSteps) {
+            result.totalDistance += step.totalDistance;
+            result.segments += step.segments;
+        }
+        return result;
     };
 
     auto buildSegments = [&](const TradeBaseRecord &buyBase,
@@ -290,21 +511,22 @@ QVector<TradeRouteCandidate> TradeScoring::calculateRoutes(const TradeRouteFilte
                              int *secondsOut) {
         QVector<TradeRouteSegment> segments;
         double totalDistance = 0.0;
-        int totalSeconds = 0;
+        double totalSeconds = 0.0;
 
         segments.append({QStringLiteral("buy_start"), buyBase.systemNickname, buyBase.systemDisplayName,
                          buyBase.displayName, buyBase.displayName, 0.0, kBuyAndLaunchSeconds});
         totalSeconds += kBuyAndLaunchSeconds;
 
         if (systemPath.size() <= 1) {
-            bool usedFallback = false;
-            const double distance = legDistance(buyBase.position, sellBase.position, &usedFallback);
-            segments.append({QStringLiteral("open_space"), buyBase.systemNickname, buyBase.systemDisplayName,
-                             buyBase.displayName, sellBase.displayName,
-                             distance, qRound(distance / kCruiseSpeed)});
-            totalDistance += distance;
-            totalSeconds += qRound(distance / kCruiseSpeed);
-            if (usedFallback)
+            const auto intra = intraSystemBreakdown(buyBase.systemNickname,
+                                                    buyBase.displayName,
+                                                    buyBase.position,
+                                                    sellBase.displayName,
+                                                    sellBase.position);
+            segments += intra.segments;
+            totalDistance += intra.totalDistance;
+            totalSeconds += intra.totalSeconds;
+            if (!hasPosition(buyBase.position) || !hasPosition(sellBase.position))
                 warnings->append(QObject::tr("In-system distance was approximated because object positions are incomplete."));
         } else {
             for (int i = 0; i < systemPath.size() - 1; ++i) {
@@ -324,17 +546,12 @@ QVector<TradeRouteCandidate> TradeScoring::calculateRoutes(const TradeRouteFilte
                     fromLabel = displayJumpName(previousArrival);
                 }
 
-                bool usedFallback = false;
-                const double distance = legDistance(fromPosition, departureJump.position, &usedFallback);
-                const int travelSeconds = qRound(distance / kCruiseSpeed);
-                segments.append({QStringLiteral("open_space"), currentSystem, displaySystemName(m_universe, currentSystem),
-                                 fromLabel,
-                                 departureJump.objectNickname.isEmpty() ? nextSystem : displayJumpName(departureJump),
-                                 distance,
-                                 travelSeconds});
-                totalDistance += distance;
-                totalSeconds += travelSeconds;
-                if (usedFallback)
+                const QString departureLabel = departureJump.objectNickname.isEmpty() ? nextSystem : displayJumpName(departureJump);
+                const auto intra = intraSystemBreakdown(currentSystem, fromLabel, fromPosition, departureLabel, departureJump.position);
+                segments += intra.segments;
+                totalDistance += intra.totalDistance;
+                totalSeconds += intra.totalSeconds;
+                if (!hasPosition(fromPosition) || !hasPosition(departureJump.position))
                     warnings->append(QObject::tr("Jump approach distance was approximated in %1.").arg(displaySystemName(m_universe, currentSystem)));
 
                 segments.append({QStringLiteral("jump"), currentSystem, displaySystemName(m_universe, currentSystem),
@@ -346,17 +563,12 @@ QVector<TradeRouteCandidate> TradeScoring::calculateRoutes(const TradeRouteFilte
             }
 
             const TradeJumpRecord arrivalJump = firstJumpFor(systemPath.last(), systemPath.at(systemPath.size() - 2));
-            bool usedFallback = false;
-            const double distance = legDistance(arrivalJump.position, sellBase.position, &usedFallback);
-            const int travelSeconds = qRound(distance / kCruiseSpeed);
-            segments.append({QStringLiteral("open_space"), sellBase.systemNickname, sellBase.systemDisplayName,
-                             arrivalJump.objectNickname.isEmpty() ? sellBase.systemNickname : displayJumpName(arrivalJump),
-                             sellBase.displayName,
-                             distance,
-                             travelSeconds});
-            totalDistance += distance;
-            totalSeconds += travelSeconds;
-            if (usedFallback)
+            const QString arrivalLabel = arrivalJump.objectNickname.isEmpty() ? sellBase.systemNickname : displayJumpName(arrivalJump);
+            const auto intra = intraSystemBreakdown(sellBase.systemNickname, arrivalLabel, arrivalJump.position, sellBase.displayName, sellBase.position);
+            segments += intra.segments;
+            totalDistance += intra.totalDistance;
+            totalSeconds += intra.totalSeconds;
+            if (!hasPosition(arrivalJump.position) || !hasPosition(sellBase.position))
                 warnings->append(QObject::tr("Final docking approach distance was approximated in %1.").arg(sellBase.systemDisplayName));
         }
 
@@ -365,7 +577,7 @@ QVector<TradeRouteCandidate> TradeScoring::calculateRoutes(const TradeRouteFilte
         totalSeconds += kLandAndSellSeconds;
 
         *distanceOut = totalDistance;
-        *secondsOut = totalSeconds;
+        *secondsOut = qRound(totalSeconds);
         return segments;
     };
 

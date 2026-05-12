@@ -54,6 +54,11 @@ QString resolveSelectEquipIni(const QString &dataPath)
     return flatlas::core::PathUtils::ciResolvePath(dataPath, QStringLiteral("EQUIPMENT/select_equip.ini"));
 }
 
+QString resolveConstantsIni(const QString &dataPath)
+{
+    return flatlas::core::PathUtils::ciResolvePath(dataPath, QStringLiteral("constants.ini"));
+}
+
 QString preferredMarketFile(const QString &dataPath)
 {
     const QString preferred = flatlas::core::PathUtils::ciResolvePath(dataPath, QStringLiteral("EQUIPMENT/market_commodities.ini"));
@@ -101,6 +106,13 @@ void applyUniverseDisplayNames(UniverseData *universe, const IdsStringTable &ids
 
 QHash<QString, IniSection> selectCommoditySections(const QString &selectEquipPath);
 
+struct TradeLaneRingScanRecord {
+    QString nickname;
+    QString previousRing;
+    QString nextRing;
+    QVector3D position;
+};
+
 QStringList marketFiles(const QString &dataPath)
 {
     QStringList files;
@@ -128,7 +140,8 @@ void scanSystemObjects(const QString &dataPath,
                        const std::shared_ptr<UniverseData> &universe,
                        const IdsStringTable &ids,
                        QHash<QString, TradeBaseRecord> *bases,
-                       QVector<TradeJumpRecord> *jumps)
+                       QVector<TradeJumpRecord> *jumps,
+                       QVector<TradeLaneRecord> *tradeLanes)
 {
     if (!universe)
         return;
@@ -139,6 +152,7 @@ void scanSystemObjects(const QString &dataPath,
             continue;
 
         const IniDocument doc = IniParser::parseFile(filePath);
+        QHash<QString, TradeLaneRingScanRecord> tradeLaneRings;
         for (const auto &section : doc) {
             if (section.name.compare(QStringLiteral("Object"), Qt::CaseInsensitive) != 0)
                 continue;
@@ -151,6 +165,20 @@ void scanSystemObjects(const QString &dataPath,
             const QString objectDisplayName =
                 resolvedIdsDisplayName(ids, idsName, objectNickname.isEmpty() ? baseNickname : objectNickname);
             const QVector3D position = parsePos(section.value(QStringLiteral("pos")));
+            const QString previousRing = section.value(QStringLiteral("prev_ring")).trimmed();
+            const QString nextRing = section.value(QStringLiteral("next_ring")).trimmed();
+            const bool isTradeLaneRing = archetype.contains(QStringLiteral("trade_lane_ring"), Qt::CaseInsensitive)
+                || !previousRing.isEmpty()
+                || !nextRing.isEmpty();
+
+            if (isTradeLaneRing && !objectNickname.isEmpty()) {
+                TradeLaneRingScanRecord ring;
+                ring.nickname = objectNickname;
+                ring.previousRing = previousRing;
+                ring.nextRing = nextRing;
+                ring.position = position;
+                tradeLaneRings.insert(normalizedNickname(objectNickname), ring);
+            }
 
             if (!baseNickname.isEmpty()) {
                 TradeBaseRecord base;
@@ -174,13 +202,15 @@ void scanSystemObjects(const QString &dataPath,
                 continue;
 
             const QString targetSystem = parts.at(0).trimmed();
-            if (targetSystem.isEmpty() || targetSystem.compare(system.nickname, Qt::CaseInsensitive) == 0)
+            if (targetSystem.isEmpty())
                 continue;
 
             TradeJumpRecord jump;
             jump.objectNickname = objectNickname;
             jump.systemNickname = system.nickname;
             jump.targetSystemNickname = targetSystem;
+            if (parts.size() > 1)
+                jump.targetObjectNickname = parts.at(1).trimmed();
             jump.kind = section.value(QStringLiteral("archetype")).contains(QStringLiteral("jumphole"), Qt::CaseInsensitive)
                 ? QStringLiteral("hole")
                 : QStringLiteral("gate");
@@ -188,7 +218,64 @@ void scanSystemObjects(const QString &dataPath,
             jump.objectDisplayName = objectDisplayName;
             jumps->append(jump);
         }
+
+        QSet<QString> consumedRings;
+        for (auto it = tradeLaneRings.constBegin(); it != tradeLaneRings.constEnd(); ++it) {
+            QString startKey = it.key();
+            QSet<QString> seenPrevious;
+            while (tradeLaneRings.contains(startKey)) {
+                const auto ring = tradeLaneRings.value(startKey);
+                const QString previousKey = normalizedNickname(ring.previousRing);
+                if (previousKey.isEmpty() || seenPrevious.contains(previousKey) || !tradeLaneRings.contains(previousKey))
+                    break;
+                seenPrevious.insert(previousKey);
+                startKey = previousKey;
+            }
+
+            if (consumedRings.contains(startKey))
+                continue;
+
+            TradeLaneRecord lane;
+            lane.systemNickname = system.nickname;
+            QString currentKey = startKey;
+            QSet<QString> seenNext;
+            while (tradeLaneRings.contains(currentKey) && !seenNext.contains(currentKey)) {
+                seenNext.insert(currentKey);
+                consumedRings.insert(currentKey);
+                const auto ring = tradeLaneRings.value(currentKey);
+                lane.ringNicknames.append(ring.nickname);
+                lane.ringPositions.append(ring.position);
+                currentKey = normalizedNickname(ring.nextRing);
+                if (currentKey.isEmpty())
+                    break;
+            }
+            if (lane.ringPositions.size() >= 2)
+                tradeLanes->append(lane);
+        }
     }
+}
+
+double loadCruiseSpeed(const QString &dataPath)
+{
+    const QString constantsPath = resolveConstantsIni(dataPath);
+    if (constantsPath.isEmpty() || !QFile::exists(constantsPath))
+        return 300.0;
+
+    const IniDocument doc = IniParser::parseFile(constantsPath);
+    const QStringList keys = {
+        QStringLiteral("CRUISE_SPEED"),
+        QStringLiteral("cruise_speed"),
+        QStringLiteral("CruiseSpeed"),
+    };
+    for (const auto &section : doc) {
+        for (const QString &key : keys) {
+            bool ok = false;
+            const double value = section.value(key).trimmed().toDouble(&ok);
+            if (ok && value > 0.0)
+                return value;
+        }
+    }
+    return 300.0;
 }
 
 QVector<TradeCommodityRecord> loadCommodities(const QString &goodsFilePath,
@@ -646,6 +733,7 @@ TradeRouteWorkspaceData TradeRouteDataService::loadFromDataPath(const QString &d
     workspace.goodsFilePath = resolveGoodsIni(dataPath);
     workspace.selectEquipFilePath = resolveSelectEquipIni(dataPath);
     workspace.preferredMarketFilePath = preferredMarketFile(dataPath);
+    workspace.cruiseSpeed = loadCruiseSpeed(dataPath);
 
     IdsStringTable ids;
     if (!dataPath.isEmpty())
@@ -667,7 +755,7 @@ TradeRouteWorkspaceData TradeRouteDataService::loadFromDataPath(const QString &d
                                             ids);
 
     QHash<QString, TradeBaseRecord> bases;
-    scanSystemObjects(dataPath, workspace.universe, ids, &bases, &workspace.jumps);
+    scanSystemObjects(dataPath, workspace.universe, ids, &bases, &workspace.jumps, &workspace.tradeLanes);
     workspace.bases = bases.values().toVector();
     std::sort(workspace.bases.begin(), workspace.bases.end(), [](const TradeBaseRecord &left, const TradeBaseRecord &right) {
         return left.nickname.toLower() < right.nickname.toLower();
