@@ -125,7 +125,7 @@ QStringList defaultPinnedTools()
 
 QUrl guideManifestUrl()
 {
-    return QUrl(QStringLiteral("https://flathack.github.io/FLAtlas-V2/guides/guide-index.json"));
+    return QUrl(QStringLiteral("https://flathack.github.io/guides/guide-index.json"));
 }
 
 QString toolKeyForWidget(QWidget *widget)

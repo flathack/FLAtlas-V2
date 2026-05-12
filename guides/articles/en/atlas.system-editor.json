@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "id": "atlas.system-editor",
+  "language": "en",
+  "title": "Using the System Editor",
+  "summary": "How the system map, object list, properties and preview work together in FLAtlas.",
+  "category": "FLAtlas Usage",
+  "tags": ["atlas", "system-editor", "objects", "zones", "map"],
+  "contexts": ["system-editor"],
+  "updatedAt": "2026-05-12T00:00:00Z",
+  "blocks": [
+    {
+      "type": "paragraph",
+      "text": "The System Editor connects the 2D map, object list and properties panel. Changes should remain traceable to the currently selected object or zone."
+    },
+    {
+      "type": "checklist",
+      "title": "Typical workflow",
+      "items": [
+        "Open a system file",
+        "Select an object or zone in the map or list",
+        "Review and edit properties",
+        "Keep changes undoable",
+        "Save the file while preserving comments"
+      ]
+    },
+    {
+      "type": "file-map",
+      "title": "Important data sources",
+      "items": [
+        { "path": "DATA/UNIVERSE/SYSTEMS/<system>/<system>.ini", "purpose": "Objects, zones, lights and ambient settings" },
+        { "path": "DATA/SOLAR/solararch.ini", "purpose": "Solar archetypes and models" },
+        { "path": "DATA/UNIVERSE/universe.ini", "purpose": "System registration and jump connections" }
+      ]
+    },
+    {
+      "type": "related",
+      "articleIds": ["modding.ini.basics", "modding.factions.introduction"]
+    }
+  ]
+}

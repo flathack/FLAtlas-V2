@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "id": "modding.factions.introduction",
+  "language": "en",
+  "title": "Adding factions to the game",
+  "summary": "Which Freelancer files are involved in a new faction and how they relate to each other.",
+  "category": "Modding Basics",
+  "tags": ["faction", "initialworld", "empathy", "ids", "npc", "loadouts"],
+  "contexts": ["faction-editor", "npc-editor", "system-editor"],
+  "updatedAt": "2026-05-12T00:00:00Z",
+  "blocks": [
+    {
+      "type": "paragraph",
+      "text": "A new faction in Freelancer is not defined in a single file. Atlas should show which entries belong together and in which order they are usually created."
+    },
+    {
+      "type": "checklist",
+      "title": "Recommended order",
+      "items": [
+        "Create IDS entries for names and descriptions",
+        "Define the faction group with nickname and IDS references",
+        "Maintain reputation and empathy relationships",
+        "Check NPC, encounter and loadout references",
+        "Review usage in systems, bases and markets"
+      ]
+    },
+    {
+      "type": "file-map",
+      "title": "Typical files",
+      "items": [
+        { "path": "DATA/INITIALWORLD.INI", "purpose": "Faction groups and initial relationships" },
+        { "path": "DATA/MISSIONS/faction_prop.ini", "purpose": "Properties, NPC affinity and behavior" },
+        { "path": "DATA/MISSIONS/mbases.ini", "purpose": "NPCs, rooms and base behavior" },
+        { "path": "EXE/*.dll", "purpose": "IDS names and infocard text" }
+      ]
+    },
+    {
+      "type": "code",
+      "language": "ini",
+      "title": "Minimal group structure",
+      "text": "[Group]\nnickname = fc_example_grp\nids_name = 123456\nids_info = 123457"
+    },
+    {
+      "type": "related",
+      "articleIds": ["modding.ids.infocards", "modding.ini.basics"]
+    }
+  ]
+}

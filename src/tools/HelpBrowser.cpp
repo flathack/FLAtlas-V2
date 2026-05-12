@@ -3,10 +3,16 @@
 #include "infrastructure/guide/GuideArticleRenderer.h"
 #include "infrastructure/guide/GuideRepository.h"
 
+#include <QComboBox>
+#include <QHBoxLayout>
+#include <QLineEdit>
 #include <QListWidget>
+#include <QSignalBlocker>
 #include <QSplitter>
 #include <QTextBrowser>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 namespace flatlas::tools {
 namespace {
@@ -18,6 +24,60 @@ bool isBetterContextArticle(const flatlas::domain::guide::GuideArticle &article,
     if (article.id == QStringLiteral("atlas.%1").arg(context))
         return true;
     return article.id.endsWith(QStringLiteral(".%1").arg(context));
+}
+
+bool contains(const QString &text, const QString &query)
+{
+    return text.contains(query, Qt::CaseInsensitive);
+}
+
+bool listContains(const QStringList &values, const QString &query)
+{
+    for (const QString &value : values) {
+        if (contains(value, query))
+            return true;
+    }
+    return false;
+}
+
+bool blockContains(const flatlas::domain::guide::GuideBlock &block, const QString &query)
+{
+    if (contains(block.title, query) || contains(block.text, query) || listContains(block.items, query)
+        || listContains(block.articleIds, query)) {
+        return true;
+    }
+
+    for (const auto &item : block.fileItems) {
+        if (contains(item.path, query) || contains(item.purpose, query) || contains(item.text, query))
+            return true;
+    }
+
+    return false;
+}
+
+bool articleMatchesSearch(const flatlas::domain::guide::GuideArticle &article, const QString &query)
+{
+    const QString trimmed = query.trimmed();
+    if (trimmed.isEmpty())
+        return true;
+
+    if (contains(article.id, trimmed) || contains(article.title, trimmed) || contains(article.summary, trimmed)
+        || contains(article.category, trimmed) || listContains(article.tags, trimmed)
+        || listContains(article.contexts, trimmed)) {
+        return true;
+    }
+
+    for (const auto &block : article.blocks) {
+        if (blockContains(block, trimmed))
+            return true;
+    }
+
+    return false;
+}
+
+QString articleTopicKey(const flatlas::domain::guide::GuideArticle &article)
+{
+    return QStringLiteral("%1:%2").arg(article.language, article.id);
 }
 
 } // namespace
@@ -36,14 +96,34 @@ void HelpBrowser::buildUi()
 {
     m_splitter = new QSplitter(Qt::Horizontal, this);
 
+    auto *navigation = new QWidget;
+    auto *navigationLayout = new QVBoxLayout(navigation);
+    navigationLayout->setContentsMargins(0, 0, 0, 0);
+
+    m_searchEdit = new QLineEdit;
+    m_searchEdit->setObjectName(QStringLiteral("guideSearchEdit"));
+    m_searchEdit->setPlaceholderText(tr("Search help"));
+
+    m_languageFilter = new QComboBox;
+    m_languageFilter->setObjectName(QStringLiteral("guideLanguageFilter"));
+
+    m_categoryFilter = new QComboBox;
+    m_categoryFilter->setObjectName(QStringLiteral("guideCategoryFilter"));
+
     m_topicList = new QListWidget;
+    m_topicList->setObjectName(QStringLiteral("guideTopicList"));
     m_topicList->setMaximumWidth(250);
     m_topicList->setMinimumWidth(150);
+
+    navigationLayout->addWidget(m_searchEdit);
+    navigationLayout->addWidget(m_languageFilter);
+    navigationLayout->addWidget(m_categoryFilter);
+    navigationLayout->addWidget(m_topicList, 1);
 
     m_browser = new QTextBrowser;
     m_browser->setOpenExternalLinks(true);
 
-    m_splitter->addWidget(m_topicList);
+    m_splitter->addWidget(navigation);
     m_splitter->addWidget(m_browser);
     m_splitter->setStretchFactor(0, 0);
     m_splitter->setStretchFactor(1, 1);
@@ -58,6 +138,12 @@ void HelpBrowser::buildUi()
         if (m_topics.contains(resolvedId))
             m_browser->setHtml(m_topics.value(resolvedId).html);
     });
+    connect(m_searchEdit, &QLineEdit::textChanged, this, [this]() { refreshTopicList(); });
+    connect(m_languageFilter, &QComboBox::currentTextChanged, this, [this]() {
+        rebuildCategoryFilter();
+        refreshTopicList();
+    });
+    connect(m_categoryFilter, &QComboBox::currentTextChanged, this, [this]() { refreshTopicList(); });
 }
 
 void HelpBrowser::showTopic(const QString &topicId)
@@ -84,10 +170,7 @@ void HelpBrowser::showTopic(const QString &topicId)
 void HelpBrowser::registerTopic(const HelpTopic &topic)
 {
     m_topics.insert(topic.id, topic);
-
-    auto *item = new QListWidgetItem(topic.title);
-    item->setData(Qt::UserRole, topic.id);
-    m_topicList->addItem(item);
+    refreshTopicList();
 }
 
 void HelpBrowser::showEmptyState()
@@ -114,16 +197,22 @@ bool HelpBrowser::loadGuideArticles(const QVector<flatlas::domain::guide::GuideA
         if (article.id.trimmed().isEmpty() || article.title.trimmed().isEmpty())
             continue;
 
-        registerTopic({article.id, article.title, renderer.renderHtml(article)});
+        const QString topicKey = articleTopicKey(article);
+        m_articles.insert(topicKey, article);
+        registerTopic({topicKey, article.title, renderer.renderHtml(article)});
 
         for (const QString &context : article.contexts) {
             if (context.trimmed().isEmpty())
                 continue;
             const QString existingArticleId = m_topicAliases.value(context);
             if (existingArticleId.isEmpty() || isBetterContextArticle(article, context))
-                m_topicAliases.insert(context, article.id);
+                m_topicAliases.insert(context, topicKey);
         }
     }
+
+    rebuildLanguageFilter();
+    rebuildCategoryFilter();
+    refreshTopicList();
 
     if (m_topics.isEmpty()) {
         loadBuiltinTopics();
@@ -314,11 +403,99 @@ void HelpBrowser::loadBuiltinTopics()
 void HelpBrowser::clearTopics()
 {
     m_topics.clear();
+    m_articles.clear();
     m_topicAliases.clear();
     if (m_topicList)
         m_topicList->clear();
+    if (m_searchEdit)
+        m_searchEdit->clear();
+    if (m_languageFilter)
+        m_languageFilter->clear();
+    if (m_categoryFilter)
+        m_categoryFilter->clear();
     if (m_browser)
         m_browser->clear();
+}
+
+void HelpBrowser::rebuildLanguageFilter()
+{
+    if (!m_languageFilter)
+        return;
+
+    const QSignalBlocker blocker(m_languageFilter);
+    const QString previous = m_languageFilter->currentText();
+    m_languageFilter->clear();
+
+    QStringList languages;
+    for (const auto &article : m_articles) {
+        if (!article.language.trimmed().isEmpty() && !languages.contains(article.language))
+            languages.append(article.language);
+    }
+    std::sort(languages.begin(), languages.end());
+    m_languageFilter->addItems(languages);
+
+    const int previousIndex = m_languageFilter->findText(previous);
+    if (previousIndex >= 0)
+        m_languageFilter->setCurrentIndex(previousIndex);
+}
+
+void HelpBrowser::rebuildCategoryFilter()
+{
+    if (!m_categoryFilter)
+        return;
+
+    const QSignalBlocker blocker(m_categoryFilter);
+    m_categoryFilter->clear();
+    m_categoryFilter->addItem(tr("All categories"));
+
+    QStringList categories;
+    for (const auto &article : m_articles) {
+        if (m_languageFilter && !m_languageFilter->currentText().isEmpty()
+            && article.language != m_languageFilter->currentText()) {
+            continue;
+        }
+        if (!article.category.trimmed().isEmpty() && !categories.contains(article.category))
+            categories.append(article.category);
+    }
+    std::sort(categories.begin(), categories.end());
+    m_categoryFilter->addItems(categories);
+}
+
+void HelpBrowser::refreshTopicList()
+{
+    if (!m_topicList)
+        return;
+
+    const QString selectedId = m_topicList->currentItem()
+        ? m_topicList->currentItem()->data(Qt::UserRole).toString()
+        : QString();
+    m_topicList->clear();
+
+    const QString query = m_searchEdit ? m_searchEdit->text() : QString();
+    const QString category = m_categoryFilter && m_categoryFilter->currentIndex() > 0
+        ? m_categoryFilter->currentText()
+        : QString();
+    const QString language = m_languageFilter ? m_languageFilter->currentText() : QString();
+
+    for (auto it = m_topics.cbegin(); it != m_topics.cend(); ++it) {
+        const auto articleIt = m_articles.constFind(it.key());
+        if (articleIt != m_articles.cend()) {
+            if (!language.isEmpty() && articleIt->language != language)
+                continue;
+            if (!category.isEmpty() && articleIt->category != category)
+                continue;
+            if (!articleMatchesSearch(*articleIt, query))
+                continue;
+        } else if (!query.trimmed().isEmpty() && !contains(it->title, query)) {
+            continue;
+        }
+
+        auto *item = new QListWidgetItem(it->title);
+        item->setData(Qt::UserRole, it.key());
+        m_topicList->addItem(item);
+        if (it.key() == selectedId)
+            m_topicList->setCurrentItem(item);
+    }
 }
 
 QString HelpBrowser::resolveTopicId(const QString &topicId) const

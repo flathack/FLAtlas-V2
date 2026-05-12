@@ -5,6 +5,9 @@
 
 #include "domain/guide/GuideArticle.h"
 
+#include <QComboBox>
+#include <QLineEdit>
+#include <QListWidget>
 #include <QTextBrowser>
 
 using namespace flatlas::tools;
@@ -25,7 +28,36 @@ private slots:
     void testTopicForContextAllMappings();
     void testLoadGuideArticlesReplacesBuiltinTopics();
     void testContextAliasDisplaysGuideArticle();
+    void testGuideCategoriesAreAvailable();
+    void testGuideCategoryFiltersTopics();
+    void testGuideSearchFiltersTopics();
+    void testGuideLanguageFilterSwitchesTopics();
 };
+
+namespace {
+
+flatlas::domain::guide::GuideArticle makeGuideArticle(const QString &id,
+                                                      const QString &title,
+                                                      const QString &category,
+                                                      const QString &text,
+                                                      const QString &language = QStringLiteral("de"))
+{
+    flatlas::domain::guide::GuideArticle article;
+    article.id = id;
+    article.language = language;
+    article.title = title;
+    article.summary = QStringLiteral("Guide aus dem Online-Katalog.");
+    article.category = category;
+    article.contexts = {QStringLiteral("system-editor")};
+
+    flatlas::domain::guide::GuideBlock block;
+    block.type = QStringLiteral("paragraph");
+    block.text = text;
+    article.blocks.append(block);
+    return article;
+}
+
+} // namespace
 
 void TestHelpBrowser::testStartsWithoutTopics()
 {
@@ -158,7 +190,7 @@ void TestHelpBrowser::testLoadGuideArticlesReplacesBuiltinTopics()
 
     const QStringList ids = browser.topicIds();
     QCOMPARE(ids.size(), 1);
-    QVERIFY(ids.contains(QStringLiteral("atlas.system-editor")));
+    QVERIFY(ids.contains(QStringLiteral("de:atlas.system-editor")));
     QVERIFY(!ids.contains(QStringLiteral("overview")));
 }
 
@@ -186,6 +218,113 @@ void TestHelpBrowser::testContextAliasDisplaysGuideArticle()
     QVERIFY(textBrowser->toPlainText().contains(QStringLiteral("Dieser Text kommt aus dem strukturierten Guide-Artikel.")));
 
     browser.close();
+}
+
+void TestHelpBrowser::testGuideCategoriesAreAvailable()
+{
+    HelpBrowser browser;
+    QVERIFY(browser.loadGuideArticles({
+        makeGuideArticle(QStringLiteral("atlas.system-editor"),
+                         QStringLiteral("System-Editor benutzen"),
+                         QStringLiteral("FLAtlas Bedienung"),
+                         QStringLiteral("Systemkarte und Properties.")),
+        makeGuideArticle(QStringLiteral("modding.ini.basics"),
+                         QStringLiteral("Freelancer-INI-Grundlagen"),
+                         QStringLiteral("Modding Grundlagen"),
+                         QStringLiteral("Sections und Keys."))
+    }));
+
+    auto *categoryFilter = browser.findChild<QComboBox *>(QStringLiteral("guideCategoryFilter"));
+    QVERIFY(categoryFilter);
+    QVERIFY(categoryFilter->findText(QStringLiteral("FLAtlas Bedienung")) >= 0);
+    QVERIFY(categoryFilter->findText(QStringLiteral("Modding Grundlagen")) >= 0);
+}
+
+void TestHelpBrowser::testGuideCategoryFiltersTopics()
+{
+    HelpBrowser browser;
+    QVERIFY(browser.loadGuideArticles({
+        makeGuideArticle(QStringLiteral("atlas.system-editor"),
+                         QStringLiteral("System-Editor benutzen"),
+                         QStringLiteral("FLAtlas Bedienung"),
+                         QStringLiteral("Systemkarte und Properties.")),
+        makeGuideArticle(QStringLiteral("modding.ini.basics"),
+                         QStringLiteral("Freelancer-INI-Grundlagen"),
+                         QStringLiteral("Modding Grundlagen"),
+                         QStringLiteral("Sections und Keys."))
+    }));
+
+    auto *categoryFilter = browser.findChild<QComboBox *>(QStringLiteral("guideCategoryFilter"));
+    auto *topicList = browser.findChild<QListWidget *>(QStringLiteral("guideTopicList"));
+    QVERIFY(categoryFilter);
+    QVERIFY(topicList);
+
+    categoryFilter->setCurrentText(QStringLiteral("FLAtlas Bedienung"));
+    QCOMPARE(topicList->count(), 1);
+    QCOMPARE(topicList->item(0)->text(), QStringLiteral("System-Editor benutzen"));
+
+    categoryFilter->setCurrentIndex(0);
+    QCOMPARE(topicList->count(), 2);
+}
+
+void TestHelpBrowser::testGuideSearchFiltersTopics()
+{
+    HelpBrowser browser;
+    QVERIFY(browser.loadGuideArticles({
+        makeGuideArticle(QStringLiteral("atlas.system-editor"),
+                         QStringLiteral("System-Editor benutzen"),
+                         QStringLiteral("FLAtlas Bedienung"),
+                         QStringLiteral("Systemkarte und Properties.")),
+        makeGuideArticle(QStringLiteral("modding.ini.basics"),
+                         QStringLiteral("Freelancer-INI-Grundlagen"),
+                         QStringLiteral("Modding Grundlagen"),
+                         QStringLiteral("Sections und Keys."))
+    }));
+
+    auto *searchEdit = browser.findChild<QLineEdit *>(QStringLiteral("guideSearchEdit"));
+    auto *topicList = browser.findChild<QListWidget *>(QStringLiteral("guideTopicList"));
+    QVERIFY(searchEdit);
+    QVERIFY(topicList);
+    QCOMPARE(topicList->count(), 2);
+
+    searchEdit->setText(QStringLiteral("Sections"));
+    QCOMPARE(topicList->count(), 1);
+    QCOMPARE(topicList->item(0)->text(), QStringLiteral("Freelancer-INI-Grundlagen"));
+
+    searchEdit->clear();
+    QCOMPARE(topicList->count(), 2);
+}
+
+void TestHelpBrowser::testGuideLanguageFilterSwitchesTopics()
+{
+    HelpBrowser browser;
+    QVERIFY(browser.loadGuideArticles({
+        makeGuideArticle(QStringLiteral("atlas.system-editor"),
+                         QStringLiteral("System-Editor benutzen"),
+                         QStringLiteral("FLAtlas Bedienung"),
+                         QStringLiteral("Systemkarte und Properties."),
+                         QStringLiteral("de")),
+        makeGuideArticle(QStringLiteral("atlas.system-editor"),
+                         QStringLiteral("Using the System Editor"),
+                         QStringLiteral("FLAtlas Usage"),
+                         QStringLiteral("System map and properties."),
+                         QStringLiteral("en"))
+    }));
+
+    auto *languageFilter = browser.findChild<QComboBox *>(QStringLiteral("guideLanguageFilter"));
+    auto *topicList = browser.findChild<QListWidget *>(QStringLiteral("guideTopicList"));
+    QVERIFY(languageFilter);
+    QVERIFY(topicList);
+    QVERIFY(languageFilter->findText(QStringLiteral("de")) >= 0);
+    QVERIFY(languageFilter->findText(QStringLiteral("en")) >= 0);
+
+    languageFilter->setCurrentText(QStringLiteral("en"));
+    QCOMPARE(topicList->count(), 1);
+    QCOMPARE(topicList->item(0)->text(), QStringLiteral("Using the System Editor"));
+
+    languageFilter->setCurrentText(QStringLiteral("de"));
+    QCOMPARE(topicList->count(), 1);
+    QCOMPARE(topicList->item(0)->text(), QStringLiteral("System-Editor benutzen"));
 }
 
 QTEST_MAIN(TestHelpBrowser)

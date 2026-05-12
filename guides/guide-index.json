@@ -2,7 +2,7 @@
   "schema": 1,
   "catalogVersion": "2026.05.12",
   "defaultLanguage": "de",
-  "languages": ["de"],
+  "languages": ["de", "en"],
   "generatedAt": "2026-05-12T00:00:00Z",
   "articles": [
     {
@@ -46,6 +46,48 @@
       "version": 1,
       "updatedAt": "2026-05-12T00:00:00Z",
       "sha256": "1d70be549415b18eeba77c4854599015f78ebb8891af1527dee18290fb733ee7"
+    },
+    {
+      "id": "modding.factions.introduction",
+      "language": "en",
+      "title": "Adding factions to the game",
+      "summary": "Which Freelancer files are involved in a new faction and how they relate to each other.",
+      "category": "Modding Basics",
+      "tags": ["faction", "initialworld", "empathy", "ids", "npc", "loadouts"],
+      "contexts": ["faction-editor", "npc-editor", "system-editor"],
+      "level": "intermediate",
+      "path": "articles/en/modding.factions.introduction.json",
+      "version": 1,
+      "updatedAt": "2026-05-12T00:00:00Z",
+      "sha256": "28a1bfce29ad6e95bdda80f0bb08c8b479e280a10ec4dc1c7ae28fe43aa1c5c8"
+    },
+    {
+      "id": "modding.ini.basics",
+      "language": "en",
+      "title": "Freelancer INI basics",
+      "summary": "How Freelancer INI files are built from sections, keys, values and repeated entries.",
+      "category": "Modding Basics",
+      "tags": ["ini", "sections", "keys", "comments"],
+      "contexts": ["ini-editor", "system-editor", "base-editor"],
+      "level": "beginner",
+      "path": "articles/en/modding.ini.basics.json",
+      "version": 1,
+      "updatedAt": "2026-05-12T00:00:00Z",
+      "sha256": "4fcd592b1e04f20d24d3d8d5875416dfdbc0cc3050a6d3480bb421ad81bb81b6"
+    },
+    {
+      "id": "atlas.system-editor",
+      "language": "en",
+      "title": "Using the System Editor",
+      "summary": "How the system map, object list, properties and preview work together in FLAtlas.",
+      "category": "FLAtlas Usage",
+      "tags": ["atlas", "system-editor", "objects", "zones", "map"],
+      "contexts": ["system-editor"],
+      "level": "beginner",
+      "path": "articles/en/atlas.system-editor.json",
+      "version": 1,
+      "updatedAt": "2026-05-12T00:00:00Z",
+      "sha256": "be5a7725e6aac244d053fef2dbd4da2428bd0f6a3b4375af52761edc71f6f08e"
     }
   ]
 }

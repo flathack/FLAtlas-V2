@@ -6,13 +6,13 @@
 #include <QString>
 #include <QVector>
 
+#include "domain/guide/GuideArticle.h"
+
+class QComboBox;
+class QLineEdit;
 class QTextBrowser;
 class QListWidget;
 class QSplitter;
-
-namespace flatlas::domain::guide {
-struct GuideArticle;
-}
 
 namespace flatlas::infrastructure::guide {
 class GuideRepository;
@@ -63,12 +63,19 @@ public:
 private:
     void buildUi();
     void clearTopics();
+    void rebuildLanguageFilter();
+    void rebuildCategoryFilter();
+    void refreshTopicList();
     QString resolveTopicId(const QString &topicId) const;
 
     QSplitter *m_splitter = nullptr;
     QListWidget *m_topicList = nullptr;
+    QLineEdit *m_searchEdit = nullptr;
+    QComboBox *m_languageFilter = nullptr;
+    QComboBox *m_categoryFilter = nullptr;
     QTextBrowser *m_browser = nullptr;
     QMap<QString, HelpTopic> m_topics;
+    QMap<QString, flatlas::domain::guide::GuideArticle> m_articles;
     QMap<QString, QString> m_topicAliases;
 };
 
