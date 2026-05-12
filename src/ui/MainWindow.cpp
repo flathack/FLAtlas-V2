@@ -41,6 +41,10 @@
 #include "domain/UniverseData.h"
 #include "infrastructure/freelancer/UniverseScanner.h"
 #include "infrastructure/freelancer/FreelancerFlightResolver.h"
+#include "infrastructure/guide/GuideCache.h"
+#include "infrastructure/guide/GuideRemoteFetcher.h"
+#include "infrastructure/guide/GuideRepository.h"
+#include "infrastructure/guide/GuideSyncService.h"
 #include "core/PathUtils.h"
 
 #include <QCloseEvent>
@@ -117,6 +121,11 @@ protected:
 QStringList defaultPinnedTools()
 {
     return {QStringLiteral("modManager"), QStringLiteral("universe")};
+}
+
+QUrl guideManifestUrl()
+{
+    return QUrl(QStringLiteral("https://flathack.github.io/FLAtlas-V2/guides/guide-index.json"));
 }
 
 QString toolKeyForWidget(QWidget *widget)
@@ -740,6 +749,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     if (flatlas::core::Config::instance().getBool(QStringLiteral("updateCheckEnabled"), true))
         checkForUpdates(false);
+
+    QTimer::singleShot(3000, this, &MainWindow::startGuideSync);
 }
 
 MainWindow::~MainWindow() = default;
@@ -1040,6 +1051,8 @@ void MainWindow::createMenus()
         showShortcutOverview();
     });
     helpMenu->addSeparator();
+    helpMenu->addAction(tr("Update &Help"), this, [this]() { updateGuideHelp(true); });
+    helpMenu->addSeparator();
     helpMenu->addAction(tr("Check for &Updates..."), this, [this]() { checkForUpdates(true); });
     if (qEnvironmentVariableIsSet("FLATLAS_ENABLE_DUMMY_UPDATE")) {
         helpMenu->addAction(tr("Test Update UI..."), this, [this]() {
@@ -1254,8 +1267,10 @@ void MainWindow::createStatusBar()
 
 void MainWindow::showContextHelp()
 {
-    if (!m_helpBrowser)
+    if (!m_helpBrowser) {
         m_helpBrowser = new flatlas::tools::HelpBrowser(this);
+        loadCachedHelpTopics();
+    }
 
     QString topicId = QStringLiteral("overview");
     if (m_centerTabs && m_centerTabs->currentWidget()) {
@@ -1267,6 +1282,63 @@ void MainWindow::showContextHelp()
         topicId = flatlas::tools::HelpBrowser::topicForContext(shortName);
     }
     m_helpBrowser->showTopic(topicId);
+}
+
+void MainWindow::startGuideSync()
+{
+    updateGuideHelp(false);
+}
+
+void MainWindow::updateGuideHelp(bool userInitiated)
+{
+    if (m_guideFetcher)
+        return;
+
+    if (userInitiated)
+        statusBar()->showMessage(tr("Updating help..."), 3000);
+
+    m_guideFetcher = new flatlas::infrastructure::guide::GuideRemoteFetcher(this);
+    connect(m_guideFetcher, &flatlas::infrastructure::guide::GuideRemoteFetcher::finished, this, [this, userInitiated]() {
+        QString error;
+        flatlas::infrastructure::guide::GuideSyncService sync(flatlas::infrastructure::guide::GuideCache::forAppDataLocation());
+        if (!sync.applyPackage(m_guideFetcher->package(), &error)) {
+            flatlas::core::Logger::warning(QStringLiteral("Guide"),
+                                           QStringLiteral("Guide sync failed: %1").arg(error));
+            if (userInitiated)
+                statusBar()->showMessage(tr("Help update failed."), 5000);
+        } else {
+            flatlas::core::Logger::info(QStringLiteral("Guide"), QStringLiteral("Guide cache updated."));
+            if (m_helpBrowser)
+                loadCachedHelpTopics();
+            if (userInitiated)
+                statusBar()->showMessage(tr("Help updated."), 5000);
+        }
+        m_guideFetcher->deleteLater();
+        m_guideFetcher = nullptr;
+    });
+    connect(m_guideFetcher, &flatlas::infrastructure::guide::GuideRemoteFetcher::failed, this, [this, userInitiated](const QString &error) {
+        flatlas::core::Logger::warning(QStringLiteral("Guide"),
+                                       QStringLiteral("Guide download failed: %1").arg(error));
+        if (userInitiated)
+            statusBar()->showMessage(tr("Help update failed."), 5000);
+        m_guideFetcher->deleteLater();
+        m_guideFetcher = nullptr;
+    });
+
+    m_guideFetcher->fetch(guideManifestUrl());
+}
+
+void MainWindow::loadCachedHelpTopics()
+{
+    if (!m_helpBrowser)
+        return;
+
+    QString error;
+    flatlas::infrastructure::guide::GuideRepository repository(flatlas::infrastructure::guide::GuideCache::forAppDataLocation());
+    if (!m_helpBrowser->loadGuideRepository(repository, QString(), &error)) {
+        flatlas::core::Logger::warning(QStringLiteral("Guide"),
+                                       QStringLiteral("No cached guide available: %1").arg(error));
+    }
 }
 
 void MainWindow::showShortcutOverview()

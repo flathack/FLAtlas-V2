@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FLAtlas Guide Index",
+  "type": "object",
+  "required": ["schema", "catalogVersion", "defaultLanguage", "languages", "generatedAt", "articles"],
+  "properties": {
+    "schema": { "type": "integer", "minimum": 1 },
+    "catalogVersion": { "type": "string", "minLength": 1 },
+    "defaultLanguage": { "type": "string", "minLength": 2 },
+    "languages": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 2 },
+      "minItems": 1
+    },
+    "generatedAt": { "type": "string", "minLength": 1 },
+    "articles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "language", "title", "summary", "category", "tags", "contexts", "path", "version", "updatedAt", "sha256"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "language": { "type": "string", "minLength": 2 },
+          "title": { "type": "string", "minLength": 1 },
+          "summary": { "type": "string" },
+          "category": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "contexts": { "type": "array", "items": { "type": "string" } },
+          "level": { "type": "string" },
+          "path": { "type": "string", "minLength": 1 },
+          "version": { "type": "integer", "minimum": 1 },
+          "updatedAt": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" }
+        }
+      }
+    }
+  }
+}

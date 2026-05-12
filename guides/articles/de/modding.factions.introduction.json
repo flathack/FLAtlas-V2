@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "id": "modding.factions.introduction",
+  "language": "de",
+  "title": "Fraktionen ins Spiel einbauen",
+  "summary": "Welche Freelancer-Dateien an einer neuen Faction beteiligt sind und wie sie zusammenhängen.",
+  "category": "Modding Grundlagen",
+  "tags": ["faction", "initialworld", "empathy", "ids", "npc", "loadouts"],
+  "contexts": ["faction-editor", "npc-editor", "system-editor"],
+  "updatedAt": "2026-05-12T00:00:00Z",
+  "blocks": [
+    {
+      "type": "paragraph",
+      "text": "Eine neue Fraktion besteht in Freelancer nicht aus einer einzelnen Datei. Atlas sollte deshalb zeigen, welche Einträge zusammengehören und in welcher Reihenfolge man sie sinnvoll anlegt."
+    },
+    {
+      "type": "checklist",
+      "title": "Sinnvolle Reihenfolge",
+      "items": [
+        "IDS-Einträge für Namen und Beschreibungen anlegen",
+        "Faction-Gruppe mit Nickname und IDS-Referenzen definieren",
+        "Reputation und Empathy-Beziehungen pflegen",
+        "NPC-, Encounter- und Loadout-Referenzen prüfen",
+        "Verwendungen in Systemen, Bases und Markets kontrollieren"
+      ]
+    },
+    {
+      "type": "file-map",
+      "title": "Typische Dateien",
+      "items": [
+        { "path": "DATA/INITIALWORLD.INI", "purpose": "Faction-Gruppen und Initialbeziehungen" },
+        { "path": "DATA/MISSIONS/faction_prop.ini", "purpose": "Eigenschaften, NPC-Nähe und Verhalten" },
+        { "path": "DATA/MISSIONS/mbases.ini", "purpose": "NPCs, Räume und Base-Verhalten" },
+        { "path": "EXE/*.dll", "purpose": "IDS-Namen und Infocard-Texte" }
+      ]
+    },
+    {
+      "type": "code",
+      "language": "ini",
+      "title": "Minimale Gruppenstruktur",
+      "text": "[Group]\nnickname = fc_example_grp\nids_name = 123456\nids_info = 123457"
+    },
+    {
+      "type": "related",
+      "articleIds": ["modding.ids.infocards", "modding.ini.basics"]
+    }
+  ]
+}

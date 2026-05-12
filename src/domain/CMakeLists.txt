@@ -9,6 +9,7 @@ add_library(flatlas_domain STATIC
     NpcData.h NpcData.cpp
     FactionData.h FactionData.cpp
     ModProfile.h ModProfile.cpp
+    guide/GuideArticle.h guide/GuideArticle.cpp
 )
 
 target_include_directories(flatlas_domain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)

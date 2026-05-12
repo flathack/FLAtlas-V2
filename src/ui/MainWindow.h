@@ -25,6 +25,7 @@ namespace flatlas::editors { class NewsRumorEditor; }
 namespace flatlas::tools { class HelpBrowser; }
 namespace flatlas::tools { class KeyboardShortcutOverviewDialog; }
 namespace flatlas::tools { struct UpdateInfo; }
+namespace flatlas::infrastructure::guide { class GuideRemoteFetcher; }
 namespace flatlas::rendering { class ModelViewerPage; }
 
 /// FLAtlas-Hauptfenster – schlanke Orchestrierung, delegiert an Panels und Editoren.
@@ -86,6 +87,9 @@ private:
     bool isWidgetDirty(QWidget *widget) const;
     QString tabTitleForWidget(QWidget *widget) const;
     void showContextHelp();
+    void startGuideSync();
+    void updateGuideHelp(bool userInitiated);
+    void loadCachedHelpTopics();
     void showShortcutOverview();
     void checkForUpdates(bool userInitiated);
     void handleUpdateInfo(const flatlas::tools::UpdateInfo &info, bool userInitiated);
@@ -100,6 +104,7 @@ private:
     flatlas::ui::CenterTabWidget *m_centerTabs = nullptr;
     flatlas::ui::PropertiesPanel *m_propertiesPanel = nullptr;
     flatlas::tools::HelpBrowser *m_helpBrowser = nullptr;
+    flatlas::infrastructure::guide::GuideRemoteFetcher *m_guideFetcher = nullptr;
     flatlas::tools::KeyboardShortcutOverviewDialog *m_shortcutOverviewDialog = nullptr;
     QLabel *m_editingLabel = nullptr;
     QLabel *m_progressPercentLabel = nullptr;

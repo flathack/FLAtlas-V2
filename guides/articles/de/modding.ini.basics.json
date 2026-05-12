@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "id": "modding.ini.basics",
+  "language": "de",
+  "title": "Freelancer-INI-Grundlagen",
+  "summary": "Wie Freelancer-INI-Dateien aus Sections, Keys, Werten und Wiederholungen aufgebaut sind.",
+  "category": "Modding Grundlagen",
+  "tags": ["ini", "sections", "keys", "comments"],
+  "contexts": ["ini-editor", "system-editor", "base-editor"],
+  "updatedAt": "2026-05-12T00:00:00Z",
+  "blocks": [
+    {
+      "type": "paragraph",
+      "text": "Freelancer-Dateien sehen wie klassische INI-Dateien aus, nutzen aber häufig wiederholte Keys, lose Reihenfolgen und Kommentare als wichtige Orientierung. Atlas muss diese Struktur erhalten, wenn Dateien gespeichert werden."
+    },
+    {
+      "type": "checklist",
+      "title": "Beim Bearbeiten beachten",
+      "items": [
+        "Kommentare nicht entfernen oder verschieben",
+        "Wiederholte Keys als mehrere Werte behandeln",
+        "Dateien nicht unnötig normalisieren",
+        "Zeilenenden respektieren, besonders bei CRLF-Dateien"
+      ]
+    },
+    {
+      "type": "code",
+      "language": "ini",
+      "title": "Typische Section",
+      "text": "[Object]\nnickname = Li01_to_Li02\nids_name = 260642\npos = -33220, 0, -27930\narchetype = jumpgate"
+    },
+    {
+      "type": "related",
+      "articleIds": ["modding.factions.introduction", "atlas.system-editor"]
+    }
+  ]
+}

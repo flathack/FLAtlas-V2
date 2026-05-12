@@ -21,6 +21,14 @@ flatlas_add_test(test_DomainModels   test_DomainModels.cpp   flatlas_domain)
 flatlas_add_test(test_FactionData    test_FactionData.cpp    flatlas_domain)
 flatlas_add_test(test_FactionRepository test_FactionRepository.cpp flatlas_infrastructure)
 flatlas_add_test(test_FreelancerFlightResolver test_FreelancerFlightResolver.cpp flatlas_infrastructure)
+flatlas_add_test(test_GuideArticleRenderer test_GuideArticleRenderer.cpp flatlas_infrastructure)
+flatlas_add_test(test_GuideCatalogFiles test_GuideCatalogFiles.cpp flatlas_infrastructure)
+flatlas_add_test(test_GuideCache test_GuideCache.cpp flatlas_infrastructure)
+flatlas_add_test(test_GuideJsonReader test_GuideJsonReader.cpp flatlas_infrastructure)
+flatlas_add_test(test_GuideRemoteFetcher test_GuideRemoteFetcher.cpp flatlas_infrastructure)
+flatlas_add_test(test_GuideRepository test_GuideRepository.cpp flatlas_infrastructure)
+flatlas_add_test(test_GuideSearchIndex test_GuideSearchIndex.cpp flatlas_infrastructure)
+flatlas_add_test(test_GuideSyncService test_GuideSyncService.cpp flatlas_infrastructure)
 add_executable(test_FactionEditorService
     test_FactionEditorService.cpp
     ${CMAKE_SOURCE_DIR}/src/editors/faction/FactionEditorService.cpp
@@ -141,7 +149,7 @@ add_executable(test_HelpBrowser test_HelpBrowser.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/HelpBrowser.cpp
 )
 target_include_directories(test_HelpBrowser PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(test_HelpBrowser PRIVATE Qt6::Test Qt6::Core Qt6::Widgets)
+target_link_libraries(test_HelpBrowser PRIVATE Qt6::Test Qt6::Core Qt6::Widgets flatlas_infrastructure)
 add_test(NAME test_HelpBrowser COMMAND test_HelpBrowser)
 
 # Phase 24 Shortest-Path-Generator tests

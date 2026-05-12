@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "catalogVersion": "2026.05.12",
+  "defaultLanguage": "de",
+  "languages": ["de"],
+  "generatedAt": "2026-05-12T00:00:00Z",
+  "articles": [
+    {
+      "id": "modding.factions.introduction",
+      "language": "de",
+      "title": "Fraktionen ins Spiel einbauen",
+      "summary": "Welche Freelancer-Dateien an einer neuen Faction beteiligt sind und wie sie zusammenhängen.",
+      "category": "Modding Grundlagen",
+      "tags": ["faction", "initialworld", "empathy", "ids", "npc", "loadouts"],
+      "contexts": ["faction-editor", "npc-editor", "system-editor"],
+      "level": "intermediate",
+      "path": "articles/de/modding.factions.introduction.json",
+      "version": 1,
+      "updatedAt": "2026-05-12T00:00:00Z",
+      "sha256": "9389172f96d8ff918fa3ceddc804195c7d03ee09c756e1e2f4db7e9c9702e726"
+    },
+    {
+      "id": "modding.ini.basics",
+      "language": "de",
+      "title": "Freelancer-INI-Grundlagen",
+      "summary": "Wie Freelancer-INI-Dateien aus Sections, Keys, Werten und Wiederholungen aufgebaut sind.",
+      "category": "Modding Grundlagen",
+      "tags": ["ini", "sections", "keys", "comments"],
+      "contexts": ["ini-editor", "system-editor", "base-editor"],
+      "level": "beginner",
+      "path": "articles/de/modding.ini.basics.json",
+      "version": 1,
+      "updatedAt": "2026-05-12T00:00:00Z",
+      "sha256": "8fd586d14df526435fd89f0526856f534460876455f2365aa52c64bc2c37fada"
+    },
+    {
+      "id": "atlas.system-editor",
+      "language": "de",
+      "title": "System-Editor benutzen",
+      "summary": "Wie Systemkarte, Objektliste, Properties und Vorschau in FLAtlas zusammenarbeiten.",
+      "category": "FLAtlas Bedienung",
+      "tags": ["atlas", "system-editor", "objects", "zones", "map"],
+      "contexts": ["system-editor"],
+      "level": "beginner",
+      "path": "articles/de/atlas.system-editor.json",
+      "version": 1,
+      "updatedAt": "2026-05-12T00:00:00Z",
+      "sha256": "1d70be549415b18eeba77c4854599015f78ebb8891af1527dee18290fb733ee7"
+    }
+  ]
+}

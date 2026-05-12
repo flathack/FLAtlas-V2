@@ -21,6 +21,13 @@ add_library(flatlas_infrastructure STATIC
     freelancer/FactionRepository.h freelancer/FactionRepository.cpp
     freelancer/ModelAssetScanner.h freelancer/ModelAssetScanner.cpp
     freelancer/ResourceDllWriter.h freelancer/ResourceDllWriter.cpp
+    guide/GuideArticleRenderer.h guide/GuideArticleRenderer.cpp
+    guide/GuideCache.h guide/GuideCache.cpp
+    guide/GuideJsonReader.h guide/GuideJsonReader.cpp
+    guide/GuideRemoteFetcher.h guide/GuideRemoteFetcher.cpp
+    guide/GuideRepository.h guide/GuideRepository.cpp
+    guide/GuideSearchIndex.h guide/GuideSearchIndex.cpp
+    guide/GuideSyncService.h guide/GuideSyncService.cpp
     updater/AutoUpdater.h updater/AutoUpdater.cpp
     net/DownloadManager.h net/DownloadManager.cpp
 )

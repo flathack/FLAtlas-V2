@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FLAtlas Guide Article",
+  "type": "object",
+  "required": ["schema", "id", "language", "title", "summary", "category", "tags", "contexts", "updatedAt", "blocks"],
+  "properties": {
+    "schema": { "type": "integer", "minimum": 1 },
+    "id": { "type": "string", "minLength": 1 },
+    "language": { "type": "string", "minLength": 2 },
+    "title": { "type": "string", "minLength": 1 },
+    "summary": { "type": "string" },
+    "category": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "contexts": { "type": "array", "items": { "type": "string" } },
+    "updatedAt": { "type": "string", "minLength": 1 },
+    "blocks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string", "minLength": 1 },
+          "title": { "type": "string" },
+          "text": { "type": "string" },
+          "language": { "type": "string" },
+          "items": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                { "type": "string" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": { "type": "string" },
+                    "purpose": { "type": "string" },
+                    "text": { "type": "string" }
+                  }
+                }
+              ]
+            }
+          },
+          "articleIds": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

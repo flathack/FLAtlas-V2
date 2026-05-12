@@ -3,11 +3,17 @@
 #include <QtTest/QtTest>
 #include "tools/HelpBrowser.h"
 
+#include "domain/guide/GuideArticle.h"
+
+#include <QTextBrowser>
+
 using namespace flatlas::tools;
 
 class TestHelpBrowser : public QObject {
     Q_OBJECT
 private slots:
+    void testStartsWithoutTopics();
+    void testShowTopicDisplaysEmptyStateWithoutTopics();
     void testBuiltinTopicsLoaded();
     void testExpectedTopicIds();
     void testRegisterCustomTopic();
@@ -17,11 +23,32 @@ private slots:
     void testTopicForContextBaseEditor();
     void testTopicForContextUnknownReturnsOverview();
     void testTopicForContextAllMappings();
+    void testLoadGuideArticlesReplacesBuiltinTopics();
+    void testContextAliasDisplaysGuideArticle();
 };
+
+void TestHelpBrowser::testStartsWithoutTopics()
+{
+    HelpBrowser browser;
+    QVERIFY(browser.topicIds().isEmpty());
+}
+
+void TestHelpBrowser::testShowTopicDisplaysEmptyStateWithoutTopics()
+{
+    HelpBrowser browser;
+    browser.showTopic(QStringLiteral("overview"));
+
+    auto *textBrowser = browser.findChild<QTextBrowser *>();
+    QVERIFY(textBrowser);
+    QVERIFY(textBrowser->toPlainText().contains(QStringLiteral("online help has not been downloaded")));
+
+    browser.close();
+}
 
 void TestHelpBrowser::testBuiltinTopicsLoaded()
 {
     HelpBrowser browser;
+    browser.loadBuiltinTopics();
     QStringList ids = browser.topicIds();
     QVERIFY(ids.size() >= 13);
 }
@@ -29,6 +56,7 @@ void TestHelpBrowser::testBuiltinTopicsLoaded()
 void TestHelpBrowser::testExpectedTopicIds()
 {
     HelpBrowser browser;
+    browser.loadBuiltinTopics();
     QStringList ids = browser.topicIds();
     QVERIFY(ids.contains(QStringLiteral("overview")));
     QVERIFY(ids.contains(QStringLiteral("system-editor")));
@@ -48,6 +76,7 @@ void TestHelpBrowser::testExpectedTopicIds()
 void TestHelpBrowser::testRegisterCustomTopic()
 {
     HelpBrowser browser;
+    browser.loadBuiltinTopics();
     int before = browser.topicIds().size();
     browser.registerTopic({QStringLiteral("custom-topic"),
                            QStringLiteral("Custom"),
@@ -59,6 +88,7 @@ void TestHelpBrowser::testRegisterCustomTopic()
 void TestHelpBrowser::testShowTopicSetsContent()
 {
     HelpBrowser browser;
+    browser.loadBuiltinTopics();
     // showTopic should not crash for known or unknown topics
     browser.showTopic(QStringLiteral("overview"));
     browser.showTopic(QStringLiteral("system-editor"));
@@ -111,6 +141,51 @@ void TestHelpBrowser::testTopicForContextAllMappings()
     for (auto it = expected.cbegin(); it != expected.cend(); ++it) {
         QCOMPARE(HelpBrowser::topicForContext(it.key()), it.value());
     }
+}
+
+void TestHelpBrowser::testLoadGuideArticlesReplacesBuiltinTopics()
+{
+    HelpBrowser browser;
+
+    flatlas::domain::guide::GuideArticle article;
+    article.id = QStringLiteral("atlas.system-editor");
+    article.language = QStringLiteral("de");
+    article.title = QStringLiteral("System-Editor benutzen");
+    article.summary = QStringLiteral("Guide aus dem Online-Katalog.");
+    article.contexts = {QStringLiteral("system-editor")};
+
+    QVERIFY(browser.loadGuideArticles({article}));
+
+    const QStringList ids = browser.topicIds();
+    QCOMPARE(ids.size(), 1);
+    QVERIFY(ids.contains(QStringLiteral("atlas.system-editor")));
+    QVERIFY(!ids.contains(QStringLiteral("overview")));
+}
+
+void TestHelpBrowser::testContextAliasDisplaysGuideArticle()
+{
+    HelpBrowser browser;
+
+    flatlas::domain::guide::GuideArticle article;
+    article.id = QStringLiteral("atlas.system-editor");
+    article.language = QStringLiteral("de");
+    article.title = QStringLiteral("System-Editor benutzen");
+    article.summary = QStringLiteral("Guide aus dem Online-Katalog.");
+    article.contexts = {QStringLiteral("system-editor")};
+
+    flatlas::domain::guide::GuideBlock block;
+    block.type = QStringLiteral("paragraph");
+    block.text = QStringLiteral("Dieser Text kommt aus dem strukturierten Guide-Artikel.");
+    article.blocks.append(block);
+
+    QVERIFY(browser.loadGuideArticles({article}));
+    browser.showTopic(QStringLiteral("system-editor"));
+
+    auto *textBrowser = browser.findChild<QTextBrowser *>();
+    QVERIFY(textBrowser);
+    QVERIFY(textBrowser->toPlainText().contains(QStringLiteral("Dieser Text kommt aus dem strukturierten Guide-Artikel.")));
+
+    browser.close();
 }
 
 QTEST_MAIN(TestHelpBrowser)

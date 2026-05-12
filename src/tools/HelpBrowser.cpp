@@ -1,11 +1,26 @@
 #include "HelpBrowser.h"
 
-#include <QVBoxLayout>
-#include <QSplitter>
+#include "infrastructure/guide/GuideArticleRenderer.h"
+#include "infrastructure/guide/GuideRepository.h"
+
 #include <QListWidget>
+#include <QSplitter>
 #include <QTextBrowser>
+#include <QVBoxLayout>
 
 namespace flatlas::tools {
+namespace {
+
+bool isBetterContextArticle(const flatlas::domain::guide::GuideArticle &article, const QString &context)
+{
+    if (article.id == context)
+        return true;
+    if (article.id == QStringLiteral("atlas.%1").arg(context))
+        return true;
+    return article.id.endsWith(QStringLiteral(".%1").arg(context));
+}
+
+} // namespace
 
 HelpBrowser::HelpBrowser(QWidget *parent)
     : QDialog(parent)
@@ -15,7 +30,6 @@ HelpBrowser::HelpBrowser(QWidget *parent)
     resize(900, 600);
 
     buildUi();
-    loadBuiltinTopics();
 }
 
 void HelpBrowser::buildUi()
@@ -40,22 +54,27 @@ void HelpBrowser::buildUi()
     connect(m_topicList, &QListWidget::currentRowChanged, this, [this](int row) {
         if (row < 0) return;
         const QString id = m_topicList->item(row)->data(Qt::UserRole).toString();
-        if (m_topics.contains(id))
-            m_browser->setHtml(m_topics.value(id).html);
+        const QString resolvedId = resolveTopicId(id);
+        if (m_topics.contains(resolvedId))
+            m_browser->setHtml(m_topics.value(resolvedId).html);
     });
 }
 
 void HelpBrowser::showTopic(const QString &topicId)
 {
-    if (m_topics.contains(topicId)) {
-        m_browser->setHtml(m_topics.value(topicId).html);
+    const QString resolvedTopicId = resolveTopicId(topicId);
+    if (m_topics.contains(resolvedTopicId)) {
+        m_browser->setHtml(m_topics.value(resolvedTopicId).html);
         // Selektiere das Thema in der Liste
         for (int i = 0; i < m_topicList->count(); ++i) {
-            if (m_topicList->item(i)->data(Qt::UserRole).toString() == topicId) {
+            const QString itemId = m_topicList->item(i)->data(Qt::UserRole).toString();
+            if (itemId == resolvedTopicId || resolveTopicId(itemId) == resolvedTopicId) {
                 m_topicList->setCurrentRow(i);
                 break;
             }
         }
+    } else if (m_topics.isEmpty()) {
+        showEmptyState();
     }
     show();
     raise();
@@ -69,6 +88,75 @@ void HelpBrowser::registerTopic(const HelpTopic &topic)
     auto *item = new QListWidgetItem(topic.title);
     item->setData(Qt::UserRole, topic.id);
     m_topicList->addItem(item);
+}
+
+void HelpBrowser::showEmptyState()
+{
+    if (!m_browser)
+        return;
+
+    m_browser->setHtml(tr("<html><body>"
+                          "<h1>FLAtlas Help</h1>"
+                          "<p>The online help has not been downloaded yet.</p>"
+                          "<p>Please keep FLAtlas online for a moment or use Help &rarr; Update Help.</p>"
+                          "</body></html>"));
+}
+
+bool HelpBrowser::loadGuideArticles(const QVector<flatlas::domain::guide::GuideArticle> &articles)
+{
+    if (articles.isEmpty())
+        return false;
+
+    clearTopics();
+
+    flatlas::infrastructure::guide::GuideArticleRenderer renderer;
+    for (const auto &article : articles) {
+        if (article.id.trimmed().isEmpty() || article.title.trimmed().isEmpty())
+            continue;
+
+        registerTopic({article.id, article.title, renderer.renderHtml(article)});
+
+        for (const QString &context : article.contexts) {
+            if (context.trimmed().isEmpty())
+                continue;
+            const QString existingArticleId = m_topicAliases.value(context);
+            if (existingArticleId.isEmpty() || isBetterContextArticle(article, context))
+                m_topicAliases.insert(context, article.id);
+        }
+    }
+
+    if (m_topics.isEmpty()) {
+        loadBuiltinTopics();
+        return false;
+    }
+
+    return true;
+}
+
+bool HelpBrowser::loadGuideRepository(const flatlas::infrastructure::guide::GuideRepository &repository,
+                                      const QString &language,
+                                      QString *errorMessage)
+{
+    const auto catalog = repository.loadActiveCatalog(errorMessage);
+    if (catalog.catalogVersion.isEmpty())
+        return false;
+
+    QVector<flatlas::domain::guide::GuideArticle> articles;
+    for (const auto &entry : catalog.articles) {
+        if (!language.isEmpty() && entry.language.compare(language, Qt::CaseInsensitive) != 0)
+            continue;
+
+        QString articleError;
+        auto article = repository.loadArticle(entry.id, entry.language, &articleError);
+        if (!articleError.isEmpty()) {
+            if (errorMessage)
+                *errorMessage = articleError;
+            return false;
+        }
+        articles.append(article);
+    }
+
+    return loadGuideArticles(articles);
 }
 
 QStringList HelpBrowser::topicIds() const
@@ -98,6 +186,8 @@ QString HelpBrowser::topicForContext(const QString &contextId)
 
 void HelpBrowser::loadBuiltinTopics()
 {
+    clearTopics();
+
     registerTopic({
         QStringLiteral("overview"),
         tr("Overview"),
@@ -219,6 +309,21 @@ void HelpBrowser::loadBuiltinTopics()
         tr("<h1>Jump Connection Editor</h1>"
            "<p>Create and manage jump gate/hole connections between star systems.</p>")
     });
+}
+
+void HelpBrowser::clearTopics()
+{
+    m_topics.clear();
+    m_topicAliases.clear();
+    if (m_topicList)
+        m_topicList->clear();
+    if (m_browser)
+        m_browser->clear();
+}
+
+QString HelpBrowser::resolveTopicId(const QString &topicId) const
+{
+    return m_topics.contains(topicId) ? topicId : m_topicAliases.value(topicId, topicId);
 }
 
 } // namespace flatlas::tools
