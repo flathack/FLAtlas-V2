@@ -2,6 +2,7 @@
 build/
 build-release/
 build-mingw-ci/
+build-ci-repro/
 cmake-build-*/
 out/
 docs/
