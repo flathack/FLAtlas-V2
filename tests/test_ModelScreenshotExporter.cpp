@@ -25,12 +25,12 @@ class TestModelScreenshotExporter : public QObject {
     Q_OBJECT
 
 private slots:
-    void buildTrianglesUsesFirstMeshFromBestLodPerNode();
+    void buildTrianglesUsesMeshesFromBestLodPerNode();
     void buildTrianglesAppliesHierarchyTransform();
     void buildTrianglesPrefersCombinedCmpTransformHints();
 };
 
-void TestModelScreenshotExporter::buildTrianglesUsesFirstMeshFromBestLodPerNode()
+void TestModelScreenshotExporter::buildTrianglesUsesMeshesFromBestLodPerNode()
 {
     DecodedModel model;
     model.rootNode.name = QStringLiteral("Root");
@@ -63,9 +63,11 @@ void TestModelScreenshotExporter::buildTrianglesUsesFirstMeshFromBestLodPerNode(
     model.rootNode.children.append(ship);
 
     const auto triangles = ModelScreenshotExporter::buildTriangles(model);
-    QCOMPARE(triangles.size(), 1);
+    QCOMPARE(triangles.size(), 2);
     QCOMPARE(triangles.first().b, QVector3D(2.0f, 0.0f, 0.0f));
     QCOMPARE(triangles.first().c, QVector3D(0.0f, 2.0f, 0.0f));
+    QCOMPARE(triangles.at(1).a, QVector3D(2.0f, 2.0f, 0.0f));
+    QCOMPARE(triangles.at(1).b, QVector3D(1.0f, 3.0f, 0.0f));
 }
 
 void TestModelScreenshotExporter::buildTrianglesAppliesHierarchyTransform()
@@ -130,5 +132,5 @@ void TestModelScreenshotExporter::buildTrianglesPrefersCombinedCmpTransformHints
     QVERIFY(fuzzyCompare(triangles.first().c, QVector3D(10.0f, 1.0f, 0.0f)));
 }
 
-QTEST_MAIN(TestModelScreenshotExporter)
+QTEST_GUILESS_MAIN(TestModelScreenshotExporter)
 #include "test_ModelScreenshotExporter.moc"

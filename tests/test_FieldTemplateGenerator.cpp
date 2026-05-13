@@ -69,8 +69,12 @@ private slots:
     {
         FieldTemplate asteroid = FieldTemplateGenerator::preset(FieldTemplateKind::Asteroid);
         FieldTemplate nebula = FieldTemplateGenerator::preset(FieldTemplateKind::Nebula);
+        asteroid.zoneSizeX = 16000;
+        asteroid.zoneSizeY = 6000;
+        asteroid.zoneSizeZ = 22000;
 
         QVERIFY(FieldTemplateGenerator::generateSystemLinkPreview(asteroid).startsWith(QStringLiteral("[Asteroids]\n")));
+        QVERIFY(FieldTemplateGenerator::generateSystemLinkPreview(asteroid).contains(QStringLiteral("size = 16000, 6000, 22000\n")));
         QVERIFY(FieldTemplateGenerator::generateSystemLinkPreview(nebula).startsWith(QStringLiteral("[Nebula]\n")));
     }
 

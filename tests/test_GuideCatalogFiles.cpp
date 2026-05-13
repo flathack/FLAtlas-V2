@@ -6,6 +6,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 
 using flatlas::infrastructure::guide::GuideCache;
 using flatlas::infrastructure::guide::GuideJsonReader;
@@ -31,9 +32,13 @@ QByteArray readAll(const QString &path)
 QString guidesRoot()
 {
     QDir dir(QCoreApplication::applicationDirPath());
-    if (!dir.cd(QStringLiteral("../..")))
-        qFatal("Failed to resolve repository root from test binary path.");
-    return dir.filePath(QStringLiteral("guides"));
+    while (true) {
+        const QString candidate = dir.filePath(QStringLiteral("guides/guide-index.json"));
+        if (QFileInfo::exists(candidate))
+            return dir.filePath(QStringLiteral("guides"));
+        if (!dir.cdUp())
+            qFatal("Failed to resolve guides directory from test binary path.");
+    }
 }
 
 } // namespace
