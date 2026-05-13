@@ -94,6 +94,7 @@ public:
 
     QHash<QString, Faction> factionsByKey;
     QStringList declaredNicknames;
+    QStringList initialWorldRepOrder;
     QStringList initialWorldPrefixSections;
     QVector<QPair<QString, QString>> lockedGateEntries;
 };

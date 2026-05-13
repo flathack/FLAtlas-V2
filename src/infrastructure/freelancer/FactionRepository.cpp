@@ -46,6 +46,50 @@ QString existingOrTargetPath(const QString &gameRoot, const QString &relativePat
     return QDir(gameRoot).filePath(relativePath);
 }
 
+bool containsNicknameKey(const QStringList &nicknames, const QString &nickname)
+{
+    const QString key = FactionWorld::keyForNickname(nickname);
+    return std::any_of(nicknames.cbegin(), nicknames.cend(), [&](const QString &candidate) {
+        return FactionWorld::keyForNickname(candidate) == key;
+    });
+}
+
+void appendMissingRepTargets(QStringList *order, const QList<FactionRep> &reputations)
+{
+    if (!order)
+        return;
+    for (const FactionRep &rep : reputations) {
+        if (!containsNicknameKey(*order, rep.target))
+            order->append(rep.target);
+    }
+}
+
+QList<FactionRep> orderedReputations(const Faction &faction, const QStringList &initialWorldRepOrder)
+{
+    if (initialWorldRepOrder.isEmpty())
+        return faction.reputations;
+
+    QList<FactionRep> ordered;
+    QVector<bool> emitted(faction.reputations.size(), false);
+
+    for (const QString &target : initialWorldRepOrder) {
+        const QString targetKey = FactionWorld::keyForNickname(target);
+        for (int index = 0; index < faction.reputations.size(); ++index) {
+            if (emitted[index])
+                continue;
+            if (FactionWorld::keyForNickname(faction.reputations.at(index).target) == targetKey) {
+                ordered.append(faction.reputations.at(index));
+                emitted[index] = true;
+            }
+        }
+    }
+    for (int index = 0; index < faction.reputations.size(); ++index) {
+        if (!emitted[index])
+            ordered.append(faction.reputations.at(index));
+    }
+    return ordered;
+}
+
 void parseInitialWorld(const IniDocument &doc, FactionWorld *world)
 {
     for (const IniSection &section : doc) {
@@ -80,6 +124,8 @@ void parseInitialWorld(const IniDocument &doc, FactionWorld *world)
         }
         if (faction.nickname.trimmed().isEmpty())
             continue;
+
+        appendMissingRepTargets(&world->initialWorldRepOrder, faction.reputations);
 
         Faction merged = world->faction(faction.nickname) ? *world->faction(faction.nickname) : Faction{};
         merged.nickname = faction.nickname;
@@ -200,7 +246,7 @@ void parseFactionProps(const IniDocument &doc, FactionWorld *world)
     }
 }
 
-IniSection makeInitialWorldSection(const Faction &faction)
+IniSection makeInitialWorldSection(const Faction &faction, const QStringList &initialWorldRepOrder)
 {
     IniSection section;
     section.name = QStringLiteral("Group");
@@ -211,7 +257,7 @@ IniSection makeInitialWorldSection(const Faction &faction)
         section.entries.append({QStringLiteral("ids_info"), faction.idsInfo});
     if (!faction.idsShortName.isEmpty())
         section.entries.append({QStringLiteral("ids_short_name"), faction.idsShortName});
-    for (const FactionRep &rep : faction.reputations)
+    for (const FactionRep &rep : orderedReputations(faction, initialWorldRepOrder))
         section.entries.append({QStringLiteral("rep"), QStringLiteral("%1, %2").arg(formatDouble(rep.value), rep.target)});
     return section;
 }
@@ -331,7 +377,7 @@ bool FactionRepository::save(const FactionWorld &world, const QString &gameRoot,
         if (!faction)
             continue;
         if (faction->inInitialWorld)
-            initialWorld.append(makeInitialWorldSection(*faction));
+            initialWorld.append(makeInitialWorldSection(*faction, world.initialWorldRepOrder));
         if (faction->inEmpathy)
             empathy.append(makeEmpathySection(*faction));
         if (faction->inFactionProp)

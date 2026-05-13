@@ -75,6 +75,49 @@ private slots:
         QVERIFY(hasMissingEmpathyTarget);
         QVERIFY(hasCaseCollision);
     }
+
+    void validationFindsReputationOrderMismatch()
+    {
+        FactionWorld world;
+        world.initialWorldRepOrder = {
+            QStringLiteral("a_grp"),
+            QStringLiteral("b_grp"),
+            QStringLiteral("c_grp"),
+        };
+
+        Faction faction;
+        faction.nickname = QStringLiteral("a_grp");
+        faction.idsName = QStringLiteral("123");
+        faction.idsInfo = QStringLiteral("456");
+        faction.props.affiliation = faction.nickname;
+        faction.props.legality = QStringLiteral("lawful");
+        faction.inInitialWorld = true;
+        faction.reputations = {
+            {QStringLiteral("a_grp"), 0.91},
+            {QStringLiteral("c_grp"), 0.0},
+            {QStringLiteral("b_grp"), 0.0},
+        };
+        world.upsertFaction(faction);
+
+        Faction b = faction;
+        b.nickname = QStringLiteral("b_grp");
+        b.reputations = {{QStringLiteral("a_grp"), 0.0}, {QStringLiteral("b_grp"), 0.91}, {QStringLiteral("c_grp"), 0.0}};
+        world.upsertFaction(b);
+
+        Faction c = faction;
+        c.nickname = QStringLiteral("c_grp");
+        c.reputations = {{QStringLiteral("a_grp"), 0.0}, {QStringLiteral("b_grp"), 0.0}, {QStringLiteral("c_grp"), 0.91}};
+        world.upsertFaction(c);
+
+        const auto issues = world.validate();
+        bool hasOrderIssue = false;
+        for (const auto &issue : issues) {
+            hasOrderIssue = hasOrderIssue
+                || (issue.faction == QStringLiteral("a_grp")
+                    && issue.message.contains(QStringLiteral("initialworld.ini order")));
+        }
+        QVERIFY(hasOrderIssue);
+    }
 };
 
 QTEST_APPLESS_MAIN(TestFactionData)

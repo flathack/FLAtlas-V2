@@ -90,6 +90,54 @@ private slots:
         QVERIFY(props.contains(QStringLiteral("npc_ship = li_fighter")));
         QVERIFY(props.contains(QStringLiteral("npc_ship = li_elite")));
     }
+
+    void saveKeepsInitialWorldReputationOrder()
+    {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const QString root = temp.path();
+
+        writeText(QDir(root).filePath(QStringLiteral("DATA/initialworld.ini")),
+                  QStringLiteral("[Group]\n"
+                                 "nickname = a_grp\n"
+                                 "ids_name = 1\n"
+                                 "rep = 0.91, a_grp\n"
+                                 "rep = 0, b_grp\n"
+                                 "rep = 0, c_grp\n"
+                                 "\n"
+                                 "[Group]\n"
+                                 "nickname = b_grp\n"
+                                 "ids_name = 2\n"
+                                 "rep = 0, a_grp\n"
+                                 "rep = 0.91, b_grp\n"
+                                 "rep = 0, c_grp\n"
+                                 "\n"
+                                 "[Group]\n"
+                                 "nickname = c_grp\n"
+                                 "ids_name = 3\n"
+                                 "rep = 0, c_grp\n"
+                                 "rep = 0, a_grp\n"
+                                 "rep = 0, b_grp\n"));
+        writeText(QDir(root).filePath(QStringLiteral("DATA/MISSIONS/empathy.ini")), QString());
+        writeText(QDir(root).filePath(QStringLiteral("DATA/MISSIONS/faction_prop.ini")), QString());
+
+        FactionRepository repository;
+        QString error;
+        auto result = repository.load(root);
+        QVERIFY2(repository.save(result.world, root, &error), qPrintable(error));
+
+        const QString initialWorld = readText(QDir(root).filePath(QStringLiteral("DATA/initialworld.ini")));
+        const int cGroup = initialWorld.indexOf(QStringLiteral("nickname = c_grp"));
+        QVERIFY(cGroup >= 0);
+        const int cToA = initialWorld.indexOf(QStringLiteral("rep = 0, a_grp"), cGroup);
+        const int cToB = initialWorld.indexOf(QStringLiteral("rep = 0, b_grp"), cGroup);
+        const int cToC = initialWorld.indexOf(QStringLiteral("rep = 0, c_grp"), cGroup);
+        QVERIFY(cToA >= 0);
+        QVERIFY(cToB >= 0);
+        QVERIFY(cToC >= 0);
+        QVERIFY(cToA < cToB);
+        QVERIFY(cToB < cToC);
+    }
 };
 
 QTEST_APPLESS_MAIN(TestFactionRepository)

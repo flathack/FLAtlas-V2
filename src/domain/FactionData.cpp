@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <QSet>
 
 namespace flatlas::domain {
 
@@ -23,6 +24,49 @@ bool hasDuplicateTarget(const auto &items)
             return true;
     }
     return false;
+}
+
+bool containsNicknameKey(const QStringList &nicknames, const QString &nickname)
+{
+    const QString key = FactionWorld::keyForNickname(nickname);
+    return std::any_of(nicknames.cbegin(), nicknames.cend(), [&](const QString &candidate) {
+        return FactionWorld::keyForNickname(candidate) == key;
+    });
+}
+
+QStringList reputationTargetKeys(const QList<FactionRep> &reputations)
+{
+    QStringList keys;
+    keys.reserve(reputations.size());
+    for (const FactionRep &rep : reputations)
+        keys.append(FactionWorld::keyForNickname(rep.target));
+    return keys;
+}
+
+QStringList expectedReputationTargetKeys(const QList<FactionRep> &reputations,
+                                         const QStringList &initialWorldRepOrder)
+{
+    QStringList expected;
+    QSet<QString> presentKeys;
+    for (const FactionRep &rep : reputations)
+        presentKeys.insert(FactionWorld::keyForNickname(rep.target));
+
+    QSet<QString> emittedKeys;
+    for (const QString &target : initialWorldRepOrder) {
+        const QString key = FactionWorld::keyForNickname(target);
+        if (presentKeys.contains(key) && !emittedKeys.contains(key)) {
+            expected.append(key);
+            emittedKeys.insert(key);
+        }
+    }
+    for (const FactionRep &rep : reputations) {
+        const QString key = FactionWorld::keyForNickname(rep.target);
+        if (!emittedKeys.contains(key)) {
+            expected.append(key);
+            emittedKeys.insert(key);
+        }
+    }
+    return expected;
 }
 
 } // namespace
@@ -132,6 +176,8 @@ void FactionWorld::addFaction(const QString &nickname)
         setEmpathyRate(other, trimmed, 0.0);
     }
     upsertFaction(faction);
+    if (!containsNicknameKey(initialWorldRepOrder, trimmed))
+        initialWorldRepOrder.append(trimmed);
 }
 
 double FactionWorld::reputation(const QString &source, const QString &target, double fallback) const
@@ -159,7 +205,10 @@ void FactionWorld::setReputation(const QString &source, const QString &target, d
             return;
         }
     }
-    item->reputations.append({target.trimmed(), clampRep(value)});
+    const QString trimmedTarget = target.trimmed();
+    item->reputations.append({trimmedTarget, clampRep(value)});
+    if (!containsNicknameKey(initialWorldRepOrder, trimmedTarget))
+        initialWorldRepOrder.append(trimmedTarget);
 }
 
 double FactionWorld::empathyRate(const QString &source, const QString &target, double fallback) const
@@ -231,6 +280,12 @@ QList<FactionValidationIssue> FactionWorld::validate() const
         }
         if (hasDuplicateTarget(faction.reputations))
             issues.append({FactionValidationSeverity::Warning, faction.nickname, QStringLiteral("Duplicate reputation target")});
+        if (faction.inInitialWorld
+            && !initialWorldRepOrder.isEmpty()
+            && reputationTargetKeys(faction.reputations) != expectedReputationTargetKeys(faction.reputations, initialWorldRepOrder)) {
+            issues.append({FactionValidationSeverity::Warning, faction.nickname,
+                           QStringLiteral("Reputation entries do not follow initialworld.ini order")});
+        }
         if (hasDuplicateTarget(faction.empathyRates))
             issues.append({FactionValidationSeverity::Warning, faction.nickname, QStringLiteral("Duplicate empathy_rate target")});
 
