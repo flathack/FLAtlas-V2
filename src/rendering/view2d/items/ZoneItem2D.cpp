@@ -235,7 +235,7 @@ void ZoneItem2D::updateFromZone(const flatlas::domain::ZoneItem &zone)
                 halfWidth = std::max<qreal>(radius, projectedAxisLength * 0.5);
                 halfHeight = radius;
                 m_drawAsRect = true;
-                setRotation(-(std::atan2(axis.x(), axis.z()) * (180.0 / M_PI)));
+                setRotation(90.0 - (std::atan2(axis.x(), axis.z()) * (180.0 / M_PI)));
             }
         }
         break;

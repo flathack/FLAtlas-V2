@@ -5,6 +5,7 @@
 
 #include <QDialog>
 #include <QHash>
+#include <QPair>
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -26,13 +27,39 @@ namespace flatlas::rendering { class ModelViewport3D; }
 
 namespace flatlas::editors {
 
+enum class ZoneCreationTemplate {
+    Custom,
+    DestroyVignette,
+    VignetteExclusion,
+    PopAmbient,
+};
+
+struct ZoneCreationTemplateProposal {
+    ZoneCreationTemplate templateId = ZoneCreationTemplate::Custom;
+    QString nickname;
+    QString comment;
+    QString shape = QStringLiteral("SPHERE");
+    QString size;
+    int sort = 99;
+    int damage = 0;
+    QVector<QPair<QString, QString>> rawEntries;
+};
+
 struct CreateSimpleZoneRequest {
+    ZoneCreationTemplate templateId = ZoneCreationTemplate::Custom;
     QString nickname;
     QString comment;
     QString shape;
+    QString size;
     int sort = 99;
     int damage = 0;
+    QVector<QPair<QString, QString>> rawEntries;
 };
+
+QString zoneCreationTemplateDisplayName(ZoneCreationTemplate templateId);
+QVector<ZoneCreationTemplateProposal> createSimpleZoneTemplateProposals(const QString &systemToken,
+                                                                        const QString &customNickname,
+                                                                        const QStringList &existingNicknames);
 
 struct CreatePatrolZoneRequest {
     QString nickname;
@@ -171,14 +198,20 @@ class CreateSimpleZoneDialog : public QDialog {
     Q_OBJECT
 public:
     explicit CreateSimpleZoneDialog(const QString &suggestedNickname,
+                                    const QVector<ZoneCreationTemplateProposal> &templates,
                                     QWidget *parent = nullptr);
 
     CreateSimpleZoneRequest result() const;
 
 private:
+    void applyTemplate(int index);
+
+    QVector<ZoneCreationTemplateProposal> m_templates;
+    QComboBox *m_templateCombo = nullptr;
     QLineEdit *m_nicknameEdit = nullptr;
     QLineEdit *m_commentEdit = nullptr;
     QComboBox *m_shapeCombo = nullptr;
+    QLineEdit *m_sizeEdit = nullptr;
     QSpinBox *m_sortSpin = nullptr;
     QSpinBox *m_damageSpin = nullptr;
 };

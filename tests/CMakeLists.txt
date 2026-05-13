@@ -54,6 +54,7 @@ flatlas_add_test(test_SystemSettingsService test_SystemSettingsService.cpp flatl
 flatlas_add_test(test_PlanetCreationService test_PlanetCreationService.cpp flatlas_editors)
 flatlas_add_test(test_RingEditService test_RingEditService.cpp flatlas_editors)
 flatlas_add_test(test_BaseEditService test_BaseEditService.cpp flatlas_editors)
+flatlas_add_test(test_ZoneCreationTemplates test_ZoneCreationTemplates.cpp flatlas_editors)
 
 # Phase 6 INI editor tests
 flatlas_add_test(test_IniSyntaxHighlighter test_IniSyntaxHighlighter.cpp flatlas_editors Qt6::Widgets)

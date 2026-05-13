@@ -24,12 +24,14 @@
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSpinBox>
 #include <QStackedLayout>
 #include <QStringListModel>
 #include <QTextEdit>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QVariant>
 
 #include <algorithm>
 
@@ -391,15 +393,113 @@ QComboBox *createEditableCombo(const QStringList &values, QWidget *parent)
     return combo;
 }
 
+QString normalizedZoneSystemToken(const QString &systemToken)
+{
+    QString token = systemToken.trimmed();
+    if (token.isEmpty())
+        token = QStringLiteral("SYSTEM");
+    token.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9_]")), QStringLiteral("_"));
+    return token;
+}
+
+QString suggestTemplateNickname(const QString &prefix, const QStringList &existingNicknames)
+{
+    int nextNumber = 1;
+    int width = 0;
+    const QRegularExpression pattern(QStringLiteral("^%1(\\d+)$").arg(QRegularExpression::escape(prefix)),
+                                     QRegularExpression::CaseInsensitiveOption);
+    for (const QString &nickname : existingNicknames) {
+        const QRegularExpressionMatch match = pattern.match(nickname.trimmed());
+        if (!match.hasMatch())
+            continue;
+        bool ok = false;
+        const int number = match.captured(1).toInt(&ok);
+        if (!ok)
+            continue;
+        nextNumber = std::max(nextNumber, number + 1);
+        width = std::max(width, static_cast<int>(match.captured(1).size()));
+    }
+    if (width == 0)
+        width = 2;
+
+    while (true) {
+        const QString candidate = QStringLiteral("%1%2").arg(prefix).arg(nextNumber, width, 10, QLatin1Char('0'));
+        if (!existingNicknames.contains(candidate, Qt::CaseInsensitive))
+            return candidate;
+        ++nextNumber;
+    }
+}
+
 } // namespace
 
-CreateSimpleZoneDialog::CreateSimpleZoneDialog(const QString &suggestedNickname, QWidget *parent)
+QString zoneCreationTemplateDisplayName(ZoneCreationTemplate templateId)
+{
+    switch (templateId) {
+    case ZoneCreationTemplate::Custom:
+        return QObject::tr("Custom");
+    case ZoneCreationTemplate::DestroyVignette:
+        return QStringLiteral("destroy_vignette");
+    case ZoneCreationTemplate::VignetteExclusion:
+        return QStringLiteral("vignette_exclusion");
+    case ZoneCreationTemplate::PopAmbient:
+        return QStringLiteral("pop_ambient");
+    }
+    return QObject::tr("Custom");
+}
+
+QVector<ZoneCreationTemplateProposal> createSimpleZoneTemplateProposals(const QString &systemToken,
+                                                                        const QString &customNickname,
+                                                                        const QStringList &existingNicknames)
+{
+    const QString prefix = QStringLiteral("Zone_%1_").arg(normalizedZoneSystemToken(systemToken));
+    QVector<ZoneCreationTemplateProposal> proposals;
+    proposals.reserve(4);
+    proposals.append({ZoneCreationTemplate::Custom, customNickname.trimmed(), QString(), QStringLiteral("SPHERE"), QString(), 99, 0, {}});
+    proposals.append({ZoneCreationTemplate::DestroyVignette,
+                      suggestTemplateNickname(prefix + QStringLiteral("destroy_vignette_"), existingNicknames),
+                      QString(),
+                      QStringLiteral("SPHERE"),
+                      QStringLiteral("10000"),
+                      99,
+                      0,
+                      {{QStringLiteral("mission_type"), QStringLiteral("unlawful, lawful")},
+                       {QStringLiteral("vignette_type"), QStringLiteral("open")}}});
+    proposals.append({ZoneCreationTemplate::VignetteExclusion,
+                      suggestTemplateNickname(prefix + QStringLiteral("vignette_exclusion_"), existingNicknames),
+                      QString(),
+                      QStringLiteral("SPHERE"),
+                      QStringLiteral("10000"),
+                      99,
+                      0,
+                      {}});
+    proposals.append({ZoneCreationTemplate::PopAmbient,
+                      suggestTemplateNickname(prefix + QStringLiteral("pop_ambient_"), existingNicknames),
+                      QString(),
+                      QStringLiteral("SPHERE"),
+                      QString(),
+                      99,
+                      0,
+                      {}});
+    return proposals;
+}
+
+CreateSimpleZoneDialog::CreateSimpleZoneDialog(const QString &suggestedNickname,
+                                               const QVector<ZoneCreationTemplateProposal> &templates,
+                                               QWidget *parent)
     : QDialog(parent)
+    , m_templates(templates.isEmpty() ? createSimpleZoneTemplateProposals(QString(), suggestedNickname, {}) : templates)
 {
     setWindowTitle(tr("Create Zone"));
     setMinimumWidth(420);
 
     auto *layout = new QFormLayout(this);
+    m_templateCombo = new QComboBox(this);
+    for (const ZoneCreationTemplateProposal &proposal : m_templates) {
+        m_templateCombo->addItem(zoneCreationTemplateDisplayName(proposal.templateId),
+                                 QVariant::fromValue(static_cast<int>(proposal.templateId)));
+    }
+    layout->addRow(tr("Template:"), m_templateCombo);
+
     m_nicknameEdit = new QLineEdit(suggestedNickname, this);
     layout->addRow(tr("Nickname:"), m_nicknameEdit);
 
@@ -415,6 +515,10 @@ CreateSimpleZoneDialog::CreateSimpleZoneDialog(const QString &suggestedNickname,
                             QStringLiteral("RING")});
     layout->addRow(tr("Shape:"), m_shapeCombo);
 
+    m_sizeEdit = new QLineEdit(this);
+    m_sizeEdit->setPlaceholderText(tr("empty = choose on map"));
+    layout->addRow(tr("Size:"), m_sizeEdit);
+
     m_sortSpin = new QSpinBox(this);
     m_sortSpin->setRange(0, 999);
     m_sortSpin->setValue(99);
@@ -426,17 +530,43 @@ CreateSimpleZoneDialog::CreateSimpleZoneDialog(const QString &suggestedNickname,
     layout->addRow(tr("Damage:"), m_damageSpin);
 
     layout->addRow(createDialogButtons(this));
+
+    connect(m_templateCombo, &QComboBox::currentIndexChanged, this, [this](int index) {
+        applyTemplate(index);
+    });
+    applyTemplate(m_templateCombo->currentIndex());
 }
 
 CreateSimpleZoneRequest CreateSimpleZoneDialog::result() const
 {
     CreateSimpleZoneRequest value;
+    const int templateIndex = m_templateCombo ? m_templateCombo->currentIndex() : -1;
+    if (templateIndex >= 0 && templateIndex < m_templates.size()) {
+        value.templateId = m_templates[templateIndex].templateId;
+        value.rawEntries = m_templates[templateIndex].rawEntries;
+    }
     value.nickname = m_nicknameEdit->text().trimmed();
     value.comment = m_commentEdit->text().trimmed();
     value.shape = m_shapeCombo->currentText().trimmed().toUpper();
+    value.size = m_sizeEdit->text().trimmed();
     value.sort = m_sortSpin->value();
     value.damage = m_damageSpin->value();
     return value;
+}
+
+void CreateSimpleZoneDialog::applyTemplate(int index)
+{
+    if (index < 0 || index >= m_templates.size())
+        return;
+
+    const ZoneCreationTemplateProposal &proposal = m_templates[index];
+    m_nicknameEdit->setText(proposal.nickname);
+    m_commentEdit->setText(proposal.comment);
+    const int shapeIndex = m_shapeCombo->findText(proposal.shape, Qt::MatchFixedString);
+    m_shapeCombo->setCurrentIndex(shapeIndex >= 0 ? shapeIndex : 0);
+    m_sizeEdit->setText(proposal.size);
+    m_sortSpin->setValue(proposal.sort);
+    m_damageSpin->setValue(proposal.damage);
 }
 
 CreateBuoyDialog::CreateBuoyDialog(QWidget *parent)

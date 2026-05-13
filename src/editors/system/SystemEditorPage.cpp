@@ -548,6 +548,44 @@ double derivedBuoySpacingMetersForLine(qreal lineLengthScene, int count)
     return std::max(lineLengthMeters / static_cast<double>(count - 1), 1.0);
 }
 
+bool parseFixedSimpleZoneSize(const QString &rawSize, const QString &shape, QVector3D *size, QString *sizeText)
+{
+    const QString trimmed = rawSize.trimmed();
+    if (trimmed.isEmpty())
+        return false;
+
+    QStringList parts = trimmed.split(',', Qt::SkipEmptyParts);
+    for (QString &part : parts)
+        part = part.trimmed();
+
+    const QString normalizedShape = shape.trimmed().toUpper();
+    const int expectedParts = (normalizedShape == QStringLiteral("SPHERE"))
+                                  ? 1
+                                  : ((normalizedShape == QStringLiteral("CYLINDER") || normalizedShape == QStringLiteral("RING")) ? 2 : 3);
+    if (parts.size() != expectedParts)
+        return false;
+
+    QVector<double> values;
+    values.reserve(parts.size());
+    for (const QString &part : parts) {
+        bool ok = false;
+        const double value = part.toDouble(&ok);
+        if (!ok || value <= 0.0)
+            return false;
+        values.append(value);
+    }
+
+    if (normalizedShape == QStringLiteral("SPHERE")) {
+        *size = QVector3D(static_cast<float>(values[0]), 0.0f, 0.0f);
+    } else if (normalizedShape == QStringLiteral("CYLINDER") || normalizedShape == QStringLiteral("RING")) {
+        *size = QVector3D(static_cast<float>(values[0]), static_cast<float>(values[1]), static_cast<float>(values[0]));
+    } else {
+        *size = QVector3D(static_cast<float>(values[0]), static_cast<float>(values[1]), static_cast<float>(values[2]));
+    }
+    *sizeText = parts.join(QStringLiteral(", "));
+    return true;
+}
+
 int nextTradeLaneRingNumber(flatlas::domain::SystemDocument *document, const QString &systemNickname)
 {
     if (!document)
@@ -4297,7 +4335,9 @@ void SystemEditorPage::setupRightSidebar()
         const QString suggested =
             suggestIndexedNickname(QStringLiteral("Zone_%1_zone_").arg(systemToken.isEmpty() ? QStringLiteral("SYSTEM") : systemToken),
                                    existingZoneNicknames);
-        CreateSimpleZoneDialog dialog(suggested, this);
+        const QVector<ZoneCreationTemplateProposal> templates =
+            createSimpleZoneTemplateProposals(systemToken, suggested, existingZoneNicknames);
+        CreateSimpleZoneDialog dialog(suggested, templates, this);
         if (dialog.exec() != QDialog::Accepted)
             return;
         beginSimpleZonePlacement(dialog.result());
@@ -6577,8 +6617,9 @@ bool SystemEditorPage::eventFilter(QObject *watched, QEvent *event)
             }
             if (mouseEvent->button() == Qt::LeftButton && m_pendingSimpleZoneHasCenter) {
                 const QPointF scenePos = m_mapView->mapToScene(mouseEvent->pos());
-                const bool isBox = m_pendingSimpleZoneRequest->shape.trimmed().compare(QStringLiteral("BOX"), Qt::CaseInsensitive) == 0;
-                if (isBox) {
+                const QString shape = m_pendingSimpleZoneRequest->shape.trimmed().toUpper();
+                const bool isLinearZone = shape == QStringLiteral("BOX") || shape == QStringLiteral("CYLINDER");
+                if (isLinearZone) {
                     if (m_pendingSimpleZoneStep == 2) {
                         m_pendingSimpleZoneHasEnd = true;
                         m_pendingSimpleZoneEndScenePos = scenePos;
@@ -6590,7 +6631,7 @@ bool SystemEditorPage::eventFilter(QObject *watched, QEvent *event)
                         }
                         updateSimpleZonePlacementPreview(scenePos);
                         m_mapView->setPlacementMode(true,
-                                                    tr("3rd click sets the width. 4th click saves '%1'.")
+                                                    tr("Move the mouse to set the width. 3rd click saves '%1'.")
                                                         .arg(m_pendingSimpleZoneRequest->nickname));
                     } else if (m_pendingSimpleZoneStep == 3 && m_pendingSimpleZoneHasEnd) {
                         m_pendingSimpleZoneHalfWidthScene = std::max<qreal>(1.0,
@@ -6602,11 +6643,6 @@ bool SystemEditorPage::eventFilter(QObject *watched, QEvent *event)
                                                                                    m_pendingSimpleZoneEndScenePos,
                                                                                    m_pendingSimpleZoneHalfWidthScene));
                         }
-                        m_pendingSimpleZoneStep = 4;
-                        m_mapView->setPlacementMode(true,
-                                                    tr("4th click saves '%1'. [Esc] or right-click cancels.")
-                                                        .arg(m_pendingSimpleZoneRequest->nickname));
-                    } else if (m_pendingSimpleZoneStep == 4 && m_pendingSimpleZoneHasEnd) {
                         finalizeSimpleZonePlacement(scenePos);
                     }
                 } else {
@@ -8763,7 +8799,10 @@ void SystemEditorPage::beginSimpleZonePlacement(const CreateSimpleZoneRequest &r
     m_pendingSimpleZoneHasEnd = false;
     m_pendingSimpleZoneEndScenePos = QPointF();
     m_pendingSimpleZoneHalfWidthScene = 0.0;
-    m_pendingSimpleZoneStep = request.shape.trimmed().compare(QStringLiteral("BOX"), Qt::CaseInsensitive) == 0 ? 1 : 0;
+    const bool hasFixedSize = !request.size.trimmed().isEmpty();
+    const QString shape = request.shape.trimmed().toUpper();
+    const bool isLinearZone = shape == QStringLiteral("BOX") || shape == QStringLiteral("CYLINDER");
+    m_pendingSimpleZoneStep = !hasFixedSize && isLinearZone ? 1 : 0;
 
     auto *placementGuard = new QObject(this);
     connect(m_mapView, &flatlas::rendering::SystemMapView::placementClicked,
@@ -8772,10 +8811,16 @@ void SystemEditorPage::beginSimpleZonePlacement(const CreateSimpleZoneRequest &r
                     return;
                 m_pendingSimpleZoneHasCenter = true;
                 m_pendingSimpleZoneCenterScenePos = scenePos;
-                if (m_pendingSimpleZoneRequest->shape.trimmed().compare(QStringLiteral("BOX"), Qt::CaseInsensitive) == 0) {
+                if (!m_pendingSimpleZoneRequest->size.trimmed().isEmpty()) {
+                    finalizeSimpleZonePlacement(scenePos);
+                    placementGuard->deleteLater();
+                    return;
+                }
+                const QString shape = m_pendingSimpleZoneRequest->shape.trimmed().toUpper();
+                if (shape == QStringLiteral("BOX") || shape == QStringLiteral("CYLINDER")) {
                     m_pendingSimpleZoneStep = 2;
                     m_mapView->setPlacementMode(true,
-                                                tr("2nd click sets the end of the box zone. [Esc] or right-click cancels."));
+                                                tr("2nd click sets the end of the zone. [Esc] or right-click cancels."));
                 }
                 m_mapView->viewport()->installEventFilter(this);
                 m_mapView->viewport()->setMouseTracking(true);
@@ -8789,10 +8834,16 @@ void SystemEditorPage::beginSimpleZonePlacement(const CreateSimpleZoneRequest &r
     });
 
     m_mapView->setPlacementMode(true,
-                                request.shape.trimmed().compare(QStringLiteral("BOX"), Qt::CaseInsensitive) == 0
-                                    ? tr("1st click sets the start point for '%1'. 2nd click sets the end. 3rd click sets width. 4th click saves.")
+                                hasFixedSize
+                                    ? tr("Click the map to place fixed-size zone '%1'.").arg(request.nickname)
+                                : isLinearZone
+                                    ? tr("1st click sets the start point for '%1'. 2nd click sets the end. 3rd click sets width/radius and saves.")
                                           .arg(request.nickname)
                                     : tr("Click the map to place '%1'.").arg(request.nickname));
+    if (hasFixedSize && m_mapView->viewport()) {
+        m_mapView->viewport()->installEventFilter(this);
+        m_mapView->viewport()->setMouseTracking(true);
+    }
 }
 
 void SystemEditorPage::beginPatrolZonePlacement(const CreatePatrolZoneRequest &request)
@@ -9052,11 +9103,73 @@ void SystemEditorPage::updateFieldZonePlacementPreview(const QPointF &currentSce
 
 void SystemEditorPage::updateSimpleZonePlacementPreview(const QPointF &currentScenePos)
 {
-    if (!m_pendingSimpleZoneRequest || !m_pendingSimpleZoneHasCenter || !m_mapScene)
+    if (!m_pendingSimpleZoneRequest || !m_mapScene)
         return;
 
-    const bool isBox = m_pendingSimpleZoneRequest->shape.trimmed().compare(QStringLiteral("BOX"), Qt::CaseInsensitive) == 0;
-    if (isBox) {
+    const QString shape = m_pendingSimpleZoneRequest->shape.trimmed().toUpper();
+    const QString fixedSize = m_pendingSimpleZoneRequest->size.trimmed();
+    if (!fixedSize.isEmpty()) {
+        QVector3D fixedSizeValue;
+        QString fixedSizeText;
+        Q_UNUSED(fixedSizeText);
+        if (!parseFixedSimpleZoneSize(fixedSize, shape, &fixedSizeValue, &fixedSizeText))
+            return;
+
+        const QPointF center = m_pendingSimpleZoneHasCenter ? m_pendingSimpleZoneCenterScenePos : currentScenePos;
+        const QColor stroke(170, 220, 120, 220);
+        const QColor fill(170, 220, 120, 30);
+
+        if (shape == QStringLiteral("BOX") || shape == QStringLiteral("CYLINDER")) {
+            const qreal halfWidth = shape == QStringLiteral("CYLINDER")
+                                        ? std::max<qreal>(fixedSizeValue.y() * 0.005, 1.0)
+                                        : std::max<qreal>(fixedSizeValue.x() * 0.005, 1.0);
+            const qreal halfHeight = shape == QStringLiteral("CYLINDER")
+                                         ? std::max<qreal>(fixedSizeValue.x() * 0.01, 1.0)
+                                         : std::max<qreal>(fixedSizeValue.z() * 0.005, 1.0);
+            if (!m_simpleZoneBoxPreview) {
+                m_simpleZoneBoxPreview = new QGraphicsPolygonItem();
+                m_simpleZoneBoxPreview->setPen(QPen(stroke, 2.0, Qt::DashLine));
+                m_simpleZoneBoxPreview->setBrush(fill);
+                m_simpleZoneBoxPreview->setZValue(9999.0);
+                m_mapScene->addItem(m_simpleZoneBoxPreview);
+            }
+            m_simpleZoneBoxPreview->setPolygon(QPolygonF({
+                QPointF(center.x() - halfWidth, center.y() - halfHeight),
+                QPointF(center.x() + halfWidth, center.y() - halfHeight),
+                QPointF(center.x() + halfWidth, center.y() + halfHeight),
+                QPointF(center.x() - halfWidth, center.y() + halfHeight),
+            }));
+            return;
+        }
+
+        if (!m_simpleZonePlacementPreview) {
+            m_simpleZonePlacementPreview = new QGraphicsEllipseItem();
+            m_simpleZonePlacementPreview->setPen(QPen(stroke, 2.0, Qt::DashLine));
+            m_simpleZonePlacementPreview->setBrush(fill);
+            m_simpleZonePlacementPreview->setZValue(9999.0);
+            m_mapScene->addItem(m_simpleZonePlacementPreview);
+        }
+
+        qreal halfWidth = std::max<qreal>(fixedSizeValue.x() * 0.01, 1.0);
+        qreal halfHeight = halfWidth;
+        if (shape == QStringLiteral("ELLIPSOID")) {
+            halfHeight = std::max<qreal>(fixedSizeValue.z() * 0.01, 1.0);
+        } else if (shape == QStringLiteral("CYLINDER") || shape == QStringLiteral("RING")) {
+            halfWidth = std::max<qreal>(fixedSizeValue.y() * 0.005, halfWidth);
+            halfHeight = std::max<qreal>(fixedSizeValue.x() * 0.01, 1.0);
+        }
+        m_simpleZonePlacementPreview->setRect(center.x() - halfWidth,
+                                              center.y() - halfHeight,
+                                              halfWidth * 2.0,
+                                              halfHeight * 2.0);
+        return;
+    }
+
+    if (!m_pendingSimpleZoneHasCenter)
+        return;
+
+    const bool isLinearZone = shape == QStringLiteral("BOX") || shape == QStringLiteral("CYLINDER");
+    if (isLinearZone) {
         if (m_pendingSimpleZoneStep == 2) {
             if (!m_simpleZoneLinePreview) {
                 const QColor stroke(170, 220, 120, 220);
@@ -9458,13 +9571,30 @@ void SystemEditorPage::finalizeSimpleZonePlacement(const QPointF &edgeScenePos)
     const double radius = std::max(std::max(deltaX, deltaZ), 500.0);
     const double sizeY = std::min(std::max(std::min(deltaX, deltaZ), 250.0), radius);
     const QString shape = m_pendingSimpleZoneRequest->shape.toUpper();
+    const QString fixedSize = m_pendingSimpleZoneRequest->size.trimmed();
+    QVector3D fixedSizeValue;
+    QString fixedSizeText;
+    const bool hasFixedSize = !fixedSize.isEmpty();
+    if (hasFixedSize && !parseFixedSimpleZoneSize(fixedSize, shape, &fixedSizeValue, &fixedSizeText)) {
+        QMessageBox::warning(this, tr("Create Zone"),
+                             tr("The fixed size is invalid for the selected shape. Please check the size in the dialog."));
+        cancelSimpleZonePlacement();
+        return;
+    }
 
     QPointF zoneCenterFl = centerFl;
     QVector3D rotation(0.0f, 0.0f, 0.0f);
-    if (shape == QStringLiteral("BOX") && m_pendingSimpleZoneHasEnd) {
+    if (hasFixedSize && shape == QStringLiteral("CYLINDER")) {
+        rotation = QVector3D(90.0f, 0.0f, 0.0f);
+    } else if (!hasFixedSize
+               && (shape == QStringLiteral("BOX") || shape == QStringLiteral("CYLINDER"))
+               && m_pendingSimpleZoneHasEnd) {
         const QPointF endFl = MapScene::qtToFl(m_pendingSimpleZoneEndScenePos.x(), m_pendingSimpleZoneEndScenePos.y());
         zoneCenterFl = QPointF((centerFl.x() + endFl.x()) * 0.5, (centerFl.y() + endFl.y()) * 0.5);
-        rotation = QVector3D(0.0f, static_cast<float>(patrolYawDegrees(centerFl, endFl)), 0.0f);
+        const float yaw = static_cast<float>(patrolYawDegrees(centerFl, endFl));
+        rotation = shape == QStringLiteral("CYLINDER")
+                       ? QVector3D(90.0f, yaw, 0.0f)
+                       : QVector3D(0.0f, yaw, 0.0f);
     }
 
     auto zone = std::make_shared<ZoneItem>();
@@ -9478,11 +9608,13 @@ void SystemEditorPage::finalizeSimpleZonePlacement(const QPointF &edgeScenePos)
     QString sizeText;
     if (shape == QStringLiteral("ELLIPSOID")) {
         zone->setShape(ZoneItem::Ellipsoid);
-        zone->setSize(QVector3D(static_cast<float>(deltaX), static_cast<float>(sizeY), static_cast<float>(deltaZ)));
-        sizeText = QStringLiteral("%1, %2, %3")
-                       .arg(std::max(deltaX, 500.0), 0, 'f', 0)
-                       .arg(sizeY, 0, 'f', 0)
-                       .arg(std::max(deltaZ, 500.0), 0, 'f', 0);
+        zone->setSize(hasFixedSize ? fixedSizeValue
+                                   : QVector3D(static_cast<float>(deltaX), static_cast<float>(sizeY), static_cast<float>(deltaZ)));
+        sizeText = hasFixedSize ? fixedSizeText
+                                : QStringLiteral("%1, %2, %3")
+                                      .arg(std::max(deltaX, 500.0), 0, 'f', 0)
+                                      .arg(sizeY, 0, 'f', 0)
+                                      .arg(std::max(deltaZ, 500.0), 0, 'f', 0);
     } else if (shape == QStringLiteral("BOX")) {
         const QPointF endFl = m_pendingSimpleZoneHasEnd
             ? MapScene::qtToFl(m_pendingSimpleZoneEndScenePos.x(), m_pendingSimpleZoneEndScenePos.y())
@@ -9491,29 +9623,39 @@ void SystemEditorPage::finalizeSimpleZonePlacement(const QPointF &edgeScenePos)
         const double width = std::max(static_cast<double>(m_pendingSimpleZoneHalfWidthScene) * 200.0, 1000.0);
         const double height = std::min(std::max(width * 0.5, 500.0), length);
         zone->setShape(ZoneItem::Box);
-        zone->setSize(QVector3D(static_cast<float>(width), static_cast<float>(height), static_cast<float>(length)));
-        sizeText = QStringLiteral("%1, %2, %3")
-                       .arg(width, 0, 'f', 0)
-                       .arg(height, 0, 'f', 0)
-                       .arg(length, 0, 'f', 0);
+        zone->setSize(hasFixedSize ? fixedSizeValue
+                                   : QVector3D(static_cast<float>(width), static_cast<float>(height), static_cast<float>(length)));
+        sizeText = hasFixedSize ? fixedSizeText
+                                : QStringLiteral("%1, %2, %3")
+                                      .arg(width, 0, 'f', 0)
+                                      .arg(height, 0, 'f', 0)
+                                      .arg(length, 0, 'f', 0);
     } else if (shape == QStringLiteral("CYLINDER")) {
-        const double length = std::max(std::max(deltaX, deltaZ) * 2.0, 1000.0);
+        const QPointF endFl = m_pendingSimpleZoneHasEnd
+            ? MapScene::qtToFl(m_pendingSimpleZoneEndScenePos.x(), m_pendingSimpleZoneEndScenePos.y())
+            : edgeFl;
+        const double length = std::max(std::hypot(endFl.x() - centerFl.x(), endFl.y() - centerFl.y()), 1000.0);
+        const double cylinderRadius = std::max(static_cast<double>(m_pendingSimpleZoneHalfWidthScene) * 100.0, 500.0);
         zone->setShape(ZoneItem::Cylinder);
-        zone->setSize(QVector3D(static_cast<float>(radius), static_cast<float>(length), static_cast<float>(radius)));
-        sizeText = QStringLiteral("%1, %2")
-                       .arg(radius, 0, 'f', 0)
-                       .arg(length, 0, 'f', 0);
+        zone->setSize(hasFixedSize ? fixedSizeValue
+                                   : QVector3D(static_cast<float>(cylinderRadius), static_cast<float>(length), static_cast<float>(cylinderRadius)));
+        sizeText = hasFixedSize ? fixedSizeText
+                                : QStringLiteral("%1, %2")
+                                      .arg(cylinderRadius, 0, 'f', 0)
+                                      .arg(length, 0, 'f', 0);
     } else if (shape == QStringLiteral("RING")) {
         const double length = std::max(std::max(deltaX, deltaZ) * 2.0, 1000.0);
         zone->setShape(ZoneItem::Ring);
-        zone->setSize(QVector3D(static_cast<float>(radius), static_cast<float>(length), static_cast<float>(radius)));
-        sizeText = QStringLiteral("%1, %2")
-                       .arg(radius, 0, 'f', 0)
-                       .arg(length, 0, 'f', 0);
+        zone->setSize(hasFixedSize ? fixedSizeValue
+                                   : QVector3D(static_cast<float>(radius), static_cast<float>(length), static_cast<float>(radius)));
+        sizeText = hasFixedSize ? fixedSizeText
+                                : QStringLiteral("%1, %2")
+                                      .arg(radius, 0, 'f', 0)
+                                      .arg(length, 0, 'f', 0);
     } else {
         zone->setShape(ZoneItem::Sphere);
-        zone->setSize(QVector3D(static_cast<float>(radius), 0.0f, 0.0f));
-        sizeText = QString::number(radius, 'f', 0);
+        zone->setSize(hasFixedSize ? fixedSizeValue : QVector3D(static_cast<float>(radius), 0.0f, 0.0f));
+        sizeText = hasFixedSize ? fixedSizeText : QString::number(radius, 'f', 0);
     }
 
     QVector<QPair<QString, QString>> entries{
@@ -9532,6 +9674,10 @@ void SystemEditorPage::finalizeSimpleZonePlacement(const QPointF &edgeScenePos)
         entries.append({QStringLiteral("comment"), m_pendingSimpleZoneRequest->comment.trimmed()});
     if (m_pendingSimpleZoneRequest->damage > 0)
         entries.append({QStringLiteral("damage"), QString::number(m_pendingSimpleZoneRequest->damage)});
+    for (const auto &entry : m_pendingSimpleZoneRequest->rawEntries) {
+        if (!entry.first.trimmed().isEmpty())
+            entries.append(entry);
+    }
     zone->setRawEntries(entries);
 
     auto *cmd = new AddZoneCommand(m_document.get(), zone, tr("Create Zone"));
