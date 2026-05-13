@@ -24,8 +24,16 @@ int main(int argc, char *argv[])
     const QCommandLineOption outputOption(QStringList{QStringLiteral("o"), QStringLiteral("output")},
                                           QStringLiteral("Output JSON path."),
                                           QStringLiteral("output"));
+    const QCommandLineOption pngOption(QStringList{QStringLiteral("p"), QStringLiteral("png")},
+                                       QStringLiteral("Export a textured transparent top-view PNG instead of JSON."));
+    const QCommandLineOption sizeOption(QStringList{QStringLiteral("s"), QStringLiteral("size")},
+                                        QStringLiteral("PNG size in pixels. Defaults to 384."),
+                                        QStringLiteral("size"),
+                                        QStringLiteral("384"));
     parser.addOption(modelOption);
     parser.addOption(outputOption);
+    parser.addOption(pngOption);
+    parser.addOption(sizeOption);
     parser.process(app);
 
     const QString modelPath = parser.value(modelOption).trimmed();
@@ -41,7 +49,16 @@ int main(int argc, char *argv[])
     }
 
     QString errorMessage;
-    if (!flatlas::tools::ModelScreenshotExporter::exportModelFileToJson(modelPath, outputPath, &errorMessage)) {
+    bool ok = false;
+    if (parser.isSet(pngOption)) {
+        bool sizeOk = false;
+        const int size = parser.value(sizeOption).toInt(&sizeOk);
+        ok = flatlas::tools::ModelScreenshotExporter::exportTexturedTopViewPng(
+            modelPath, outputPath, sizeOk ? size : 384, &errorMessage);
+    } else {
+        ok = flatlas::tools::ModelScreenshotExporter::exportModelFileToJson(modelPath, outputPath, &errorMessage);
+    }
+    if (!ok) {
         std::cerr << errorMessage.toStdString() << "\n";
         return 3;
     }

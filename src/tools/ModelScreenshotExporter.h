@@ -25,6 +25,10 @@ public:
     static bool exportModelFileToJson(const QString &modelPath,
                                       const QString &outPath,
                                       QString *errorMessage = nullptr);
+    static bool exportTexturedTopViewPng(const QString &modelPath,
+                                         const QString &outPath,
+                                         int size = 384,
+                                         QString *errorMessage = nullptr);
 };
 
 } // namespace flatlas::tools
