@@ -95,6 +95,9 @@ private slots:
             "flag = MINE_DANGER_OBJECTS\n"
             "\n"
             "[Cube]\n"
+            "xaxis_rotation = 8, 40, 90, 158\n"
+            "yaxis_rotation = 5, 45, 100, 135\n"
+            "zaxis_rotation = 355, 45, 78, 145\n"
             "asteroid = mine_spike1, -0.90, 0.00, 0.05, 110, 0, 10, mine\n"
             "\n"
             "[AsteroidBillboards]\n"
@@ -113,9 +116,17 @@ private slots:
         QCOMPARE(field.fillDistance, 2000);
         QCOMPARE(field.billboardCount, 120);
         QCOMPARE(field.dynamicCount, 0);
+        QCOMPARE(field.cubeXAxisRotations, QVector<int>({8, 40, 90, 158}));
+        QCOMPARE(field.cubeYAxisRotations, QVector<int>({5, 45, 100, 135}));
+        QCOMPARE(field.cubeZAxisRotations, QVector<int>({355, 45, 78, 145}));
         QCOMPARE(field.placedObjects.size(), 1);
         QCOMPARE(field.placedObjects.first().assetNickname, QStringLiteral("mine_spike1"));
         QVERIFY(field.placedObjects.first().mineRole);
+
+        const QString generated = FieldTemplateGenerator::generateFieldIni(field);
+        QVERIFY(generated.contains(QStringLiteral("xaxis_rotation = 8, 40, 90, 158\n")));
+        QVERIFY(generated.contains(QStringLiteral("yaxis_rotation = 5, 45, 100, 135\n")));
+        QVERIFY(generated.contains(QStringLiteral("zaxis_rotation = 355, 45, 78, 145\n")));
     }
 
     void parsesNebulaTemplateForEditing()

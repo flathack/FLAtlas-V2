@@ -19,6 +19,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFormLayout>
+#include <QFont>
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHeaderView>
@@ -35,6 +36,7 @@
 #include <QPushButton>
 #include <QSaveFile>
 #include <QSignalBlocker>
+#include <QSlider>
 #include <QSplitter>
 #include <QSpinBox>
 #include <QTableWidget>
@@ -306,7 +308,7 @@ public:
             || m_field.placedObjects.size() != field.placedObjects.size();
         m_field = field;
 #ifdef FLATLAS_HAS_QT3D
-        rebuildQt3DScene();
+        scheduleQt3DRebuild(0);
         if (shouldFrameCamera)
             frameCameraForField();
 #endif
@@ -321,7 +323,19 @@ public:
         m_previewCubeCount = count;
 #ifdef FLATLAS_HAS_QT3D
         if (!m_compact)
-            rebuildQt3DScene();
+            scheduleQt3DRebuild(140);
+#endif
+        update();
+    }
+
+    void setCubeWireframesVisible(bool visible)
+    {
+        if (m_cubeWireframesVisible == visible)
+            return;
+        m_cubeWireframesVisible = visible;
+#ifdef FLATLAS_HAS_QT3D
+        if (m_wireRoot)
+            m_wireRoot->setEnabled(m_cubeWireframesVisible);
 #endif
         update();
     }
@@ -453,6 +467,19 @@ protected:
 
 private:
 #ifdef FLATLAS_HAS_QT3D
+    struct PreviewCube {
+        QVector3D offset;
+        int ix = 0;
+        int iy = 0;
+        int iz = 0;
+    };
+
+    struct PendingPlacedObject {
+        FieldPlacedObject object;
+        QVector3D cubeOffset;
+        QQuaternion cubeRotation;
+    };
+
     void setupQt3D()
     {
         auto *layout = m_compact
@@ -525,6 +552,14 @@ private:
         m_skyRenderer->setRadius(m_compact ? 35000.0f : 250000.0f);
         m_skyRenderer->setCenter(m_camera->position());
 
+        m_rebuildTimer = new QTimer(this);
+        m_rebuildTimer->setSingleShot(true);
+        connect(m_rebuildTimer, &QTimer::timeout, this, &FieldPreviewWidget::rebuildQt3DScene);
+
+        m_batchTimer = new QTimer(this);
+        m_batchTimer->setInterval(0);
+        connect(m_batchTimer, &QTimer::timeout, this, &FieldPreviewWidget::loadNextObjectBatch);
+
         m_window->setRootEntity(m_rootEntity);
     }
 
@@ -557,11 +592,15 @@ private:
         if (!m_rootEntity)
             return;
 
+        stopPendingBuild();
         if (m_sceneRoot) {
             m_sceneRoot->setEnabled(false);
             m_sceneRoot->deleteLater();
         }
         m_sceneRoot = new Qt3DCore::QEntity(m_rootEntity);
+        m_wireRoot = new Qt3DCore::QEntity(m_sceneRoot);
+        m_objectRoot = new Qt3DCore::QEntity(m_sceneRoot);
+        m_wireRoot->setEnabled(m_cubeWireframesVisible);
 
         QVector<FieldPlacedObject> objects = m_field.placedObjects;
         if (objects.isEmpty()) {
@@ -581,50 +620,98 @@ private:
             return;
         }
 
-        const QVector<QVector3D> cubeOffsets = repeatedCubeOffsets();
-        for (const QVector3D &offset : cubeOffsets) {
-            addCubeWireBox(offset);
+        const QVector<PreviewCube> cubes = repeatedCubes();
+        if (m_cubeWireframesVisible) {
+            for (const PreviewCube &cube : cubes)
+                addCubeWireBox(cube.offset);
         }
 
-        const QVector<QVector3D> objectOffsets = objectCubeOffsets(cubeOffsets, objects.size());
-        for (const QVector3D &offset : objectOffsets) {
+        const QVector<PreviewCube> objectCubes = objectCubesForPreview(cubes, objects.size());
+        for (const PreviewCube &cube : objectCubes) {
+            const QQuaternion cubeRotation = rotationForCube(cube);
             for (const FieldPlacedObject &object : std::as_const(objects))
-                addPlacedObject(object, offset);
+                m_pendingObjects.append({object, cube.offset, cubeRotation});
         }
+        loadNextObjectBatch();
     }
 
-    QVector<QVector3D> repeatedCubeOffsets() const
+    void scheduleQt3DRebuild(int delayMs)
     {
-        QVector<QVector3D> offsets;
+        if (!m_rebuildTimer)
+            return;
+        stopPendingBuild();
+        m_rebuildTimer->start(delayMs);
+    }
+
+    void stopPendingBuild()
+    {
+        m_pendingObjects.clear();
+        if (m_batchTimer)
+            m_batchTimer->stop();
+    }
+
+    void loadNextObjectBatch()
+    {
+        if (!m_objectRoot || m_pendingObjects.isEmpty()) {
+            if (m_batchTimer)
+                m_batchTimer->stop();
+            return;
+        }
+
+        const int batchSize = qMax(1, m_previewCubeCount <= 2 ? 10 : 4);
+        for (int i = 0; i < batchSize && !m_pendingObjects.isEmpty(); ++i) {
+            const PendingPlacedObject next = m_pendingObjects.takeFirst();
+            addPlacedObject(next.object, next.cubeOffset, next.cubeRotation);
+        }
+        if (!m_pendingObjects.isEmpty() && m_batchTimer && !m_batchTimer->isActive())
+            m_batchTimer->start();
+    }
+
+    QVector<PreviewCube> repeatedCubes() const
+    {
+        QVector<PreviewCube> cubes;
         const double cube = previewCubeScale();
         const int count = qBound(1, m_previewCubeCount, 5);
-        offsets.reserve(count * count * count);
+        cubes.reserve(count * count * count);
         for (int ix = 0; ix < count; ++ix) {
             for (int iy = 0; iy < count; ++iy) {
                 for (int iz = 0; iz < count; ++iz) {
-                    offsets.append(QVector3D(repeatPosition(ix, count, cube),
-                                             repeatPosition(iy, count, cube),
-                                             repeatPosition(iz, count, cube)));
+                    cubes.append({QVector3D(repeatPosition(ix, count, cube),
+                                            repeatPosition(iy, count, cube),
+                                            repeatPosition(iz, count, cube)),
+                                  ix, iy, iz});
                 }
             }
         }
-        if (offsets.isEmpty())
-            return {QVector3D()};
+        if (cubes.isEmpty())
+            return {{QVector3D(), 0, 0, 0}};
 
-        std::sort(offsets.begin(), offsets.end(), [](const QVector3D &left, const QVector3D &right) {
-            return left.lengthSquared() < right.lengthSquared();
+        std::sort(cubes.begin(), cubes.end(), [](const PreviewCube &left, const PreviewCube &right) {
+            return left.offset.lengthSquared() < right.offset.lengthSquared();
         });
-        return offsets;
+        return cubes;
     }
 
-    QVector<QVector3D> objectCubeOffsets(QVector<QVector3D> offsets, int objectCount) const
+    QVector<PreviewCube> objectCubesForPreview(QVector<PreviewCube> cubes, int objectCount) const
     {
+        if (m_previewCubeCount > 1) {
+            QVector<PreviewCube> filledCubes;
+            const double emptyFrequency = qBound(0.0, m_field.emptyCubeFrequency, 1.0);
+            filledCubes.reserve(cubes.size());
+            for (const PreviewCube &cube : std::as_const(cubes)) {
+                if (cubeEmptyRoll(cube) >= emptyFrequency)
+                    filledCubes.append(cube);
+            }
+            if (!filledCubes.isEmpty())
+                cubes = filledCubes;
+        }
+
         constexpr int maxPreviewObjects = 144;
         const int safeObjectCount = qMax(1, objectCount);
         const int maxOffsets = qMax(1, maxPreviewObjects / safeObjectCount);
-        if (offsets.size() > maxOffsets)
-            offsets.resize(maxOffsets);
-        return offsets;
+        if (cubes.size() > maxOffsets)
+            cubes.resize(maxOffsets);
+        return cubes;
     }
 
     float repeatPosition(int index, int count, double cubeSize) const
@@ -635,6 +722,63 @@ private:
         return static_cast<float>(centeredIndex * cubeSize);
     }
 
+    quint32 stableTextHash(const QString &text) const
+    {
+        quint32 hash = 2166136261u;
+        const QByteArray bytes = text.toUtf8();
+        for (char byte : bytes) {
+            hash ^= static_cast<quint8>(byte);
+            hash *= 16777619u;
+        }
+        return hash;
+    }
+
+    quint32 stableCubeHash(const PreviewCube &cube, quint32 salt) const
+    {
+        quint32 hash = stableTextHash(m_field.fileName.toLower()) ^ (salt * 16777619u);
+        const auto mix = [&hash](int value) {
+            hash ^= static_cast<quint32>(value + 32768);
+            hash *= 16777619u;
+        };
+        mix(cube.ix);
+        mix(cube.iy);
+        mix(cube.iz);
+        return hash;
+    }
+
+    double cubeEmptyRoll(const PreviewCube &cube) const
+    {
+        return static_cast<double>(stableCubeHash(cube, 11u) % 10000u) / 10000.0;
+    }
+
+    int cubeRotationVariant(const PreviewCube &cube) const
+    {
+        int count = 0;
+        for (const QVector<int> &values : {m_field.cubeXAxisRotations, m_field.cubeYAxisRotations, m_field.cubeZAxisRotations}) {
+            if (!values.isEmpty())
+                count = count == 0 ? values.size() : qMin(count, values.size());
+        }
+        if (count <= 0)
+            return -1;
+        return static_cast<int>(stableCubeHash(cube, 23u) % static_cast<quint32>(count));
+    }
+
+    int rotationValueAt(const QVector<int> &values, int index) const
+    {
+        if (values.isEmpty() || index < 0)
+            return 0;
+        return values.at(qBound(0, index, values.size() - 1));
+    }
+
+    QQuaternion rotationForCube(const PreviewCube &cube) const
+    {
+        const int variant = cubeRotationVariant(cube);
+        const int x = rotationValueAt(m_field.cubeXAxisRotations, variant);
+        const int y = rotationValueAt(m_field.cubeYAxisRotations, variant);
+        const int z = rotationValueAt(m_field.cubeZAxisRotations, variant);
+        return QQuaternion::fromEulerAngles(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+    }
+
     void addCubeWireBox(const QVector3D &cubeOffset)
     {
         const float half = static_cast<float>(previewCubeScale() * 0.5);
@@ -642,7 +786,7 @@ private:
         bounds.include(QVector3D(-half, -half, -half));
         bounds.include(QVector3D(half, half, half));
 
-        auto *entity = new Qt3DCore::QEntity(m_sceneRoot);
+        auto *entity = new Qt3DCore::QEntity(m_wireRoot ? m_wireRoot : m_sceneRoot);
         auto *transform = new Qt3DCore::QTransform(entity);
         transform->setTranslation(cubeOffset);
         entity->addComponent(transform);
@@ -657,18 +801,20 @@ private:
         entity->addComponent(material);
     }
 
-    void addPlacedObject(const FieldPlacedObject &object, const QVector3D &cubeOffset)
+    void addPlacedObject(const FieldPlacedObject &object, const QVector3D &cubeOffset, const QQuaternion &cubeRotation = {})
     {
         const QString modelPath = absoluteModelPathForAsset(object.assetNickname);
-        auto *host = new Qt3DCore::QEntity(m_sceneRoot);
+        auto *host = new Qt3DCore::QEntity(m_objectRoot ? m_objectRoot : m_sceneRoot);
         auto *hostTransform = new Qt3DCore::QTransform(host);
         const double cubeScale = previewCubeScale();
-        hostTransform->setTranslation(cubeOffset + QVector3D(static_cast<float>(object.x * cubeScale),
-                                                             static_cast<float>(object.y * cubeScale),
-                                                             static_cast<float>(object.z * cubeScale)));
-        hostTransform->setRotation(QQuaternion::fromEulerAngles(static_cast<float>(object.rotateX),
-                                                                static_cast<float>(object.rotateY),
-                                                                static_cast<float>(object.rotateZ)));
+        const QVector3D localPosition(static_cast<float>(object.x * cubeScale),
+                                      static_cast<float>(object.y * cubeScale),
+                                      static_cast<float>(object.z * cubeScale));
+        const QQuaternion objectRotation = QQuaternion::fromEulerAngles(static_cast<float>(object.rotateX),
+                                                                        static_cast<float>(object.rotateY),
+                                                                        static_cast<float>(object.rotateZ));
+        hostTransform->setTranslation(cubeOffset + cubeRotation.rotatedVector(localPosition));
+        hostTransform->setRotation(cubeRotation * objectRotation);
         host->addComponent(hostTransform);
 
         if (!modelPath.isEmpty()) {
@@ -722,7 +868,9 @@ private:
                 meshEntity->deleteLater();
                 continue;
             }
-            const QColor color = QColor::fromHsv((depth * 47 + meshIndex * 31) % 360, 90, 205);
+            const QColor color = m_field.primaryColor.isValid()
+                ? m_field.primaryColor.lighter(105 + ((depth + meshIndex) % 3) * 8)
+                : QColor::fromHsv((depth * 47 + meshIndex * 31) % 360, 90, 205);
             Qt3DRender::QMaterial *material = nullptr;
             if (!modelPath.isEmpty()) {
                 const QImage texture = flatlas::infrastructure::FreelancerMaterialResolver::loadTextureForMesh(modelPath, mesh);
@@ -798,15 +946,21 @@ private:
     QWidget *m_container = nullptr;
     Qt3DCore::QEntity *m_rootEntity = nullptr;
     Qt3DCore::QEntity *m_sceneRoot = nullptr;
+    Qt3DCore::QEntity *m_wireRoot = nullptr;
+    Qt3DCore::QEntity *m_objectRoot = nullptr;
     Qt3DRender::QCamera *m_camera = nullptr;
     flatlas::rendering::FreeCameraController *m_freeCamera = nullptr;
     flatlas::rendering::SkyRenderer *m_skyRenderer = nullptr;
+    QTimer *m_rebuildTimer = nullptr;
+    QTimer *m_batchTimer = nullptr;
+    QVector<PendingPlacedObject> m_pendingObjects;
 #endif
 
     RulerWidget *m_horizontalRuler = nullptr;
     RulerWidget *m_verticalRuler = nullptr;
     bool m_compact = false;
     int m_previewCubeCount = 1;
+    bool m_cubeWireframesVisible = true;
     FieldTemplate m_field;
 };
 
@@ -858,6 +1012,9 @@ void FieldCreatorPage::buildUi()
     templateForm->addRow(tr("Preset:"), m_presetCombo);
     m_fileNameEdit = new QLineEdit(templateBox);
     templateForm->addRow(tr("File name:"), m_fileNameEdit);
+    auto *resetPresetButton = new QPushButton(tr("Reset to preset"), templateBox);
+    resetPresetButton->setToolTip(tr("Reloads the selected preset and clears the current placed assets."));
+    templateForm->addRow(resetPresetButton);
     leftLayout->addWidget(templateBox);
 
     auto *zoneBox = new QGroupBox(tr("Zone defaults"), left);
@@ -1036,17 +1193,56 @@ void FieldCreatorPage::buildUi()
 
     auto *previewControls = new QHBoxLayout();
     previewControls->setContentsMargins(0, 0, 0, 8);
-    m_previewCubeCountSpin = new QSpinBox(previewPage);
-    m_previewCubeCountSpin->setRange(1, 5);
-    m_previewCubeCountSpin->setValue(1);
-    m_previewCubeCountSpin->setToolTip(tr("Controls how many adjacent cube boxes are shown per axis in the 3D preview."));
+    m_previewControlsToggle = new QPushButton(tr("Hide controls"), previewPage);
+    m_previewControlsToggle->setCheckable(true);
+    previewControls->addWidget(m_previewControlsToggle);
     previewControls->addWidget(new QLabel(tr("Preview cube grid:"), previewPage));
-    previewControls->addWidget(m_previewCubeCountSpin);
-    previewControls->addStretch(1);
+    auto *decreaseGridButton = new QPushButton(tr("-"), previewPage);
+    decreaseGridButton->setFixedWidth(32);
+    auto *increaseGridButton = new QPushButton(tr("+"), previewPage);
+    increaseGridButton->setFixedWidth(32);
+    m_previewCubeSlider = new QSlider(Qt::Horizontal, previewPage);
+    m_previewCubeSlider->setRange(1, 5);
+    m_previewCubeSlider->setValue(1);
+    m_previewCubeSlider->setTickInterval(1);
+    m_previewCubeSlider->setTickPosition(QSlider::TicksBelow);
+    m_previewCubeSlider->setToolTip(tr("Controls how many adjacent cube boxes are shown per axis in the 3D preview."));
+    m_previewCubeValueLabel = new QLabel(QString::number(m_previewCubeSlider->value()), previewPage);
+    m_previewCubeValueLabel->setMinimumWidth(18);
+    m_previewCubeValueLabel->setAlignment(Qt::AlignCenter);
+    previewControls->addWidget(decreaseGridButton);
+    previewControls->addWidget(m_previewCubeSlider, 1);
+    previewControls->addWidget(increaseGridButton);
+    previewControls->addWidget(m_previewCubeValueLabel);
+    m_previewWireframesCheck = new QCheckBox(tr("Show cube wireframes"), previewPage);
+    m_previewWireframesCheck->setChecked(true);
+    m_previewWireframesCheck->setToolTip(tr("Shows or hides the cube boundary lines in the 3D preview."));
+    previewControls->addWidget(m_previewWireframesCheck);
     previewLayout->addLayout(previewControls);
 
+    auto *previewBody = new QHBoxLayout();
+    previewBody->setContentsMargins(0, 0, 0, 0);
+    previewBody->setSpacing(8);
+    m_previewHelpPanel = new QWidget(previewPage);
+    m_previewHelpPanel->setFixedWidth(220);
+    auto *helpLayout = new QVBoxLayout(m_previewHelpPanel);
+    helpLayout->setContentsMargins(8, 8, 8, 8);
+    auto *helpTitle = new QLabel(tr("Camera controls"), m_previewHelpPanel);
+    QFont helpTitleFont = helpTitle->font();
+    helpTitleFont.setBold(true);
+    helpTitle->setFont(helpTitleFont);
+    helpLayout->addWidget(helpTitle);
+    helpLayout->addWidget(new QLabel(tr("W/A/S/D: move"), m_previewHelpPanel));
+    helpLayout->addWidget(new QLabel(tr("Space/Ctrl: up/down"), m_previewHelpPanel));
+    helpLayout->addWidget(new QLabel(tr("Mouse drag: look around"), m_previewHelpPanel));
+    helpLayout->addWidget(new QLabel(tr("Mouse wheel: adjust speed"), m_previewHelpPanel));
+    helpLayout->addWidget(new QLabel(tr("Click preview first to capture controls."), m_previewHelpPanel));
+    helpLayout->addStretch(1);
+    previewBody->addWidget(m_previewHelpPanel);
+
     m_preview = new FieldPreviewWidget(previewPage);
-    previewLayout->addWidget(m_preview, 1);
+    previewBody->addWidget(m_preview, 1);
+    previewLayout->addLayout(previewBody, 1);
 
     tabs->addTab(editorPage, tr("Template"));
     tabs->addTab(previewPage, tr("3D Preview"));
@@ -1074,9 +1270,29 @@ void FieldCreatorPage::buildUi()
         connect(spin, qOverload<int>(&QSpinBox::valueChanged), this, changed);
     }
     connect(m_emptyCubeSpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, changed);
-    connect(m_previewCubeCountSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
+    connect(m_previewControlsToggle, &QPushButton::toggled, this, [this](bool hidden) {
+        if (m_previewHelpPanel)
+            m_previewHelpPanel->setVisible(!hidden);
+        if (m_previewControlsToggle)
+            m_previewControlsToggle->setText(hidden ? tr("Show controls") : tr("Hide controls"));
+    });
+    connect(decreaseGridButton, &QPushButton::clicked, this, [this]() {
+        if (m_previewCubeSlider)
+            m_previewCubeSlider->setValue(m_previewCubeSlider->value() - 1);
+    });
+    connect(increaseGridButton, &QPushButton::clicked, this, [this]() {
+        if (m_previewCubeSlider)
+            m_previewCubeSlider->setValue(m_previewCubeSlider->value() + 1);
+    });
+    connect(m_previewCubeSlider, &QSlider::valueChanged, this, [this](int value) {
+        if (m_previewCubeValueLabel)
+            m_previewCubeValueLabel->setText(QString::number(value));
         if (m_preview)
             m_preview->setPreviewCubeCount(value);
+    });
+    connect(m_previewWireframesCheck, &QCheckBox::toggled, this, [this](bool checked) {
+        if (m_preview)
+            m_preview->setCubeWireframesVisible(checked);
     });
     connect(m_kindCombo, &QComboBox::currentIndexChanged, this, [this]() {
         const FieldTemplateKind kind = currentKind();
@@ -1088,7 +1304,7 @@ void FieldCreatorPage::buildUi()
             }
         }
         loadAssetsForKind();
-        applyCurrentPreset();
+        applyCurrentPreset(true);
     });
     connect(m_presetCombo, &QComboBox::currentIndexChanged, this, [this]() {
         const int index = m_presetCombo->currentIndex();
@@ -1101,7 +1317,7 @@ void FieldCreatorPage::buildUi()
                 loadAssetsForKind();
             }
         }
-        applyCurrentPreset();
+        applyCurrentPreset(true);
     });
     connect(m_assetList, &QListWidget::itemSelectionChanged, this, [this]() {
         const auto items = m_assetList->selectedItems();
@@ -1115,29 +1331,57 @@ void FieldCreatorPage::buildUi()
     });
     connect(addButton, &QPushButton::clicked, this, &FieldCreatorPage::addManualObject);
     connect(autoButton, &QPushButton::clicked, this, &FieldCreatorPage::autoDistributeObjects);
+    connect(resetPresetButton, &QPushButton::clicked, this, &FieldCreatorPage::resetCurrentPreset);
     connect(loadButton, &QPushButton::clicked, this, &FieldCreatorPage::loadTemplate);
     connect(saveButton, &QPushButton::clicked, this, &FieldCreatorPage::saveTemplate);
 }
 
 void FieldCreatorPage::loadAssetsForKind()
 {
-    m_assets = scanAssets(flatlas::core::EditingContext::instance().primaryGamePath(), currentKind());
+    m_assets.clear();
     m_assetList->clear();
-    for (const FieldAsset &asset : std::as_const(m_assets)) {
-        const QString label = asset.modelPath.isEmpty()
-            ? QStringLiteral("%1  [%2]").arg(asset.nickname, asset.category)
-            : QStringLiteral("%1  [%2]").arg(asset.nickname, asset.modelPath);
-        auto *item = new QListWidgetItem(label, m_assetList);
-        item->setData(Qt::UserRole, asset.nickname);
-        item->setToolTip(asset.modelPath);
+
+    const QString gameRoot = flatlas::core::EditingContext::instance().primaryGamePath();
+    const QVector<FieldTemplateKind> themes = {
+        FieldTemplateKind::Mine,
+        FieldTemplateKind::Asteroid,
+        FieldTemplateKind::Ice,
+        FieldTemplateKind::Debris,
+        FieldTemplateKind::Gas,
+        FieldTemplateKind::Nebula,
+    };
+
+    for (FieldTemplateKind theme : themes) {
+        QVector<FieldAsset> assets = scanAssets(gameRoot, theme);
+        std::sort(assets.begin(), assets.end(), [](const FieldAsset &left, const FieldAsset &right) {
+            return QString::compare(left.nickname, right.nickname, Qt::CaseInsensitive) < 0;
+        });
+
+        auto *header = new QListWidgetItem(FieldTemplateGenerator::kindLabel(theme), m_assetList);
+        header->setFlags(Qt::NoItemFlags);
+        QFont headerFont = header->font();
+        headerFont.setBold(true);
+        header->setFont(headerFont);
+        header->setForeground(QColor(140, 170, 205));
+
+        for (const FieldAsset &asset : std::as_const(assets)) {
+            m_assets.append(asset);
+            const QString label = asset.modelPath.isEmpty()
+                ? QStringLiteral("%1  [%2]").arg(asset.nickname, asset.category)
+                : QStringLiteral("%1  [%2]").arg(asset.nickname, asset.modelPath);
+            auto *item = new QListWidgetItem(label, m_assetList);
+            item->setData(Qt::UserRole, asset.nickname);
+            item->setToolTip(asset.modelPath);
+        }
     }
     m_assetList->clearSelection();
     updateAssetPreview();
 }
 
-void FieldCreatorPage::applyCurrentPreset()
+void FieldCreatorPage::applyCurrentPreset(bool preservePlacements)
 {
     FieldTemplateKind kind = currentKind();
+    const QVector<FieldPlacedObject> existingObjects = m_template.placedObjects;
     const int presetIndex = m_presetCombo->currentIndex();
     if (presetIndex >= 0) {
         const auto presetKind = static_cast<FieldTemplateKind>(m_presetCombo->itemData(presetIndex).toInt());
@@ -1155,7 +1399,14 @@ void FieldCreatorPage::applyCurrentPreset()
         m_template = FieldTemplateGenerator::preset(kind);
     }
 
+    if (preservePlacements)
+        m_template.placedObjects = existingObjects;
     applyTemplateToUi(m_template);
+}
+
+void FieldCreatorPage::resetCurrentPreset()
+{
+    applyCurrentPreset(false);
 }
 
 void FieldCreatorPage::applyTemplateToUi(const FieldTemplate &field)

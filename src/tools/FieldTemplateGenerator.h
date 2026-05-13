@@ -57,6 +57,9 @@ struct FieldTemplate {
     int cubeSize = 400;
     int fillDistance = 3200;
     double emptyCubeFrequency = 0.6;
+    QVector<int> cubeXAxisRotations;
+    QVector<int> cubeYAxisRotations;
+    QVector<int> cubeZAxisRotations;
     int billboardCount = 400;
     int dynamicCount = 12;
     int fogDistance = 1600;

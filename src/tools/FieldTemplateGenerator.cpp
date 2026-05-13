@@ -76,6 +76,32 @@ QColor colorValue(const IniSection *section, const QString &key, const QColor &f
     return QColor(std::clamp(r, 0, 255), std::clamp(g, 0, 255), std::clamp(b, 0, 255));
 }
 
+QVector<int> intListValue(const IniSection *section, const QString &key)
+{
+    QVector<int> values;
+    if (!section)
+        return values;
+    const QString raw = section->value(key).trimmed();
+    if (raw.isEmpty())
+        return values;
+    const QStringList parts = raw.split(QLatin1Char(','), Qt::SkipEmptyParts);
+    for (const QString &part : parts) {
+        bool ok = false;
+        const int value = part.trimmed().toInt(&ok);
+        if (ok)
+            values.append(value);
+    }
+    return values;
+}
+
+QString intListText(const QVector<int> &values)
+{
+    QStringList parts;
+    for (int value : values)
+        parts.append(QString::number(value));
+    return parts.join(QStringLiteral(", "));
+}
+
 FieldTemplateKind inferAsteroidKind(const IniDocument &doc, const FieldTemplate &field)
 {
     QStringList flags;
@@ -415,6 +441,10 @@ FieldTemplate FieldTemplateGenerator::parseFieldIni(const QString &fileName, con
     field.billboardCount = intValue(billboards, QStringLiteral("count"), field.billboardCount);
     field.billboardShape = billboards ? billboards->value(QStringLiteral("shape"), field.billboardShape).trimmed() : field.billboardShape;
     field.dynamicCount = intValue(dynamic, QStringLiteral("count"), field.dynamicCount);
+    const IniSection *cube = findSection(doc, QStringLiteral("Cube"));
+    field.cubeXAxisRotations = intListValue(cube, QStringLiteral("xaxis_rotation"));
+    field.cubeYAxisRotations = intListValue(cube, QStringLiteral("yaxis_rotation"));
+    field.cubeZAxisRotations = intListValue(cube, QStringLiteral("zaxis_rotation"));
     field.placedObjects = parseCubeObjects(doc);
     if (!field.placedObjects.isEmpty()) {
         field.cubeShapeFallbacks.clear();
@@ -519,6 +549,12 @@ QString FieldTemplateGenerator::generateFieldIni(const FieldTemplate &field)
     appendBlank();
 
     lines << QStringLiteral("[Cube]");
+    if (!field.cubeXAxisRotations.isEmpty())
+        lines << QStringLiteral("xaxis_rotation = %1").arg(intListText(field.cubeXAxisRotations));
+    if (!field.cubeYAxisRotations.isEmpty())
+        lines << QStringLiteral("yaxis_rotation = %1").arg(intListText(field.cubeYAxisRotations));
+    if (!field.cubeZAxisRotations.isEmpty())
+        lines << QStringLiteral("zaxis_rotation = %1").arg(intListText(field.cubeZAxisRotations));
     const QVector<FieldPlacedObject> objects = field.placedObjects.isEmpty() ? fallbackObjects(field) : field.placedObjects;
     for (const FieldPlacedObject &object : objects) {
         QString value = QStringLiteral("asteroid = %1, %2, %3, %4, %5, %6, %7")

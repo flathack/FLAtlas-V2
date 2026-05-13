@@ -12,6 +12,7 @@ class QLabel;
 class QLineEdit;
 class QListWidget;
 class QPushButton;
+class QSlider;
 class QSpinBox;
 class QTableWidget;
 class QTextEdit;
@@ -30,7 +31,8 @@ public:
 private:
     void buildUi();
     void loadAssetsForKind();
-    void applyCurrentPreset();
+    void applyCurrentPreset(bool preservePlacements = true);
+    void resetCurrentPreset();
     void applyTemplateToUi(const FieldTemplate &field);
     void updateTemplateFromUi();
     void refreshPreviews();
@@ -80,9 +82,13 @@ private:
     QSpinBox *m_rotateYSpin = nullptr;
     QSpinBox *m_rotateZSpin = nullptr;
     QCheckBox *m_mineRoleCheck = nullptr;
+    QCheckBox *m_previewWireframesCheck = nullptr;
     QSpinBox *m_autoCountSpin = nullptr;
     QSpinBox *m_seedSpin = nullptr;
-    QSpinBox *m_previewCubeCountSpin = nullptr;
+    QSlider *m_previewCubeSlider = nullptr;
+    QLabel *m_previewCubeValueLabel = nullptr;
+    QPushButton *m_previewControlsToggle = nullptr;
+    QWidget *m_previewHelpPanel = nullptr;
     QComboBox *m_spreadCombo = nullptr;
     FieldPreviewWidget *m_assetPreview = nullptr;
     FieldPreviewWidget *m_preview = nullptr;
