@@ -1,0 +1,2 @@
+# Keep content-hashed guide files byte-stable across platforms.
+guides/**/*.json text eol=lf
