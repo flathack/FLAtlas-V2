@@ -51,6 +51,9 @@ struct FieldTemplate {
     int visit = 32;
     int damage = 0;
     int sort = 25;
+    int zoneSizeX = 10000;
+    int zoneSizeY = 8000;
+    int zoneSizeZ = 10000;
     int cubeSize = 400;
     int fillDistance = 3200;
     double emptyCubeFrequency = 0.6;

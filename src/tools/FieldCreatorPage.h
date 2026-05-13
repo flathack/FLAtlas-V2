@@ -57,6 +57,9 @@ private:
     QSpinBox *m_propertyFlagsSpin = nullptr;
     QSpinBox *m_visitSpin = nullptr;
     QSpinBox *m_damageSpin = nullptr;
+    QSpinBox *m_zoneSizeXSpin = nullptr;
+    QSpinBox *m_zoneSizeYSpin = nullptr;
+    QSpinBox *m_zoneSizeZSpin = nullptr;
     QSpinBox *m_cubeSizeSpin = nullptr;
     QSpinBox *m_fillDistanceSpin = nullptr;
     QDoubleSpinBox *m_emptyCubeSpin = nullptr;
@@ -79,6 +82,7 @@ private:
     QCheckBox *m_mineRoleCheck = nullptr;
     QSpinBox *m_autoCountSpin = nullptr;
     QSpinBox *m_seedSpin = nullptr;
+    QSpinBox *m_previewCubeCountSpin = nullptr;
     QComboBox *m_spreadCombo = nullptr;
     FieldPreviewWidget *m_assetPreview = nullptr;
     FieldPreviewWidget *m_preview = nullptr;

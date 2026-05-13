@@ -69,7 +69,7 @@ Die 3D-Preview liegt im Field Creator in einem eigenen Tab (`3D Preview`), nicht
 
 Wichtig: Das Feld soll still stehen. Die Kamera bewegt sich durch das Feld.
 
-Wichtig für die Skalierung: `[Cube]`-Koordinaten wie `0.6, 0.2, -0.2` sind relative Positionen innerhalb eines einzelnen Cubes. Die 3D-Preview skaliert diese Positionen deshalb mit `cube_size`, nicht mit der gesamten Field-/Zone-Größe.
+Wichtig für die Skalierung: `[Cube]`-Koordinaten wie `0.6, 0.2, -0.2` sind relative Positionen innerhalb eines einzelnen Cubes. Die 3D-Preview skaliert diese Positionen deshalb mit `cube_size`, nicht mit der gesamten Field-/Zone-Größe. Die einstellbare `Field size X/Y/Z` entspricht der System-Zone-Größe (`size = ...`) und wird in der System-Link-Vorschau genutzt. Die 3D-Preview zeigt das Cube-Muster über den separaten Regler `Preview cube grid` an. Standard ist ein einzelner Cube; höhere Werte zeigen ein nahtloses Raster, bei dem benachbarte Cubes exakt um `cube_size` versetzt sind. Die Preview capped die Anzahl sichtbarer Objektinstanzen, damit große Freelancer-Felder bedienbar bleiben und der Tool-Start nicht tausende Modelle lädt. Die Cubes selbst werden als Wireframe-Boxen angezeigt, ohne Flächen.
 
 Aktuelle Qt3D-Steuerung:
 

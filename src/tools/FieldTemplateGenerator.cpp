@@ -583,7 +583,7 @@ QString FieldTemplateGenerator::generateSystemLinkPreview(const FieldTemplate &f
           << QStringLiteral("ids_name = 0")
           << QStringLiteral("pos = 0, 0, 0")
           << QStringLiteral("shape = ELLIPSOID")
-          << QStringLiteral("size = 10000, 8000, 10000")
+          << QStringLiteral("size = %1, %2, %3").arg(field.zoneSizeX).arg(field.zoneSizeY).arg(field.zoneSizeZ)
           << QStringLiteral("property_flags = %1").arg(field.propertyFlags)
           << QStringLiteral("ids_info = 66146")
           << QStringLiteral("visit = %1").arg(field.visit)
