@@ -665,7 +665,7 @@ void SceneView3D::setSystemLightSources(const QVector<SystemLightSource> &lightS
     if (m_defaultLightEntity)
         m_defaultLightEntity->setEnabled(true);
     if (m_light)
-        m_light->setIntensity(m_systemLightSources.isEmpty() ? 1.6f : 0.35f);
+        m_light->setIntensity(m_systemLightSources.isEmpty() ? 1.6f : 0.08f);
     if (m_systemLightSources.isEmpty())
         return;
 
@@ -677,13 +677,13 @@ void SceneView3D::setSystemLightSources(const QVector<SystemLightSource> &lightS
         if (type == QStringLiteral("DIRECTIONAL")) {
             auto *light = new Qt3DRender::QDirectionalLight(lightEntity);
             light->setColor(color);
-            light->setIntensity(0.9f);
+            light->setIntensity(0.35f);
             light->setWorldDirection(directionalLightDirection(source));
             lightEntity->addComponent(light);
         } else {
             auto *light = new Qt3DRender::QPointLight(lightEntity);
             light->setColor(color);
-            light->setIntensity(0.75f);
+            light->setIntensity(0.45f);
             if (source.attenuation.x() > 0.0f)
                 light->setConstantAttenuation(source.attenuation.x());
             if (source.attenuation.y() > 0.0f)
