@@ -36,6 +36,7 @@
 #include <Qt3DExtras/QTorusMesh>
 #include <Qt3DExtras/Qt3DWindow>
 #include <Qt3DRender/QCamera>
+#include <Qt3DRender/QDirectionalLight>
 #include <Qt3DRender/QGeometryRenderer>
 #include <Qt3DRender/QMaterial>
 #include <Qt3DRender/QObjectPicker>
@@ -424,6 +425,14 @@ float lightSourceMarkerRadius(const SystemLightSource &source)
     return 520.0f;
 }
 
+QVector3D directionalLightDirection(const SystemLightSource &source)
+{
+    QVector3D direction = source.position;
+    if (direction.lengthSquared() <= 0.0001f)
+        direction = QVector3D(-1.0f, -0.35f, -1.0f);
+    return -direction.normalized();
+}
+
 float markerRadius(flatlas::domain::SolarObject::Type type)
 {
     using Type = flatlas::domain::SolarObject::Type;
@@ -653,10 +662,11 @@ void SceneView3D::setSystemLightSources(const QVector<SystemLightSource> &lightS
     if (!m_rootEntity)
         return;
 
-    const bool useFallbackLight = m_systemLightSources.isEmpty();
     if (m_defaultLightEntity)
-        m_defaultLightEntity->setEnabled(useFallbackLight);
-    if (useFallbackLight)
+        m_defaultLightEntity->setEnabled(true);
+    if (m_light)
+        m_light->setIntensity(m_systemLightSources.isEmpty() ? 1.6f : 0.35f);
+    if (m_systemLightSources.isEmpty())
         return;
 
     for (const SystemLightSource &source : std::as_const(m_systemLightSources)) {
@@ -664,14 +674,16 @@ void SceneView3D::setSystemLightSources(const QVector<SystemLightSource> &lightS
         auto *lightEntity = new Qt3DCore::QEntity(m_rootEntity);
         const QColor color = source.color.isValid() ? source.color : QColor(Qt::white);
 
-        auto *light = new Qt3DRender::QPointLight(lightEntity);
-        light->setColor(color);
-        light->setIntensity(type == QStringLiteral("DIRECTIONAL") ? 0.45f : 0.75f);
         if (type == QStringLiteral("DIRECTIONAL")) {
-            light->setConstantAttenuation(1.0f);
-            light->setLinearAttenuation(0.0f);
-            light->setQuadraticAttenuation(0.0f);
+            auto *light = new Qt3DRender::QDirectionalLight(lightEntity);
+            light->setColor(color);
+            light->setIntensity(0.9f);
+            light->setWorldDirection(directionalLightDirection(source));
+            lightEntity->addComponent(light);
         } else {
+            auto *light = new Qt3DRender::QPointLight(lightEntity);
+            light->setColor(color);
+            light->setIntensity(0.75f);
             if (source.attenuation.x() > 0.0f)
                 light->setConstantAttenuation(source.attenuation.x());
             if (source.attenuation.y() > 0.0f)
@@ -680,11 +692,11 @@ void SceneView3D::setSystemLightSources(const QVector<SystemLightSource> &lightS
                 light->setQuadraticAttenuation(source.attenuation.z());
             else if (source.range > 0.0f)
                 light->setQuadraticAttenuation(1.0f / (source.range * source.range));
+            lightEntity->addComponent(light);
         }
 
         auto *transform = new Qt3DCore::QTransform(lightEntity);
         transform->setTranslation(source.position);
-        lightEntity->addComponent(light);
         lightEntity->addComponent(transform);
 
         auto *markerMesh = new Qt3DExtras::QSphereMesh(lightEntity);

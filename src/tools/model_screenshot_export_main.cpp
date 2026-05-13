@@ -26,14 +26,27 @@ int main(int argc, char *argv[])
                                           QStringLiteral("output"));
     const QCommandLineOption pngOption(QStringList{QStringLiteral("p"), QStringLiteral("png")},
                                        QStringLiteral("Export a textured transparent top-view PNG instead of JSON."));
+    const QCommandLineOption perspectiveOption(QStringList{QStringLiteral("perspective")},
+                                               QStringLiteral("Render PNG from an angled perspective camera instead of top view."));
     const QCommandLineOption sizeOption(QStringList{QStringLiteral("s"), QStringLiteral("size")},
                                         QStringLiteral("PNG size in pixels. Defaults to 384."),
                                         QStringLiteral("size"),
                                         QStringLiteral("384"));
+    const QCommandLineOption yawOption(QStringList{QStringLiteral("yaw")},
+                                       QStringLiteral("Perspective yaw in degrees. Defaults to 35."),
+                                       QStringLiteral("degrees"),
+                                       QStringLiteral("35"));
+    const QCommandLineOption pitchOption(QStringList{QStringLiteral("pitch")},
+                                         QStringLiteral("Perspective pitch in degrees. Defaults to 18."),
+                                         QStringLiteral("degrees"),
+                                         QStringLiteral("18"));
     parser.addOption(modelOption);
     parser.addOption(outputOption);
     parser.addOption(pngOption);
+    parser.addOption(perspectiveOption);
     parser.addOption(sizeOption);
+    parser.addOption(yawOption);
+    parser.addOption(pitchOption);
     parser.process(app);
 
     const QString modelPath = parser.value(modelOption).trimmed();
@@ -53,8 +66,22 @@ int main(int argc, char *argv[])
     if (parser.isSet(pngOption)) {
         bool sizeOk = false;
         const int size = parser.value(sizeOption).toInt(&sizeOk);
-        ok = flatlas::tools::ModelScreenshotExporter::exportTexturedTopViewPng(
-            modelPath, outputPath, sizeOk ? size : 384, &errorMessage);
+        if (parser.isSet(perspectiveOption)) {
+            bool yawOk = false;
+            bool pitchOk = false;
+            const float yaw = parser.value(yawOption).toFloat(&yawOk);
+            const float pitch = parser.value(pitchOption).toFloat(&pitchOk);
+            ok = flatlas::tools::ModelScreenshotExporter::exportTexturedPerspectivePng(
+                modelPath,
+                outputPath,
+                sizeOk ? size : 768,
+                yawOk ? yaw : 35.0f,
+                pitchOk ? pitch : 18.0f,
+                &errorMessage);
+        } else {
+            ok = flatlas::tools::ModelScreenshotExporter::exportTexturedTopViewPng(
+                modelPath, outputPath, sizeOk ? size : 384, &errorMessage);
+        }
     } else {
         ok = flatlas::tools::ModelScreenshotExporter::exportModelFileToJson(modelPath, outputPath, &errorMessage);
     }

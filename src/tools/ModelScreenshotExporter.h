@@ -29,6 +29,12 @@ public:
                                          const QString &outPath,
                                          int size = 384,
                                          QString *errorMessage = nullptr);
+    static bool exportTexturedPerspectivePng(const QString &modelPath,
+                                             const QString &outPath,
+                                             int size = 768,
+                                             float yawDegrees = 35.0f,
+                                             float pitchDegrees = 18.0f,
+                                             QString *errorMessage = nullptr);
 };
 
 } // namespace flatlas::tools

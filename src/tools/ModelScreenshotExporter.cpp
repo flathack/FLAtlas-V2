@@ -478,4 +478,154 @@ bool ModelScreenshotExporter::exportTexturedTopViewPng(const QString &modelPath,
     return true;
 }
 
+bool ModelScreenshotExporter::exportTexturedPerspectivePng(const QString &modelPath,
+                                                           const QString &outPath,
+                                                           int size,
+                                                           float yawDegrees,
+                                                           float pitchDegrees,
+                                                           QString *errorMessage)
+{
+    const int outputSize = qBound(64, size, 2048);
+    const int imageSize = outputSize * 2;
+    const auto model = flatlas::infrastructure::CmpLoader::loadModel(modelPath);
+    if (!model.isValid()) {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("Model could not be decoded: %1").arg(modelPath);
+        return false;
+    }
+
+    QVector<TexturedIconTriangle> triangles;
+    const QHash<QString, flatlas::infrastructure::CmpTransformHint> transformHints;
+    int nodeIndex = 0;
+    QMatrix4x4 identity;
+    appendTexturedNodeTriangles(modelPath, model.rootNode, identity, transformHints, &triangles, &nodeIndex);
+    if (triangles.isEmpty()) {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("Model produced no renderable triangles: %1").arg(modelPath);
+        return false;
+    }
+
+    QVector3D minPoint(std::numeric_limits<float>::max(),
+                       std::numeric_limits<float>::max(),
+                       std::numeric_limits<float>::max());
+    QVector3D maxPoint(std::numeric_limits<float>::lowest(),
+                       std::numeric_limits<float>::lowest(),
+                       std::numeric_limits<float>::lowest());
+    for (const auto &triangle : triangles) {
+        const QVector3D points[] = {triangle.a, triangle.b, triangle.c};
+        for (const QVector3D &p : points) {
+            minPoint.setX(std::min(minPoint.x(), p.x()));
+            minPoint.setY(std::min(minPoint.y(), p.y()));
+            minPoint.setZ(std::min(minPoint.z(), p.z()));
+            maxPoint.setX(std::max(maxPoint.x(), p.x()));
+            maxPoint.setY(std::max(maxPoint.y(), p.y()));
+            maxPoint.setZ(std::max(maxPoint.z(), p.z()));
+        }
+    }
+
+    const QVector3D center = (minPoint + maxPoint) * 0.5f;
+    constexpr float pi = 3.14159265358979323846f;
+    const float yaw = yawDegrees * pi / 180.0f;
+    const float pitch = pitchDegrees * pi / 180.0f;
+    const float cy = std::cos(yaw);
+    const float sy = std::sin(yaw);
+    const float cp = std::cos(pitch);
+    const float sp = std::sin(pitch);
+
+    auto cameraProject = [&](const QVector3D &point) {
+        const QVector3D local = point - center;
+        const float x1 = cy * local.x() + sy * local.z();
+        const float z1 = -sy * local.x() + cy * local.z();
+        const float y1 = local.y();
+        const float y2 = cp * y1 - sp * z1;
+        const float z2 = sp * y1 + cp * z1;
+        return QVector3D(x1, -y2, z2);
+    };
+
+    float minX = std::numeric_limits<float>::max();
+    float maxX = std::numeric_limits<float>::lowest();
+    float minY = std::numeric_limits<float>::max();
+    float maxY = std::numeric_limits<float>::lowest();
+    for (const auto &triangle : triangles) {
+        const QVector3D points[] = {cameraProject(triangle.a), cameraProject(triangle.b), cameraProject(triangle.c)};
+        for (const QVector3D &p : points) {
+            minX = std::min(minX, p.x());
+            maxX = std::max(maxX, p.x());
+            minY = std::min(minY, p.y());
+            maxY = std::max(maxY, p.y());
+        }
+    }
+
+    const float spanX = std::max(1.0f, maxX - minX);
+    const float spanY = std::max(1.0f, maxY - minY);
+    const float scale = (static_cast<float>(imageSize) * 0.86f) / std::max(spanX, spanY);
+    const QPointF projectedCenter((minX + maxX) * 0.5f, (minY + maxY) * 0.5f);
+    const QPointF imageCenter(imageSize * 0.5, imageSize * 0.5);
+
+    struct ProjectedTriangle {
+        TexturedIconTriangle triangle;
+        QPolygonF poly;
+        float depth = 0.0f;
+    };
+
+    QVector<ProjectedTriangle> projected;
+    projected.reserve(triangles.size());
+    auto toImagePoint = [&](const QVector3D &cameraPoint) {
+        return QPointF(imageCenter.x() + (cameraPoint.x() - projectedCenter.x()) * scale,
+                       imageCenter.y() + (cameraPoint.y() - projectedCenter.y()) * scale);
+    };
+
+    for (const auto &triangle : triangles) {
+        const QVector3D a = cameraProject(triangle.a);
+        const QVector3D b = cameraProject(triangle.b);
+        const QVector3D c = cameraProject(triangle.c);
+        QPolygonF poly;
+        poly << toImagePoint(a) << toImagePoint(b) << toImagePoint(c);
+        projected.append(ProjectedTriangle{triangle, poly, (a.z() + b.z() + c.z()) / 3.0f});
+    }
+
+    std::sort(projected.begin(), projected.end(), [](const ProjectedTriangle &left, const ProjectedTriangle &right) {
+        return left.depth < right.depth;
+    });
+
+    QImage image(imageSize, imageSize, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+
+    for (const auto &entry : projected) {
+        const auto &triangle = entry.triangle;
+        if (!triangle.texture.isNull()) {
+            const float baseValue = std::max(0.01f, static_cast<float>(sampleTexture(triangle.texture, triangle.uvA, triangle.color).valueF()));
+            const float shade = qBound(0.35f, static_cast<float>(triangle.color.valueF()) / baseValue, 1.25f);
+            rasterizeTexturedTriangle(&image,
+                                      entry.poly,
+                                      triangle.texture,
+                                      triangle.uvA,
+                                      triangle.uvB,
+                                      triangle.uvC,
+                                      triangle.color,
+                                      shade);
+            continue;
+        }
+
+        QPainter painter(&image);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(triangle.color);
+        painter.drawPolygon(entry.poly);
+    }
+
+    QDir().mkpath(QFileInfo(outPath).absolutePath());
+    const QImage finalImage = image.scaled(outputSize,
+                                           outputSize,
+                                           Qt::IgnoreAspectRatio,
+                                           Qt::SmoothTransformation);
+    if (!finalImage.save(outPath, "PNG")) {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("Could not save PNG: %1").arg(outPath);
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace flatlas::tools
