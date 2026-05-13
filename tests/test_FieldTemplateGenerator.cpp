@@ -69,11 +69,19 @@ private slots:
     {
         FieldTemplate asteroid = FieldTemplateGenerator::preset(FieldTemplateKind::Asteroid);
         FieldTemplate nebula = FieldTemplateGenerator::preset(FieldTemplateKind::Nebula);
+        asteroid.zonePosX = 1200;
+        asteroid.zonePosY = 50;
+        asteroid.zonePosZ = -3400;
+        asteroid.zoneRotateY = -40;
+        asteroid.zoneShape = QStringLiteral("BOX");
         asteroid.zoneSizeX = 16000;
         asteroid.zoneSizeY = 6000;
         asteroid.zoneSizeZ = 22000;
 
         QVERIFY(FieldTemplateGenerator::generateSystemLinkPreview(asteroid).startsWith(QStringLiteral("[Asteroids]\n")));
+        QVERIFY(FieldTemplateGenerator::generateSystemLinkPreview(asteroid).contains(QStringLiteral("pos = 1200, 50, -3400\n")));
+        QVERIFY(FieldTemplateGenerator::generateSystemLinkPreview(asteroid).contains(QStringLiteral("rotate = 0, -40, 0\n")));
+        QVERIFY(FieldTemplateGenerator::generateSystemLinkPreview(asteroid).contains(QStringLiteral("shape = BOX\n")));
         QVERIFY(FieldTemplateGenerator::generateSystemLinkPreview(asteroid).contains(QStringLiteral("size = 16000, 6000, 22000\n")));
         QVERIFY(FieldTemplateGenerator::generateSystemLinkPreview(nebula).startsWith(QStringLiteral("[Nebula]\n")));
     }
@@ -127,6 +135,7 @@ private slots:
         QVERIFY(generated.contains(QStringLiteral("xaxis_rotation = 8, 40, 90, 158\n")));
         QVERIFY(generated.contains(QStringLiteral("yaxis_rotation = 5, 45, 100, 135\n")));
         QVERIFY(generated.contains(QStringLiteral("zaxis_rotation = 355, 45, 78, 145\n")));
+        QCOMPARE(generated, ini);
     }
 
     void parsesNebulaTemplateForEditing()

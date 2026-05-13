@@ -50,6 +50,7 @@
 #include <Qt3DCore/QEntity>
 #include <Qt3DCore/QTransform>
 #include <Qt3DExtras/QCuboidMesh>
+#include <Qt3DExtras/QDiffuseSpecularMaterial>
 #include <Qt3DExtras/QForwardRenderer>
 #include <Qt3DExtras/QSphereMesh>
 #include <Qt3DExtras/Qt3DWindow>
@@ -57,6 +58,7 @@
 #include <Qt3DRender/QGeometryRenderer>
 #include <Qt3DRender/QMaterial>
 #include <Qt3DRender/QPointLight>
+#include <Qt3DRender/QTextureWrapMode>
 #endif
 
 #include <algorithm>
@@ -68,6 +70,8 @@ namespace flatlas::tools {
 namespace {
 
 constexpr double kPi = 3.14159265358979323846;
+constexpr int kMaxPreviewCubeGrid = 10;
+constexpr int kMaxPreviewObjects = 1000;
 
 using flatlas::infrastructure::IniDocument;
 using flatlas::infrastructure::IniParser;
@@ -317,7 +321,7 @@ public:
 
     void setPreviewCubeCount(int count)
     {
-        count = qBound(1, count, 5);
+        count = qBound(1, count, kMaxPreviewCubeGrid);
         if (m_previewCubeCount == count)
             return;
         m_previewCubeCount = count;
@@ -338,6 +342,12 @@ public:
             m_wireRoot->setEnabled(m_cubeWireframesVisible);
 #endif
         update();
+    }
+
+    void setObjectStatsLabel(QLabel *label)
+    {
+        m_objectStatsLabel = label;
+        updateObjectStats(0);
     }
 
 protected:
@@ -533,7 +543,7 @@ private:
         auto *lightEntity = new Qt3DCore::QEntity(m_rootEntity);
         auto *light = new Qt3DRender::QPointLight(lightEntity);
         light->setColor(Qt::white);
-        light->setIntensity(1.6f);
+        light->setIntensity(0.9f);
         auto *lightTransform = new Qt3DCore::QTransform(lightEntity);
         lightTransform->setTranslation(QVector3D(0.0f, 14000.0f, -10000.0f));
         lightEntity->addComponent(light);
@@ -542,7 +552,7 @@ private:
         auto *fillLightEntity = new Qt3DCore::QEntity(m_rootEntity);
         auto *fillLight = new Qt3DRender::QPointLight(fillLightEntity);
         fillLight->setColor(QColor(160, 190, 255));
-        fillLight->setIntensity(0.6f);
+        fillLight->setIntensity(0.25f);
         auto *fillLightTransform = new Qt3DCore::QTransform(fillLightEntity);
         fillLightTransform->setTranslation(QVector3D(-9000.0f, -5000.0f, 9000.0f));
         fillLightEntity->addComponent(fillLight);
@@ -627,6 +637,7 @@ private:
         }
 
         const QVector<PreviewCube> objectCubes = objectCubesForPreview(cubes, objects.size());
+        updateObjectStats(objectCubes.size() * objects.size());
         for (const PreviewCube &cube : objectCubes) {
             const QQuaternion cubeRotation = rotationForCube(cube);
             for (const FieldPlacedObject &object : std::as_const(objects))
@@ -671,7 +682,7 @@ private:
     {
         QVector<PreviewCube> cubes;
         const double cube = previewCubeScale();
-        const int count = qBound(1, m_previewCubeCount, 5);
+        const int count = qBound(1, m_previewCubeCount, kMaxPreviewCubeGrid);
         cubes.reserve(count * count * count);
         for (int ix = 0; ix < count; ++ix) {
             for (int iy = 0; iy < count; ++iy) {
@@ -706,12 +717,17 @@ private:
                 cubes = filledCubes;
         }
 
-        constexpr int maxPreviewObjects = 144;
         const int safeObjectCount = qMax(1, objectCount);
-        const int maxOffsets = qMax(1, maxPreviewObjects / safeObjectCount);
+        const int maxOffsets = qMax(1, kMaxPreviewObjects / safeObjectCount);
         if (cubes.size() > maxOffsets)
             cubes.resize(maxOffsets);
         return cubes;
+    }
+
+    void updateObjectStats(int visibleObjects)
+    {
+        if (m_objectStatsLabel)
+            m_objectStatsLabel->setText(tr("%1 / %2 objects").arg(visibleObjects).arg(kMaxPreviewObjects));
     }
 
     float repeatPosition(int index, int count, double cubeSize) const
@@ -875,10 +891,10 @@ private:
             if (!modelPath.isEmpty()) {
                 const QImage texture = flatlas::infrastructure::FreelancerMaterialResolver::loadTextureForMesh(modelPath, mesh);
                 if (!texture.isNull())
-                    material = flatlas::rendering::MaterialFactory::createFromImage(texture, meshEntity);
+                    material = createFieldAssetMaterial(texture, meshEntity);
             }
             if (!material)
-                material = flatlas::rendering::MaterialFactory::createDefault(color, meshEntity);
+                material = flatlas::rendering::MaterialFactory::createDefault(color.darker(150), meshEntity);
             meshEntity->addComponent(renderer);
             meshEntity->addComponent(material);
             ++visibleMeshCount;
@@ -887,6 +903,43 @@ private:
         for (const auto &child : node.children)
             visibleMeshCount += addModelNode(child, nodeEntity, modelPath, depth + 1);
         return visibleMeshCount;
+    }
+
+    QImage fieldPreviewTexture(const QImage &image) const
+    {
+        if (image.isNull())
+            return {};
+
+        QImage adjusted = image.convertToFormat(QImage::Format_ARGB32);
+        for (int y = 0; y < adjusted.height(); ++y) {
+            auto *row = reinterpret_cast<QRgb *>(adjusted.scanLine(y));
+            for (int x = 0; x < adjusted.width(); ++x) {
+                const QRgb pixel = row[x];
+                auto channel = [](int value) {
+                    const double normalized = static_cast<double>(value) / 255.0;
+                    const double contrasted = std::pow(qBound(0.0, normalized, 1.0), 1.18);
+                    return qBound(0, static_cast<int>(contrasted * 210.0), 255);
+                };
+                row[x] = qRgba(channel(qRed(pixel)), channel(qGreen(pixel)), channel(qBlue(pixel)), 255);
+            }
+        }
+        return adjusted;
+    }
+
+    Qt3DRender::QMaterial *createFieldAssetMaterial(const QImage &image, Qt3DCore::QNode *parent) const
+    {
+        if (image.isNull())
+            return flatlas::rendering::MaterialFactory::createDefault(m_field.primaryColor.darker(160), parent);
+
+        auto *material = new Qt3DExtras::QDiffuseSpecularMaterial(parent);
+        auto *texture = flatlas::rendering::MaterialFactory::createTexture(fieldPreviewTexture(image), material);
+        texture->wrapMode()->setX(Qt3DRender::QTextureWrapMode::Repeat);
+        texture->wrapMode()->setY(Qt3DRender::QTextureWrapMode::Repeat);
+        material->setDiffuse(QVariant::fromValue(texture));
+        material->setAmbient(QColor(5, 5, 5));
+        material->setSpecular(QColor(0, 0, 0));
+        material->setShininess(1.0f);
+        return material;
     }
 
     void addFallbackMesh(const FieldPlacedObject &object, Qt3DCore::QEntity *parent)
@@ -958,6 +1011,7 @@ private:
 
     RulerWidget *m_horizontalRuler = nullptr;
     RulerWidget *m_verticalRuler = nullptr;
+    QLabel *m_objectStatsLabel = nullptr;
     bool m_compact = false;
     int m_previewCubeCount = 1;
     bool m_cubeWireframesVisible = true;
@@ -1202,7 +1256,7 @@ void FieldCreatorPage::buildUi()
     auto *increaseGridButton = new QPushButton(tr("+"), previewPage);
     increaseGridButton->setFixedWidth(32);
     m_previewCubeSlider = new QSlider(Qt::Horizontal, previewPage);
-    m_previewCubeSlider->setRange(1, 5);
+    m_previewCubeSlider->setRange(1, kMaxPreviewCubeGrid);
     m_previewCubeSlider->setValue(1);
     m_previewCubeSlider->setTickInterval(1);
     m_previewCubeSlider->setTickPosition(QSlider::TicksBelow);
@@ -1237,10 +1291,44 @@ void FieldCreatorPage::buildUi()
     helpLayout->addWidget(new QLabel(tr("Mouse drag: look around"), m_previewHelpPanel));
     helpLayout->addWidget(new QLabel(tr("Mouse wheel: adjust speed"), m_previewHelpPanel));
     helpLayout->addWidget(new QLabel(tr("Click preview first to capture controls."), m_previewHelpPanel));
+    m_previewObjectStatsLabel = new QLabel(m_previewHelpPanel);
+    m_previewObjectStatsLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    helpLayout->addWidget(m_previewObjectStatsLabel);
+
+    auto *zonePreviewBox = new QGroupBox(tr("Zone"), m_previewHelpPanel);
+    auto *zonePreviewForm = new QGridLayout(zonePreviewBox);
+    m_zoneShapeCombo = new QComboBox(zonePreviewBox);
+    m_zoneShapeCombo->addItems({QStringLiteral("ELLIPSOID"), QStringLiteral("SPHERE"), QStringLiteral("BOX"), QStringLiteral("CYLINDER")});
+    m_zonePosXSpin = new QSpinBox(zonePreviewBox);
+    m_zonePosYSpin = new QSpinBox(zonePreviewBox);
+    m_zonePosZSpin = new QSpinBox(zonePreviewBox);
+    m_zoneRotateXSpin = new QSpinBox(zonePreviewBox);
+    m_zoneRotateYSpin = new QSpinBox(zonePreviewBox);
+    m_zoneRotateZSpin = new QSpinBox(zonePreviewBox);
+    for (QSpinBox *spin : {m_zonePosXSpin, m_zonePosYSpin, m_zonePosZSpin}) {
+        spin->setRange(-1000000, 1000000);
+        spin->setSingleStep(1000);
+    }
+    for (QSpinBox *spin : {m_zoneRotateXSpin, m_zoneRotateYSpin, m_zoneRotateZSpin}) {
+        spin->setRange(-360, 360);
+        spin->setSingleStep(5);
+    }
+    zonePreviewForm->addWidget(new QLabel(tr("Shape:"), zonePreviewBox), 0, 0);
+    zonePreviewForm->addWidget(m_zoneShapeCombo, 0, 1, 1, 3);
+    zonePreviewForm->addWidget(new QLabel(tr("Pos:"), zonePreviewBox), 1, 0);
+    zonePreviewForm->addWidget(m_zonePosXSpin, 1, 1);
+    zonePreviewForm->addWidget(m_zonePosYSpin, 1, 2);
+    zonePreviewForm->addWidget(m_zonePosZSpin, 1, 3);
+    zonePreviewForm->addWidget(new QLabel(tr("Rot:"), zonePreviewBox), 2, 0);
+    zonePreviewForm->addWidget(m_zoneRotateXSpin, 2, 1);
+    zonePreviewForm->addWidget(m_zoneRotateYSpin, 2, 2);
+    zonePreviewForm->addWidget(m_zoneRotateZSpin, 2, 3);
+    helpLayout->addWidget(zonePreviewBox);
     helpLayout->addStretch(1);
     previewBody->addWidget(m_previewHelpPanel);
 
     m_preview = new FieldPreviewWidget(previewPage);
+    m_preview->setObjectStatsLabel(m_previewObjectStatsLabel);
     previewBody->addWidget(m_preview, 1);
     previewLayout->addLayout(previewBody, 1);
 
@@ -1266,10 +1354,13 @@ void FieldCreatorPage::buildUi()
     }
     for (QSpinBox *spin : {m_propertyFlagsSpin, m_visitSpin, m_damageSpin, m_zoneSizeXSpin, m_zoneSizeYSpin,
                            m_zoneSizeZSpin, m_cubeSizeSpin, m_fillDistanceSpin,
-                           m_billboardCountSpin, m_dynamicCountSpin, m_fogDistanceSpin, m_puffCountSpin}) {
+                           m_billboardCountSpin, m_dynamicCountSpin, m_fogDistanceSpin, m_puffCountSpin,
+                           m_zonePosXSpin, m_zonePosYSpin, m_zonePosZSpin,
+                           m_zoneRotateXSpin, m_zoneRotateYSpin, m_zoneRotateZSpin}) {
         connect(spin, qOverload<int>(&QSpinBox::valueChanged), this, changed);
     }
     connect(m_emptyCubeSpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, changed);
+    connect(m_zoneShapeCombo, &QComboBox::currentTextChanged, this, changed);
     connect(m_previewControlsToggle, &QPushButton::toggled, this, [this](bool hidden) {
         if (m_previewHelpPanel)
             m_previewHelpPanel->setVisible(!hidden);
@@ -1415,7 +1506,7 @@ void FieldCreatorPage::applyTemplateToUi(const FieldTemplate &field)
     const int kindIndex = m_kindCombo->findData(static_cast<int>(m_template.kind));
     const int presetIndex = m_presetCombo->findData(static_cast<int>(m_template.kind));
 
-    const std::array<QSignalBlocker, 23> blockers = {
+    const std::array<QSignalBlocker, 30> blockers = {
         QSignalBlocker(m_kindCombo),
         QSignalBlocker(m_presetCombo),
         QSignalBlocker(m_fileNameEdit),
@@ -1426,6 +1517,13 @@ void FieldCreatorPage::applyTemplateToUi(const FieldTemplate &field)
         QSignalBlocker(m_propertyFlagsSpin),
         QSignalBlocker(m_visitSpin),
         QSignalBlocker(m_damageSpin),
+        QSignalBlocker(m_zoneShapeCombo),
+        QSignalBlocker(m_zonePosXSpin),
+        QSignalBlocker(m_zonePosYSpin),
+        QSignalBlocker(m_zonePosZSpin),
+        QSignalBlocker(m_zoneRotateXSpin),
+        QSignalBlocker(m_zoneRotateYSpin),
+        QSignalBlocker(m_zoneRotateZSpin),
         QSignalBlocker(m_zoneSizeXSpin),
         QSignalBlocker(m_zoneSizeYSpin),
         QSignalBlocker(m_zoneSizeZSpin),
@@ -1455,6 +1553,14 @@ void FieldCreatorPage::applyTemplateToUi(const FieldTemplate &field)
     m_propertyFlagsSpin->setValue(m_template.propertyFlags);
     m_visitSpin->setValue(m_template.visit);
     m_damageSpin->setValue(m_template.damage);
+    const int shapeIndex = m_zoneShapeCombo->findText(m_template.zoneShape, Qt::MatchFixedString);
+    m_zoneShapeCombo->setCurrentIndex(shapeIndex >= 0 ? shapeIndex : 0);
+    m_zonePosXSpin->setValue(m_template.zonePosX);
+    m_zonePosYSpin->setValue(m_template.zonePosY);
+    m_zonePosZSpin->setValue(m_template.zonePosZ);
+    m_zoneRotateXSpin->setValue(m_template.zoneRotateX);
+    m_zoneRotateYSpin->setValue(m_template.zoneRotateY);
+    m_zoneRotateZSpin->setValue(m_template.zoneRotateZ);
     m_zoneSizeXSpin->setValue(m_template.zoneSizeX);
     m_zoneSizeYSpin->setValue(m_template.zoneSizeY);
     m_zoneSizeZSpin->setValue(m_template.zoneSizeZ);
@@ -1474,6 +1580,7 @@ void FieldCreatorPage::applyTemplateToUi(const FieldTemplate &field)
 
 void FieldCreatorPage::updateTemplateFromUi()
 {
+    const FieldTemplate before = m_template;
     m_template.kind = currentKind();
     m_template.fileName = FieldTemplateGenerator::normalizedFileName(m_fileNameEdit->text(), m_template.kind);
     m_template.zoneNickname = FieldTemplateGenerator::defaultZoneNickname(m_template.kind);
@@ -1492,6 +1599,13 @@ void FieldCreatorPage::updateTemplateFromUi()
     m_template.propertyFlags = m_propertyFlagsSpin->value();
     m_template.visit = m_visitSpin->value();
     m_template.damage = m_damageSpin->value();
+    m_template.zoneShape = m_zoneShapeCombo->currentText().trimmed();
+    m_template.zonePosX = m_zonePosXSpin->value();
+    m_template.zonePosY = m_zonePosYSpin->value();
+    m_template.zonePosZ = m_zonePosZSpin->value();
+    m_template.zoneRotateX = m_zoneRotateXSpin->value();
+    m_template.zoneRotateY = m_zoneRotateYSpin->value();
+    m_template.zoneRotateZ = m_zoneRotateZSpin->value();
     m_template.zoneSizeX = m_zoneSizeXSpin->value();
     m_template.zoneSizeY = m_zoneSizeYSpin->value();
     m_template.zoneSizeZ = m_zoneSizeZSpin->value();
@@ -1505,6 +1619,42 @@ void FieldCreatorPage::updateTemplateFromUi()
     m_template.primaryColor = parseColorText(m_primaryColorEdit->text(), m_template.primaryColor);
     m_template.ambientColor = parseColorText(m_ambientColorEdit->text(), m_template.ambientColor);
     m_template.fogColor = parseColorText(m_fogColorEdit->text(), m_template.fogColor);
+
+    const bool changedImportedTemplate = !before.originalIniText.isEmpty()
+        && (before.kind != m_template.kind
+            || before.fileName != m_template.fileName
+            || before.texturePanelsFile != m_template.texturePanelsFile
+            || before.billboardShape != m_template.billboardShape
+            || before.fillShape != m_template.fillShape
+            || before.spacedust != m_template.spacedust
+            || before.music != m_template.music
+            || before.propertyFlags != m_template.propertyFlags
+            || before.visit != m_template.visit
+            || before.damage != m_template.damage
+            || before.zoneShape != m_template.zoneShape
+            || before.zonePosX != m_template.zonePosX
+            || before.zonePosY != m_template.zonePosY
+            || before.zonePosZ != m_template.zonePosZ
+            || before.zoneRotateX != m_template.zoneRotateX
+            || before.zoneRotateY != m_template.zoneRotateY
+            || before.zoneRotateZ != m_template.zoneRotateZ
+            || before.zoneSizeX != m_template.zoneSizeX
+            || before.zoneSizeY != m_template.zoneSizeY
+            || before.zoneSizeZ != m_template.zoneSizeZ
+            || before.cubeSize != m_template.cubeSize
+            || before.fillDistance != m_template.fillDistance
+            || std::abs(before.emptyCubeFrequency - m_template.emptyCubeFrequency) > 0.0001
+            || before.billboardCount != m_template.billboardCount
+            || before.dynamicCount != m_template.dynamicCount
+            || before.fogDistance != m_template.fogDistance
+            || before.puffCount != m_template.puffCount
+            || before.primaryColor != m_template.primaryColor
+            || before.ambientColor != m_template.ambientColor
+            || before.fogColor != m_template.fogColor
+            || before.cubeShapeFallbacks != m_template.cubeShapeFallbacks
+            || before.placedObjects != m_template.placedObjects);
+    if (changedImportedTemplate)
+        m_template.originalIniText.clear();
 }
 
 void FieldCreatorPage::refreshPreviews()
@@ -1562,6 +1712,7 @@ void FieldCreatorPage::addManualObject()
             || object.assetNickname.contains(QStringLiteral("mine"), Qt::CaseInsensitive)
             || currentKind() == FieldTemplateKind::Mine
             || currentKind() == FieldTemplateKind::Gas;
+        m_template.originalIniText.clear();
         m_template.placedObjects.append(object);
     }
     refreshPreviews();
@@ -1580,6 +1731,7 @@ void FieldCreatorPage::autoDistributeObjects()
     }
     if (assets.isEmpty())
         assets = selectedAssets().isEmpty() ? m_assets : selectedAssets();
+    m_template.originalIniText.clear();
     m_template.placedObjects = FieldTemplateGenerator::autoDistribute(
         assets, currentKind(), count, static_cast<quint32>(m_seedSpin->value()), m_spreadCombo->currentText());
     refreshPreviews();

@@ -31,6 +31,8 @@ struct FieldPlacedObject {
     int rotateY = 0;
     int rotateZ = 0;
     bool mineRole = false;
+
+    bool operator==(const FieldPlacedObject &other) const = default;
 };
 
 struct FieldTemplate {
@@ -41,6 +43,7 @@ struct FieldTemplate {
     QString texturePanelsFile;
     QString billboardShape;
     QString fillShape;
+    QString originalIniText;
     QStringList cubeShapeFallbacks;
     QString spacedust;
     QString music;
@@ -51,6 +54,13 @@ struct FieldTemplate {
     int visit = 32;
     int damage = 0;
     int sort = 25;
+    int zonePosX = 0;
+    int zonePosY = 0;
+    int zonePosZ = 0;
+    int zoneRotateX = 0;
+    int zoneRotateY = 0;
+    int zoneRotateZ = 0;
+    QString zoneShape = QStringLiteral("ELLIPSOID");
     int zoneSizeX = 10000;
     int zoneSizeY = 8000;
     int zoneSizeZ = 10000;

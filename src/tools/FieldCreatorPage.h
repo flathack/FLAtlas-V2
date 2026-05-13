@@ -59,6 +59,13 @@ private:
     QSpinBox *m_propertyFlagsSpin = nullptr;
     QSpinBox *m_visitSpin = nullptr;
     QSpinBox *m_damageSpin = nullptr;
+    QSpinBox *m_zonePosXSpin = nullptr;
+    QSpinBox *m_zonePosYSpin = nullptr;
+    QSpinBox *m_zonePosZSpin = nullptr;
+    QSpinBox *m_zoneRotateXSpin = nullptr;
+    QSpinBox *m_zoneRotateYSpin = nullptr;
+    QSpinBox *m_zoneRotateZSpin = nullptr;
+    QComboBox *m_zoneShapeCombo = nullptr;
     QSpinBox *m_zoneSizeXSpin = nullptr;
     QSpinBox *m_zoneSizeYSpin = nullptr;
     QSpinBox *m_zoneSizeZSpin = nullptr;
@@ -87,6 +94,7 @@ private:
     QSpinBox *m_seedSpin = nullptr;
     QSlider *m_previewCubeSlider = nullptr;
     QLabel *m_previewCubeValueLabel = nullptr;
+    QLabel *m_previewObjectStatsLabel = nullptr;
     QPushButton *m_previewControlsToggle = nullptr;
     QWidget *m_previewHelpPanel = nullptr;
     QComboBox *m_spreadCombo = nullptr;

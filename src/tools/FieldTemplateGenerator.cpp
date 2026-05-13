@@ -395,6 +395,7 @@ FieldTemplate FieldTemplateGenerator::parseFieldIni(const QString &fileName, con
     FieldTemplate field = preset(isNebula ? FieldTemplateKind::Nebula : FieldTemplateKind::Asteroid);
     field.fileName = normalizedFileName(fileName, field.kind);
     field.zoneNickname = defaultZoneNickname(field.kind);
+    field.originalIniText = iniText;
     field.placedObjects.clear();
 
     const IniSection *texturePanels = findSection(doc, QStringLiteral("TexturePanels"));
@@ -460,6 +461,9 @@ FieldTemplate FieldTemplateGenerator::parseFieldIni(const QString &fileName, con
 
 QString FieldTemplateGenerator::generateFieldIni(const FieldTemplate &field)
 {
+    if (!field.originalIniText.isEmpty())
+        return field.originalIniText.endsWith(QLatin1Char('\n')) ? field.originalIniText : field.originalIniText + QLatin1Char('\n');
+
     QStringList lines;
     auto appendBlank = [&lines]() {
         if (!lines.isEmpty() && !lines.last().isEmpty())
@@ -617,8 +621,10 @@ QString FieldTemplateGenerator::generateSystemLinkPreview(const FieldTemplate &f
           << QStringLiteral("[Zone]")
           << QStringLiteral("nickname = %1").arg(field.zoneNickname)
           << QStringLiteral("ids_name = 0")
-          << QStringLiteral("pos = 0, 0, 0")
-          << QStringLiteral("shape = ELLIPSOID")
+          << QStringLiteral("pos = %1, %2, %3").arg(field.zonePosX).arg(field.zonePosY).arg(field.zonePosZ);
+    if (field.zoneRotateX != 0 || field.zoneRotateY != 0 || field.zoneRotateZ != 0)
+        lines << QStringLiteral("rotate = %1, %2, %3").arg(field.zoneRotateX).arg(field.zoneRotateY).arg(field.zoneRotateZ);
+    lines << QStringLiteral("shape = %1").arg(field.zoneShape.isEmpty() ? QStringLiteral("ELLIPSOID") : field.zoneShape)
           << QStringLiteral("size = %1, %2, %3").arg(field.zoneSizeX).arg(field.zoneSizeY).arg(field.zoneSizeZ)
           << QStringLiteral("property_flags = %1").arg(field.propertyFlags)
           << QStringLiteral("ids_info = 66146")
