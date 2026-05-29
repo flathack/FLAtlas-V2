@@ -34,6 +34,23 @@ FLAtlas V2 is built for modders who want to work directly with Freelancer data w
 - Inspect and adjust game data while keeping a clearer overview of how files relate to each other.
 - Use helper tools for patching, path finding, screenshots, updates, and launching your modded setup.
 
+## Included Tools
+
+- **Mod Manager** - Manage Freelancer installations, mods, and the active editing context.
+- **Universe Editor** - Inspect and edit universe-level system data and connections.
+- **System Editor** - Work visually with system objects, zones, bases, lanes, fields, rings, and related system data.
+- **File Editor** - Browse and edit Freelancer INI files directly inside FLAtlas.
+- **Trade Routes** - Analyze commodity routes, base prices, and trading opportunities.
+- **IDS Editor** - Edit IDS names and infocards used by Freelancer resources.
+- **NPC Editor** - Edit mbases NPCs, bribes, rumors, outfits, voices, and related base population data.
+- **Faction Editor** - Edit factions and relationship data.
+- **News Editor** - Edit news and rumor text assignments.
+- **3D Model Viewer** - Browse and preview Freelancer models.
+- **BINI Converter** - Convert BINI-coded INI files into editable text INI files.
+- **Translator Tool** - Scan IDS entries and optionally translate selected text after explicit opt-in.
+- **Plugin Catalog** - Browse external Freelancer tools with provider links and license notes.
+- **Field Creator** - Create asteroid and nebula field templates with placed assets.
+
 ## Getting Started
 
 1. Download the latest Windows ZIP from the release page.

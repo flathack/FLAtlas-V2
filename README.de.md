@@ -34,6 +34,23 @@ FLAtlas V2 ist fuer Modder gebaut, die direkt mit Freelancer-Daten arbeiten woll
 - Spieldaten pruefen und anpassen, waehrend die Zusammenhaenge zwischen Dateien uebersichtlich bleiben.
 - Hilfswerkzeuge fuer Patches, Pfadsuche, Screenshots, Updates und das Starten deiner Mod-Umgebung verwenden.
 
+## Enthaltene Werkzeuge
+
+- **Mod Manager** - Freelancer-Installationen, Mods und den aktiven Bearbeitungskontext verwalten.
+- **Universe Editor** - Universumsweite Systemdaten und Verbindungen pruefen und bearbeiten.
+- **System Editor** - Systemobjekte, Zonen, Basen, Lanes, Felder, Ringe und zugehoerige Systemdaten visuell bearbeiten.
+- **File Editor** - Freelancer-INI-Dateien direkt in FLAtlas durchsuchen und bearbeiten.
+- **Trade Routes** - Warenrouten, Basispreise und Handelsmoeglichkeiten analysieren.
+- **IDS Editor** - IDS-Namen und Infocards bearbeiten, die von Freelancer-Ressourcen genutzt werden.
+- **NPC Editor** - Mbases-NPCs, Bestechungen, Geruechte, Outfits, Stimmen und zugehoerige Basisbevoelkerung bearbeiten.
+- **Faction Editor** - Fraktionen und Beziehungsdaten bearbeiten.
+- **News Editor** - News- und Geruechttext-Zuweisungen bearbeiten.
+- **3D Model Viewer** - Freelancer-Modelle durchsuchen und in der Vorschau ansehen.
+- **BINI Converter** - BINI-codierte INI-Dateien in editierbare Text-INI-Dateien umwandeln.
+- **Translator Tool** - IDS-Eintraege scannen und ausgewaehlte Texte nach ausdruecklicher Zustimmung optional uebersetzen.
+- **Plugin Catalog** - Externe Freelancer-Tools mit Anbieterlinks und Lizenzhinweisen durchsuchen.
+- **Field Creator** - Asteroiden- und Nebelfeld-Templates mit platzierten Assets erstellen.
+
 ## Erste Schritte
 
 1. Lade die aktuelle Windows-ZIP von der Release-Seite herunter.
