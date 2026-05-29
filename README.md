@@ -5,6 +5,8 @@
 ![2D and 3D](https://img.shields.io/badge/2D%20%2B%203D-System%20Editor-7B61FF?style=for-the-badge)
 ![Community](https://img.shields.io/badge/Discord-Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)
 
+[Deutsch lesen](README.de.md)
+
 **FLAtlas V2** is a Windows desktop tool for the Freelancer modding community.
 
 It helps you inspect, edit, and understand Freelancer data with practical editors, 2D/3D system views, modding utilities, and safer workflows for everyday mod work.
