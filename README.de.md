@@ -5,7 +5,7 @@
 ![2D und 3D](https://img.shields.io/badge/2D%20%2B%203D-Systemeditor-7B61FF?style=for-the-badge)
 ![Community](https://img.shields.io/badge/Discord-Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)
 
-[Read in English](README.md)
+[Read in English](README.md) | [Читать по-русски](README.ru.md)
 
 **FLAtlas V2** ist ein Windows-Desktop-Tool fuer die Freelancer-Modding-Community.
 
