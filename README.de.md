@@ -11,7 +11,7 @@
 
 Es hilft dabei, Freelancer-Daten mit praktischen Editoren, 2D/3D-Systemansichten, Modding-Werkzeugen und sichereren Arbeitsablaeufen zu pruefen, zu bearbeiten und besser zu verstehen.
 
-![FLAtlas V2 Vorschau](https://github.com/flathack/FLAtlas-V2/releases/download/v0.8.0.5/PREVIEW.png)
+![FLAtlas V2 Vorschau](https://github.com/flathack/FLAtlas-V2/releases/download/v0.8.1/PREVIEW.png)
 
 ## Download
 

@@ -11,7 +11,7 @@
 
 Он помогает просматривать, редактировать и понимать данные Freelancer с помощью практичных редакторов, 2D/3D-предпросмотра систем, моддинг-утилит и более безопасных рабочих процессов.
 
-![Предпросмотр FLAtlas V2](https://github.com/flathack/FLAtlas-V2/releases/download/v0.8.0.5/PREVIEW.png)
+![Предпросмотр FLAtlas V2](https://github.com/flathack/FLAtlas-V2/releases/download/v0.8.1/PREVIEW.png)
 
 ## Скачать
 
