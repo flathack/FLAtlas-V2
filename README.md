@@ -11,7 +11,7 @@
 
 It helps you inspect, edit, and understand Freelancer data with practical editors, 2D/3D system views, modding utilities, and safer workflows for everyday mod work.
 
-![FLAtlas V2 preview](https://github.com/flathack/FLAtlas-V2/releases/download/v0.8.2/PREVIEW.png)
+![FLAtlas V2 preview](https://github.com/flathack/FLAtlas-V2/releases/download/v0.8.3/PREVIEW.png)
 
 ## Download
 
@@ -61,11 +61,15 @@ FLAtlas V2 is built for modders who want to work directly with Freelancer data w
 
 FLAtlas does not replace your Freelancer installation. It works with an existing game or mod folder.
 
-## Requirements
+## System Requirements
 
-- Windows
-- A Freelancer installation or mod installation
-- Enough care to keep backups of important mod files before large edits
+- **Operating system:** Windows 10 or newer; Windows 10 version 1809 or newer is recommended for Qt 6.8.3
+- **Architecture:** 64-bit Windows (`x64`)
+- **Game data:** An existing Freelancer installation or mod installation
+- **Runtime:** The release ZIP includes the required Qt runtime files
+- **Backups:** Keep backups of important mod files before large edits
+
+Windows 7, Windows 8/8.1, and 32-bit Windows are not supported by current FLAtlas V2 releases. The application is built with Qt 6.8.3, whose official Windows support starts at Windows 10 version 1809.
 
 ## Help And Community
 
