@@ -1,4 +1,4 @@
-# FLAtlas V2
+# FLAtlas
 
 ![Windows](https://img.shields.io/badge/Windows-Desktop-0078D4?style=for-the-badge&logo=windows&logoColor=white)
 ![Freelancer](https://img.shields.io/badge/Freelancer-Modding-00A3FF?style=for-the-badge)
@@ -7,15 +7,15 @@
 
 [Read in English](README.md) | [Читать по-русски](README.ru.md)
 
-**FLAtlas V2** ist ein Windows-Desktop-Tool für die Freelancer-Modding-Community.
+**FLAtlas** ist ein Windows-Desktop-Tool für die Freelancer-Modding-Community.
 
 Es hilft dabei, Freelancer-Daten mit praktischen Editoren, 2D/3D-Systemansichten, Modding-Werkzeugen und sichereren Arbeitsabläufen zu prüfen, zu bearbeiten und besser zu verstehen.
 
-![FLAtlas V2 Vorschau](https://github.com/flathack/FLAtlas-V2/releases/download/v0.8.3/PREVIEW.png)
+![FLAtlas Vorschau](https://github.com/flathack/FLAtlas-V2/releases/download/v0.8.5/PREVIEW.png)
 
 ## Download
 
-Der einfachste Weg zu FLAtlas V2 ist das aktuelle GitHub-Release.
+Der einfachste Weg zu FLAtlas ist das aktuelle GitHub-Release.
 
 [![Aktuelles Release herunterladen](https://img.shields.io/badge/Download-Aktuelles%20Release-2EA44F?style=for-the-badge&logo=github&logoColor=white)](https://github.com/flathack/FLAtlas-V2/releases/latest)
 [![Auf ModDB ansehen](https://img.shields.io/badge/Ansehen%20auf-ModDB-F28C28?style=for-the-badge)](https://www.moddb.com/games/freelancer/downloads/flatlas-v2-windows-2d3d-system-editor-idseditor-trade-data-npc)
@@ -27,7 +27,7 @@ Alle veröffentlichten Versionen, Prüfsummen und Release-Hinweise findest du hi
 
 ## Was Du Damit Machen Kannst
 
-FLAtlas V2 ist für Modder gebaut, die direkt mit Freelancer-Daten arbeiten wollen, ohne ständig zwischen vielen kleinen Tools zu wechseln.
+FLAtlas ist für Modder gebaut, die direkt mit Freelancer-Daten arbeiten wollen, ohne ständig zwischen vielen kleinen Tools zu wechseln.
 
 - Systeme, Basen, Universumsdaten, INI-Dateien, IDS-Einträge, Infocards, Handelsdaten, NPC-Daten und Mod-Ressourcen bearbeiten.
 - Interaktive 2D- und 3D-Vorschauen für Systeme, Objekte, Zonen, Basen, Docking Rings, Tradelanes und Verbindungen nutzen.
@@ -38,16 +38,19 @@ FLAtlas V2 ist für Modder gebaut, die direkt mit Freelancer-Daten arbeiten woll
 
 - **Mod Manager** - Freelancer-Installationen, Mods und den aktiven Bearbeitungskontext verwalten.
 - **Universe Editor** - Universumsweite Systemdaten und Verbindungen prüfen und bearbeiten.
-- **System Editor** - Systemobjekte, Zonen, Basen, Lanes, Felder, Ringe und zugehoerige Systemdaten visuell bearbeiten.
+- **System Editor** - Systemobjekte, Zonen, Basen, Lanes, Felder, Ringe und zugehörige Systemdaten visuell bearbeiten.
 - **File Editor** - Freelancer-INI-Dateien direkt in FLAtlas durchsuchen und bearbeiten.
 - **Trade Routes** - Warenrouten, Basispreise und Handelsmöglichkeiten analysieren.
 - **IDS Editor** - IDS-Namen und Infocards bearbeiten, die von Freelancer-Ressourcen genutzt werden.
-- **NPC Editor** - Mbases-NPCs, Bestechungen, Geruechte, Outfits, Stimmen und zugehoerige Basisbevoelkerung bearbeiten.
+- **NPC Editor** - Mbases-NPCs, Bestechungen, Gerüchte, Outfits, Stimmen und zugehörige Basisbevölkerung bearbeiten.
 - **Faction Editor** - Fraktionen und Beziehungsdaten bearbeiten.
-- **News Editor** - News- und Geruechttext-Zuweisungen bearbeiten.
+- **News Editor** - News- und Gerüchttext-Zuweisungen bearbeiten.
 - **3D Model Viewer** - Freelancer-Modelle durchsuchen und in der Vorschau ansehen.
+- **Equipment Visualizer** - Waffenmodelle, Projektile, Effekte und Feuerwerte untersuchen.
+- **Audio Manager** - Freelancer-Audiodateien untersuchen, exportieren, ersetzen und konvertieren.
+- **WAV Converter** - PCM-WAV-Dateien stapelweise in ein geprüftes Freelancer-kompatibles Profil konvertieren.
 - **BINI Converter** - BINI-codierte INI-Dateien in editierbare Text-INI-Dateien umwandeln.
-- **Translator Tool** - IDS-Einträge scannen und ausgewählte Texte nach ausdruecklicher Zustimmung optional übersetzen.
+- **Translator Tool** - IDS-Einträge scannen und ausgewählte Texte nach ausdrücklicher Zustimmung optional übersetzen.
 - **Plugin Catalog** - Externe Freelancer-Tools mit Anbieterlinks und Lizenzhinweisen durchsuchen.
 - **Field Creator** - Asteroiden- und Nebelfeld-Templates mit platzierten Assets erstellen.
 
@@ -55,7 +58,7 @@ FLAtlas V2 ist für Modder gebaut, die direkt mit Freelancer-Daten arbeiten woll
 
 1. Lade die aktuelle Windows-ZIP von der Release-Seite herunter.
 2. Entpacke die ZIP in einen Ordner deiner Wahl.
-3. Starte FLAtlas V2.
+3. Starte FLAtlas.
 4. Wähle deine Freelancer-Installation oder Mod-Installation aus.
 5. Öffne den gewünschten Editor oder das passende Werkzeug und erkunde deine Daten.
 
@@ -69,7 +72,7 @@ FLAtlas ersetzt keine Freelancer-Installation. Es arbeitet mit einem vorhandenen
 - **Runtime:** Die Release-ZIP enthält die benötigten Qt-Runtime-Dateien
 - **Backups:** Lege vor größeren Änderungen Backups wichtiger Mod-Dateien an
 
-Windows 7, Windows 8/8.1 und 32-bit Windows werden von aktuellen FLAtlas-V2-Releases nicht unterstützt. Die Anwendung wird mit Qt 6.8.3 gebaut; dessen offizieller Windows-Support beginnt bei Windows 10 Version 1809.
+Windows 7, Windows 8/8.1 und 32-bit Windows werden von aktuellen FLAtlas-Releases nicht unterstützt. Die Anwendung wird mit Qt 6.8.3 gebaut; dessen offizieller Windows-Support beginnt bei Windows 10 Version 1809.
 
 ## Hilfe Und Community
 
@@ -81,6 +84,6 @@ Wenn etwas nicht wie erwartet funktioniert, beschreibe bitte, was du bearbeitet 
 
 ## Hinweise
 
-Dieses GitHub-Repository ist die öffentliche Download- und Release-Seite für FLAtlas V2.
+Dieses GitHub-Repository ist die öffentliche Download- und Release-Seite für FLAtlas.
 
-Freelancer ist ein Spiel von Digital Anvil und Microsoft. FLAtlas V2 ist ein Community-Modding-Tool und ist nicht mit Microsoft verbunden oder von Microsoft unterstuetzt.
+Freelancer ist ein Spiel von Digital Anvil und Microsoft. FLAtlas ist ein Community-Modding-Tool und ist nicht mit Microsoft verbunden oder von Microsoft unterstützt.

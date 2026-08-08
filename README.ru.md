@@ -1,4 +1,4 @@
-# FLAtlas V2
+# FLAtlas
 
 ![Windows](https://img.shields.io/badge/Windows-Desktop-0078D4?style=for-the-badge&logo=windows&logoColor=white)
 ![Freelancer](https://img.shields.io/badge/Freelancer-Modding-00A3FF?style=for-the-badge)
@@ -7,15 +7,15 @@
 
 [Read in English](README.md) | [Deutsch lesen](README.de.md)
 
-**FLAtlas V2** — настольный инструмент для Windows, созданный для сообщества моддинга Freelancer.
+**FLAtlas** — настольный инструмент для Windows, созданный для сообщества моддинга Freelancer.
 
 Он помогает просматривать, редактировать и понимать данные Freelancer с помощью практичных редакторов, 2D/3D-предпросмотра систем, моддинг-утилит и более безопасных рабочих процессов.
 
-![Предпросмотр FLAtlas V2](https://github.com/flathack/FLAtlas-V2/releases/download/v0.8.3/PREVIEW.png)
+![Предпросмотр FLAtlas](https://github.com/flathack/FLAtlas-V2/releases/download/v0.8.5/PREVIEW.png)
 
 ## Скачать
 
-Самый простой способ получить FLAtlas V2 — скачать актуальный релиз на GitHub.
+Самый простой способ получить FLAtlas — скачать актуальный релиз на GitHub.
 
 [![Скачать актуальный релиз](https://img.shields.io/badge/Download-Latest%20Release-2EA44F?style=for-the-badge&logo=github&logoColor=white)](https://github.com/flathack/FLAtlas-V2/releases/latest)
 [![Открыть на ModDB](https://img.shields.io/badge/View%20on-ModDB-F28C28?style=for-the-badge)](https://www.moddb.com/games/freelancer/downloads/flatlas-v2-windows-2d3d-system-editor-idseditor-trade-data-npc)
@@ -27,7 +27,7 @@
 
 ## Что можно делать
 
-FLAtlas V2 создан для моддеров, которые хотят работать напрямую с данными Freelancer без постоянного переключения между множеством мелких инструментов.
+FLAtlas создан для моддеров, которые хотят работать напрямую с данными Freelancer без постоянного переключения между множеством мелких инструментов.
 
 - Редактировать системы, базы, данные вселенной, INI-файлы, IDS-записи, infocards, торговые данные, NPC-данные и ресурсы модов.
 - Использовать интерактивный 2D- и 3D-предпросмотр для систем, объектов, зон, баз, docking rings, tradelanes и соединений.
@@ -46,6 +46,9 @@ FLAtlas V2 создан для моддеров, которые хотят ра�
 - **Faction Editor** - редактирование фракций и данных отношений.
 - **News Editor** - редактирование назначений текстов новостей и слухов.
 - **3D Model Viewer** - просмотр моделей Freelancer.
+- **Equipment Visualizer** - просмотр моделей оружия, снарядов, эффектов и параметров стрельбы.
+- **Audio Manager** - просмотр, экспорт, замена и преобразование аудиоресурсов Freelancer.
+- **WAV Converter** - пакетное преобразование PCM WAV-файлов в проверенный профиль, совместимый с Freelancer.
 - **BINI Converter** - преобразование BINI-кодированных INI-файлов в редактируемые текстовые INI-файлы.
 - **Translator Tool** - сканирование IDS-записей и, только после явного согласия, перевод выбранного текста.
 - **Plugin Catalog** - просмотр внешних инструментов Freelancer со ссылками на поставщиков и заметками о лицензиях.
@@ -55,7 +58,7 @@ FLAtlas V2 создан для моддеров, которые хотят ра�
 
 1. Скачайте актуальный Windows ZIP со страницы релиза.
 2. Распакуйте ZIP в удобную папку.
-3. Запустите FLAtlas V2.
+3. Запустите FLAtlas.
 4. Выберите установку Freelancer или установку мода.
 5. Откройте нужный редактор или инструмент и начните изучать данные.
 
@@ -69,7 +72,7 @@ FLAtlas не заменяет установку Freelancer. Он работае
 - **Runtime:** ZIP-релиз содержит необходимые файлы Qt runtime
 - **Резервные копии:** делайте резервные копии важных файлов мода перед крупными изменениями
 
-Windows 7, Windows 8/8.1 и 32-bit Windows не поддерживаются текущими релизами FLAtlas V2. Приложение собрано с Qt 6.8.3, официальный Windows support которого начинается с Windows 10 версии 1809.
+Windows 7, Windows 8/8.1 и 32-bit Windows не поддерживаются текущими релизами FLAtlas. Приложение собрано с Qt 6.8.3, официальный Windows support которого начинается с Windows 10 версии 1809.
 
 ## Помощь и сообщество
 
@@ -81,6 +84,6 @@ Windows 7, Windows 8/8.1 и 32-bit Windows не поддерживаются т�
 
 ## Примечания
 
-Этот репозиторий GitHub является публичным центром загрузки и релизов для пользователей FLAtlas V2.
+Этот репозиторий GitHub является публичным центром загрузки и релизов для пользователей FLAtlas.
 
-Freelancer — игра Digital Anvil и Microsoft. FLAtlas V2 является инструментом сообщества для моддинга и не связан с Microsoft и не одобрен Microsoft.
+Freelancer — игра Digital Anvil и Microsoft. FLAtlas является инструментом сообщества для моддинга и не связан с Microsoft и не одобрен Microsoft.
