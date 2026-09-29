@@ -1,17 +1,18 @@
 # FLAtlas
 
 ![Windows](https://img.shields.io/badge/Windows-Desktop-0078D4?style=for-the-badge&logo=windows&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-Omarchy%20%2F%20Arch-1793D1?style=for-the-badge&logo=linux&logoColor=white)
 ![Freelancer](https://img.shields.io/badge/Freelancer-Modding-00A3FF?style=for-the-badge)
 ![2D и 3D](https://img.shields.io/badge/2D%20%2B%203D-System%20Editor-7B61FF?style=for-the-badge)
 ![Community](https://img.shields.io/badge/Discord-Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)
 
 [Read in English](README.md) | [Deutsch lesen](README.de.md)
 
-**FLAtlas** — настольный инструмент для Windows, созданный для сообщества моддинга Freelancer.
+**FLAtlas** — настольный инструмент для Windows и Linux, созданный для сообщества моддинга Freelancer.
 
 Он помогает просматривать, редактировать и понимать данные Freelancer с помощью практичных редакторов, 2D/3D-предпросмотра систем, моддинг-утилит и более безопасных рабочих процессов.
 
-![Предпросмотр FLAtlas](https://github.com/flathack/FLAtlas-V2/releases/download/v0.8.8/PREVIEW.png?v=fc2e151d)
+![Предпросмотр FLAtlas](https://github.com/flathack/FLAtlas-V2/releases/download/v0.8.9/PREVIEW.png)
 
 ## Скачать
 
@@ -56,9 +57,9 @@ FLAtlas создан для моддеров, которые хотят рабо
 
 ## Первые шаги
 
-1. Скачайте актуальный Windows ZIP со страницы релиза.
+1. Скачайте ZIP для Windows или Linux со страницы релиза.
 2. Распакуйте ZIP в удобную папку.
-3. Запустите FLAtlas.
+3. Запустите `FLAtlas.exe` в Windows или `./run-flatlas.sh` в Linux.
 4. Выберите установку Freelancer или установку мода.
 5. Откройте нужный редактор или инструмент и начните изучать данные.
 
@@ -66,13 +67,13 @@ FLAtlas не заменяет установку Freelancer. Он работае
 
 ## Системные требования
 
-- **Операционная система:** Windows 10 или новее; Windows 10 версии 1809 или новее рекомендуется для Qt 6.8.3
-- **Архитектура:** 64-bit Windows (`x64`)
+- **Операционная система:** Windows 10 или новее либо Omarchy/Arch Linux
+- **Архитектура:** x64
 - **Игровые данные:** установка Freelancer или мода
-- **Runtime:** ZIP-релиз содержит необходимые файлы Qt runtime
+- **Runtime:** ZIP для Windows содержит Qt 6.8.3 и MinGW; ZIP для Linux использует системные пакеты `qt6-base`, `qt6-3d`, `qt6-multimedia` и `qt6-multimedia-ffmpeg`
 - **Резервные копии:** делайте резервные копии важных файлов мода перед крупными изменениями
 
-Windows 7, Windows 8/8.1 и 32-bit Windows не поддерживаются текущими релизами FLAtlas. Приложение собрано с Qt 6.8.3, официальный Windows support которого начинается с Windows 10 версии 1809.
+Windows 7, Windows 8/8.1 и 32-битная Windows не поддерживаются. Для Qt 6.8.3 рекомендуется Windows 10 версии 1809 или новее. В Linux установите `wine` для запуска Freelancer и инструментов Windows, а также `unzip` для обновлений ZIP. Linux ZIP собран для Omarchy/Arch и не является автономным пакетом для других дистрибутивов.
 
 ## Помощь и сообщество
 
