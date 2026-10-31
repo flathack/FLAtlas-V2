@@ -12,9 +12,19 @@
 
 Es hilft dabei, Freelancer-Daten mit praktischen Editoren, 2D/3D-Systemansichten, Modding-Werkzeugen und sichereren Arbeitsabläufen zu prüfen, zu bearbeiten und besser zu verstehen.
 
-![FLAtlas Vorschau](https://github.com/flathack/FLAtlas-V2/releases/download/v0.8.9/PREVIEW.png)
+![FLAtlas Vorschau](https://github.com/flathack/FLAtlas-V2/releases/download/v0.9.0/PREVIEW.png)
 
 ## Download
+
+**Aktuelles Release: [FLAtlas v0.9.0 Beta](https://github.com/flathack/FLAtlas-V2/releases/tag/v0.9.0)**
+
+- [Windows-x64-ZIP](https://github.com/flathack/FLAtlas-V2/releases/download/v0.9.0/FLAtlas-V2-v0.9.0-win-x64.zip)
+- [Omarchy-/Arch-Linux-x64-ZIP](https://github.com/flathack/FLAtlas-V2/releases/download/v0.9.0/FLAtlas-V2-v0.9.0-linux-x64.zip)
+
+Neu in v0.9.0: direkte Suchvorschläge mit System-/Objektfokus, Datei- und
+IDS-Verwendungsnavigation, KI-Infocard-Entwürfe und sicherere Speicher-, Undo-
+und Update-Abläufe. Prüfsummen und Installationshinweise stehen im Release.
+
 
 Der einfachste Weg zu FLAtlas ist das aktuelle GitHub-Release.
 
